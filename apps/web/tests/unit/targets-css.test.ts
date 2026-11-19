@@ -56,7 +56,11 @@ function rules(css: string): Rule[] {
 }
 
 /** The declarations for a selector, later rules winning, only inside the at-rules `at` accepts ("" = none). */
-function style(sheet: string, selector: string, at: (a: string) => boolean = (a) => a === ""): Map<string, string> {
+function style(
+  sheet: string,
+  selector: string,
+  at: (a: string) => boolean = (a) => a === "",
+): Map<string, string> {
   const merged = new Map<string, string>();
   for (const r of rules(read(sheet)))
     if (r.selectors.includes(selector) && at(r.at)) for (const [k, v] of r.decls) merged.set(k, v);
@@ -64,6 +68,16 @@ function style(sheet: string, selector: string, at: (a: string) => boolean = (a)
 }
 
 const FOLDED = (a: string) => a === "@container sbar (max-width: 120px)";
+
+/** The app's global sheets in the order the root layout imports them, so a later sheet wins as in the browser. */
+const SHEETS = [...read("layout.tsx").matchAll(/^import "\.\/([\w-]+\.css)";$/gm)].map((m) => m[1]!);
+
+/** The declarations every global sheet gives a selector outside any at-rule, in import order (later wins). */
+function cascade(selector: string): Map<string, string> {
+  const merged = new Map<string, string>();
+  for (const sheet of SHEETS) for (const [k, v] of style(sheet, selector)) merged.set(k, v);
+  return merged;
+}
 
 describe("F-SPACE.targets, C-SIDEBAR.anatomy/4–5: a section's rows never slide under the account row", () => {
   it("open, the sections keep their full height, so the bar scrolls instead of stacking rows under Account", () => {
@@ -82,5 +96,33 @@ describe("F-SPACE.targets, C-SIDEBAR.anatomy/4–5: a section's rows never slide
     expect(sec.get("visibility")).toBe("hidden");
     expect(sec.get("min-height")).toBe("0");
     expect(sec.get("flex-shrink")).toBe("1");
+  });
+});
+
+describe("F-SPACE.targets, F-A11Y.rules/2: the skip link, with focus, covers no other target", () => {
+  it("reads the global sheets in the root layout's order, ds-app.css last", () => {
+    expect(SHEETS.at(-1)).toBe("ds-app.css");
+    expect(SHEETS).toEqual(expect.arrayContaining(["globals.css", "shell.css", "ds-app.css"]));
+  });
+
+  it("rests off the page, laid over it", () => {
+    const rest = cascade(".skip-link");
+    expect(rest.get("position")).toBe("absolute");
+    expect(rest.get("top")).toBe("-4rem");
+  });
+
+  it("with focus takes its own row in the flow, so the page moves down under it (S-02's mark was left 8 px clear)", () => {
+    const focus = cascade(".skip-link:focus");
+    expect(focus.get("position")).toBe("relative");
+    expect(focus.get("top")).toBe("auto");
+    expect(focus.get("left")).toBe("auto");
+    expect(focus.get("display")).toBe("block");
+    expect(focus.get("width")).toBe("fit-content");
+    expect(focus.get("z-index")).toBe("var(--z-skip)");
+  });
+
+  it("in the signed-in shell, starts after the fixed sidebar rather than over its brand", () => {
+    const signedIn = cascade(".skip-link:focus:has(~ .shell:not(.shell-public))");
+    expect(signedIn.get("margin-inline-start")).toBe("calc(var(--sbw) + var(--space-4))");
   });
 });

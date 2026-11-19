@@ -68,9 +68,8 @@
   backdrop-filter: var(--glass-blur);
 }
 
-/* The skip link sits above the sidebar, the bars and any pop-up when it has focus */
+/* The skip link stays above the bars and any pop-up when it has focus; ds-app.css gives it its own row in the flow */
 .skip-link:focus {
-  top: 12px;
   z-index: var(--z-skip);
 }
 
