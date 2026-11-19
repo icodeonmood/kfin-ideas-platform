@@ -11,7 +11,8 @@ import { createRoot, hydrateRoot, type Root } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ListenPlayer } from "@/components/review/listen-player";
+import { ListenPlayer, VOICE_WAIT_MS } from "@/components/review/listen-player";
+import { LISTEN_ERROR } from "@/lib/desk/listen";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -148,5 +149,92 @@ describe("C-LISTEN.anatomy: the listen strip from the first paint", () => {
     await answer(SCRIPT, json(503, { error: { code: "switched_off" } }));
     expect(calls).toEqual([CHAPTERS, SCRIPT]);
     expect(host.innerHTML).toBe("");
+  });
+});
+
+// J-REVIEW/M3 (BLD-B271): once an idea joins another, lane C's audio routes answer 404 for it
+// (`speech/listen.py` NOT_LISTENABLE holds "merged"), so the desk's script is the only source and the device's voice
+// reads it. A browser without a local English voice (headless Chromium, the journeys' browser) dropped the strip.
+const SCRIPT_BODY = {
+  parts: [
+    { part: "summary", title: "The problem", text: "Investors call the branch about a code.", seconds: 4 },
+    { part: "often", title: "How often", text: "About 40 calls a day at one branch.", seconds: 3 },
+    { part: "who", title: "Who it affects", text: "Investors.", seconds: 2 },
+    { part: "cost", title: "What it’s worth", text: "Not worked out yet.", seconds: 2 },
+    { part: "evidence", title: "Attached", text: "Nothing attached.", seconds: 2 },
+    { part: "fix", title: "Fix", text: "No fix suggested. It was optional.", seconds: 3 },
+  ],
+  chapters: [],
+  total_seconds: 16,
+  version: "v-merged-1",
+};
+
+describe("J-REVIEW/M3, C-LISTEN: a merged idea's S-R2 keeps Listen", () => {
+  it("J-REVIEW/M3, C-LISTEN: a merged idea's S-R2 keeps Listen with no device voice, then says it couldn’t prepare the audio (L-LISTEN/7)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await act(async () => {
+        root = createRoot(host);
+        root.render(player());
+      });
+      await answer(CHAPTERS, json(404, { error: "not_found" }));
+      await answer(SCRIPT, json(200, SCRIPT_BODY));
+      expect(calls).toEqual([CHAPTERS, SCRIPT]);
+      // The strip stays at its place, waiting for a voice: title, and the inert, named play button
+      expect(host.querySelector("section.listen")).not.toBeNull();
+      expect(title()).toBe("Listen to the whole idea");
+      expect(play()?.getAttribute("aria-disabled")).toBe("true");
+      expect(play()?.getAttribute("aria-label")).toBe("Play the whole idea");
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+      expect(host.querySelector<HTMLButtonElement>('[aria-label="Save for offline"]')?.disabled).toBe(true);
+      // No voice comes: the player's own failure line and Try again, in the strip; the page is unaffected
+      await act(async () => {
+        vi.advanceTimersByTime(VOICE_WAIT_MS);
+      });
+      await settle();
+      expect(title()).toBe("Listen to the whole idea");
+      expect(host.querySelector('[role="alert"]')?.textContent).toBe(`${LISTEN_ERROR} Try again`);
+      expect(play()?.getAttribute("aria-disabled")).toBe("true");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("J-REVIEW/M3, C-LISTEN: with a device voice, a merged idea's strip plays its own script, named with its length", async () => {
+    const voice = {
+      name: "Synthetic en-IN",
+      lang: "en-IN",
+      localService: true,
+      default: true,
+      voiceURI: "syn",
+    };
+    vi.stubGlobal("speechSynthesis", {
+      getVoices: () => [voice],
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      speak: () => undefined,
+      cancel: () => undefined,
+      pause: () => undefined,
+      resume: () => undefined,
+      speaking: false,
+      paused: false,
+      pending: false,
+    });
+    vi.stubGlobal(
+      "SpeechSynthesisUtterance",
+      class {
+        constructor(public text: string) {}
+      },
+    );
+    await act(async () => {
+      root = createRoot(host);
+      root.render(player());
+    });
+    await answer(CHAPTERS, json(404, { error: "not_found" }));
+    await answer(SCRIPT, json(200, SCRIPT_BODY));
+    const button = play()!;
+    expect(button.hasAttribute("aria-disabled")).toBe(false);
+    expect(button.getAttribute("aria-label")).toMatch(/^Play the whole idea, \d+ seconds?$/);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
   });
 });
