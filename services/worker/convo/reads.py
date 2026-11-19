@@ -48,6 +48,7 @@ EMPTY_TITLE = "No messages yet"
 EMPTY_BODY = "If the review desk has a question, it shows here and in your Inbox, and we tell you on Teams."
 EMPTY_BODY_NO_TEAMS = "If the review desk has a question, it shows here and in your Inbox."
 FROM_COMMITTEE = f"From {ONES_COMMITTEE}"  # "In this conversation" (L-CONVO/8)
+FROM_DESK = f"From {REVIEW_DESK}"  # "In this conversation" (L-CONVO/8)
 
 
 def teams_on(conn: Conn) -> bool:
@@ -127,7 +128,11 @@ def conversation(conn: Conn, ref: str, user_id: str, *, at: dt.datetime | None =
     # "No messages yet" is drawn only with the review desk (Messages.md); once the idea has left the desk, an idea
     # with no messages shows its event lines alone (NOT DRAWN default, BLD-F088). A merge line counts as said too,
     # as S-06's "You and the review desk" counts it (lane E's `MERGE_EVENTS`, L-MERGE.effects/6, BLD-F090); the
-    # shared and checked lines and any other event line keep the empty line, as Messages.md draws it
+    # shared and checked lines and any other event line keep the empty line, as Messages.md draws it.
+    # Event rows are never soft-deleted (only messages are, `convo.messages.remove`), so S-06's `deleted_at IS NULL`
+    # on its merge lines and this unfiltered read agree. One known gap: S-06's `entry_count` counts a questions entry
+    # whose set is queued or missing, and this read does not (`_entry` renders no such entry); lane B writes the
+    # entry only once the set is sent, so the two do not differ in practice (f-convo-merge-empty review, BLD-F093).
     said = any(
         e["type"] in ("message", "questions", "answers")
         or (e["type"] == "event" and e["code"] in page_read.MERGE_EVENTS)
@@ -488,7 +493,8 @@ def _participants(
     """'In this conversation' (L-CONVO/8): each person with what they are doing; the reader last, as "You". Outside
     the review desk and the committee, the desk's people are one row, "The review desk" (DEC-111), and the Ones
     Committee's one row, "The Ones Committee", however many of its members took part (DEC-113): "Mentioned" while its
-    members were only mentioned, "From the Ones Committee" once any member wrote (BLD-F092)."""
+    members were only mentioned, "From the Ones Committee" once any member wrote (BLD-F092). The desk's row likewise
+    reads "From the review desk" once its people wrote, unless it is the reviewer's row (BLD-F093)."""
     seen: dict[str, tuple[Person, str]] = {}
 
     def add(p: Person, doing: str) -> None:
@@ -523,7 +529,10 @@ def _participants(
             who = _sender(ctx, x, staff_as)
             if who.committee and "committee" in seen:  # a member wrote: no longer only mentioned (BLD-F092)
                 seen["committee"] = (seen["committee"][0], FROM_COMMITTEE)
-            add(who, "From the review desk" if who.desk or who.role_label == DESK else
+            # Likewise the desk, only mentioned until now; the reviewer's row ("Reviewing it", "Picked it") stays
+            if who.desk and "desk" in seen and seen["desk"][1] == "Mentioned":  # (BLD-F093)
+                seen["desk"] = (seen["desk"][0], FROM_DESK)
+            add(who, FROM_DESK if who.desk or who.role_label == DESK else
                 FROM_COMMITTEE if who.committee or who.role_label == COMMITTEE else "In the conversation")  # fmt: skip
     me = seen.pop(ctx.reader.user_id, None)
     out = [{"person": p.ref(), "label": p.label, "doing": d, "you": False} for p, d in seen.values()]

@@ -15,7 +15,7 @@ Every finding is the same rule: target size, WCAG 2.5.8, rated serious. In each 
 | 1 | S-02 Sign-in (lane A) | `/sign-in` | The 1% Club mark that links to Landing, `.si-brand` (`app/sign-in/page.tsx`) | 96.8 × 8 px |
 | 2 | S-05 Check it (lane C) | `/share/:id/check` | The "Change title" button (`app/share/[id]/check/parts.tsx`) | 56 × 10.2 px |
 | 3 | S-R2 The idea at the desk (lane B) | `/desk/ideas/IDEA-2026-000050` and `…000051` | The link to IDEA-2026-000049 on the panel | 232 × 13.4 px |
-| 4 | S-H2 Find your crew (lane F) | `/kit/crew`, the kit page that renders the crew screen | The filter button, `.crew-fbtn` (`app/crew/crew-screen.tsx`) | 103 × 6.4 px |
+| 4 | S-H2 Find your crew (lane F) | `/kit/crew`, the kit page that renders the crew screen | The filter button, `.crew-fbtn` (`app/crew/crew-screen.tsx`) | 103 × 6.4 px. **Cause found, not a fix (lane F, 20 Nov, BLD-F093):** nothing overlaps the button at rest. By the log's timing in run 44398344925, axe measured it at 375 px in `find-your-crew.spec.ts`'s J-TEAMUP test, after the tap on the card's Team up had scrolled the page, so the button sat under the phone's sticky bar (`.pnav`, whose back link fills its 1fr column). A sticky bar covers whatever scrolls under it, so no change keeps the look (DEC-119). Pinned at rest by an axe `target-size` check at desktop and 360 px in the same spec. For BLD-A229: that test's page-level axe call still runs at that scroll |
 
 ## What axe does not check
 

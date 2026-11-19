@@ -934,6 +934,33 @@ def test_BLD_F028_V_ACC_similar_8_an_inbox_button_is_refused_and_audited_like_th
     assert db.execute("SELECT count(*) AS n FROM merges").fetchone()["n"] == 0
 
 
+def test_BLD_F093_V_ACC_similar_8_a_stale_inbox_item_is_refused_once_its_reader_no_longer_leads(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lead's item outlives their lead: the crew's live lead row moves to Asha (the sharer stays the fallback
+    only while no live row exists, L-TEAMUP.rules/10). Ravi's old button is refused as not_lead and audited, and
+    nothing is answered; the new lead answers it (f-teamup-5.delta review's stale-lead test)."""
+    monkeypatch.setitem(sys.modules, "notify.inbox", None)  # the route's own refusal
+    sent = _send(db, cast)
+    row = _item(inbox)
+    lead = cast["lead"]
+    db.execute(
+        "UPDATE crew_members SET role = 'crew' WHERE idea_uuid = %s AND contributor_code = %s",
+        (lead["id"], cast["ravi"]["code"]),
+    )
+    db.execute(
+        "UPDATE crew_members SET role = 'lead' WHERE idea_uuid = %s AND contributor_code = %s",
+        (lead["id"], cast["asha"]["code"]),
+    )
+    stale = _refused(inbox_ops.team_only, db, cast["ravi"]["id"], row)
+    assert (stale.status, stale.code) == (403, "not_lead")
+    assert [a["after"]["answer"] for a in f.audit_rows(db, "teamup.answer_refused", sent["id"])] == [
+        "team_only"
+    ]
+    assert requests.read(db, sent["id"], cast["kavya"]["id"])["state"] == "sent"
+    assert inbox_ops.decline(db, cast["asha"]["id"], row)["request"]["state"] == "declined"
+
+
 def test_BLD_F028_the_handlers_register_in_lane_A_registry_when_it_is_there(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -960,7 +987,8 @@ def test_BLD_F028_the_handlers_register_in_lane_A_registry_when_it_is_there(
 
 
 def test_BLD_F028_lane_A_registry_holds_the_three_handlers_once_teamup_has_loaded() -> None:
-    ops = pytest.importorskip("notify.ops")  # lane A's Inbox registry: skipped until it is on main
+    from notify import ops  # lane A's Inbox registry is on main: no skip (BLD-F093)
+
     inbox_ops.register()
     for op in ("decline", "team_only", "merge"):
         assert ops.handler("teamup_request", op) is inbox_ops.HANDLERS[op]

@@ -368,6 +368,43 @@ def test_dec_111_l_convo_7_10_what_post_and_delete_return_to_the_sharer_and_the_
     assert gone["entry"]["removed"] and gone["entry"]["text"] == "Message removed"
 
 
+# --- f-dec111-names nit 5 (BLD-F093): the desk's row with no reviewer on the idea --------------------------------
+def test_dec_111_l_convo_8_bld_f093_with_no_reviewer_the_desk_row_reads_mentioned_until_the_desk_writes(
+    db: Any,
+) -> None:
+    """Neither `reviewer_id` nor `opened_by` is set, so no reviewer row comes first. A member of the committee, who
+    reads names, mentions Meera: the sharer's one desk row reads "Mentioned". Once someone at the desk writes, it
+    reads "From the review desk", as the committee's row does (BLD-F092). With a reviewer, that row stays as
+    `_reviewer_doing` words it (test_..._reviewer_row_keeps_its_words below)."""
+    kavya = fx.person(db, "Kavya Menon")
+    meera = fx.person(db, "Meera Iyer", roles=(("reviewer", None),))
+    harish = fx.person(db, "Harish Rao", roles=(("reviewer", None),))
+    rohan = fx.person(db, "Rohan Mehta", roles=(("committee", None),))
+    idea = fx.idea(db, kavya)
+    send(db, idea["idea_id"], rohan["id"],
+         {"text": "@Meera Iyer please look at the R07 calls.", "mentions": [meera["id"]]}, at=fx.at(17, 9))  # fmt: skip
+
+    def desk_rows() -> list[tuple[str, str]]:
+        view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
+        blob = json.dumps(view, default=str, ensure_ascii=False)
+        assert not [t for t in _traces(meera, harish) if t in blob]
+        return [(p["label"], p["doing"]) for p in view["participants"] if p["label"] == "The review desk"]
+
+    assert desk_rows() == [("The review desk", "Mentioned")]
+    send(db, idea["idea_id"], harish["id"], {"text": "Looking at the calls now."}, at=fx.at(17, 9, 30))
+    assert desk_rows() == [("The review desk", "From the review desk")]
+
+
+def test_dec_111_l_convo_8_bld_f093_the_reviewer_row_keeps_its_words_after_the_desk_writes(db: Any) -> None:
+    kavya = fx.person(db, "Kavya Menon")
+    meera = fx.person(db, "Meera Iyer", roles=(("reviewer", None),))
+    idea = fx.idea(db, kavya, reviewer_id=meera["id"], opened_by=meera["id"])
+    send(db, idea["idea_id"], meera["id"], {"text": "Can you add last week’s calls?"}, at=fx.at(17, 9))
+    view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
+    rows = [(p["label"], p["doing"]) for p in view["participants"] if p["label"] == "The review desk"]
+    assert rows == [("The review desk", "Reviewing it")]
+
+
 # --- BLD-F084: the Inbox items a message posts say when the review desk speaks (lane A's `as_desk`) ---------------
 def _items(db: Any, entry_id: str) -> list[dict[str, Any]]:
     """The in-app Inbox items one message posted: kind, recipient, refs, stored sender, key."""
