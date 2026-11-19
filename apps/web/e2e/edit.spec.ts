@@ -109,7 +109,7 @@ const FILES = [
     type: "application/pdf",
     size: 143360,
     state: "personal_data_found",
-    problem: "Found a phone number on page 2. Nobody can open it until it’s hidden.",
+    problem: "Found a phone number on page 2. Only you, the review desk and the Ones Committee can open it.",
     added_by: ME,
     added_at: "2026-11-15T08:01:00Z",
   },
@@ -166,7 +166,10 @@ test("S-06B V-ACC: the edit page, its files, the fix sheet, Cancel's confirm and
   await expect(
     page
       .getByRole("alert")
-      .filter({ hasText: "Found a phone number on page 2. Nobody can open it until it’s hidden." }),
+      .filter({
+        hasText:
+          "Found a phone number on page 2. Only you, the review desk and the Ones Committee can open it.",
+      }),
   ).toBeVisible();
   // "Hide it for me" waits for `files.blackout`, off at launch (DEC-107, BLD-C064): shown only while it is on.
   const status = (await (await page.request.get("/api/status")).json()) as {
