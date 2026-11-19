@@ -8,6 +8,11 @@
  * again. When that route answers 404 (not on main yet) or 503 (switched off), or anything else, the browser reads the
  * masked script with a local voice (BLD-B230), and nothing leaves the device. With neither, the player is not shown;
  * nor when Listen is switched off (desk.listen). Both voices sit behind the same controls (`ListenControls`).
+ *
+ * C-LISTEN.anatomy (BLD-B267): the strip is drawn at its full size from the first render, the server's included, so
+ * the page does not move when the audio answers. Until then the title stands, the time keeps its line unseen, the
+ * play button is announced as "Play the whole idea" but does nothing (`aria-disabled`, so it stays focusable), and
+ * the parts menu, "Save for offline" and the line are disabled; the player then takes over in place.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 
@@ -23,6 +28,7 @@ import {
   nowLabel,
   OFFLINE_DAYS,
   pickVoice,
+  PLAY_NAME,
   playLabel,
   progressLabel,
   readChapters,
@@ -298,7 +304,8 @@ export function ListenPlayer({ ideaId, decided }: { ideaId: string; decided: boo
   );
 
   if (paused) return null;
-  if (source?.kind !== "hosted" && voice === null) return null;
+  // The browser's voice is needed only once its script is the source; until a source answers, the strip stands
+  if (source?.kind === "local" && voice === null) return null;
   const total = state?.total ?? timeline?.total ?? 0;
   const position = state?.position ?? 0;
   const playing = state?.playing ?? false;
@@ -346,7 +353,8 @@ export function ListenPlayer({ ideaId, decided }: { ideaId: string; decided: boo
         <h2 id={`listen-t-${ideaId}`} className="listen-t" ref={titleRef} tabIndex={-1}>
           Listen to the whole idea
         </h2>
-        <p className="meta listen-time">
+        {/* Its line is kept, unseen, until the length is known: no "0:00 / 0:00" and no new words (BLD-B267) */}
+        <p className={`meta listen-time${ready ? "" : " listen-wait"}`}>
           {playing ? <span className="eq" aria-hidden="true" /> : null}
           {clock(position)} / {clock(total)}
           {playing && state?.currentPart ? (
@@ -440,9 +448,12 @@ export function ListenPlayer({ ideaId, decided }: { ideaId: string; decided: boo
           <button
             type="button"
             className="lplay"
-            aria-label={playing ? "Pause" : playLabel(total)}
-            disabled={!ready}
-            onClick={() => engine?.toggle()}
+            aria-label={playing ? "Pause" : ready ? playLabel(total) : PLAY_NAME}
+            // Not `disabled`: it stays focusable and announced before the audio answers, and ignores clicks and keys
+            aria-disabled={ready ? undefined : true}
+            onClick={() => {
+              if (ready) engine?.toggle();
+            }}
           >
             {playing ? (
               <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">

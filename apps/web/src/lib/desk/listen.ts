@@ -116,8 +116,11 @@ function lengthInWords(seconds: number): string {
   return words.join(" ");
 }
 
+/** The play button's name before the length is known (C-LISTEN.anatomy, BLD-B267). */
+export const PLAY_NAME = "Play the whole idea";
+
 export function playLabel(total: number): string {
-  return `Play the whole idea, ${lengthInWords(total)}`;
+  return `${PLAY_NAME}, ${lengthInWords(total)}`;
 }
 
 export function progressLabel(position: number, total: number): string {
