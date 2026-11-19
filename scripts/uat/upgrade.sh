@@ -40,6 +40,13 @@ BASE=""
 DUMP=""
 LOCK=""
 
+APPLIED=""
+record_upgrade() {  # <smoke passed: true|false>: ops/upgrade-<ts>.json, written after the backup and again at the end
+  local applied_json="" v
+  for v in $APPLIED; do applied_json="${applied_json:+$applied_json, }\"$v\""; done
+  printf '{"from": "%s", "to": "%s", "backup": "%s", "migrations_applied": [%s], "smoke_passed": %s, "seconds": %d}\n' \
+    "$FROM_SHA" "$TO_SHA" "$DUMP" "$applied_json" "$1" "$(( SECONDS - STARTED ))" > "$UAT_DATA_DIR/ops/upgrade-$TS.json"
+}
 restore_tags() {  # the :latest tags back to the running images, so a later `up` cannot start a half-built version
   local svc
   for svc in $SERVICES; do
@@ -56,7 +63,7 @@ on_exit() {
       ;;
     build|backup)
       restore_tags
-      [[ -n "$BASE" ]] && rm -rf "$BASE.dump" "$BASE.repo.tar" "$BASE.from"
+      [[ -n "$BASE" ]] && rm -rf "$BASE.dump" "$BASE.repo.tar" "$BASE.from" "$UAT_DATA_DIR/ops/upgrade-$TS.json"
       printf '\nNothing was changed: the database was not touched and the running version still serves.\n' >&2
       ;;
     migrate|restart|smoke|record)
@@ -109,7 +116,7 @@ LOCK="$UAT_DATA_DIR/ops/.lock"
 [[ -n "$(compose ps --status running -q postgres)" ]] \
   || fail "Postgres is not running in project $PROJECT: is UAT_PROJECT the install's project?"
 [[ "$(sql "SELECT to_regclass('public.schema_migrations') IS NOT NULL")" == "t" ]] \
-  || fail "the database has no schema_migrations: nothing is installed here (a fresh install is make uat-deploy)"
+  || fail "the database ideas or its schema_migrations is missing. If a rollback was interrupted, run make uat-rollback again with the same BACKUP. Never run make uat-deploy over a live install"
 # A database that an earlier, failed run already migrated is rolled back with that run's backup, never upgraded again:
 # a new backup would hold the new schema, and its rollback would start the old images on it.
 from_versions="$(git ls-tree --name-only "$FROM_SHA" db/migrations/ | sed -nE 's#^db/migrations/([0-9]+)_.*#\1#p')"
@@ -117,8 +124,16 @@ from_versions="$(git ls-tree --name-only "$FROM_SHA" db/migrations/ | sed -nE 's
 ahead="$(sql "SELECT version FROM schema_migrations ORDER BY version" | LC_ALL=C sort \
   | LC_ALL=C comm -23 - <(printf '%s\n' "$from_versions" | LC_ALL=C sort))" || fail "could not read schema_migrations"
 if [[ -n "$ahead" ]]; then
-  hint="$(ls -t "$UAT_DATA_DIR"/backups/*.dump 2>/dev/null | head -1 || true)"
-  fail "an earlier upgrade already migrated this database ($(printf '%s ' $ahead)are not in $FROM_SHORT): roll back with that run's backup (make uat-rollback BACKUP=${hint:-<the .dump of that run>}) instead of running the upgrade again"
+  # The backup that run recorded (its upgrade-<ts>.json from FROM is written as soon as the backup is checked), else
+  # the newest backup.
+  hint=""
+  rec="$(grep -l "\"from\": \"$FROM_SHA\"" "$UAT_DATA_DIR"/ops/upgrade-*.json 2>/dev/null | LC_ALL=C sort | tail -1 || true)"
+  [[ -z "$rec" ]] || hint="$(sed -nE 's/.*"backup": "([^"]*)".*/\1/p' "$rec")"
+  [[ -n "$hint" && -s "$hint" ]] || hint="$(ls -t "$UAT_DATA_DIR"/backups/*.dump 2>/dev/null | head -1 || true)"
+  printf '\nRoll it back; do not run the upgrade again. Check it is the backup from before the failed upgrade, then run:\n' >&2
+  printf '  UAT_DATA_DIR=%s UAT_PROJECT=%s make uat-rollback BACKUP=%s APP_ENV_FILE=%s DB_ENV_FILE=%s\n' \
+    "$UAT_DATA_DIR" "$PROJECT" "${hint:-<the .dump from before the failed upgrade>}" "$APP_ENV_FILE" "$DB_ENV_FILE" >&2
+  fail "an earlier upgrade already migrated this database ($(printf '%s ' $ahead)are not in $FROM_SHORT)"
 fi
 for svc in $SERVICES; do
   [[ -n "$(compose ps --status running -q "$svc")" ]] || fail "$svc is not running: an upgrade starts from a running install"
@@ -192,6 +207,7 @@ chmod 600 "$BASE.repo.tar"
 tar -tf "$BASE.repo.tar" > /dev/null || fail "the company repo archive cannot be read"
 sql "SELECT version FROM schema_migrations ORDER BY version" > "$BASE.from/migrations.txt"
 echo "backup: $DUMP ($tables tables with data) and $BASE.repo.tar"
+record_upgrade false   # names this backup at once, so a later run can point a rollback at it
 
 PHASE=migrate
 step "5/8 Migrations: dbmate up, then nothing pending"
@@ -216,9 +232,6 @@ grep -qx 'smoke: all checks passed' <<< "$smoke_out" || fail "smoke tests"
 PHASE=record
 step "8/8 Record the upgrade"
 write_installed "$TO_SHA" "$TO_TAG" "$INSTALLED"
-applied_json=""
-for v in $APPLIED; do applied_json="${applied_json:+$applied_json, }\"$v\""; done
-printf '{"from": "%s", "to": "%s", "backup": "%s", "migrations_applied": [%s], "smoke_passed": true, "seconds": %d}\n' \
-  "$FROM_SHA" "$TO_SHA" "$DUMP" "$applied_json" "$(( SECONDS - STARTED ))" > "$UAT_DATA_DIR/ops/upgrade-$TS.json"
+record_upgrade true
 echo "recorded: $INSTALLED and $UAT_DATA_DIR/ops/upgrade-$TS.json"
 printf '\nupgrade: %s -> %s done in %ss. Backup kept at %s\n' "$FROM_SHORT" "${TO_SHA:0:8}" "$(( SECONDS - STARTED ))" "$DUMP"

@@ -98,7 +98,7 @@ sql ideas "SELECT version FROM schema_migrations ORDER BY version" | cmp -s - "$
   || fail "the restored database's migrations differ from the backup's list"
 echo "database restored: migrations as at the backup ($(grep -c . "$FROMDIR/migrations.txt"))"
 echo "kill switches restored:"
-switches
+switches || echo "  (could not read them now: check them on the Admin page once the web app is up)"
 echo "kill switches are back to their state at backup time: check them on the Admin page"
 
 step "5/8 Company repo: back from its archive (always restored)"

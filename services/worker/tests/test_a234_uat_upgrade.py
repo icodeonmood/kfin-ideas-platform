@@ -38,7 +38,7 @@ case "$a" in
   "image tag "*) set -- $a; touch "$FAKE_STATE/tag-$(key "$4")" ;;
   "image ls "*) for f in "$FAKE_STATE"/tag-*@rollback-*; do [[ -e "$f" ]] && basename "$f" | sed 's/^tag-//; s/@/:/'; done ;;
   "image rm "*) set -- $a; rm -f "$FAKE_STATE/tag-$(key "$3")" ;;
-  *"to_regclass"*) echo t ;;
+  *"to_regclass"*) echo "${FAKE_REGCLASS:-t}" ;;
   *"FROM kill_switches"*) printf 'ai.all off\nsubmissions on\n' ;;
   *"pg_database_size"*) echo 1048576 ;;
   *"SELECT version FROM schema_migrations"*) printf '20261101000000\n20261102000000\n'; [[ -f "$FAKE_STATE/migrated" ]] && echo 20261120000100 ;;
@@ -297,7 +297,19 @@ def test_a234_upgrade_refuses_a_database_an_earlier_run_already_migrated(tmp_pat
     run = _upgrade(tmp_path, FROM="launch-2026-11-20-r2")
     assert run.returncode == 1
     assert f"already migrated this database (20261120000100 are not in {FROM_SHA[:8]})" in run.stderr
-    assert f"(make uat-rollback BACKUP={dump}) instead of running the upgrade again" in run.stderr
+    assert (
+        "Roll it back; do not run the upgrade again. Check it is the backup from before the failed upgrade"
+        in run.stderr
+    )
+    data = tmp_path / "data"
+    assert (
+        f"  UAT_DATA_DIR={data} UAT_PROJECT={PROJECT} make uat-rollback BACKUP={dump} "
+        f"APP_ENV_FILE={tmp_path / 'app.env'} DB_ENV_FILE={tmp_path / 'db.env'}\n"
+    ) in run.stderr
+    # The failed run named its backup as soon as it was checked: that is the one the hint gives.
+    (record,) = (data / "ops").glob("upgrade-*.json")
+    rec = json.loads(record.read_text())
+    assert rec["backup"] == str(dump) and rec["from"] == FROM_SHA and rec["smoke_passed"] is False
     assert f"git ls-tree --name-only {FROM_SHA} db/migrations/" in _calls(tmp_path)
     assert not any(" build " in c or "pg_dump" in c or "image tag" in c for c in _calls(tmp_path))
     assert len(list((tmp_path / "data" / "backups").glob("*.dump"))) == 1
@@ -312,6 +324,16 @@ def test_a234_upgrade_takes_one_lock_and_leaves_anothers_alone(tmp_path: Path) -
     assert not any(" build " in c or "pg_dump" in c for c in _calls(tmp_path))
     lock.rmdir()
     assert _upgrade(tmp_path, FROM="launch-2026-11-20-r2").returncode == 0 and not lock.exists()
+
+
+def test_a234_upgrade_without_the_database_points_at_the_rollback_never_a_fresh_deploy(
+    tmp_path: Path,
+) -> None:
+    run = _upgrade(tmp_path, FROM="launch-2026-11-20-r2", FAKE_REGCLASS="f")
+    assert run.returncode == 1
+    assert "If a rollback was interrupted, run make uat-rollback again with the same BACKUP" in run.stderr
+    assert "Never run make uat-deploy over a live install" in run.stderr
+    assert not any(" build " in c or "pg_dump" in c for c in _calls(tmp_path))
 
 
 @pytest.mark.parametrize("script", ["upgrade", "rollback"])
