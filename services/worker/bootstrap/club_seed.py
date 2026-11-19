@@ -51,6 +51,7 @@ from core.crypto import encrypt_json
 from core.db import Conn, connect
 from desk.window import add_months
 from identity.codes import assign_contributor_code, emp_id_hash
+from notify import AS_DESK_REF, AS_THE_DESK, as_the_desk
 from onepc.context import seal_text, sealed_context
 from pii import vault
 from teamup.adapters import request_key
@@ -90,6 +91,9 @@ PEOPLE: list[tuple[str, str, str, str, str, tuple[str, ...], int, bool, str]] = 
     ("SYN-10026", "Sana Qureshi", "Operations", "Jaipur", "LOB-shared-operations", (), 1, True, "First visit to Home"),
 ]  # fmt: skip
 EMP = {name.split()[0].lower(): emp for emp, name, *_ in PEOPLE}  # "tanvi" -> "SYN-10001"
+# The seed's review desk ("harish", "lavanya"): an Inbox item they send of a kind that is not already the desk's
+# own is sent as the desk as a whole (DEC-111, `notify.AS_DESK_REF`), as lane F posts a comment or a mention.
+DESK = frozenset(name.split()[0].lower() for _e, name, _a, _c, _l, roles, *_ in PEOPLE if "reviewer" in roles)
 # S-03's first visit (BLD-C148): the one person who has never seen Home, with no ideas, drafts, crew or Inbox items.
 # Everyone else has seen it, so their first /home after a reset is the returning one (J-TRACK/2, journey walks).
 FIRST_VISIT = "sana"
@@ -1557,6 +1561,14 @@ def _inbox(
         ).fetchall()
     }
     for to, kind, sender, key, days, needs, due, read, archived, actions in items:
+        refs: dict[str, Any] = {"idea_id": m[key].ref}
+        if sender in DESK and kind not in AS_THE_DESK:
+            # DEC-111 (GAP-SEED, BLD-E072): someone on the review desk speaks as the desk as a whole. The desk's own
+            # kinds already are (`notify.AS_THE_DESK`); any other kind they send (here Harish's comment on T7) says so
+            # in its refs, as lane F's comment and mention do. A reversal is the Ones Committee's, not the desk's.
+            refs[AS_DESK_REF] = True
+        # As `notify.post` stores it: an item from the desk as a whole keeps no reviewer (L-HIDE/7, BLD-A205)
+        stored = None if as_the_desk(kind, refs) else sender
         if days is None:
             # The set's own clock, as lane B posts them: the questions arrive when it is sent, the reminder when it
             # went (24 hours before the deadline, L-NOTIFY/5), and both are due when the set is (L-QUESTIONS.clock/5)
@@ -1565,8 +1577,8 @@ def _inbox(
             due_at = qset["due_at"]
         else:
             at, due_at = _ago(days, now), now + dt.timedelta(days=due) if due is not None else None
-        _inbox_item(conn, p[to]["id"], kind, p[sender]["id"] if sender else None, m[key].uuid,
-                    {"idea_id": m[key].ref}, at, actions=actions, needs=needs, due=due_at, read=read,
+        _inbox_item(conn, p[to]["id"], kind, p[stored]["id"] if stored else None, m[key].uuid,
+                    refs, at, actions=actions, needs=needs, due=due_at, read=read,
                     archived=archived, dedupe_key=_draft_key(m[key].uuid) if kind == "draft_kept" else None)  # fmt: skip
     # Needs you: every request still waiting on a lead (Esha's on Tanvi's T5 with E1 brought, Bhavesh's on Rekha's R1
     # with nothing brought, and T2's, N2's and G2's drafts on R1), exactly as lane F's `tell_lead` posts it

@@ -910,3 +910,39 @@ def test_gap_seed_bld_b231_decide_by_and_team_by_are_the_live_clocks(office: Any
             r1 = _one(conn, "SELECT decide_by FROM ideas WHERE id = %s", m["R1"].uuid)
             assert r1 == dt.datetime(2026, 11, 19, 18, 0, tzinfo=IST)
         club_seed.remove(conn)
+
+
+def test_dec111_gap_seed_l_inbox_a_reviewers_comment_comes_from_the_review_desk(office: Any) -> None:
+    """DEC-111, GAP-SEED (BLD-E072): Harish is on the review desk, so his comment on Tanvi's T7 is sent as the desk
+    as a whole, as lane F posts a comment or a mention a reviewer writes as the desk: its refs say `as_desk: true`
+    and, as `notify.post` stores it, the item keeps no reviewer. Tanvi's Inbox reads "The review desk" with no
+    "Harish" anywhere in the item. The desk's own kinds keep no reviewer either; a reversal keeps its committee
+    member, whom lane A names by the reader's live roles (DEC-113)."""
+    import json
+
+    from notify import inbox
+
+    conn = office
+    m = club_seed.load(conn)
+    tanvi, harish = p_id(conn, "tanvi"), p_id(conn, "harish")
+    rows = conn.execute(
+        "SELECT id, kind, from_user_id, payload FROM notifications WHERE user_id = %s AND channel = 'in_app'",
+        (tanvi,),
+    ).fetchall()
+    by_kind = {r["kind"]: r for r in rows}
+    comment = by_kind["comment"]
+    assert comment["payload"] == {"idea_id": m["T7"].ref, "as_desk": True}
+    assert comment["from_user_id"] is None
+    for kind in ("questions", "decision", "worth_revised", "detail_hidden_by_desk", "desk_merge"):
+        assert by_kind[kind]["from_user_id"] is None, kind
+        assert "as_desk" not in by_kind[kind]["payload"], kind  # already the desk's own kind
+    assert by_kind["decision_reversed"]["from_user_id"] == p_id(conn, "manoj")
+    assert by_kind["mention"]["from_user_id"] == p_id(conn, "naveen")  # a colleague, named as before
+    assert "as_desk" not in by_kind["mention"]["payload"]
+
+    items = inbox.items(conn, str(tanvi))["items"]
+    seen = next(it for it in items if it["kind"] == "comment")
+    assert seen["body"]["sender"] == "The review desk"
+    dump = json.dumps(seen, ensure_ascii=False, default=str)
+    assert "Harish" not in dump and "Venkatesan" not in dump and str(harish) not in dump, dump
+    assert '"initials": "HV"' not in dump
