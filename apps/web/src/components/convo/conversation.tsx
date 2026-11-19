@@ -51,7 +51,7 @@ import { FieldMsg } from "@/components/ui/field";
 import { FileList, FileRow, fileKind } from "@/components/ui/file";
 import { IDEA_STATUS, Pill } from "@/components/ui/pill";
 import type { ConversationEntryView, ConversationView, FileItem, PersonRef } from "@/lib/contracts";
-import { REVIEW_DESK, REVIEW_DESK_START } from "@/lib/review-desk";
+import { ONES_COMMITTEE, ONES_COMMITTEE_START, REVIEW_DESK, REVIEW_DESK_START } from "@/lib/review-desk";
 
 import {
   S08_COPY as C,
@@ -119,10 +119,15 @@ function Face({ person, size, ring }: { person: PersonRef; size: 28 | 36; ring?:
   return person.initials ? <Avatar initials={person.initials} size={size} ring={ring} /> : null;
 }
 
-/** "your", "the review desk’s", "Ravi Nair’s": whose message it is, inside a sentence. */
+/** "your", "the review desk’s", "the Ones Committee’s", "Ravi Nair’s": whose message it is, inside a sentence, so a
+ * screen reader reads "Files in the Ones Committee’s message" in lower case (DEC-111, DEC-113). */
 function whose(label: string): string {
   if (label === "You") return "your";
-  return `${label === REVIEW_DESK_START ? REVIEW_DESK : label}’s`;
+  const inSentence: Record<string, string> = {
+    [REVIEW_DESK_START]: REVIEW_DESK,
+    [ONES_COMMITTEE_START]: ONES_COMMITTEE,
+  };
+  return `${inSentence[label] ?? label}’s`;
 }
 
 /** Words with one part of them linked: an event's reference ("It’s now part of IDEA-…"), or "Answer the questions"
