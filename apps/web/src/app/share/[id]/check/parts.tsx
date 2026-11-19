@@ -583,7 +583,10 @@ export function SendRows({ view, onChange }: { view: SendViewResponse; onChange(
             {r.label}
           </dt>
           <dd>
-            {r.key === "title" ? (
+            {!r.value?.trim() ? (
+              // An empty row (no title yet, DEC-118) reads as part 1 reads an empty line (BLD-C188).
+              <p className="ck-v ck-empty">{C.words.notGiven}</p>
+            ) : r.key === "title" ? (
               <p className="ck-v ck-v-title">{r.value}</p>
             ) : (
               <p className="ck-v">{r.value}</p>

@@ -3,8 +3,9 @@ and DEC-094).
 
 - Each field arrives pre-filled from the draft's parts with its reason (`L-SORT.rules/1`): who it affects from the
   `who` part, the area from `area`, what it would bring from `value`; what kind it is from the draft's kind, a
-  problem to fix unless the draft says otherwise. A suggestion is never stored: while a field is untouched it follows
-  the draft, so a later message that changes a part changes the suggestion too.
+  problem to fix unless the draft says otherwise or its area is New business (DEC-118, BLD-C196). A suggestion is
+  never stored: while a field is untouched it follows the draft, so a later message that changes a part changes the
+  suggestion too.
 - Confirmation is explicit (`/2`). `{confirm: true}` ("Confirm sorting", "Looks right") confirms every untouched
   field at its current suggestion; changing a value confirms that field. Each field records its source,
   `suggested`, `confirmed` or `changed` (`/3`), in `ideas.sorting_sources`; a changed value is the person's call
@@ -44,6 +45,7 @@ KIND_WHY = {
     "problem": "because you described something that goes wrong today.",
     "business_idea": "because you described something new KFintech could offer.",  # NOT DRAWN: default
 }
+NEW_BUSINESS = "New business"  # the area (draft/config.py, rules/drafting.md) that suggests a business idea
 MAX_PICKS = 20
 # Review.md and Edit.md draw the reason beside What it would bring with a second sentence, for the drawn suggestion
 # (saves time and saves cost): "… Add revenue or outside tools if it does those too." Other suggestions are not
@@ -69,6 +71,13 @@ def kind_on_check_it(kind: object) -> str | None:
     if kind == "business_idea":
         return "business_idea"
     return None
+
+
+def kind_for_area(area: str | None) -> str:
+    """The kind suggested while the person has not set one (DEC-118 (2), BLD-C196): "A new business idea" when the
+    area comes out as New business, else a problem to fix. A kind the person set, confirmed or changed is never
+    replaced: `suggestions` asks only when the idea has no kind, and `current` keeps what the person chose."""
+    return "business_idea" if area is not None and area.casefold() == NEW_BUSINESS.casefold() else "problem"
 
 
 def stored_kind(kind: str, fix_included: bool) -> str:
@@ -111,7 +120,7 @@ def suggestions(conn: Conn, idea: dict[str, Any], li: config.Lists) -> dict[Fiel
     brings = _dedupe([b for b in value_list if b in config.BRINGS])
     if config.NOT_SURE in brings and len(brings) > 1:
         brings = [b for b in brings if b != config.NOT_SURE]
-    kind = kind_on_check_it(idea.get("kind")) or "problem"
+    kind = kind_on_check_it(idea.get("kind")) or kind_for_area(area)
     return {
         "affects": Choice(affects, "suggested", why("who") if affects else None),
         "kind": Choice(kind, "suggested", KIND_WHY[kind]),
