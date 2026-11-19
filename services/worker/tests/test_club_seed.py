@@ -757,12 +757,18 @@ def test_gap_seed_bld_e066_p_decisions_19_every_seeded_person_is_on_the_launch_d
 
 # --- The seed's clocks are the live ones (BLD-E067; lane G's walk of 19 Nov, rows 2 and 5) ---------------------------
 
-# A load in the morning, one in the two hours before 6 pm, and one just before midnight that is read after it
-# (Monday 16, Thursday 19 and Thursday 19 November 2026, office time).
+# Fixed load times, never the real clock (office time, 2026): a Monday morning; Thursday 19 November in the morning
+# (the walk's), in the two hours before 6 pm, and just before midnight, read after it; launch night, Friday 20
+# November at 10 pm; a Saturday at noon; and a Monday in the two hours before 6 pm.
+WALK_LOAD = dt.datetime(2026, 11, 19, 10, 0, tzinfo=IST)
 LOADS = (
     dt.datetime(2026, 11, 16, 11, 30, tzinfo=IST),
+    WALK_LOAD,
     dt.datetime(2026, 11, 19, 17, 0, tzinfo=IST),
     dt.datetime(2026, 11, 19, 23, 50, tzinfo=IST),
+    dt.datetime(2026, 11, 20, 22, 0, tzinfo=IST),
+    dt.datetime(2026, 11, 21, 12, 0, tzinfo=IST),
+    dt.datetime(2026, 11, 23, 17, 0, tzinfo=IST),
 )
 
 
@@ -810,11 +816,14 @@ def test_gap_seed_l_questions_clock_5_every_seeded_set_is_due_at_6_pm_ist_as_the
         t6, z1, b1 = sets[m["T6"].ref], sets[m["Z1"].ref], sets[m["B1"].ref]
         assert now + club_seed.WALK_ROOM <= t6["due_at"] <= now + dt.timedelta(hours=26), now
         assert t6["state"] == "seen" and t6["seen_at"] < now
-        assert z1["state"] == "sent" and z1["due_at"] < now  # overdue (the desk's Waiting on the sharer)
-        assert b1["state"] == "answered"
-        # The desk opened T6 before it asked (L-REVIEW.open/1)
-        opened = _one(conn, "SELECT opened_at FROM ideas WHERE id = %s", m["T6"].uuid)
-        assert opened < t6["sent_at"]
+        # Overdue, as J-REVIEW/A4 walks it (Remind Zoya, Give 2 more days)
+        assert z1["state"] == "sent" and z1["due_at"] < now, now
+        assert b1["state"] == "answered" and b1["sent_at"] < b1["answered_at"] < now, now
+        # Shared, then opened by the desk, then asked (L-REVIEW.open/1), all before the load
+        idea = conn.execute(
+            "SELECT shared_at, opened_at FROM ideas WHERE id = %s", (m["T6"].uuid,)
+        ).fetchone()
+        assert idea["shared_at"] < idea["opened_at"] < t6["sent_at"] < now, now
         club_seed.remove(conn)
 
 
@@ -860,22 +869,35 @@ def test_gap_seed_bld_b231_decide_by_and_team_by_are_the_live_clocks(office: Any
     """GAP-SEED, BLD-B231, L-REVIEW.clock/1, L-DECIDE.rules/6 (J-TEAMUP/2, /3, /5): a seeded idea's decide-by is the
     date a share at the same moment would get (`submit.clock.decide_by`, which counts the share day as day 1), and a
     seeded Pick's or reversal's team-by the date the desk would write (`desk.clock.team_by`), each at 6 pm office
-    time. R1, shared on Friday 13 November at 5 pm, is decided by Thursday 19 November, not Friday 20 (the walk's
-    row 5)."""
+    time. An idea still with the desk keeps its decide-by ahead of the load: the live date, or the first working
+    day's 6 pm at least 2 hours after the load when that is later (a Friday-night or weekend load; launch night is
+    a Friday evening). R1, shared on Friday 13 November at 10 am and loaded on Thursday 19 November at 10 am, is
+    decided by Thursday 19 November, not Friday 20 (the walk's row 5)."""
     from desk import clock as desk_clock
     from desk import promises
     from submit import clock, config
 
     conn = office
+    cal = desk_clock.office_calendar()
     for now in LOADS:
         m = club_seed.load(conn, now)
+        floor_day = now.astimezone(IST).date()
+        while not cal.working(floor_day) or cal.at(floor_day, 18) - now < dt.timedelta(hours=2):
+            floor_day += dt.timedelta(days=1)
+        floor = cal.at(floor_day, 18)
         shared = conn.execute(
-            "SELECT idea_id, shared_at, decide_by FROM ideas WHERE shared_at IS NOT NULL"
+            "SELECT idea_id, status, shared_at, decide_by FROM ideas WHERE shared_at IS NOT NULL"
         ).fetchall()
         assert len(shared) >= 20
+        with_desk = [r for r in shared if r["status"] in ("checking", "with_review_desk")]
+        assert len(with_desk) >= 10
         for r in shared:
-            assert r["decide_by"] == clock.decide_by(r["shared_at"], config.promises()), (now, r["idea_id"])
+            live = clock.decide_by(r["shared_at"], config.promises())
+            expected = max(live, floor) if r in with_desk else live
+            assert r["decide_by"] == expected, (now, r["idea_id"])
             assert r["decide_by"].astimezone(IST).hour == 18
+        for r in with_desk:
+            assert r["decide_by"] > now, (now, r["idea_id"])
         teams = conn.execute(
             "SELECT at, team_by FROM idea_decisions WHERE choice = 'pick' "
             "UNION ALL SELECT at, team_by FROM decision_reversals WHERE to_choice = 'pick'"
@@ -884,7 +906,7 @@ def test_gap_seed_bld_b231_decide_by_and_team_by_are_the_live_clocks(office: Any
         for t in teams:
             assert t["team_by"] == desk_clock.team_by(t["at"], promises.get(), desk_clock.office_calendar())
             assert t["team_by"].astimezone(IST).hour == 18
-        if now == LOADS[1]:
+        if now == WALK_LOAD:
             r1 = _one(conn, "SELECT decide_by FROM ideas WHERE id = %s", m["R1"].uuid)
             assert r1 == dt.datetime(2026, 11, 19, 18, 0, tzinfo=IST)
         club_seed.remove(conn)

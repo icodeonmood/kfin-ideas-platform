@@ -182,7 +182,7 @@ IDEAS: dict[str, Spec] = {
                ["New folios are held when the PAN name and the form name differ by one letter. An investor "
                 "with {pan} waited six days last week and nobody told them why."],
                often="About 30 folios a week", hidden={"{pan}": ("pan", "AAAPZ9999Z")},
-               shared_days=4.5, opened_days=3.6, reviewer="harish", brings=["saves_time"]),
+               shared_days=4.6, opened_days=3.6, reviewer="harish", brings=["saves_time"]),
     "T7": Spec("tanvi", "picked", "fix", "Plain words for transaction rejection codes",
                "Rejection letters show codes like R07 that investors cannot read. A short plain sentence per "
                "code would cut the calls that follow.",
@@ -384,6 +384,29 @@ def _decide_by(shared: dt.datetime) -> dt.datetime:
     return clock.decide_by(shared, config.promises())
 
 
+# Time for a walk after loading before T6's deadline or an open idea's decide-by passes; T6's day-before reminder
+# has gone by then (L-NOTIFY/5).
+WALK_ROOM = dt.timedelta(hours=2)
+DAY_BEFORE = dt.timedelta(hours=24)  # L-NOTIFY/5, L-QUESTIONS.clock/2: the first reminder, 24 hours before
+# Ideas still with the desk, no decision yet: their decide-by is a promise still ahead.
+WITH_THE_DESK = ("checking", "with_review_desk")
+
+
+def _open_decide_by(shared: dt.datetime, now: dt.datetime) -> dt.datetime:
+    """An idea still with the desk keeps its promise ahead of the load: the live decide-by (`_decide_by`, BLD-B231), or
+    the first 6 pm office time on a working day at least `WALK_ROOM` after the load, whichever is later. Without it a
+    load on a Friday evening or a weekend (launch night is a Friday evening) shows T6, R1 and Z1 past their date
+    before anyone acts. Whenever the live date is later it stands, so a Thursday morning load keeps R1 at Thursday
+    19 November (BLD-E067)."""
+    from desk import clock, promises
+
+    cal, hour = clock.office_calendar(), promises.get().deadline_hour
+    day = now.astimezone(cal.tz).date()
+    while not cal.working(day) or cal.at(day, hour) - now < WALK_ROOM:
+        day += dt.timedelta(days=1)
+    return max(_decide_by(shared), cal.at(day, hour))
+
+
 def _team_by(decided: dt.datetime) -> dt.datetime:
     """L-DECIDE.rules/6 as a Pick (desk/decide.py `dates_for`) or a reversal to Picked (desk/join_build.py) writes it:
     10 working days at 6 pm office time, counted as `_decide_by` counts (BLD-B231)."""
@@ -398,11 +421,6 @@ def _answer_due(sent: dt.datetime, time_to_answer: str = "3d") -> dt.datetime:
     from desk import clock, promises
 
     return clock.answer_due(sent, time_to_answer, promises.get(), clock.office_calendar())
-
-
-# Time for a walk after loading before T6's deadline passes; its day-before reminder has gone by then (L-NOTIFY/5).
-WALK_ROOM = dt.timedelta(hours=2)
-DAY_BEFORE = dt.timedelta(hours=24)  # L-NOTIFY/5, L-QUESTIONS.clock/2: the first reminder, 24 hours before
 
 
 def _due_within_a_day(now: dt.datetime) -> dt.datetime:
@@ -643,7 +661,8 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             40 + (len(s.title) % 50) if shared else None, DECLARATION if shared else None, shared,
             (min(opened, shared + dt.timedelta(days=3)) if opened else shared + dt.timedelta(days=3)) if shared else None,
             _ago(s.withdrawn_days, now) if s.withdrawn_days is not None else None,
-            _decide_by(shared) if shared else None, reviewer, opened, reviewer if opened else None,
+            (_open_decide_by(shared, now) if s.status in WITH_THE_DESK else _decide_by(shared)) if shared else None,
+            reviewer, opened, reviewer if opened else None,
             path[0][1], similar_check,
         ),
     )  # fmt: skip
