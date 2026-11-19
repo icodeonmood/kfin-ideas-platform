@@ -25,6 +25,7 @@ import {
   runSeconds,
   seeded,
   signInAs,
+  snap,
   step,
 } from "./lib";
 
@@ -472,7 +473,7 @@ step(
   "S-05",
   "Offline at send: it says it will send when back online, and once online it lands on the idea's page",
   { needs: ["S-05", "L-SUBMIT", "S-06"] },
-  async ({ page }) => {
+  async ({ page }, info) => {
     await checkPart(page, "Send it");
     await page.context().setOffline(true);
     await expect(
@@ -484,6 +485,8 @@ step(
     await page.context().setOffline(false);
     await page.waitForURL(new RegExp(`/ideas/${REF}$`), { timeout: 20_000 });
     carried.idea = new URL(page.url()).pathname;
+    // The still of the first arrival, before expectWithDesk may reload the page and lose it (the RC walk's row 5).
+    await snap(page, info, "J-RECOVER/14", "S-06", "arrival");
     await expectWithDesk(page);
   },
 );

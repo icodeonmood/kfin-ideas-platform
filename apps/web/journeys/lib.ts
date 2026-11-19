@@ -332,6 +332,15 @@ export async function expectWithDesk(page: Page): Promise<void> {
     .toBe(true);
 }
 
+/** S-06's "You and the review desk" card (S-06.layout/8): the heading and "Open the conversation". A merged idea
+ * keeps it, with the merge line counted, so it never reads "No messages yet" (BLD-E069). */
+export async function expectDeskCard(page: Page): Promise<void> {
+  const side = page.getByRole("complementary", { name: "The conversation and similar ideas" });
+  await expect(side.getByRole("heading", { level: 2, name: "You and the review desk" })).toBeVisible();
+  await expect(side.getByRole("link", { name: "Open the conversation" })).toBeVisible();
+  await expect(side.getByText(/^No messages yet\./)).toHaveCount(0);
+}
+
 // --- Which modules are on main ---------------------------------------------------------------------------------------
 
 /** Off on purpose, so a step that needs them stays fixme even though code exists (reason shown on the board).

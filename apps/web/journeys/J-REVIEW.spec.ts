@@ -17,7 +17,7 @@
  */
 import { expect, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 
-import { ideaUrl, seeded, signInAs, snap, step, type Person, type StepRef } from "./lib";
+import { expectDeskCard, ideaUrl, seeded, signInAs, snap, step, type Person, type StepRef } from "./lib";
 
 // --- Patterns for run-time parts of the copy ----------------------------------------------------------------------------
 
@@ -706,12 +706,21 @@ step(
         )
         .first(),
     ).toBeVisible();
-    await expect(page.getByText("Merged", { exact: true }).first()).toBeVisible();
+    // The lead's row under Similar ideas reads Merged, and still does after a reload, though J2 joined F2 rather
+    // than F2 joining J2 (C-SHEET-MERGE.after, L-MERGE.desk; BLD-B266). The strip "Listen to the whole idea" is not
+    // checked here: lane B restores it on a merged idea after launch.
+    const leadRow = page
+      .locator(".ri-sim-row")
+      .filter({ has: page.getByRole("button", { name: f2.title, exact: true }) });
+    await expect(leadRow.getByText("Merged", { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(leadRow.getByText("Merged", { exact: true })).toBeVisible();
     await asOther(browser, info, "jatin", { ref: "J-REVIEW/M3", screen: "S-06" }, async (sharer) => {
       await sharer.goto(ideaUrl(j2));
       await expect(
         sharer.getByText(new RegExp(`^Merged into ${f2Ref} by the review desk`)).first(),
       ).toBeVisible();
+      await expectDeskCard(sharer);
     });
   },
 );

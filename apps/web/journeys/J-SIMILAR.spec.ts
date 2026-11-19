@@ -17,7 +17,7 @@
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { draftUrl, ideaUrl, seeded, signInAs, snap, step } from "./lib";
+import { draftUrl, expectDeskCard, ideaUrl, seeded, signInAs, snap, step } from "./lib";
 
 const REF = String.raw`IDEA-\d{4}-\d{6}`;
 
@@ -261,13 +261,14 @@ step(
       .first()
       .click();
     await page.getByRole("button", { name: "Merge it", exact: true }).click();
-    await expect(
-      page
-        .getByText(
-          /^Merged\. Tanvi’s idea is now part of yours, and (?:Tanvi is|they are) on your crew, credited\. We’ve told (?:Tanvi|them)\.$/,
-        )
-        .first(),
-    ).toBeVisible();
+    // The confirmation shows whole in the viewport, where Rekha is looking (BLD-A228; lane A's lines, green in 44370097494).
+    const merged = page
+      .getByText(
+        /^Merged\. Tanvi’s idea is now part of yours, and (?:Tanvi is|they are) on your crew, credited\. We’ve told (?:Tanvi|them)\.$/,
+      )
+      .first();
+    await expect(merged).toBeVisible();
+    await expect(merged).toBeInViewport({ ratio: 1 });
     await expect(page.getByRole("link", { name: "Say hello to Tanvi" })).toBeVisible();
 
     // L-MERGE.request/5: what Tanvi reads on her draft.
@@ -412,6 +413,7 @@ step(
         sharer.getByText("Both ideas ask for one clear message after a failed debit.").first(),
       ).toBeVisible();
       await expect(sharer.getByRole("link", { name: new RegExp(REF) }).first()).toBeVisible();
+      await expectDeskCard(sharer);
     } finally {
       await snap(sharer, info, "J-SIMILAR/7", "S-06", "tanvi");
       await context.close();

@@ -123,6 +123,10 @@ step(
     // (S-R4.rules/2). The line is checked first, so the panel is known to be there when no Extend is found in it.
     await expect(panel.getByText("At the 3-month limit", { exact: true })).toBeVisible();
     await expect(panel.getByRole("button", { name: /^Extend to / })).toHaveCount(0);
+    // With nothing left to add, the window line drops "You can extend it…" (BLD-B268); newDate is the 3-month date.
+    await expect(
+      panel.getByText(`Open until ${newDate}. When it closes, the decision stands.`, { exact: true }),
+    ).toBeVisible();
 
     // Hand-off: the sharer's page shows the same new date in the committee line (S-06.states, Status.md).
     const sharer = await (await browser.newContext()).newPage();

@@ -33,6 +33,29 @@ step(
 );
 
 step(
+  "J-ONE/1b",
+  "S-ADMIN",
+  "Choosing a picked idea's build team, the admin sees who asked to join it, oldest first",
+  // S-ADMIN is not drawn (L-DECIDE.after OPEN); the list is lane A's BLD-A226. The seed's J1 is picked with no team,
+  // and its sharer asked to join a day before the load (L-DECIDE.rules/6, DEC-111, BLD-E059).
+  { needs: ["L-DECIDE"] },
+  async ({ page }) => {
+    const j1 = await seeded("J1");
+    expect(j1.ref, "J1 is picked, so it has a reference").toBeTruthy();
+    await signInAs(page, "kunal");
+    await page.goto("/admin");
+    const form = page.getByRole("region", { name: "Picked ideas: choose the build team" });
+    await form.getByLabel("Idea", { exact: true }).selectOption(j1.ref as string);
+    const asked = form.getByRole("list", { name: "Asked to join" });
+    // programme/view.py: "{name}, asked {D Mon YYYY}" in India time.
+    await expect(asked.getByRole("listitem").first()).toHaveText(
+      /^Jatin Khurana, asked \d{1,2} [A-Z][a-z]{2} \d{4}$/,
+    );
+    await expect(form.getByText("No one has asked to join yet.")).toHaveCount(0);
+  },
+);
+
+step(
   "J-ONE/2",
   "S-WALL",
   "Measured figures reach the Wall's live fixes and totals; money only once Finance confirms",

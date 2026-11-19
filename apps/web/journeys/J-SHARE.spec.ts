@@ -381,6 +381,12 @@ step(
       .click();
     await page.waitForURL(new RegExp(`/ideas/${REF}$`));
     carried.idea = new URL(page.url()).pathname;
+    // S-06 opens as the first arrival (from=share, S-06.rules/6, S-06.states "Just shared"; BLD-C084): the way back
+    // is Home, and the shared date carries how long it took (ideapage/sharer.py: always in seconds).
+    await expect(
+      page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Home", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText(/^Done in \d+ seconds$/)).toBeVisible();
   },
 );
 
