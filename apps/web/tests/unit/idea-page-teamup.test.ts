@@ -549,6 +549,65 @@ describe("S-06: You and the review desk as Status.md draws it (BLD-E045)", () =>
     );
   });
 
+  it("S-06.layout/8 DEC-111 DEC-113 BLD-E071: a sharer outside the desk and the committee reads the committee's message from the Ones Committee, with no face", () => {
+    const desk = { id: "", name: "The review desk", first_name: "The review desk", initials: "" };
+    const committee = { id: "", name: "The Ones Committee", first_name: "The Ones Committee", initials: "" };
+    const note = "We’ve moved it to not now: the SMS templates are frozen until January.";
+    const html = renderToStaticMarkup(
+      createElement(
+        SharerScreen,
+        sharer(
+          "being_built",
+          {
+            heading: "You and the review desk",
+            count: 2,
+            link: LINK,
+            sub_line:
+              "The Ones Committee has the last word on this decision. The full conversation is one tap away.",
+            messages: [
+              decisionMessage(desk, "The review desk"),
+              {
+                id: "reversal-r1",
+                kind: "reversal",
+                from: committee,
+                from_label: "The Ones Committee",
+                at: "2026-11-24T12:10:00Z",
+                at_label: "Tuesday 24 November, 5:40 pm",
+                by_line: "The Ones Committee, Tuesday 24 November, 5:40 pm",
+                text: note,
+              },
+            ],
+          },
+          null,
+        ),
+      ),
+    );
+    const card = conversationCard(html);
+    expect(card).toContain(
+      `<li class="ip-msg dec oc no-face"><p class="ip-msg-h"><b>The Ones Committee</b>, Tuesday 24 November, 5:40 pm</p><p class="ip-msg-b">${note}</p></li></ol>`,
+    );
+    expect(card).not.toContain('class="av');
+    // A speaker with initials but no id is still not drawn a face (the committee or desk itself, never a person)
+    const half = renderToStaticMarkup(
+      createElement(
+        SharerScreen,
+        sharer(
+          "picked",
+          {
+            heading: "You and the review desk",
+            count: 1,
+            link: LINK,
+            sub_line: DECIDED_LINE,
+            messages: [decisionMessage({ ...committee, initials: "OC" }, "The Ones Committee")],
+          },
+          null,
+        ),
+      ),
+    );
+    expect(conversationCard(half)).not.toContain('class="av');
+    expect(conversationCard(half)).toContain('<li class="ip-msg dec no-face">');
+  });
+
   it("S-06 BLD-E058 L-COMMITTEE: after a reversal to Pick, being built, the desk's overturned reason is not drawn", () => {
     const decided = (reversal: Record<string, unknown> | null) =>
       ({

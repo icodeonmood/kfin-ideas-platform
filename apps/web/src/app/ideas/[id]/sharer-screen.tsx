@@ -24,7 +24,7 @@ import type {
 } from "@/lib/contracts/api";
 import type { FileItem } from "@/lib/contracts/entities";
 
-import { capital, decisionSentence, type Decided } from "./decision";
+import { capital, decisionSentence, hasFace, type Decided } from "./decision";
 import { AskToJoin } from "./join-build";
 import { BackLink, backToList, CopyRef, useWay } from "./parts";
 import { toTrack, type StageWords } from "./track";
@@ -178,7 +178,10 @@ function ReversalCard({ d }: { d: Decided }) {
   return (
     <div className="ip-rcard">
       <div className="ip-r-by">
-        <Avatar initials={d.reversal.by.initials} size={32} ring="neutral" />
+        {/* DEC-113: "The Ones Committee, …" for a sharer outside the desk and the committee, with no face (BLD-E071) */}
+        {hasFace(d.reversal.by) ? (
+          <Avatar initials={d.reversal.by.initials} size={32} ring="neutral" />
+        ) : null}
         <p>{r.from_line}</p>
       </div>
       <h2 className="ip-r-h">{r.title}</h2>
@@ -730,7 +733,8 @@ export function SharerScreen({
               ) : null}
               {/* The card's messages, in time order: once the desk has decided, its decision, and after a reversal
                   the Ones Committee's, each outlined as Status.md draws them, the committee's face in ink (BLD-E058).
-                  DEC-111: the review desk itself comes with no initials, so no face, as on S-08. TODO(lane F): the
+                  DEC-111, DEC-113: the review desk itself and the Ones Committee itself come with no id or
+                  initials, so no face, as on S-08 (BLD-E071). TODO(lane F): the
                   conversation's other entries (S-06.layout/8, L-CONVO). */}
               {conv.messages?.length ? (
                 <ol className="ip-msgs">
@@ -741,12 +745,12 @@ export function SharerScreen({
                         "ip-msg",
                         m.kind === "decision" || m.kind === "reversal" ? "dec" : "",
                         m.kind === "reversal" ? "oc" : "",
-                        m.from.initials ? "" : "no-face",
+                        hasFace(m.from) ? "" : "no-face",
                       ]
                         .filter(Boolean)
                         .join(" ")}
                     >
-                      {m.from.initials ? <Avatar initials={m.from.initials} size={32} /> : null}
+                      {hasFace(m.from) ? <Avatar initials={m.from.initials} size={32} /> : null}
                       <p className="ip-msg-h">
                         <b>{m.from_label}</b>, {m.at_label}
                       </p>

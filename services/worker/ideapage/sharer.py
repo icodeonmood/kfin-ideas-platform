@@ -274,17 +274,20 @@ def questions_message(
 
 COMMITTEE_ROLE = "from the Ones Committee"
 COMMITTEE_START = "The Ones Committee"
-# The committee itself, with no id or initials: for a member who is no longer in `users`.
+# The committee itself, with no id or initials, so no face (BLD-E058): what anyone outside the review desk and the
+# Ones Committee reads as the sender (DEC-113), and what a member who is no longer in `users` becomes.
 COMMITTEE_ITSELF = {"id": "", "name": COMMITTEE_START, "first_name": COMMITTEE_START, "initials": ""}
 
 
-def committee_speaker(conn: Conn, user_id: str | None) -> tuple[dict[str, Any], str]:
-    """Who the committee's message is from, and the line's name: "Rohan Mehta from the Ones Committee" with their
-    initials, as lane B's reversal card names the member to the sharer today (`reversal.by`, `from_line` in
-    desk/committee.sharer_lines). DEC-111 hides only the review desk's names; whether the committee's are hidden too
-    is with the product lead (BLD-F082 asked it). If they are, return `dict(COMMITTEE_ITSELF), COMMITTEE_START` here:
-    one line, and the web draws no face for it (BLD-E058)."""
-    person = read.person_by_user(conn, user_id)
+def committee_speaker(conn: Conn, user_id: str | None, *, names_desk: bool) -> tuple[dict[str, Any], str]:
+    """Who the committee's message is from, and the line's name. DEC-113 (the product lead's decision of 19 Nov,
+    extending DEC-111 to the Ones Committee): a reader outside the review desk and the Ones Committee (the sharer,
+    the crew, anyone else) never gets a member's id, name, initials or face; the sender is the committee itself,
+    "The Ones Committee", and nothing about the member is read. `names_desk` is the reader's DEC-111 rule
+    (`read.Viewer.sees_desk_names`, from live grants), the same flag `decision_message` takes. A reader on the desk
+    or the committee reads "Rohan Mehta from the Ones Committee" with their initials, as the two see each other's
+    names. The web draws no face for an empty id or initials (BLD-E058, BLD-E071)."""
+    person = read.person_by_user(conn, user_id) if names_desk else None
     if person is None:
         return dict(COMMITTEE_ITSELF), COMMITTEE_START
     speaker = {
@@ -297,14 +300,17 @@ def committee_speaker(conn: Conn, user_id: str | None) -> tuple[dict[str, Any], 
     return speaker, f"{person['name']} {COMMITTEE_ROLE}"
 
 
-def committee_message(conn: Conn, dec: Decided, now: dt.datetime) -> dict[str, Any]:
+def committee_message(conn: Conn, dec: Decided, now: dt.datetime, *, names_desk: bool) -> dict[str, Any]:
     """The Ones Committee's message after it reversed the desk's decision (Status.md "Reversed by the Ones Committee":
-    the desk's message stays, then the member's), at the time it reversed it. The product stores no separate short
+    the desk's message stays, then the committee's), at the time it reversed it. The product stores no separate short
     message, so the words are the committee's note, lane B's masked copy: the same words as the reversal card's note.
-    A note that will not open falls back to the reversal card's title. NOT DRAWN (BLD-E058), HR sign-off."""
+    A note that will not open falls back to the reversal card's title. NOT DRAWN (BLD-E058), HR sign-off.
+    DEC-113 (the lead's decision of 19 Nov): outside the review desk and the Ones Committee the by-line reads
+    "The Ones Committee, Tuesday 24 November, 5:40 pm" with no face; inside them, the member's name and initials
+    (`committee_speaker`). HR signs off the changed line (docs/hr-wording/lane-e.md, section 11)."""
     reversal_id = str(dec.raw["reversal_id"])
     note = read.reversal_note(conn, reversal_id)
-    speaker, from_label = committee_speaker(conn, dec.reversed_by)
+    speaker, from_label = committee_speaker(conn, dec.reversed_by, names_desk=names_desk)
     at = dec.reversed_at or dec.at
     at_label = day_time(at, now)
     return {
@@ -314,7 +320,9 @@ def committee_message(conn: Conn, dec: Decided, now: dt.datetime) -> dict[str, A
         "from_label": from_label,
         "at": at.isoformat(),
         "at_label": at_label,
-        "by_line": f"{from_label}, {at_label}",  # "Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm"
+        # "The Ones Committee, Tuesday 24 November, 5:40 pm" (DEC-113); on the desk or the committee,
+        # "Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm"
+        "by_line": f"{from_label}, {at_label}",
         "text": note or f"The Ones Committee changed the decision to {DECISION_LABEL[dec.choice].lower()}",
     }
 
@@ -769,7 +777,7 @@ def sharer_view(
         if stands and dec is not None:
             messages.append(decision_message(conn, dec, now, names_desk=names_desk))
             if reversed_:
-                messages.append(committee_message(conn, dec, now))
+                messages.append(committee_message(conn, dec, now, names_desk=names_desk))
         # The questions message is the set's own entry, which `entry_count` already counts (it is not added again)
         said = sum(1 for m in messages if m["kind"] != "questions")
         n_entries = read.entry_count(conn, uid) + said + read.merge_line_count(conn, uid)

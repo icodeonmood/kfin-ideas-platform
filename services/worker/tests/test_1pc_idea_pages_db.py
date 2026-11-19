@@ -469,25 +469,55 @@ def the_desks_message(club: dict[str, Any], key: str, said: str, msg_id: str) ->
     }
 
 
-def the_committees_message(club: dict[str, Any], key: str, msg_id: str) -> dict[str, Any]:
-    """The committee's message, named as lane B's reversal card names the member, its words the card's note."""
-    d = lane_b(club, key, "tanvi")
-    by, at = d["reversal"]["by"], dt.datetime.fromisoformat(d["reversal"]["at"])
+THE_COMMITTEE = {"id": "", "name": "The Ones Committee", "first_name": "The Ones Committee", "initials": ""}
+# The seed's Ones Committee member who reversed T9 (club_seed.PEOPLE), as anything naming him would carry him
+MEMBER_TRACES = ("Manoj", "Agarwal", '"initials": "MA"')
+
+
+def reversed_at(club: dict[str, Any], key: str) -> dt.datetime:
+    row = (
+        club["conn"]
+        .execute(
+            "SELECT v.at FROM decision_reversals v JOIN decision_windows w ON w.id = v.window_id "
+            "JOIN idea_decisions d ON d.id = w.decision_id WHERE d.idea_uuid = %s",
+            (club["m"][key].uuid,),
+        )
+        .fetchone()
+    )
+    return row["at"]
+
+
+def no_member_named(payload: dict[str, Any], club: dict[str, Any]) -> bool:
+    """No Ones Committee member's name, users.id or initials (as a person object's) anywhere in the payload."""
+    dump = json.dumps(payload, ensure_ascii=False, default=str)
+    return not any(t in dump for t in (*MEMBER_TRACES, str(club["p"]["manoj"])))
+
+
+def the_committees_message(club: dict[str, Any], key: str, msg_id: str, *, names: bool) -> dict[str, Any]:
+    """The committee's message, its words the reversal card's note (lane B's masked copy). DEC-113: a sharer outside
+    the review desk and the Ones Committee reads the committee itself, with no id, name or initials; a sharer on
+    either reads the member by name, with their initials."""
+    at = reversed_at(club, key)
+    if names:
+        speaker = {
+            "id": club["p"]["manoj"],
+            "name": "Manoj Agarwal",
+            "first_name": "Manoj",
+            "initials": "MA",
+            "role_label": "from the Ones Committee",
+        }
+        from_label = "Manoj Agarwal from the Ones Committee"
+    else:
+        speaker, from_label = THE_COMMITTEE, "The Ones Committee"
     return {
         "id": msg_id,
         "kind": "reversal",
-        "from": {
-            "id": by["id"],
-            "name": by["name"],
-            "first_name": by["first_name"],
-            "initials": by["initials"],
-            "role_label": "from the Ones Committee",
-        },
-        "from_label": f"{by['name']} from the Ones Committee",
+        "from": speaker,
+        "from_label": from_label,
         "at": at.isoformat(),
         "at_label": day_time(at, NOW),
-        "by_line": d["lines"]["reversal"]["from_line"],
-        "text": d["reversal"]["note"],
+        "by_line": f"{from_label}, {day_time(at, NOW)}",
+        "text": lane_b(club, key, "tanvi")["reversal"]["note"],
     }
 
 
@@ -520,15 +550,16 @@ def test_s06_layout_8_j_track_7_j_review_6_bld_e058_the_decision_is_the_desks_me
     assert t7["count"] == int(entries["n"]) + 1
 
 
-def test_s06_layout_8_l_committee_bld_e058_after_a_reversal_the_committees_message_follows_the_desks(
+def test_s06_layout_8_l_committee_bld_e058_dec111_dec113_after_a_reversal_the_committees_message_follows_the_desks(
     club: dict[str, Any],
 ) -> None:
     """BLD-E058 (Status.md "Reversed by the Ones Committee", L-COMMITTEE.rules/5): the desk's decision stays on
-    record as its message, then the committee member's message at the time they reversed it, its words the note the
-    reversal card shows (lane B's masked copy), its sender named as the card names them, with their initials. The
-    sub-line is the committee's. T9: the desk said Not picked, the committee moved it to Picked. Then it is built
-    and shipped: both messages and the committee's sub-line stay, so the card never ends on the desk's Not picked
-    alone under "The review desk has decided"."""
+    record as its message, then the committee's message at the time it reversed it, its words the note the reversal
+    card shows (lane B's masked copy). The sub-line is the committee's. T9: the desk said Not picked, the committee
+    moved it to Picked. Then it is built and shipped: both messages and the committee's sub-line stay, so the card
+    never ends on the desk's Not picked alone under "The review desk has decided". DEC-111 and DEC-113 (BLD-E071):
+    the sharer is on neither the desk nor the committee, so the committee's message is from "The Ones Committee",
+    with no id, initials or face, and the member is nowhere in the page."""
     conn, t9 = club["conn"], ref(club, "T9")
     for status, state in (("picked", "reversed"), ("being_built", "being_built"), ("shipped", "shipped")):
         conn.execute("UPDATE ideas SET status = %s WHERE id = %s", (status, club["m"]["T9"].uuid))
@@ -537,9 +568,10 @@ def test_s06_layout_8_l_committee_bld_e058_after_a_reversal_the_committees_messa
         assert v["page"]["state"] == state
         desk, committee = conv["messages"]
         assert desk == the_desks_message(club, "T9", "Not picked", desk["id"])
-        assert committee == the_committees_message(club, "T9", committee["id"])
-        assert committee["from_label"] == "Manoj Agarwal from the Ones Committee"
-        assert committee["from"]["initials"] == "MA" and committee["from"]["id"] == club["p"]["manoj"]
+        assert committee == the_committees_message(club, "T9", committee["id"], names=False)
+        assert committee["from"] == THE_COMMITTEE and committee["from_label"] == "The Ones Committee"
+        assert committee["by_line"] == f"The Ones Committee, {day_time(reversed_at(club, 'T9'), NOW)}"
+        assert no_member_named(committee, club) and no_member_named(v, club)
         assert (
             committee["text"]
             == "We can ask the exchange to move the reminder. Failed dividends cost more than the change."
@@ -578,6 +610,27 @@ def test_s06_layout_8_dec111_bld_e058_the_desk_and_the_committee_read_who_decide
         revoke_all(club, "tanvi")
     v = view(club, t8, "tanvi")
     assert v["page"]["conversation"]["messages"][0]["from"] == THE_DESK and no_reviewer_named(v, club)
+
+
+def test_s06_layout_8_dec111_dec113_bld_e071_the_desk_and_the_committee_read_the_member_who_reversed_it(
+    club: dict[str, Any],
+) -> None:
+    """DEC-113 (the lead's decision of 19 Nov; BLD-E071): the committee and the desk still see each other's names, so
+    a sharer on the review desk or the Ones Committee reads the committee's message from the member who reversed the
+    decision, "Manoj Agarwal from the Ones Committee, <day>, <time>", with his initials for the face. The grant gone
+    (read from live grants, as DEC-111's), the committee speaks as itself and the member leaves the payload."""
+    conn, t9 = club["conn"], ref(club, "T9")
+    conn.execute("UPDATE ideas SET status = 'picked' WHERE id = %s", (club["m"]["T9"].uuid,))
+    at = reversed_at(club, "T9")
+    for role in ("reviewer", "committee"):
+        grant(club, "tanvi", role)
+        _, committee = view(club, t9, "tanvi")["page"]["conversation"]["messages"]
+        assert committee == the_committees_message(club, "T9", committee["id"], names=True), role
+        assert committee["by_line"] == f"Manoj Agarwal from the Ones Committee, {day_time(at, NOW)}"
+        assert committee["from"]["initials"] == "MA" and committee["from"]["id"] == club["p"]["manoj"]
+        revoke_all(club, "tanvi")
+    v = view(club, t9, "tanvi")
+    assert v["page"]["conversation"]["messages"][1]["from"] == THE_COMMITTEE and no_member_named(v, club)
 
 
 def test_s06_layout_8_j_review_6_j_track_7_bld_e058_a_decision_sent_after_answers_comes_after_them_masked(

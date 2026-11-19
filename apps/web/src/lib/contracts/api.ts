@@ -595,13 +595,14 @@ export type SharerPageState =
  * A message in S-06's "You and the review desk" (S-06.layout/8, BLD-E058): the desk's decision, "Picked. <reason>",
  * and after a reversal the Ones Committee's, its words the committee's note. DEC-111: outside the review desk and the
  * Ones Committee the desk's `from` is the desk itself ("The review desk", no id, no initials, so no face), as lane
- * F's S-08 sends it; the committee member is named, as lane B's reversal card names them.
+ * F's S-08 sends it; DEC-113 does the same for the committee ("The Ones Committee", no id, no initials; BLD-E071).
+ * The desk and the committee read each other's names.
  */
 export interface SharerCardMessage {
   id: string;
   kind: "decision" | "reversal";
   from: PersonRef;
-  from_label: string; // "The review desk", "Meera from the review desk", "Rohan Mehta from the Ones Committee"
+  from_label: string; // "The review desk", "The Ones Committee"; on the desk or committee, "Meera from the review desk"
   at: IsoDate;
   at_label: string; // "Monday 16 November, 4:58 pm"
   by_line: string; // "The review desk, Monday 16 November, 4:58 pm"
