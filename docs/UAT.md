@@ -65,3 +65,38 @@ Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answe
 ## Rehearsal
 
 `make uat-rehearsal` runs the same script on a developer machine with throwaway secrets and local stand-ins (S3, ClamAV, Mailpit), then tears it down, images and volumes included. It pauses the dev stack while it runs and starts it again after. The rehearsal sets a throwaway Sarvam key so preflight and the smoke checks pass as at launch. Nothing in the rehearsal calls the service. With `KEEP=1`, voice on the kept stack fails at the service. Run it before every UAT deploy.
+
+## Moving a server from hash to BGE-M3 vectors (BLD-C211)
+
+**This runbook cannot be run until the subsection "BGE-M3 model files for IT" below is filled in.**
+
+Every stored vector (search chunks, the review desk's past corrections, cluster centroids) was made by the model the server ran with. A server that moves from `EMBEDDINGS_MODE=hash` to `bge-m3` must rebuild all of them in one go: hash and BGE-M3 vectors mixed together make similar ideas meaningless, with no error. `python -m similar.reembed` does it from the text already in the database. It is the re-index the BGE-M3 row under What you need first names, and it needs no company repo.
+
+You need the install change from that row first: a worker image built with `--build-arg WITH_BGE=1`, and the BGE-M3 model files on the host, mounted read-only at the path `EMBEDDINGS_MODEL_PATH` names. The compose files mount no model folder today, so until that install change adds one to the worker service, give the one-off container the folder with `-v`, as below. The worker you start at the end needs the same folder, or every match fails.
+
+Use the same compose wrapper as `scripts/uat/deploy.sh`, from the checkout the server was deployed from:
+
+```bash
+export UAT_APP_ENV_FILE=/secure/.env.uat UAT_DATA_DIR=/srv/kfin-ideas-uat
+compose() { docker compose -p kfin-ideas-uat -f infra/docker-compose.yml -f infra/uat/compose.uat.yml --project-directory . \
+  --env-file /secure/.env.uat --env-file /secure/.env.uat.db "$@"; }
+MODELS="-v /srv/models/bge-m3:/models/bge-m3:ro"          # host folder : EMBEDDINGS_MODEL_PATH
+```
+
+1. Pick a quiet window and stop the worker, so matching never sees mixed vectors: `compose stop worker`. The web app builds drafts and sends ideas through the worker, so while it is stopped nobody can tell, check or send; the web app itself can stay up.
+2. In the app env file, set `EMBEDDINGS_MODE=bge-m3` and `EMBEDDINGS_MODEL_PATH=/models/bge-m3` (the path inside the container). Build the worker image with the library: `compose build --build-arg WITH_BGE=1 worker`.
+3. Check the model (AT-B5-01): `compose run --rm --no-deps -T $MODELS worker python -m embeddings.check`. It must print `dimensions 1024: True · normalised: True` and a paraphrase cosine of 0.80 or more, and exit 0.
+4. Count first: `compose run --rm --no-deps -T $MODELS worker python -m similar.reembed --dry-run`. It loads the model and tries it on one synthetic sentence before it reads any row; if that fails it says why, changes nothing and exits 1. It also refuses, changing nothing, while another run is going or while the jobs table shows a worker in the middle of a job. Otherwise it prints the counts it would change and changes nothing.
+5. Rebuild: `compose run --rm --no-deps -T $MODELS worker python -m similar.reembed`. It works in batches of 32, each committed as it goes. If it stops (an error, Ctrl-C or `docker stop`), the batches done are kept and it writes an `embeddings.rebuild_stopped` row to `audit_log`. After a stopped run, don't start the worker; run it again until it exits 0. Each run redoes every row.
+6. Check the counts and the audit row. The real run's counts match the dry run's. Chunks re-embedded (repo, idea and file) plus skipped plus changed during the run equal all chunks. Skipped (chunks with no text) is normally 0. Changed during the run is 0 while the worker is stopped; if it is not, something wrote to the index during the run: run the command again until it is 0. Corrections re-embedded plus cleared equal all corrections. A correction is re-embedded from its idea's card as it is now, which may differ from the card when the correction was made; cleared means the idea is gone or its card is empty, and the review desk's past corrections simply leave that one out. Centroids recomputed plus cleared equal all clusters: cleared means no member has a vector to average, as the cluster code itself would leave it. Then read the one audit row, which holds the mode and the counts, never text:
+   `compose exec -T postgres psql -U ideas -d ideas -c "SELECT at, actor, action, after FROM audit_log WHERE action LIKE 'embeddings.%' ORDER BY id DESC LIMIT 1"`
+   It must say `process:reembed`, `embeddings.rebuilt` and `"mode": "bge-m3"`.
+7. Start the worker, once the install change mounts the model folder on the worker service (`compose up` takes no `-v`): `compose up -d --wait worker`. Share one synthetic idea and check that similar ideas appear.
+
+To go back to hash vectors, do the same with `EMBEDDINGS_MODE=hash` (no model folder, no build argument).
+
+For IT: on an x86_64 server, `--build-arg WITH_BGE=1` installs sentence-transformers, which pulls PyTorch with its CUDA libraries (several GB) unless torch is installed from PyTorch's CPU-only index first. The Dockerfile does not do that today, so plan for the larger image.
+
+### BGE-M3 model files for IT (file list and checksums)
+
+**Placeholder: to be filled in by the coordinator from the BGE-M3 test of 20 Nov 2026.** Until it is, do not install the model files on a server: the list of files, their sizes and their SHA-256 checksums come here.
