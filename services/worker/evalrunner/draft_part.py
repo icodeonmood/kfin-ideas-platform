@@ -1,8 +1,10 @@
 """draft-part golden set (L-DRAFT.parts, BLD-C072): each answer, after the gateway, quotes only the person's own
 words (never the English copy of a voice note, DEC-108), holds only their numbers, chooses only from the lists and
 carries no tags in what the person reads. The expectations per case measure whether the part found what the words
-say; `dropped` and `first_attempt_problems` measure the model before the gateway mends it (BLD-C035). Synthetic
-cases only."""
+say; `dropped` and `first_attempt_problems` measure the model before the gateway mends it (BLD-C035). Since 0.2.0 the
+title also says what kind it is, with a quote of the person's own words (`kind_evidence`, held by the same checks), and
+a business idea's summary describes the new offer (BLD-C201, BLD-C202, BLD-C205): `kind_accuracy` is reported over the
+cases that expect a kind. Synthetic cases only."""
 
 from __future__ import annotations
 
@@ -45,7 +47,11 @@ def _met(expected: dict[str, Any], out: dict[str, Any], sent: dict[str, Any]) ->
             ok = all(w in (out.get("worth") or []) for w in want)
         elif key == "quotes_from_text_only":
             texts = " ".join(str(w.get("text")) for w in sent.get("words") or [])
-            ok = all(q in texts for q in out.get("evidence") or [])
+            ok = all(q in texts for q in [*(out.get("evidence") or []), *_kind_quote(out)])
+        elif key == "kind_evidence_from_text":
+            ok = _kind_from_text(out, sent) == want
+        elif key == "summary_offer":
+            ok = _offer(out.get("summary"), want)
         elif key == "no_tags_in_text":
             ok = not any(isinstance(out.get(k), str) and TAG_RE.search(out[k]) for k in TEXT)
         else:  # a field equal to the expected value ("often": null, "area": "Investor service")
@@ -54,10 +60,36 @@ def _met(expected: dict[str, Any], out: dict[str, Any], sent: dict[str, Any]) ->
     return met, total
 
 
+def _kind_quote(out: dict[str, Any]) -> list[str]:
+    q = out.get("kind_evidence")
+    return [q] if isinstance(q, str) and q else []
+
+
+def _kind_from_text(out: dict[str, Any], sent: dict[str, Any]) -> bool:
+    """The kind is given, with one quote that stands word for word in one message's own text (not its English copy,
+    DEC-108)."""
+    quote = _kind_quote(out)
+    texts = [f" {grounding.normalise(str(w.get('text')))} " for w in sent.get("words") or []]
+    return (
+        bool(out.get("kind"))
+        and bool(quote)
+        and any(f" {grounding.normalise(quote[0])} " in t for t in texts)
+    )
+
+
+def _offer(summary: Any, want: dict[str, list[str]]) -> bool:
+    """A business idea's summary describes the new offer (BLD-C202): it names what is offered (any of `what`) and for
+    whom (any of `for`), case aside."""
+    if not isinstance(summary, str):
+        return False
+    s = summary.casefold()
+    return all(any(w.casefold() in s for w in want.get(k) or []) for k in ("what", "for"))
+
+
 def run(ctx: Context) -> dict[str, Any]:
     spec = load("draft-part")
     cases: list[dict[str, Any]] = []
-    ungrounded = out_of_list = tags = met = total = dropped = first_attempt = 0
+    ungrounded = out_of_list = tags = met = total = dropped = first_attempt = kinds = kinds_right = 0
     for case in read_jsonl("draft_part.jsonl"):
         sent = ctx.fill(_inputs(case["input"]))
         row: dict[str, Any] = {"id": case["id"]}
@@ -76,8 +108,12 @@ def run(ctx: Context) -> dict[str, Any]:
         # still unbacked after the re-ask (dropped). The checks after the gateway always hold; these do not.
         first_attempt += int(result.outcome == "ok_after_retry")
         dropped += int(bool(result.dropped))
-        m, t = _met(case.get("expected") or {}, out, result.sent)
+        expected = case.get("expected") or {}
+        m, t = _met(expected, out, result.sent)
         met, total = met + m, total + t
+        if "kind" in expected:
+            kinds += 1
+            kinds_right += int(out.get("kind") == expected["kind"])
         row.update({"met": m, "of": t, "dropped": result.dropped, "problems": len(problems),
                     "first_attempt_refused": result.outcome == "ok_after_retry"})  # fmt: skip
         cases.append(row)
@@ -91,6 +127,7 @@ def run(ctx: Context) -> dict[str, Any]:
         "dropped": dropped,
         "first_attempt_problems": first_attempt,
         "expectations": round(met / total, 4) if total else 1.0,
+        "kind_accuracy": round(kinds_right / kinds, 4) if kinds else 1.0,
     }
     gates = spec.raw.get("pass_gates") or {}
     model_gates = {

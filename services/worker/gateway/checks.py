@@ -265,7 +265,7 @@ def reason_writer(sent: dict[str, Any], out: dict[str, Any], d: Directory | None
 # ---- draft-part (L-DRAFT.parts, BLD-C072) ------------------------------------------------------------------------
 # The fields each part may fill; everything else stays empty.
 DRAFT_FIELDS: dict[str, tuple[str, ...]] = {
-    "title": ("title", "summary"),
+    "title": ("title", "summary", "kind", "kind_evidence"),
     "often": ("often",),
     "who": ("who", "reason"),
     "value": ("worth",),
@@ -273,8 +273,18 @@ DRAFT_FIELDS: dict[str, tuple[str, ...]] = {
 }
 DRAFT_TEXT = ("title", "summary", "often", "reason")
 _DRAFT_EMPTY: dict[str, Any] = {
-    "title": None, "summary": None, "often": None, "who": [], "worth": [], "area": None, "reason": None,
+    "title": None, "summary": None, "kind": None, "kind_evidence": None, "often": None, "who": [], "worth": [],
+    "area": None, "reason": None,
 }  # fmt: skip
+# The kind rides with the title (BLD-C201): its one quote is checked like every other part's evidence.
+KIND_FIELDS = ("kind", "kind_evidence")
+_KIND_MESSAGES = {
+    "no_quote": "kind_evidence needs one exact quote from the person's own text that shows the kind, or set kind "
+    "to null",
+    "too_short": "kind_evidence must be at least two words that say something (not just 'the product')",
+    "not_found": "kind_evidence is not word for word in one of the person's messages; copy one continuous phrase "
+    "from a single message exactly, or set kind to null",
+}
 
 
 def _draft_words(sent: dict[str, Any]) -> list[str]:
@@ -312,6 +322,7 @@ def draft_part(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -
             problems.append(f"evidence: {grounding.MESSAGES[code]}")
     elif evidence:
         problems.append("evidence must be [] when the part is empty")
+    problems += _kind_problems(out, padded)
     for key in DRAFT_TEXT:
         text = out.get(key)
         if isinstance(text, str) and TAG_RE.search(text):
@@ -343,11 +354,27 @@ def draft_part(sent: dict[str, Any], out: dict[str, Any], d: Directory | None) -
     return problems
 
 
+def _kind_problems(out: dict[str, Any], padded: list[str]) -> list[str]:
+    """`kind` with one quote of the person's own words that shows it (BLD-C201), or both empty. Only the title part
+    may fill them; the loop over `_DRAFT_EMPTY` already refuses them on any other part."""
+    kind, quote = out.get("kind"), out.get("kind_evidence")
+    if kind is None:
+        return [] if quote in (None, "") else ["kind_evidence must be null when kind is null"]
+    code = grounding._quote_problem([quote] if isinstance(quote, str) else quote, padded)
+    return [_KIND_MESSAGES.get(code, _KIND_MESSAGES["not_found"])] if code else []
+
+
 def draft_part_repair(sent: dict[str, Any], out: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """After the one re-ask, an answer that still fails is dropped: the part comes back empty and the person fills
-    it by hand ("Waiting for your words"). Returns the dropped part's field paths, never text."""
+    it by hand ("Waiting for your words"). A title whose only fault is its kind keeps the title and summary and
+    loses the kind (BLD-C201): the sorting then falls back to the area's rule. Returns the dropped field paths,
+    never text."""
     if not draft_part(sent, out, None):
         return out, []
+    if out.get("kind") is not None or out.get("kind_evidence") not in (None, ""):
+        no_kind = {**out, "kind": None, "kind_evidence": None}
+        if not draft_part(sent, no_kind, None):
+            return no_kind, list(KIND_FIELDS)
     part = str(sent.get("part") or "")
     fixed = {"part": part, **_DRAFT_EMPTY, "evidence": []}
     if part == "value":

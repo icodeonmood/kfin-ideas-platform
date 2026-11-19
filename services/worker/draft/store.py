@@ -514,8 +514,9 @@ def set_part(
             if row_key == "title":
                 base = old if isinstance(old, dict) else {}
                 pinned = parts.pinned_fields(base) | {wire_key}
-                new = {"title": base.get("title"), "summary": base.get("summary"), wire_key: masked,
-                       "pinned": sorted(pinned)}  # fmt: skip
+                new = {"title": base.get("title"), "summary": base.get("summary"),
+                       **{k: base[k] for k in parts.KIND_KEYS if k in base},  # the agent's kind stays (BLD-C201)
+                       wire_key: masked, "pinned": sorted(pinned)}  # fmt: skip
                 state = "pinned" if pinned >= {"title", "summary"} else "filled"
             else:
                 new, state = masked, "pinned"
@@ -647,9 +648,16 @@ def _wire_parts(rows: list[dict[str, Any]], means: dict[str, int]) -> dict[str, 
     return out
 
 
-def _sorting(row: dict[str, Any], wire: dict[str, Any]) -> dict[str, Any]:
-    """E-ENTITIES Sorting: what the person confirmed or changed (L-SORT) wins; until then the parts suggest."""
+def _sorting(row: dict[str, Any], wire: dict[str, Any], part_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """E-ENTITIES Sorting: what the person confirmed or changed (L-SORT) wins; until then the parts suggest. The
+    kind is the one the sorting shows (`parts.kind_now`): Tell it words S1's questions for a business idea by it
+    (BLD-C203)."""
     sources = row["sorting_sources"] or {}
+    shown = {
+        str(r["key"]): r["value"]
+        for r in part_rows
+        if r["state"] in ("filled", "pinned") and r["value"] is not None
+    }
 
     def choice(field: str, own: Any, part: str) -> dict[str, Any]:
         src = (sources.get(field) or {}).get("source")
@@ -664,7 +672,10 @@ def _sorting(row: dict[str, Any], wire: dict[str, Any]) -> dict[str, Any]:
     kind_src = (sources.get("kind") or {}).get("source")
     return {
         "affects": choice("affects", list(row["affects"] or []), "who"),
-        "kind": {"value": row["kind"] or "problem", "source": kind_src or "suggested"},
+        "kind": {
+            "value": parts.kind_now(row["kind"], sources, row["area"], shown.get("title"), shown.get("area")),
+            "source": kind_src or "suggested",
+        },
         "area": choice("area", row["area"] or "", "area"),
         "brings": choice("brings", list(row["brings"] or []), "value"),
         "confirmed": row["sorting_confirmed_at"] is not None,
@@ -818,7 +829,7 @@ def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: boo
         "messages": messages,
         "parts": wire,
         "hidden": hidden,
-        "sorting": _sorting(row, wire),
+        "sorting": _sorting(row, wire, part_rows),
         "files": files,
         "step": row["step"] or "tell",
         **_saved(row, device, now),
