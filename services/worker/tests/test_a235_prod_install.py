@@ -358,14 +358,45 @@ def test_a235_hr_import_line_numbers_are_the_files_own_lines_when_a_field_holds_
     assert people[1]["name"] not in out
 
 
-def test_a235_hr_import_a_row_over_two_lines_is_named_by_its_first_line(
+def test_a235_hr_import_a_row_over_two_lines_is_named_by_the_line_it_ends_on(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     people = _people(3)
-    broken = dict(people[1], email="", job_title='"Team Lead\r\nOperations"')
+    broken = dict(people[1], email="", job_title='"Team Lead\r\nOperations"')  # lines 3-4
     rows = [",".join(HEADER), ",".join(people[0][k] for k in HEADER), ",".join(broken[k] for k in HEADER)]
     out = _failed(monkeypatch, capsys, ("\r\n".join(rows) + "\r\n").encode("utf-8"))
-    assert out == "failed: line 3: employee_id, name and email are required; nothing was changed\n"
+    assert out == "failed: line 4: employee_id, name and email are required; nothing was changed\n"
+
+
+def test_a235_hr_import_a_bare_carriage_return_in_a_quoted_field_counts_as_a_line(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Delta review 2: a bare \\r inside quotes is a line break to the reader, so the row after it is line 4."""
+    people = _people(3)
+    first = dict(people[0], job_title='"Team Lead\rOperations"')  # lines 2-3
+    rows = [
+        ",".join(HEADER),
+        ",".join(first[k] for k in HEADER),
+        ",".join(dict(people[1], email="")[k] for k in HEADER),
+    ]
+    out = _failed(monkeypatch, capsys, ("\n".join(rows) + "\n").encode("utf-8"))
+    assert out == "failed: line 4: employee_id, name and email are required; nothing was changed\n"
+
+
+def test_a235_hr_import_a_row_with_an_extra_column_keeps_the_line_count(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Delta review 2: an extra column (DictReader's list under None), holding a line break, then a row with no
+    name: the reader's own count still names line 4."""
+    people = _people(3)
+    rows = [
+        ",".join(HEADER),
+        ",".join(people[0][k] for k in HEADER) + ',"extra\ncolumn"',  # lines 2-3
+        ",".join(dict(people[1], name="")[k] for k in HEADER),
+    ]
+    out = _failed(monkeypatch, capsys, ("\n".join(rows) + "\n").encode("utf-8"))
+    assert out == "failed: line 4: employee_id, name and email are required; nothing was changed\n"
+    assert people[1]["email"] not in out
 
 
 def test_a235_hr_import_wrong_header_names_the_expected_header_only(

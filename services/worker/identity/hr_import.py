@@ -88,12 +88,11 @@ def read_stream(fh: TextIO) -> list[HrRow]:
     rows = []
     try:
         for raw in reader:
-            # Line numbers are the file's own lines, as HR sees them: a quoted field can hold a newline, so the row
-            # starts that many lines before the one the reader has reached.
-            line = reader.line_num - sum(v.count("\n") for v in raw.values() if isinstance(v, str))
             values = {k: (raw.get(k) or "").strip() for k in HEADER}
             if not values["employee_id"] or not values["email"] or not values["name"]:
-                raise ValueError(f"line {line}: employee_id, name and email are required")
+                # The reader's own count: the line of HR's file where this row ends (a quoted field can hold a
+                # line break, so a row can span lines).
+                raise ValueError(f"line {reader.line_num}: employee_id, name and email are required")
             rows.append(HrRow(**values))
     except csv.Error:
         # The inner reader's count: DictReader's own is only updated after a row is read whole.
