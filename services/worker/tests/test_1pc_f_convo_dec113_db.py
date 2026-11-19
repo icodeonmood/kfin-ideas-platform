@@ -229,6 +229,33 @@ def test_dec_113_l_convo_8_bld_f092_a_member_only_mentioned_reads_mentioned_unti
     assert rows() == [("The Ones Committee", "From the Ones Committee")]
 
 
+@pytest.mark.parametrize(
+    "order", ["mentioned_then_another_member_writes", "a_member_writes_then_is_mentioned"]
+)
+def test_dec_113_l_convo_8_bld_f092_the_committee_row_reads_from_the_ones_committee_once_any_member_wrote(
+    db: Any, order: str
+) -> None:
+    """Whichever member wrote, and whether before or after a member was mentioned, the one committee row reads "From
+    the Ones Committee" (the f/followups-p1 review's two more orders)."""
+    kavya = fx.person(db, "Kavya Menon")
+    meera = fx.person(db, "Meera Iyer", roles=(("reviewer", None),))
+    rohan = fx.person(db, "Rohan Mehta", roles=(("committee", None),))
+    sunita = fx.person(db, "Sunita Bhatt", roles=(("committee", None),))
+    idea = fx.idea(db, kavya, reviewer_id=meera["id"], opened_by=meera["id"])
+    ref = idea["idea_id"]
+    mention = {"text": "@Rohan Mehta can you look at this before Friday?", "mentions": [rohan["id"]]}
+    if order == "mentioned_then_another_member_writes":
+        send(db, ref, meera["id"], mention, at=fx.at(17, 9))
+        send(db, ref, sunita["id"], {"text": "Looked at it; the numbers hold."}, at=fx.at(17, 9, 30))
+    else:
+        send(db, ref, rohan["id"], {"text": "Looked at it; the numbers hold."}, at=fx.at(17, 9))
+        send(db, ref, meera["id"], mention, at=fx.at(17, 9, 30))
+    view = conversation(db, ref, kavya["id"], at=NOW)
+    _clean_of(_blob(view), rohan, sunita, meera)
+    rows = [(p["label"], p["doing"]) for p in view["participants"] if p["label"] == "The Ones Committee"]
+    assert rows == [("The Ones Committee", "From the Ones Committee")]
+
+
 # --- The review desk and the committee keep the names ------------------------------------------------------------
 @pytest.mark.parametrize("who", NAMED)
 def test_dec_113_l_convo_the_review_desk_and_the_committee_read_the_members_by_name(

@@ -228,7 +228,7 @@ For HR's sign-off under DEC-113, which extends DEC-111 to the Ones Committee. Th
 | `S-08`, the files on a member's message, as read out | Files in Rohan Mehta from the Ones Committee’s message | Files in the Ones Committee’s message |
 | `L-CONVO/8`, "In this conversation", a member only mentioned and no member has written yet (BLD-F092, added 20 Nov) | The Ones Committee, From the Ones Committee | The Ones Committee, Mentioned |
 
-On 20 Nov (BLD-F092) the screen was brought in line with the last two rows: until then a screen reader read "Files in The Ones Committee’s message" with a capital T, and a committee member who was only mentioned showed as "From the Ones Committee". "Mentioned" is the word every other mentioned person already reads (section 3).
+On 20 Nov (BLD-F092) the screen was brought in line with the files row and the new row: until then a screen reader read "Files in The Ones Committee’s message" with a capital T, and a committee member who was only mentioned showed as "From the Ones Committee". "Mentioned" is the word every other mentioned person already reads (section 3).
 
 ### 9. S-08's "+" (DEC-124, BLD-F095, added 21 Nov)
 
