@@ -286,6 +286,11 @@
   font-size: 11.5px;
 }
 
+/* DEC-113: the Ones Committee as one, with no face, initials or mark; the row keeps the place, empty. */
+.ibx-av.none {
+  background: none;
+}
+
 .ibx-b {
   display: block;
   min-width: 0;
@@ -486,6 +491,10 @@
   padding: 16px 0;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
+}
+
+.ibx-from.noav {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .ibx-fw {
@@ -763,6 +772,14 @@
   .ibx-from .ibx-due {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .ibx-from.noav {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ibx-from.noav .ibx-due {
+    grid-column: 1;
   }
 
   /* The item's action in the dock. */

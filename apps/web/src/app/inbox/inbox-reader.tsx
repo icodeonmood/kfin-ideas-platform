@@ -31,7 +31,7 @@ import {
 import { answerLabel, QuestionsCard } from "@/components/review/qcard";
 import type { InboxTab, SharerQuestionSetResponse } from "@/lib/contracts";
 import { COUNTS_EVENT } from "@/lib/inbox-events";
-import { REVIEW_DESK_START } from "@/lib/review-desk";
+import { ONES_COMMITTEE_START, REVIEW_DESK_START } from "@/lib/review-desk";
 import {
   cleanAddress,
   noSubscription,
@@ -136,6 +136,15 @@ export function drawsMark(item: InboxEntry): boolean {
   return item.from === "system" || DESK_KINDS.has(item.kind) || SYSTEM_KINDS.has(item.kind);
 }
 
+/** DEC-113 (BLD-A231): the Ones Committee speaking as one, to a sharer, a crew member or anyone outside the review
+ * desk and the committee. The worker sends it with no person behind it ("The Ones Committee", no id, no initials);
+ * it is drawn with no face, no initials and not the desk's mark: no avatar at all. A member named to the desk or the
+ * committee ("Rohan Mehta from the Ones Committee") keeps their initials. */
+export function drawsNoFace(item: InboxEntry): boolean {
+  if (drawsMark(item) || item.from === "system") return false;
+  return item.from.name === ONES_COMMITTEE_START || item.body.sender === ONES_COMMITTEE_START;
+}
+
 /** The row's accessible name, as on the board: "The review desk asked you 3 questions, <title>, 11:20 am, unread"
  * (Inbox.md Controls; DEC-111 names the desk where the board names Meera). */
 export function rowName(item: InboxEntry, now: Date): string {
@@ -145,6 +154,8 @@ export function rowName(item: InboxEntry, now: Date): string {
 }
 
 export function Avatar({ item, size }: { item: InboxEntry; size: "sm" | "md" }) {
+  // The row keeps the avatar's place, empty, so its words line up with the rows above and below (DEC-113)
+  if (drawsNoFace(item)) return <span className={`ibx-av ibx-av-${size} none`} aria-hidden="true" />;
   const mark = drawsMark(item);
   return (
     <span className={`ibx-av ibx-av-${size}${mark ? " sys" : ""}`} aria-hidden="true">
@@ -414,8 +425,9 @@ function OpenItem({
           <Title id="ibx-title" className="ibx-mtitle" ref={titleRef} tabIndex={-1}>
             {titleOf(item) || item.line}
           </Title>
-          <div className="ibx-from">
-            <Avatar item={item} size="md" />
+          {/* DEC-113: the Ones Committee as one has no avatar, so the header drops its place */}
+          <div className={`ibx-from${drawsNoFace(item) ? " noav" : ""}`}>
+            {drawsNoFace(item) ? null : <Avatar item={item} size="md" />}
             <span className="ibx-fw">
               <span className="ibx-fl">
                 <b>{senderOf(item)}</b> {item.line}
