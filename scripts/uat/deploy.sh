@@ -31,6 +31,20 @@ fail() { printf 'STOPPED: %s\n' "$*" >&2; exit 1; }
 value() { { grep -E "^$1=" "$2" || true; } | tail -1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//; s/^"(.*)"$/\1/'; }
 
 step "1/8 Preflight: no dev settings, no weak secrets"
+# The privacy notice (BLD-A232): the web app shows its notice only when PRIVACY_NOTICE_VERSION equals the version
+# in its text, and sends everyone who has not accepted that version to the notice first. A mismatch locks everyone
+# out at sign-in. The two values are printed only when both look like versions (digits and dots, "-draft" allowed),
+# so a secret pasted on the wrong line never reaches the terminal.
+notice_env="$(value PRIVACY_NOTICE_VERSION "$APP_ENV_FILE")"
+# More than one match, or none, leaves a value that is not a version, so the check stops.
+notice_text="$(sed -nE 's/^[[:space:]]*version: "([^"]*)",[[:space:]]*$/\1/p' apps/web/src/content/privacy-notice.ts 2>/dev/null || true)"
+notice_re='^[0-9]+(\.[0-9]+)*(-draft)?$'
+if [[ -z "$notice_text" || "$notice_env" != "$notice_text" ]]; then
+  if [[ "$notice_env" =~ $notice_re && "$notice_text" =~ $notice_re ]]; then
+    fail "PRIVACY_NOTICE_VERSION in the app env file is $notice_env, but this build's privacy notice is $notice_text: set it to $notice_text"
+  fi
+  fail "PRIVACY_NOTICE_VERSION in the app env file must equal the version in apps/web/src/content/privacy-notice.ts"
+fi
 for name in POSTGRES_PASSWORD DB_WEB_PASSWORD DB_WORKER_PASSWORD; do
   v="$(value "$name" "$DB_ENV_FILE")"
   # Letters and digits only: they go into connection URLs, and Compose and this script must read them alike.

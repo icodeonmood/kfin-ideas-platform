@@ -1,0 +1,80 @@
+# Privacy notice 0.2: changes for Legal and the DPO
+
+This is the notice every person accepts at first sign-in, before Home (`apps/web/src/content/privacy-notice.ts`, BLD-A232). Version 0.1-draft becomes **0.2-draft**, and the page reads "Version 0.2-draft (draft, awaiting Legal sign-off)". After the install, everyone who accepted 0.1-draft is sent to the notice on the next page they open and asked to accept again. The version is also pinned in `.env.example` and `scripts/uat/rehearse.sh`. The go/no-go report counts any version ending in "draft" as not live.
+
+**On every server that runs this build, `PRIVACY_NOTICE_VERSION` in the app env file must read `0.2-draft`.** The notice page will not show a notice whose version differs from the configured one. A server left on `0.1-draft` therefore cannot take anyone through first sign-in. `scripts/uat/deploy.sh` now stops at preflight when the two versions differ. Where the install does not use that script, check this setting by hand.
+
+What changed: the notice was corrected to the product lead's decisions of 16 and 17 November. It was then checked against the code in an independent review, whose findings are cited as B and S below, and settled with the product lead's calls of 19 November on three of those findings. Sentences not listed here are unchanged. Three sentences still wait for the DPO.
+
+## Changed and new sentences
+
+| Section | Old sentence (or "new") | New sentence | Decision it follows |
+|---|---|---|---|
+| What we use | What you share here: your ideas, comments, files and choices such as teaming up with colleagues. | What you share here: your ideas, voice notes, files, messages in an idea's conversation, and choices such as teaming up with colleagues. | DEC-108 (voice notes); F-COPY.vocabulary ("conversation", not "comments") |
+| What we use | new | How you'd like us to refer to you, if you choose to tell us in Profile. | DEC-108 (3): asked once in Profile, stored in `person_settings.refer_as` (review B4) |
+| Why we use it | Outside the app, your ideas carry a contributor code instead of your name. | Inside 1% Club, your ideas are stored under a contributor code, and the link from that code to you is kept in a separate table. | DEC-106 (1): nothing writes ideas outside the platform any more; DEC-104: names show inside it; non-negotiable 6. See the note for the DPO below (review S4) |
+| Why we use it | Your name is shown on the public wall only if you agree. | Removed here; replaced by the first two sentences of "Who sees what" | DEC-104 |
+| Why we use it | Before any AI assistant reads your idea, names and personal details are replaced with labels. The assistant never sees them. | Before the AI assistant reads your idea, our checks look for names and personal details in the text and replace them with labels. | Non-negotiable 2 (tagging before every model call). The wording is the product lead's of 19 Nov (review B3), with "our checks look for" kept because the checks can miss (L-HIDE.detect, L-HIDE.rules/7; review B7). What reaches the speech service is under Voice notes and listening |
+| Who sees what | new (section) | Your name shows on your ideas, on crew cards and on your requests to team up. | DEC-104; P-PRODUCT.privacy |
+| Who sees what | new | It also shows on the Wall next to your shared ideas, unless you turn that off in Profile. | DEC-104; Profile's switch "Show my name next to my ideas" |
+| Who sees what | new | The review desk and the Ones Committee see your name. | DEC-104 |
+| Who sees what | new | Only you, the review desk and the Ones Committee read your words. | DEC-104; P-PRODUCT.privacy ("Their own words (raw text, voice)"). Hidden customer details stay hidden from the desk and the committee too (L-HIDE.rules/3) |
+| Who sees what | new | Everyone else sees the short summary. | DEC-104; P-PRODUCT.privacy |
+| Who sees what | new | Your crew also sees the idea's checked files, its conversation, the review desk's questions and your answers, and the decision with its reason. | DEC-104; P-PRODUCT.privacy (review S3) |
+| Who sees what | new | A file in which our checks find a customer detail is the exception (see Never share). | DEC-107 ("a file with a customer detail found"; review S3, delta review B2) |
+| Who sees what | new | Once a build team is chosen, it sees the conversation too, and a colleague you mention in a message sees that message. | L-CONVO/2, /6; `convo/access.py` (BLD-F052; review S3) |
+| Who sees what | new | Your points are private to you. | DEC-104; P-PRODUCT.privacy |
+| Never share | The platform blocks them, but please don't type them. | Don't type or say them. | DEC-103: details are hidden, not stopped. DEC-108 (5): the recording is not hidden. F-COPY.voice: no "please" (review S1) |
+| Never share | new | If you include a customer's PAN, Aadhaar, folio, account or phone number, or their email address, our checks look for it and hide it before any other person or service sees your text. | DEC-103; L-HIDE.rules/1, /3. These are the kinds the checks look for. Addresses stay in the ask above but are not claimed as found (review B7) |
+| Never share | new | The review desk can hide one the checks missed. | L-HIDE.rules/7 (review B7) |
+| Never share | new | The full detail is stored encrypted, and only you can see it. | DEC-103; L-HIDE.rules/4 |
+| Never share | new | If it isn't a customer's detail, such as a scheme code, you can choose Show it and give a reason, unless the review desk hid it. | DEC-103; L-HIDE.rules/6; a detail the desk hid stays hidden (`hide/desk.py`, BLD-C066). The three reasons are a scheme or product code, an internal reference, or made up for the example (review B1) |
+| Never share | new | It is then no longer hidden, and the review desk sees that you showed it and why. | L-HIDE.rules/6. The shown value returns to every copy, and the reason is logged with the idea for the desk (review B1) |
+| Never share | new | A file in which our checks find a customer detail is not hidden. | DEC-107 (a file is marked only when the checks find a detail; delta review B2). The black-out copy (`files.blackout`) is off at launch (review B1) |
+| Never share | new | It opens only for you, the review desk and the Ones Committee, and they see it as it is. | DEC-107 (review B1) |
+| Voice notes and listening | new (section) | If you record a voice note, it goes to an Indian speech service to turn it into text. | DEC-108 (5); DEC-096 (no vendor named) |
+| Voice notes and listening | new | You can check the text before you send it. | DEC-108 (1). The recorder shows the same words before a recording |
+| Voice notes and listening | new | The recording goes as you spoke it, because a recording can't be hidden. | DEC-108 (5); non-negotiable 2's voice exception |
+| Voice notes and listening | new | So don't say a customer's details in a voice note. | DEC-108 (5); DEC-103 (review S1) |
+| Voice notes and listening | new | If you chose 'she' or 'he' in Profile, that goes to the service with your voice note, so its English copy refers to you correctly. | DEC-108 (3); `speech/prefs.py`. Only "she" or "he" is sent; "they" and "Prefer not to say" send nothing (review B4) |
+| Voice notes and listening | new | Before text goes to that service, to make the English copy or to be read aloud, our checks look for customers' details in it and hide what they find. | DEC-108 (3), (4), (5); the product lead, 19 Nov (review B3); delta review B1. For this service the checks are patterns only, so a customer's name or address can reach it, and other names reach it as written (see below) |
+| Voice notes and listening | new | The text that comes back is checked, and customers' details the checks find are hidden before anyone else, or any other service, sees it. | DEC-108 (5); DEC-103. F-COPY.vocabulary: no "transcript" (review S2) |
+| Voice notes and listening | new | When you send an idea, its draft goes to that service so it can be read aloud to the review desk and the Ones Committee, with the answers to the review desk's questions, the first name of whoever answered, and the names of its files. | DEC-108 (4); L-LISTEN. `speech/listen.py` makes the audio when an idea is sent; `desk.listen` and `speech.hosted` are on at launch. The script carries the draft, the answers spoken as "{first name} answered", and the checked files' names (`desk/reads.py` `script_for`); it is served to the desk and the committee (review B2, delta review S1) |
+| Voice notes and listening | new | This happens again after each change or answer, whether or not you recorded a voice note. | DEC-108 (4). A new version follows an edit or an answer (`speech/listen.py`; review B2, delta review S1) |
+| How your ideas improve the suggestions | new (section; six sentences in the reviewed 0.2-draft) | Removed: the section is not in 0.2 | The product lead, 19 Nov (review B5): keep the notice minimal on this point, as 0.1 was. The learning loops it described are retired (DEC-106; `docs/SHIP_PLAN_1PC.md` §6.2) |
+| Your choices and questions | You can see and download everything you have shared from My ideas. | You can see and download everything you have shared from My ideas. | Kept as it is by the product lead's decision, 19 Nov (review B6). **No download feature exists yet** |
+
+## Decided by the product lead, 19 November
+
+The review raised three findings that needed the product lead's call. All three are settled for 0.2.
+
+| Finding | The lead's decision | What the notice now says |
+|---|---|---|
+| B3: text sent to the speech service, to make the English copy or to be read aloud, is checked only for customers' details (and ARN, EUIN, IFSC and KFin addresses). Other names in it, such as a colleague's or a customer's name, are not replaced. | The code stays as it is ("fine for now"). The notice must not claim that names are hidden for that service. | The "one exception" line is gone. The line about the assistant names only the AI assistant. The speech service line says our checks look for customers' details and hide what they find. For this service the checks are the patterns only, so a customer's name, even next to their folio or PAN, or their address can reach it. The line says nothing about other names. |
+| B5: the section "How your ideas improve the suggestions" described learning loops that are retired. | Remove the section; keep the notice minimal on this point, as 0.1 was. | Nothing on how suggestions improve. |
+| B6: "You can see and download everything you have shared from My ideas." There is no download or export. | Keep the sentence as it is. | Unchanged from 0.1. No download feature exists yet. |
+
+**For Legal and the DPO: names reach the speech service.** Some text goes to the speech service: the text used to make the English copy of a voice note, and the text used to read an idea aloud to the review desk and the Ones Committee. That text is checked by patterns only. Customers' details the patterns find are hidden, but a customer's name, even next to their folio or PAN (which DEC-103 counts as a customer detail), or their address, can reach the service. Other names in that text, such as a colleague's, reach the service as written. This is by the product lead's decision of 19 November. Every idea that is sent is read aloud this way. The read-aloud script carries the idea's draft, the answers to the review desk's questions with the first name of whoever answered, and the names of the idea's checked files. A new version goes after each change or answer.
+
+## What the notice deliberately does not say
+
+The notice names no speech vendor (DEC-096). In "an Indian speech service", the word "Indian" describes the company, not where the processing happens. The notice does not claim that processing is India-hosted, or that the speech service keeps nothing or trains on nothing: DEC-108 records these only as requests made to the vendor, not as agreed terms. It says nothing about any model provider's training. It does not tell people that names other than customers' details reach the speech service (the product lead's decision of 19 Nov, above).
+
+## Still waiting for the DPO
+
+These three sentences stay word for word until the DPO's lines arrive.
+
+| Section | Sentence | Owner |
+|---|---|---|
+| Why we use it | Your contribution history is not used in performance appraisal unless HR policy says so. (To be confirmed by HR.) | DPO, with HR |
+| How long we keep it | As long as KFintech's record-retention policy requires. If you leave KFintech, the link between your name and your contributor code is deleted, so your ideas stay but no longer point to you. (Retention period to be confirmed by Legal.) | DPO, with Legal |
+| Your choices and questions | For questions or complaints under KFintech's data protection policy, contact the Data Protection Officer. (Contact details to be confirmed by Legal.) | DPO, with Legal |
+
+**Note for the DPO: the leaver promise in the retention line is not built.** Today nothing deletes the link between a person and their contributor code when they leave. The HR import marks leavers inactive and never deletes them, and nothing in the platform deletes rows from the code-to-person table (`contributor_map`). A person's own unmasked words are also stored against their user ID (`idea_words_sealed.owner_user_id`), not against the contributor code. Deleting the code link alone would therefore not stop those words pointing to them. The retention line needs either that work or new wording. The placeholder above is left exactly as it is for your text.
+
+When the DPO's lines arrive, one commit makes these changes:
+- it replaces the three sentences above;
+- it sets the version to **0.2** with `draft: false` in `privacy-notice.ts`;
+- it sets `PRIVACY_NOTICE_VERSION=0.2` in `.env.example`, in `scripts/uat/rehearse.sh` and in every server's app env file.
+
+The test `services/worker/tests/test_a232_privacy_notice.py` then expects no "to be confirmed" line. Legal and the DPO sign off the full text before that commit.

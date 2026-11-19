@@ -58,4 +58,4 @@ Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answe
 
 ## Rehearsal
 
-`make uat-rehearsal` runs the same script on a developer machine with throwaway secrets and local stand-ins (S3, ClamAV, Mailpit), then tears it down, images and volumes included. It pauses the dev stack while it runs and starts it again after. Run it before every UAT deploy.
+`make uat-rehearsal` runs the same script on a developer machine with throwaway secrets and local stand-ins (S3, ClamAV, Mailpit), then tears it down, images and volumes included. It pauses the dev stack while it runs and starts it again after. The rehearsal sets a throwaway Sarvam key, so voice runs as at launch but makes no calls. Run it before every UAT deploy.

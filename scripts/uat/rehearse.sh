@@ -27,7 +27,7 @@ OIDC_MODE=entra
 OIDC_ISSUER=https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0
 OIDC_CLIENT_ID=rehearsal-only
 OIDC_CLIENT_SECRET=$(rand)
-PRIVACY_NOTICE_VERSION=0.1-draft
+PRIVACY_NOTICE_VERSION=0.2-draft
 LLM_MODE=fake
 EMBEDDINGS_MODE=hash
 S3_ENDPOINT=http://s3:9000
@@ -39,11 +39,14 @@ EMAIL_MODE=smtp
 SMTP_URL=smtp://mailpit:1025
 GOLDEN_SEED=42
 ENV
+# SARVAM_API_KEY is a throwaway (BLD-A232): deploy.sh defaults SPEECH_MODE to sarvam (DEC-108, BLD-C115) and stops
+# without a key in the database env file. Only the smoke check's "Sarvam key set" reads it; nothing calls Sarvam.
 cat > "$WORK/db.env" <<ENV
 POSTGRES_PASSWORD=$(rand)
 DB_WEB_PASSWORD=$(rand)
 DB_WORKER_PASSWORD=$(rand)
 PSEUDONYM_VAULT_KEY=$(rand)
+SARVAM_API_KEY=rehearsal-only-$(rand)
 ENV
 chmod 600 "$WORK"/*.env
 
