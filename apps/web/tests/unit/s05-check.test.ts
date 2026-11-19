@@ -2476,3 +2476,145 @@ describe("S-05 part 2 L-SORT BLD-C194: each sorting reason reads as Review.md dr
     expect(document.body.textContent).not.toContain("Suggested: from your words");
   });
 });
+
+// --- DEC-118: Check it with an empty title, summary and area (BLD-C195) -----------------------------------------------
+
+describe("V-ACC S-05 DEC-118: a draft that reaches Check it with no title, summary or area (BLD-C195)", () => {
+  const EMPTY_PARTS = {
+    title: { state: "failed", value: "" },
+    summary: { state: "failed", value: "" },
+    often: { state: "waiting", value: null },
+    who: { state: "waiting", value: [] },
+    value: { state: "filled", value: ["not_sure"] },
+    area: { state: "waiting", value: "" },
+    similar: { state: "failed", value: [] },
+  };
+  const emptyDraft = () => draft({ parts: EMPTY_PARTS, hidden: [], ready: true });
+  const emptySorting = (): SortingResponse => ({
+    affects: { value: [], source: "suggested", why: null, why_line: null },
+    kind: {
+      value: "problem",
+      source: "suggested",
+      why: "because you described something that goes wrong today.",
+      why_line: "Suggested because you described something that goes wrong today.",
+    },
+    area: { value: null, source: "suggested", why: null, why_line: null },
+    brings: { value: [], source: "suggested", why: null, why_line: null },
+    confirmed: false,
+    complete: false,
+    confirmed_at: null,
+    rail: "Suggested, not confirmed yet",
+    summary: "Not confirmed yet",
+    note: "These are suggestions from your words. Not confirmed yet.",
+    problem: {
+      code: "sorting_incomplete",
+      message: "Confirm these, or change any of them, before you send.",
+      field: "sorting",
+    },
+  });
+  const emptySend = () =>
+    sendView({
+      rows: [
+        { key: "title", label: "Title", value: null, ok: false, step: "check:1" },
+        ...sendView().rows.filter((r) => r.key !== "title"),
+      ],
+      problems: [{ code: "not_ready", message: "Give it a title of a few words.", field: "title" }],
+    });
+  const refuseConfirm: Route = (m, u, b) =>
+    m === "PATCH" && u.endsWith("/sorting") && (b as { confirm?: boolean }).confirm
+      ? {
+          status: 422,
+          body: {
+            error: {
+              code: "sorting_incomplete",
+              message: "Confirm these, or change any of them, before you send.",
+              field: "sorting",
+            },
+          },
+        }
+      : undefined;
+  const emptyBase = () =>
+    base({ draft: emptyDraft(), sorting: emptySorting(), send: emptySend(), similar: [] });
+
+  it("S-05 part 1: no crash; the empty title, what happens and how often read Not given. with their pens; part 1 is not ticked", async () => {
+    await mount(emptyBase());
+    expect(h1()).toBe("Is this how you’d put it?");
+    expect(Array.from(document.querySelectorAll(".ck-v.ck-empty")).map(text)).toEqual([
+      "Not given.",
+      "Not given.",
+      "Not given.",
+    ]);
+    expect(button("Change the title")).toBeTruthy();
+    expect(button("Change what happens")).toBeTruthy();
+    await click(button("Looks right"));
+    expect(h1()).toBe("Is it sorted right?");
+    expect(buttons().some((b) => /^Your words, done/.test(nameOf(b)))).toBe(false);
+  });
+
+  it("S-05 part 2 L-SORT: the area unpicked with no reason line; who and worth too; Confirm sorting says what to do", async () => {
+    await mount([refuseConfirm, ...emptyBase()]);
+    await railTo("Sorting");
+    const group = document.querySelector('[role="radiogroup"][aria-label="Area"]')!;
+    expect(group).toBeTruthy();
+    const radios = Array.from(group.querySelectorAll('[role="radio"]'));
+    expect(radios.map(text)).toEqual(["Investor service", "Operations", "Distributor experience"]);
+    expect(radios.every((r) => r.getAttribute("aria-checked") === "false")).toBe(true);
+    // Only the kind, which always has a suggestion, says why; the empty fields say nothing.
+    expect(Array.from(document.querySelectorAll(".ck-why")).map(text)).toEqual([
+      "Suggested because you described something that goes wrong today.",
+    ]);
+    expect(document.body.textContent).toContain("These are suggestions from your words. Not confirmed yet.");
+    await click(button("Confirm sorting"));
+    expect(h1()).toBe("Is it sorted right?"); // nothing moves on
+    expect(document.body.textContent).toContain("Confirm these, or change any of them, before you send.");
+    await click(radios.find((r) => text(r) === "Operations"));
+    expect(calls.filter((c) => c.method === "PATCH" && c.url.endsWith("/sorting")).pop()?.body).toEqual({
+      area: "Operations",
+    });
+  });
+
+  it("S-05 part 7 V-FIELDS.checkit: the title row reads Not given.; Submit stays blocked: the sorting first, then the title", async () => {
+    await mount([
+      (m, u) =>
+        m === "POST" && u.endsWith("/submit")
+          ? {
+              status: 422,
+              body: {
+                error: { code: "not_ready", message: "Give it a title of a few words.", field: "title" },
+              },
+            }
+          : undefined,
+      ...emptyBase(),
+    ]);
+    await railTo("Send it");
+    const titleRow = Array.from(document.querySelectorAll(".ck-row")).find(
+      (r) => text(r.querySelector("dt")) === "!Title",
+    )!;
+    expect(text(titleRow.querySelector("dd .ck-v"))).toBe("Not given.");
+    const submit = button("Submit")!;
+    expect(submit.getAttribute("aria-disabled")).toBeNull();
+    await click(submit);
+    expect(document.body.textContent).toContain("Confirm the sorting first, or change any of it.");
+    expect(calls.some((c) => c.url.endsWith("/submit"))).toBe(false);
+  });
+
+  it("S-05 part 1 V-FIELDS.checkit/1: with the sorting confirmed, Submit's refusal asks for the title under it", async () => {
+    await mount([
+      (m, u) =>
+        m === "POST" && u.endsWith("/submit")
+          ? {
+              status: 422,
+              body: {
+                error: { code: "not_ready", message: "Give it a title of a few words.", field: "title" },
+              },
+            }
+          : undefined,
+      ...base({ draft: emptyDraft(), sorting: sorting(true), send: emptySend(), similar: [] }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(h1()).toBe("Is this how you’d put it?");
+    expect(document.body.textContent).toContain("Give it a title of a few words.");
+    expect(button("Change the title")?.getAttribute("aria-describedby")).toBeTruthy();
+  });
+});

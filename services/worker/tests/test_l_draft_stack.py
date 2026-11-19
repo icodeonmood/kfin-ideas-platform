@@ -129,7 +129,8 @@ def test_l_draft_dec_105_with_ai_off_parts_wait_for_the_person_and_the_draft_sti
     )  # C-DRAFT-LOADER.failure: "Couldn't work this out. Add it yourself."
     assert db.execute("SELECT count(*) AS n FROM llm_calls").fetchone()["n"] == 0  # no model at all
     draft = store.view(db, owner, idea, LAPTOP)
-    assert draft["ready"] is False and draft["run"]["state"] == "done"
+    # DEC-118 (BLD-C195): the words are at the minimum and nothing builds, so it can move on; Check it fills the rest.
+    assert draft["ready"] is True and draft["run"]["state"] == "done"
 
     for key, value in (("title", "Rejection SMS codes confuse investors"), ("summary", "Investors call the branch."),
                        ("area", "Investor service"), ("who", ["Investors"]), ("value", ["saves_time"])):  # fmt: skip

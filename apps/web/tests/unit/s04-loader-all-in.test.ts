@@ -2,9 +2,9 @@
 /**
  * "All 6 parts are in" only when all six are (S-04, S-04B; C-DRAFT-LOADER.maths/7–8, failure/1; L-DRAFT.parts/1, /7;
  * BLD-C157). Lane G's walk (J-SHARE/v1) saw the line while How often and Area read "Waiting for your words". A run that
- * ends with a part the words do not support: no all-in line, no fill to 100%, no pop, the strip folds quietly, the
- * header leaves "Updating", and Move to Review stays off with "Your draft needs a little more first.". A run where
- * every part fills, or fails and asks to be added, plays the drawn sequence. Desktop and phone. Synthetic words only.
+ * ends with a part the words do not support: no all-in line, no fill to 100%, no pop, the strip folds quietly and the
+ * header leaves "Updating"; since DEC-118 Move to Review no longer waits for it (BLD-C195). A run where every part
+ * fills, or fails and asks to be added, plays the drawn sequence. Desktop and phone. Synthetic words only.
  */
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -99,7 +99,7 @@ function panel(live: Live, phone = false) {
     minChars: 30,
     sending: false,
     running: live.running,
-    ready: live.ready,
+    saved: true, // a saved draft at the minimum (DEC-118)
   });
   act(() =>
     root.render(
@@ -123,7 +123,7 @@ const move = () =>
   ) as HTMLElement;
 
 describe("C-DRAFT-LOADER.maths/7, L-DRAFT.parts/1: a part the words do not support is not in (BLD-C157)", () => {
-  it("L-DRAFT.parts/1 a finished run with How often and Area null: no all-in line, no 'Updating', Move to Review off with the drawn line", () => {
+  it("L-DRAFT.parts/1, DEC-118 a finished run with How often and Area null: no all-in line, no 'Updating', and Move to Review on", () => {
     const live = runOf({ often: null, area: null });
     expect(live.running).toBe(false);
     expect(partIn(live.parts, "often")).toBe(false);
@@ -140,10 +140,9 @@ describe("C-DRAFT-LOADER.maths/7, L-DRAFT.parts/1: a part the words do not suppo
     expect(Number(bar().getAttribute("aria-valuenow"))).toBeLessThanOrEqual(97);
     // The header leaves "Updating" once nothing is building; the drawn state for a draft with words.
     expect(status()).toBe("Up to date");
-    expect(host.textContent).toContain(READINESS.more);
-    expect(host.textContent).toContain("Your draft needs a little more first.");
-    expect(move().getAttribute("aria-disabled")).toBe("true");
-    expect(move().tagName).toBe("BUTTON");
+    // DEC-118: the area waits, and Move to Review is on all the same; Check it asks for the area.
+    expect(host.textContent).toContain(READINESS.ready);
+    expect(move().tagName).toBe("A");
   });
 
   it("J-SHARE/v1 while the run closes with both blank parts answered: '4 of 6 ready, almost there', never the all-in line", () => {
@@ -346,12 +345,12 @@ describe("C-DRAFT-LOADER.maths with parts waiting for words (BLD-C157)", () => {
     expect(loaderLine(live.loader!, 7001)).toBe(LOADER_ALL_IN);
   });
 
-  it("L-DRAFT.parts/7 Move to Review: How often, Who and Worth may wait; a missing area holds it", () => {
+  it("DEC-118 Move to Review: the minimum and nothing building; title, summary and area may all wait", () => {
     const base = { chars: WORDS.length, minChars: 30, sending: false, running: false };
-    expect(readinessOf({ ...base, ready: true })).toBe("ready");
-    expect(readinessOf({ ...base, ready: false })).toBe("more");
-    expect(readinessOf({ ...base, running: true, ready: true })).toBe("working");
-    expect(readinessOf({ ...base, sending: true, ready: true })).toBe("finishing");
-    expect(readinessOf({ ...base, chars: 12, ready: true })).toBe("more");
+    expect(readinessOf({ ...base, saved: true })).toBe("ready");
+    expect(readinessOf({ ...base, saved: false })).toBe("more"); // typed, not saved yet
+    expect(readinessOf({ ...base, running: true, saved: true })).toBe("working");
+    expect(readinessOf({ ...base, sending: true, saved: true })).toBe("finishing");
+    expect(readinessOf({ ...base, chars: 12, saved: true })).toBe("more");
   });
 });

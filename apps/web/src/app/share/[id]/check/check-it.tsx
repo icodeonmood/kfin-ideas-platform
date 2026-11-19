@@ -827,14 +827,18 @@ export function CheckIt({
   // draft was read; for part 3, "Keep mine separate" kept or a merge request answered; for part 5, a fix added. Moving
   // on in this visit ticks the part at once, as before.
   const answered = mv !== null && mv.state !== "waiting";
+  // DEC-118 (BLD-C195): a draft can arrive with no title or no "what happens"; part 1 is not done until both are there.
+  const wordsIn = title.trim() !== "" && summary.trim() !== "";
   const isDone = (n: PartNo) =>
     !attention[n] &&
-    (n === 2
-      ? Boolean(sorting?.confirmed)
-      : done.has(n) ||
-        passed.has(n) ||
-        (n === 3 && (kept || answered)) ||
-        (n === 5 && fixPart.kind === "added"));
+    (n === 1 && !wordsIn
+      ? false
+      : n === 2
+        ? Boolean(sorting?.confirmed)
+        : done.has(n) ||
+          passed.has(n) ||
+          (n === 3 && (kept || answered)) ||
+          (n === 5 && fixPart.kind === "added"));
 
   /** A merged draft's parts 2, 4, 5 and 6: the value its last look gives that part (BLD-C155). */
   const readRow = (key: string) => {

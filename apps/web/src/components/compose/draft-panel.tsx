@@ -74,23 +74,25 @@ export const READINESS = {
 } as const;
 export type Readiness = keyof typeof READINESS;
 
-/** S-04.rules/2 and L-DRAFT.parts/3, /7: which line "Move to Review" shows. Ready only once nothing is building and the
- * draft has its title, summary and area (`ready`, the worker's `ready`, BLD-C083). A run that ends with the title or
- * the area waiting for words stays at "Your draft needs a little more first."; How often, Who it affects and What
- * it's worth may wait without holding it (L-DRAFT.parts/7, BLD-C157). */
+/** S-04.rules/2 with DEC-118, which overrides L-DRAFT.parts/7 for launch (BLD-C195): which line "Move to Review"
+ * shows. It turns on once the words reach the minimum to check (V-FIELDS.tellit/1) and nothing is building, the same
+ * rule as the worker's `ready`. A run that failed, or that the page gave up on or lost, counts as finished
+ * (C-DRAFT-LOADER.failure/1). Title, summary and area are not waited for: Check it fills them and Send checks them.
+ * "All 6 parts are in" stays the loader's line for all six (BLD-C157) and no longer holds the button. */
 export function readinessOf(s: {
   chars: number;
   minChars: number;
   /** A detail is still on its way from this device. */
   sending: boolean;
   running: boolean;
-  ready: boolean;
+  /** The saved draft's side of the rule: there is one, it is not merged, and its own count is at the minimum, so
+   * words typed but not sent yet never move it on. */
+  saved: boolean;
 }): Readiness {
   if (!s.chars || s.chars < s.minChars) return "more";
   if (s.sending) return "finishing";
   if (s.running) return "working";
-  // Nothing is building: a failed part waits for the person (C-DRAFT-LOADER.failure/1).
-  return s.ready ? "ready" : "more";
+  return s.saved ? "ready" : "more";
 }
 
 type FactKey = "often" | "who" | "value" | "area";

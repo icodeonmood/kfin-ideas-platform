@@ -399,17 +399,21 @@ def _write(
 
 
 def ready(conn: Conn, idea_uuid: str) -> bool:
-    """L-DRAFT.parts/7 and /3: title, summary and area present, the words at the minimum to check, and nothing
-    still building ("Move to Review" waits for all six, C-DRAFT-LOADER.maths/8)."""
+    """DEC-118 "Move to Review" (it overrides L-DRAFT.parts/7 for launch; BLD-C195): the words have reached the
+    minimum to check (`V-FIELDS.tellit/1`) and no run is still building. Title, summary and area are not needed: what
+    the draft could not fill is filled on Check it, and Send checks them (`V-FIELDS.checkit`). A run that failed or
+    timed out counts as finished: a part it left `updating` (a run marked failed, or one past `run_stale_seconds`
+    that no read has settled yet) holds nothing."""
     row = conn.execute("SELECT char_count FROM ideas WHERE id = %s", (idea_uuid,)).fetchone()
     if row is None or int(row["char_count"]) < rules().min_chars_to_check:
         return False
-    now = current(conn, idea_uuid)
-    if any(state == "updating" for state, _ in now.values()):
-        return False
-    title = now.get("title", ("waiting", None))[1] or {}
-    area = now.get("area", ("waiting", None))[1]
-    return bool(isinstance(title, dict) and title.get("title") and title.get("summary") and area)
+    building = conn.execute(
+        "SELECT 1 FROM idea_parts p JOIN draft_runs r ON r.id = p.run_id WHERE p.idea_uuid = %s "
+        "AND p.state = 'updating' AND r.state = 'running' "
+        "AND r.started_at >= now() - make_interval(secs => %s) LIMIT 1",
+        (idea_uuid, rules().run_stale_seconds),
+    ).fetchone()
+    return building is None
 
 
 def finish(conn: Conn, run_id: str, *, before: dict[str, Any] | None) -> None:
@@ -444,7 +448,7 @@ def finish(conn: Conn, run_id: str, *, before: dict[str, Any] | None) -> None:
         after,
         hidden_masked=hidden,
         similar_found=similar_found,
-        ready=is_ready,
+        ready=is_ready and not all_failed,  # never "ready" beside "We couldn't build the draft" (BLD-C195)
         all_failed=all_failed,
         email=run["channel"] == "email" and int(run["earlier"]) == 0,
     )

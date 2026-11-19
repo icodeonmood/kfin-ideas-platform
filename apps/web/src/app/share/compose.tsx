@@ -1000,12 +1000,14 @@ export function Compose({
   const chars = conversation ? (draft?.char_count ?? 0) : Math.max(box.trim().length, draft?.char_count ?? 0);
   const minChars = draft?.min_chars ?? MIN_CHARS;
   const sendingDetail = pending.length > 0;
+  // DEC-118 (BLD-C195): "Move to Review" waits only for the minimum and for nothing building, on the phone's dock as
+  // in the panel. A run the stream lost or gave up on has stopped building here, as a failed run has on the worker.
   const readiness: Readiness = readinessOf({
     chars,
     minChars,
     sending: sendingDetail,
     running: live.running,
-    ready: live.ready || Boolean(draft?.ready),
+    saved: Boolean(draftId) && !draft?.merged_into && (draft?.char_count ?? 0) >= minChars,
   });
   const checkHref = draftId ? `/share/${draftId}/check` : null;
   const hiddenActions = draftId
