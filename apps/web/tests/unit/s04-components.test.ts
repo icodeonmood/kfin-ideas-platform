@@ -431,14 +431,17 @@ describe("C-DRAFT-PANEL C-HIDDEN L-HIDE BLD-C193: a quote says a masked detail's
   });
 
   it("the worth quote reads 'with Folio ••••17' once, and no raw value reaches the page", () => {
-    panel({}, {
-      ...READY,
-      value: {
-        state: "filled",
-        value: ["saves_time"],
-        why: "From your words: “about 2 hours a week for one investor with folio Folio ••••17”",
+    panel(
+      {},
+      {
+        ...READY,
+        value: {
+          state: "filled",
+          value: ["saves_time"],
+          why: "From your words: “about 2 hours a week for one investor with folio Folio ••••17”",
+        },
       },
-    });
+    );
     const whys = [...host.querySelectorAll(".why")].map((w) => w.textContent);
     expect(whys).toContain("From your words: “about 2 hours a week for one investor with Folio ••••17”");
     expect(host.textContent).not.toMatch(/folio Folio/i);
@@ -448,14 +451,17 @@ describe("C-DRAFT-PANEL C-HIDDEN L-HIDE BLD-C193: a quote says a masked detail's
   });
 
   it("a different word before the masked form keeps the label as it was", () => {
-    panel({}, {
-      ...READY,
-      value: {
-        state: "filled",
-        value: ["saves_time"],
-        why: "From your words: “about 2 hours a week for the investor at Folio ••••17”",
+    panel(
+      {},
+      {
+        ...READY,
+        value: {
+          state: "filled",
+          value: ["saves_time"],
+          why: "From your words: “about 2 hours a week for the investor at Folio ••••17”",
+        },
       },
-    });
+    );
     const whys = [...host.querySelectorAll(".why")].map((w) => w.textContent);
     expect(whys).toContain("From your words: “about 2 hours a week for the investor at Folio ••••17”");
   });

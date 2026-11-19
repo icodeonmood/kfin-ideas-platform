@@ -730,7 +730,9 @@ def test_l_draft_parts_bld_c194_because_and_quotes_in_are_one_builder() -> None:
     assert line == "From your words: “about 40 calls a day” and “5 to 10 minutes each”"
     assert parts.quotes_in(line) == ["about 40 calls a day", "5 to 10 minutes each"]
     assert parts.quotes_in("From your words: “with folio Folio ••••17”") == ["with folio Folio ••••17"]
-    assert parts.because(None, ["about 40 calls a day"]) == "Suggested because you said “about 40 calls a day”."
+    assert (
+        parts.because(None, ["about 40 calls a day"]) == "Suggested because you said “about 40 calls a day”."
+    )
     assert (
         parts.because(None, ["about 40 calls a day", "5 to 10 minutes each"])
         == "Suggested because you said “about 40 calls a day” and “5 to 10 minutes each”."

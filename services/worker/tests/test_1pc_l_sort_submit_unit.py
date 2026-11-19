@@ -387,7 +387,8 @@ def test_l_submit_send_s06_rules_6_bld_c191_next_to_is_the_first_arrival_and_no_
         "edit_closes_at": shared + dt.timedelta(days=3),
         "opened_at": None,
     }
-    for at in (shared + dt.timedelta(seconds=2), shared + dt.timedelta(hours=5)):  # the send, then a repeated Submit
+    # The send, then a repeated Submit
+    for at in (shared + dt.timedelta(seconds=2), shared + dt.timedelta(hours=5)):
         h = handover(None, idea, at)  # type: ignore[arg-type]
         assert h["next"]["to"] == "/ideas/IDEA-2026-001482?from=share"
         assert h["edit_window"]["edit"] == {"label": "Edit it", "to": "/ideas/IDEA-2026-001482/edit"}

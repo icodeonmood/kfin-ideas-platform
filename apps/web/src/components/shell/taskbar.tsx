@@ -28,7 +28,11 @@ export function savedTime(at: Date | string): string {
 /** C-TASKBAR.save: the words for each save state. `savedLabel` is the server's words for `savedAt` when the screen
  * has them (the draft read's `saved_labels.status`, A-API.conventions/6): on an earlier day they carry the day
  * (BLD-C192). Without them, the time alone. */
-export function saveWords(state: SaveState, savedAt?: Date | string | null, savedLabel?: string | null): string {
+export function saveWords(
+  state: SaveState,
+  savedAt?: Date | string | null,
+  savedLabel?: string | null,
+): string {
   switch (state) {
     case "saving":
       return "Saving…";

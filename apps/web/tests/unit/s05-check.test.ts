@@ -2412,7 +2412,9 @@ describe("S-05 C-TASKBAR.save BLD-C192: saved on an earlier day, the top bar say
   });
 
   it("saved today it reads as now, exactly as before", async () => {
-    const today = draft({ saved_labels: { ...labels("Saved at 1:38 pm"), sidebar: "Today, on this laptop" } });
+    const today = draft({
+      saved_labels: { ...labels("Saved at 1:38 pm"), sidebar: "Today, on this laptop" },
+    });
     await mount(base({ draft: today }));
     expect(status()).toBe("Saved at 1:38 pm");
   });
@@ -2437,7 +2439,9 @@ describe("S-05 C-HIDDEN L-HIDE BLD-C193: the sorting's quote says a masked detai
   const whys = () => Array.from(document.querySelectorAll(".ck-why")).map((p) => text(p));
 
   it("'folio Folio ••••17' reads 'Folio ••••17' once; the value stays masked", async () => {
-    await mount(base({ sorting: quoting("Suggested because you mentioned “one investor with folio Folio ••••17”.") }));
+    await mount(
+      base({ sorting: quoting("Suggested because you mentioned “one investor with folio Folio ••••17”.") }),
+    );
     await railTo("Sorting");
     expect(whys()).toContain("Suggested because you mentioned “one investor with Folio ••••17”.");
     expect(document.body.textContent).not.toMatch(/folio Folio/i);
@@ -2445,7 +2449,9 @@ describe("S-05 C-HIDDEN L-HIDE BLD-C193: the sorting's quote says a masked detai
   });
 
   it("a different word before the masked form keeps the label", async () => {
-    await mount(base({ sorting: quoting("Suggested because you mentioned “the investor at Folio ••••17”.") }));
+    await mount(
+      base({ sorting: quoting("Suggested because you mentioned “the investor at Folio ••••17”.") }),
+    );
     await railTo("Sorting");
     expect(whys()).toContain("Suggested because you mentioned “the investor at Folio ••••17”.");
   });
