@@ -19,7 +19,7 @@ import pytest
 
 from core import killswitch
 from core.config import get_settings
-from core.crypto import decrypt_json
+from core.crypto import CryptoError, decrypt_json
 from gateway import sarvam
 from pii import tagger as tagger_mod
 from pii import vault
@@ -92,6 +92,17 @@ def world(db: Any, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
 
 def english(w: dict[str, Any], masked: str = MASKED) -> tuple[str | None, bool | None, str | None]:
     return drafts._english(w["db"], "stream-c200", masked, "hi-IN", None, idea_uuid=w["idea"])
+
+
+def leak_alerts(db: Any, scope: str) -> list[Any]:
+    """This test's own `alert.leak_check` rows from the speech path (its draft's scope is new), so the order the tests
+    run in never changes the count."""
+    rows = db.execute(
+        "SELECT after FROM audit_log WHERE action = 'alert.leak_check' AND entity = 'speech:sarvam' "
+        "AND after->>'ref_id' = %s ORDER BY at",
+        (scope,),
+    ).fetchall()
+    return [r["after"] for r in rows]
 
 
 def test_BLD_C200_L_DRAFT_voice_a_colleagues_name_never_reaches_the_speech_service_and_the_sharer_reads_it_back(
@@ -167,13 +178,11 @@ def test_BLD_C200_L_DRAFT_voice_a_broken_tag_fails_the_english_copy_cleanly_neve
     world: dict[str, Any], broken: Callable[[str], str]
 ) -> None:
     world["reply"]["make"] = lambda text: broken(english_of(text))
+    scope = f"DRAFT-{world['idea']}"
+    before = len(leak_alerts(world["db"], scope))
     text_en, translated, failure = english(world)
     assert (text_en, translated, failure) == (None, None, "translation_hosted_tags_broken")
-    db = world["db"]
-    alerts = db.execute(
-        "SELECT count(*) AS n FROM audit_log WHERE action = 'alert.leak_check' AND entity = 'speech:sarvam'"
-    ).fetchone()
-    assert alerts["n"] == 0  # a broken tag is a failed reply, never a leak: no value was ever sent
+    assert len(leak_alerts(world["db"], scope)) == before  # a failed reply, never a leak: no value was sent
 
 
 def test_BLD_C200_L_DRAFT_voice_a_broken_tag_keeps_the_sharers_own_words_through_the_stream(
@@ -195,20 +204,18 @@ def test_BLD_C200_the_leak_check_stops_a_payload_with_a_pattern_hit_before_anyth
     monkeypatch.setattr(tagger_mod, "detect", lambda *a, **k: [])  # detection misses everything
     monkeypatch.setattr(drafts, "mask_for_service", lambda text: text)  # and so did the masking before it
     db = world["db"]
+    scope = f"DRAFT-{world['idea']}"
     metered = db.execute("SELECT count(*) AS n FROM speech_calls").fetchone()["n"]
+    before = leak_alerts(db, scope)
     with pytest.raises(sarvam.SarvamFailed) as refused:
         sarvam.tag_for_service(f"Investor PAN {PAN} again", conn=db, scope_id=f"DRAFT-{world['idea']}")
     assert refused.value.code == "unmasked_text"
     text_en, translated, failure = english(world, f"{COLLEAGUE} ne investor ka {PAN} bheja")
     assert (text_en, translated, failure) == (None, None, "translation_unmasked_text")
     assert world["sent"] == []  # nothing reached the service
-    alerts = db.execute(
-        "SELECT after FROM audit_log WHERE action = 'alert.leak_check' AND entity = 'speech:sarvam' ORDER BY at"
-    ).fetchall()
-    assert [a["after"] for a in alerts][-2:] == [
-        {"patterns": ["pan"], "ref_id": f"DRAFT-{world['idea']}"}
-    ] * 2
-    assert PAN not in json.dumps([a["after"] for a in alerts])
+    new = leak_alerts(db, scope)[len(before) :]
+    assert new == [{"patterns": ["pan"], "ref_id": scope}] * 2  # one alert per refusal, pattern ids only
+    assert PAN not in json.dumps(new)
     assert db.execute("SELECT count(*) AS n FROM speech_calls").fetchone()["n"] == metered  # no call made
 
 
@@ -217,6 +224,11 @@ def test_BLD_C200_the_tag_check_lets_only_a_reply_with_every_tag_intact_through(
         "[[KFIN_EMPLOYEE_1]]": "KFIN_EMPLOYEE", "[[CLIENT_AMC_1]]": "CLIENT_AMC",
     })  # fmt: skip
     none = sarvam.Outgoing(text="No names.", tags={})
+    twice = sarvam.Outgoing(
+        text="[[KFIN_EMPLOYEE_1]] said it. [[KFIN_EMPLOYEE_1]] said it again.",
+        tags={"[[KFIN_EMPLOYEE_1]]": "KFIN_EMPLOYEE"},
+    )
+    assert sarvam.tags_back(twice, "[[KFIN_EMPLOYEE_1]] said so. [[KFIN_EMPLOYEE_1]] said so again.")
     assert sarvam.tags_back(two, "[[CLIENT_AMC_1]] told [[KFIN_EMPLOYEE_1]].") == (
         "[[CLIENT_AMC_1]] told [[KFIN_EMPLOYEE_1]]."
     )
@@ -229,6 +241,7 @@ def test_BLD_C200_the_tag_check_lets_only_a_reply_with_every_tag_intact_through(
         ),  # all back, plus a piece of one
         (none, "No names [["),  # a bracket pair with no tag sent
         (none, "No names [[PERSON_1]]"),  # a tag nobody sent
+        (twice, "[[KFIN_EMPLOYEE_1]] said it again."),  # a tag sent twice, back once
     ):
         with pytest.raises(sarvam.SarvamFailed) as broken:
             sarvam.tags_back(sent, reply)
@@ -241,3 +254,59 @@ def test_BLD_C200_english_needs_no_service_and_sends_nothing(world: dict[str, An
     )
     assert (text_en, translated, failure) == (MASKED, False, None) and world["sent"] == []
     assert vault.known_tags(world["db"], f"DRAFT-{world['idea']}") == {}
+
+
+# ---- review fixes (BLD-C200): an error in the tagging or the swapping back never costs the person their words -------
+
+
+def ended_in_a_transaction(w: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> tuple[str, dict[str, Any]]:
+    """A note heard and ended inside the caller's own transaction, so `store.done` must still commit on the same
+    connection after the failure."""
+    db, code, idea = w["db"], w["sharer"].contributor_code, w["idea"]
+    with ws_server(monkeypatch, FakeSarvamWs(heard=HEARD)):
+        sid = str(drafts.start(db, idea_uuid=idea, by_code=code)["id"])
+        drafts.chunk(db, sid, idea_uuid=idea, by_code=code, seq=0, data=SECOND)
+        with db.transaction():
+            done = drafts.end(db, sid, idea_uuid=idea, by_code=code)
+    return sid, done
+
+
+def kept_without_english(db: Any, sid: str, done: dict[str, Any]) -> None:
+    assert done["state"] == "done" and done["text"] == HEARD and done["text_en"] is None
+    assert done["translation_failure"] == drafts.TAGGING_FAILED == "translation_tagging_failed"
+    row = db.execute(
+        "SELECT state, failure, text_en_encrypted, own_words_sealed FROM voice_streams WHERE id = %s", (sid,)
+    ).fetchone()
+    assert (row["state"], row["failure"], row["text_en_encrypted"]) == ("done", drafts.TAGGING_FAILED, None)
+    assert row["own_words_sealed"] is not None  # the person's words are kept, sealed for them
+
+
+def test_BLD_C200_L_DRAFT_voice_a_tagger_that_fails_in_the_database_keeps_the_words_and_sends_nothing(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch, captured_logs: io.StringIO
+) -> None:
+    def failing(conn: Any, scope_id: str, payload: Any, *, d: Any = None) -> Any:
+        conn.execute("SELECT no_such_column FROM users")  # a database error, mid-tagging
+        raise AssertionError("unreachable")
+
+    monkeypatch.setattr(sarvam, "tag_payload", failing)
+    sid, done = ended_in_a_transaction(world, monkeypatch)
+    kept_without_english(world["db"], sid, done)
+    assert world["sent"] == []  # nothing reached the service
+    logged = captured_logs.getvalue()
+    assert "voice_stream.translation_tagging_failed" in logged and "UndefinedColumn" in logged
+    assert "Devika" not in logged and PAN not in logged
+
+
+def test_BLD_C200_L_DRAFT_voice_a_vault_that_cannot_be_opened_keeps_the_words_and_no_name_was_sent(
+    world: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def cannot_open(*a: Any, **k: Any) -> bytes:
+        raise CryptoError("open_failed")
+
+    monkeypatch.setattr(vault, "decrypt_bytes", cannot_open)  # the swapping back cannot read the vault
+    sid, done = ended_in_a_transaction(world, monkeypatch)
+    kept_without_english(world["db"], sid, done)
+    # The failure is after the service's reply: what reached it was the tagged copy only, never the name.
+    assert [b["input"] for b in world["sent"]] == [
+        "[[KFIN_EMPLOYEE_1]] ne bataya ki investor ka PAN ••••4F do baar type hota hai"
+    ]

@@ -37,6 +37,7 @@ import logging
 import re
 import threading
 import time
+from collections import Counter
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -54,7 +55,7 @@ from gateway.core import _alert, leak_hits
 from gateway.speech import FAKE_MARKER, FAKE_SAMPLE, SpeechUnavailable, Transcript, hosted_allowed
 from pii.detect import Directory
 from pii.patterns import scan
-from pii.tagger import TAG_RE, tag_payload, tags_in
+from pii.tagger import TAG_RE, tag_payload
 
 log = get_logger("sarvam")
 _ws_log = logging.getLogger("kfin.sarvam.websockets")
@@ -173,12 +174,19 @@ class Outgoing:
 _TAG_PIECE = re.compile(r"\[\[|\]\]|\b[A-Z][A-Z_]*_[0-9]+\b")
 
 
+def _tag_counts(text: str) -> Counter[str]:
+    return Counter(m.group(0) for m in TAG_RE.finditer(text))
+
+
 def tag_for_service(text: str, *, conn: Conn, scope_id: str, d: Directory | None = None) -> Outgoing:
     """The masked text tagged in the idea's vault scope by the gateway's own tagger (`pii.tagger.tag_payload`:
     colleagues from `users`, other names, client organisations, codes and any pattern value), then the gateway's leak
     check (`gateway.core.leak_hits`) on the tagged text, in `run_agent`'s order. A hit means detection missed
-    something: an `alert.leak_check` row (pattern ids only) and `unmasked_text`, before anything is sent."""
-    tagged = tag_payload(conn, scope_id, text, d=d)
+    something: an `alert.leak_check` row (pattern ids only) and `unmasked_text`, before anything is sent. The tagging
+    runs in a savepoint, so a database or key error there leaves the caller's transaction usable; the alert is
+    written outside it, so a refusal always keeps its alert."""
+    with conn.transaction():  # a savepoint inside the caller's transaction
+        tagged = tag_payload(conn, scope_id, text, d=d)
     hits = leak_hits(tagged.payload)
     if hits:
         _alert(conn, "alert.leak_check", "speech:sarvam", {"patterns": hits, "ref_id": scope_id})
@@ -188,9 +196,10 @@ def tag_for_service(text: str, *, conn: Conn, scope_id: str, d: Directory | None
 
 def tags_back(sent: Outgoing, text: str) -> str:
     """`run_agent`'s step 7 for the service's reply, stricter: every tag sent is back intact, and no other tag or
-    piece of one is there. A translation can translate, split or drop a tag; that is a failed reply
-    (`hosted_tags_broken`), never a leak, because no value behind a tag was ever sent. Returns `text` as it is."""
-    if tags_in(text) != set(sent.tags) or _TAG_PIECE.search(TAG_RE.sub(" ", text)):
+    piece of one is there. Tags are counted, so a tag sent twice must come back twice. A translation can translate,
+    split, merge or drop a tag; that is a failed reply (`hosted_tags_broken`), never a leak, because no value behind a
+    tag was ever sent. Returns `text` as it is."""
+    if _tag_counts(text) != _tag_counts(sent.text) or _TAG_PIECE.search(TAG_RE.sub(" ", text)):
         raise SarvamFailed("hosted_tags_broken")
     return text
 
