@@ -230,3 +230,22 @@ def test_a232_l_auth_deploy_passes_the_notice_check_on_this_builds_version(tmp_p
     run = _deploy(tmp_path, f"PRIVACY_NOTICE_VERSION={_version()}")
     assert run.returncode == 1 and "PRIVACY_NOTICE_VERSION" not in run.stderr
     assert "POSTGRES_PASSWORD must be" in run.stderr  # the next preflight check, before anything starts
+
+
+# ---- scripts/uat/rehearse.sh: a throwaway Sarvam key, the worker's alone (DEC-108, BLD-C115) ---------------------
+
+
+def _heredoc(name: str) -> list[str]:
+    """The lines rehearse.sh writes into `$WORK/<name>`."""
+    script = PINS[1].read_text("utf-8")
+    body = script.split(f'cat > "$WORK/{name}" <<ENV\n', 1)[1].split("\nENV\n", 1)[0]
+    return body.splitlines()
+
+
+def test_a232_dec108_rehearsal_sets_a_throwaway_sarvam_key_in_the_database_env_file_only() -> None:
+    db, app = _heredoc("db.env"), _heredoc("app.env")
+    assert db.count("SARVAM_API_KEY=rehearsal-only-$(rand)") == 1  # no inline comment: env files
+    assert db.index("SARVAM_API_KEY=rehearsal-only-$(rand)") == db.index("PSEUDONYM_VAULT_KEY=$(rand)") + 1
+    assert not any(
+        line.startswith("SARVAM_API_KEY") for line in app
+    )  # the app env file also reaches the web app

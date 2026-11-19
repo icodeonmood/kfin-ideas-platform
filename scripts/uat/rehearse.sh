@@ -39,11 +39,14 @@ EMAIL_MODE=smtp
 SMTP_URL=smtp://mailpit:1025
 GOLDEN_SEED=42
 ENV
+# SARVAM_API_KEY is a throwaway (BLD-A232): deploy.sh defaults SPEECH_MODE to sarvam (DEC-108, BLD-C115) and stops
+# without a key in the database env file. Only the smoke check's "Sarvam key set" reads it; nothing calls Sarvam.
 cat > "$WORK/db.env" <<ENV
 POSTGRES_PASSWORD=$(rand)
 DB_WEB_PASSWORD=$(rand)
 DB_WORKER_PASSWORD=$(rand)
 PSEUDONYM_VAULT_KEY=$(rand)
+SARVAM_API_KEY=rehearsal-only-$(rand)
 ENV
 chmod 600 "$WORK"/*.env
 
