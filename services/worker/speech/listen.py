@@ -50,8 +50,8 @@ REF = re.compile(r"^IDEA-[0-9]{4}-[0-9]{6}$")
 # Prefetched only once the checks are done and the sharer can no longer edit (BLD-C117).
 DESK_STATUSES = ("with_review_desk", "needs_you")
 # Nobody listens to these: a draft or one still being checked is the sharer's; a withdrawn idea is not found for anyone
-# else (BLD-E011); a merged one is read as the idea it joined.
-NOT_LISTENABLE = frozenset({"draft", "checking", "withdrawn", "merged"})
+# else (BLD-E011). A merged idea is read as its own page, for the desk and the committee (BLD-B271, L-LISTEN/2).
+NOT_LISTENABLE = frozenset({"draft", "checking", "withdrawn"})
 PREFETCH_BACKOFF = "6 hours"  # after a failed prefetch, the same script and voice wait this long (BLD-C117)
 
 

@@ -186,8 +186,8 @@ def test_BLD_C114_a_bad_reference_is_not_found(env: dict[str, Any]) -> None:
     assert (exc.value.status, exc.value.code) == (404, "not_found")
 
 
-@pytest.mark.parametrize("status", ["draft", "checking", "withdrawn", "merged"])
-def test_BLD_C117_nobody_listens_to_a_draft_one_being_checked_withdrawn_or_merged(
+@pytest.mark.parametrize("status", ["draft", "checking", "withdrawn"])
+def test_BLD_C117_nobody_listens_to_a_draft_one_being_checked_or_withdrawn(
     env: dict[str, Any], status: str
 ) -> None:
     env["conn"].status = status
@@ -198,6 +198,41 @@ def test_BLD_C117_nobody_listens_to_a_draft_one_being_checked_withdrawn_or_merge
         "with_review_desk",
         "needs_you",
     }
+
+
+def test_BLD_B271_l_listen_2_a_merged_ideas_chapters_answer_a_reviewer_202_then_the_cached_chapters(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLD-B271, L-LISTEN/2: a merged idea is read as its own page, so `_idea_uuid` finds it and its chapters answer
+    the desk: 202 `{ pending: true }` until the audio is made (one job queued, on that first ask), then the cached
+    chapters. The 15-minute sweep never picks it (`DESK_STATUSES`)."""
+    from contextlib import contextmanager
+
+    from fastapi.testclient import TestClient
+
+    import api.app as app_module
+
+    configure(monkeypatch, SPEECH_MODE="fake", SARVAM_API_KEY="", INTERNAL_API_TOKEN="t" * 32)
+    conn = env["conn"]
+    conn.status = "merged"
+    assert listen._idea_uuid(conn, IDEA) == IDEA and "merged" not in listen.DESK_STATUSES
+
+    @contextmanager
+    def fake_connect(**k: Any) -> Iterator[Any]:
+        yield conn
+
+    monkeypatch.setattr(app_module, "connect", fake_connect)
+    # A reviewer asks (BLD-C198: the worker checks the desk or committee role; the fake conn holds no grants).
+    monkeypatch.setattr("desk.store.has_role", lambda c, user_id, roles: user_id == READER)
+    client = TestClient(app_module.app)
+    url, token = f"/internal/listen/{IDEA}/chapters?user_id={READER}", {"X-Internal-Token": "t" * 32}
+    r = client.get(url, headers=token)
+    assert (r.status_code, r.json()) == (202, {"pending": True})
+    assert [j[1] for j in conn.jobs] == [f"listen:{IDEA}"]
+    assert listen.prefetch(conn, IDEA) is True
+    r = client.get(url, headers=token)
+    assert r.status_code == 200 and r.json()["parts"][0] == {"part": "summary", "start_s": 0.0}
+    assert r.json()["duration_s"] > 0
 
 
 def test_BLD_C114_only_masked_text_is_read(env: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:

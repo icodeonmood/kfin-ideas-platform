@@ -152,8 +152,8 @@ describe("C-LISTEN.anatomy: the listen strip from the first paint", () => {
   });
 });
 
-// J-REVIEW/M3 (BLD-B271): once an idea joins another, lane C's audio routes answer 404 for it
-// (`speech/listen.py` NOT_LISTENABLE holds "merged"), so the desk's script is the only source and the device's voice
+// J-REVIEW/M3 (BLD-B271): when lane C's audio routes answer 404 (as they did for a merged idea until
+// `speech/listen.py` NOT_LISTENABLE dropped "merged"), the desk's script is the only source and the device's voice
 // reads it. A browser without a local English voice (headless Chromium, the journeys' browser) dropped the strip.
 const SCRIPT_BODY = {
   parts: [
