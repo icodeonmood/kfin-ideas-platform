@@ -181,7 +181,7 @@ Everything else on S-08 is the pack's copy (Messages.md) or comes from the conve
 
 ### 6. The review desk, not the person at it (DEC-111, added 18 Nov)
 
-For HR's sign-off under DEC-111. The sharer, the crew, the build team and anyone mentioned never see the name of the person at the review desk. Each line below is the line they read before, with the reviewer's name replaced by "the review desk" ("The review desk" at the start of a line or as a byline), and no face or initials beside it. Nothing else in the line changes. The review desk and the Ones Committee still read the named lines in sections 2, 3 and 5. The Ones Committee's own lines ("Rohan Mehta from the Ones Committee reversed the decision.") are unchanged (BLD-F082). The code is `services/worker/convo/render.py` and `reads.py` (`Ctx.shown`), with the words from `onepc/words.py`; the screen is `apps/web/src/components/convo/conversation.tsx`.
+For HR's sign-off under DEC-111. The sharer, the crew, the build team and anyone mentioned never see the name of the person at the review desk. Each line below is the line they read before, with the reviewer's name replaced by "the review desk" ("The review desk" at the start of a line or as a byline), and no face or initials beside it. Nothing else in the line changes. The review desk and the Ones Committee still read the named lines in sections 2, 3 and 5. The Ones Committee's own lines ("Rohan Mehta from the Ones Committee reversed the decision.") were unchanged by DEC-111 (BLD-F082); DEC-113 changes them, in section 8. The code is `services/worker/convo/render.py` and `reads.py` (`Ctx.shown`), with the words from `onepc/words.py`; the screen is `apps/web/src/components/convo/conversation.tsx`.
 
 | Module | Line before (as the sharer, crew or build team read it) | Line now, for HR's sign-off (DEC-111) |
 |---|---|---|
@@ -212,6 +212,20 @@ For HR's sign-off. Teams messages are built and switched off at launch (DEC-105)
 |---|---|---|
 | `S-08` "No messages yet", the card's line for the sharer (Messages.md:367) | If the review desk has a question, it shows here and in your Inbox, and we tell you on Teams. | If the review desk has a question, it shows here and in your Inbox. |
 | `S-08` "In this conversation", the last line of the side panel (Messages.md:75) | This is the idea’s own conversation. It shows on the idea’s page too, and new messages reach you in your Inbox, on Teams and by email. | This is the idea’s own conversation. It shows on the idea’s page too, and new messages reach you in your Inbox and by email. |
+
+### 8. The Ones Committee, not the member (DEC-113, BLD-F091, added 19 Nov)
+
+For HR's sign-off under DEC-113, which extends DEC-111 to the Ones Committee. The sharer, the crew, the build team and anyone mentioned never see the name of a member of the Ones Committee. Each line below is the line they read before, with the member's name replaced by "the Ones Committee" ("The Ones Committee" at the start of a line or as a byline), and no face or initials beside it. Nothing else in the line changes. The review desk and the Ones Committee still read the named lines ("Rohan Mehta from the Ones Committee reversed the decision."), and a member reads their own lines as "You". This overrides Messages.md where it draws the member's name for the sharer. The code is `services/worker/convo/render.py` and `reads.py` (`Ctx.shown`), with the words from `onepc/words.py` (`ONES_COMMITTEE`, `ONES_COMMITTEE_START`).
+
+| Module | Line before (as the sharer, crew, build team or a mentioned person read it) | Line now, for HR's sign-off (DEC-113) |
+|---|---|---|
+| `L-CONVO/3`, `L-COMMITTEE`, the committee reverses a decision | Rohan Mehta from the Ones Committee reversed the decision. It’s now Not now. / … It’s now Picked. / … It’s now Not picked. / … reversed the decision. | The Ones Committee reversed the decision. It’s now Not now. / The Ones Committee reversed the decision. It’s now Picked. / The Ones Committee reversed the decision. It’s now Not picked. / The Ones Committee reversed the decision. |
+| `L-CONVO/3`, `L-COMMITTEE`, the committee undoes a desk merge (on both ideas) | Rohan Mehta from the Ones Committee undid the merge. Each idea is on its own again. | The Ones Committee undid the merge. Each idea is on its own again. |
+| `L-CONVO/5`, a message from a member: the name above it | Rohan Mehta from the Ones Committee (with RM in a circle) | The Ones Committee (no circle, no initials) |
+| `L-CONVO/8`, "In this conversation" | Rohan Mehta from the Ones Committee, From the Ones Committee (one row per member, each with initials) | The Ones Committee, From the Ones Committee (one row for the committee however many members wrote, no circle) |
+| `L-CONVO/6`, a member mentioned in a message | @Rohan Mehta (highlighted) | @the Ones Committee (highlighted); the mention list does not offer the committee to the sharer, the crew or the build team |
+| `L-CONVO/5`, the box of a person a member mentioned | Reply to Rohan | Reply to the Ones Committee |
+| `S-08`, the files on a member's message, as read out | Files in Rohan Mehta from the Ones Committee’s message | Files in the Ones Committee’s message |
 
 ## Find your crew (S-H2, L-CREW, added 18 Nov)
 
