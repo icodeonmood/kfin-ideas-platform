@@ -500,6 +500,22 @@ test("DEC-121, S-R2: a committee-only member opens the reviewer's idea and its L
     data: { choice: "pick", reason: REASON },
   });
   expect(decided.status(), `decision: ${await decided.text()}`).toBe(201);
+  // An idea still with the desk, with a similar idea beside it: the reviewer is offered Decide, Ask, worth and Merge
+  // on it (S-R2.panel, S-R2.similar), so the committee member's zero below is the role at work, not an empty page
+  const onDesk = `Branch slips ask for the PAN twice (${testInfo.project.name} ${Date.now()})`;
+  const onDeskId = await sharedIdea(sharer.code, onDesk);
+  const similar = `Branch slips repeat the address box (${testInfo.project.name} ${Date.now()})`;
+  const similarId = await sharedIdea(sharer.code, similar);
+  await db((c) =>
+    c.query(
+      "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) SELECT a.id, b.id, 'close', " +
+        "'Same branch slip' FROM ideas a, ideas b WHERE a.idea_id = $1 AND b.idea_id = $2",
+      [onDeskId, similarId],
+    ),
+  );
+  await reviewer.page.goto(`/desk/ideas/${onDeskId}`);
+  await expect(reviewer.page.getByRole("button", { name: "Decide on this idea" })).toBeVisible();
+  await expect(reviewer.page.getByRole("button", { name: `Merge with ${similar}` })).toBeVisible();
 
   // A synthetic member who holds `committee` and nothing else (BLD-B270): made on this first sign-in, so no other
   // spec signs in as them. The role is given for this test and taken back after it (grants are read on every
@@ -542,6 +558,16 @@ test("DEC-121, S-R2: a committee-only member opens the reviewer's idea and its L
     // C-LISTEN, L-LISTEN: the desk's script answers them
     const listen = await m.request.get(`/api/desk/ideas/${ideaId}/listen`);
     expect(listen.status(), `listen: ${await listen.text()}`).toBe(200);
+    // BLD-B270, S-R2: on the idea still with the desk they read it, and are offered none of the desk's actions
+    // (`can_act` holds only for the review desk)
+    await m.goto(`/desk/ideas/${onDeskId}`);
+    await expect(m.getByRole("heading", { level: 1, name: onDesk })).toBeVisible();
+    await expect(m.getByRole("heading", { name: "Review this idea" })).toBeVisible();
+    await expect(m.getByRole("button", { name: "Decide on this idea" })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /^Ask about this/ })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /^Ask .* first/ })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /what it’s worth$/ })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /^Merge with / })).toHaveCount(0);
     // C-SIDEBAR: their sidebar is as before (Ones Committee, no Review desk); a phone's tabs are everyone's
     await m.goto("/home");
     expect(await navLabels(m)).toEqual(
