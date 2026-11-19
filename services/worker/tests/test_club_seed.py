@@ -946,3 +946,87 @@ def test_dec111_gap_seed_l_inbox_a_reviewers_comment_comes_from_the_review_desk(
     dump = json.dumps(seen, ensure_ascii=False, default=str)
     assert "Harish" not in dump and "Venkatesan" not in dump and str(harish) not in dump, dump
     assert '"initials": "HV"' not in dump
+
+
+# --- Founding Ones since the founding day (BLD-E073; lane G's walk of the release candidate, row 2) -----------------
+
+# The Wall's order (`one_cards`: by induction time, then number) and the order of becoming a One (induction_no), by
+# number, as the seed has always laid them out: Gopal, Aparna, Rekha, Dinesh, then Indira, Siddharth, Varun.
+WALL_ORDER = [15, 2, 4, 8, 30, 21, 11]
+INDUCTION_ORDER = [2, 4, 8, 11, 15, 21, 30]
+
+
+def test_s_one_gap_seed_founding_ones_inducted_on_the_founding_day(office: Any) -> None:
+    """S-ONE.layout/2 and /3, GAP-SEED, BLD-E073 (J-ONE/3b to /6b; the Wall's Ones in J-BROWSE): every founding One
+    is inducted on the programme's founding day as the board draws it ("Founding One since 1 Nov 2026",
+    reference/copy/OneDashboard.md:36), never a year before the programme existed and never after the load. Its
+    number window keeps the live rule (30 days from becoming a One), so it is open "until 1 Dec 2026" (:40).
+    Dinesh's dashboard reads his since line and still holds his glow-up. Accepted-idea Ones keep their days back,
+    and every One keeps its number, tier, way in, Wall order and order of becoming a One."""
+    from wall import ones as wall_ones
+
+    conn = office
+    founding_day = dt.datetime(2026, 11, 1, tzinfo=IST)
+    assert club_seed.FOUNDING_DAY.astimezone(IST).date() == founding_day.date()
+    accepted = {who: days for who, *_r, way_in, _k, _b, days in club_seed.ONES if way_in == "accepted_idea"}
+    assert accepted == {"varun": 8, "siddharth": 10, "indira": 12}
+    who_by_hash = {emp_id_hash(emp): who for who, emp in club_seed.EMP.items()}
+    for now in LOADS:
+        assert now >= dt.datetime(2026, 11, 2, tzinfo=IST)  # every load is on or after 2 Nov 2026
+        club_seed.load(conn, now)
+        rows = conn.execute(
+            "SELECT o.number, o.tier, o.way_in, o.inducted_at, o.swap_until, o.induction_no, u.emp_id_hash "
+            "FROM ones o JOIN users u ON u.id = o.user_id"
+        ).fetchall()
+        by_who = {who_by_hash[r["emp_id_hash"]]: r for r in rows}
+        assert len(by_who) == len(rows) == 7
+        for who, wanted, tier, way_in, *_rest in club_seed.ONES:
+            r = by_who[who]
+            assert (r["number"], r["tier"], r["way_in"]) == (wanted, tier, way_in), (now, who)
+            assert r["swap_until"] == r["inducted_at"] + dt.timedelta(days=30), (now, who)
+            if way_in == "founding":
+                assert founding_day <= r["inducted_at"] < founding_day + dt.timedelta(days=1), (now, who)
+                assert r["inducted_at"] <= now, (now, who)
+            else:
+                assert r["inducted_at"] == now - dt.timedelta(days=accepted[who]), (now, who)
+        assert [c["number"] for c in wall_ones.one_cards(conn)] == WALL_ORDER, now
+        assert [r["number"] for r in sorted(rows, key=lambda r: r["induction_no"])] == INDUCTION_ORDER, now
+
+        dash = wall_ones.dashboard(conn, str(p_id(conn, "dinesh")), now)
+        assert dash["headline"] == "You're No. 8"
+        assert dash["since_line"] == "Tier 5, White heat. Founding One since 1 Nov 2026.", now
+        window = dash["number_window"]
+        assert window["open"] is True and window["until_label"] == "1 Dec 2026", now
+        assert window["keep_label"] == (
+            "Keep No. 8, or choose any free number from 1 to 999 until 1 Dec 2026. First come, first served. "
+            "After that, it's yours."
+        )
+        moment = dash["tier_moment"]  # J-ONE/6b: his glow-up still waits to play once
+        assert moment is not None and moment["line"] == "From Tier 4, Blaze to Tier 5, White heat", now
+        assert moment["title"] == "No. 8, your spark is hotter"
+        club_seed.remove(conn)
+
+
+def test_s_one_gap_seed_founding_ones_never_after_a_load_before_the_founding_day() -> None:
+    """S-ONE.layout/2, GAP-SEED, BLD-E073: a load before the founding day (or within the hour after it) inducts the
+    founding Ones just before the load, in the same order, never after it; from an hour after it, on the founding
+    day itself. Accepted-idea Ones count their days back from the load as before."""
+    founding = [(who, when) for who, *_r, way_in, _k, _b, when in club_seed.ONES if way_in == "founding"]
+    order = [who for who, _w in sorted(founding, key=lambda f: f[1])]
+    assert order == ["gopal", "aparna", "rekha", "dinesh"]
+    for now in (
+        dt.datetime(2026, 10, 20, 9, 0, tzinfo=IST),
+        club_seed.FOUNDING_DAY - dt.timedelta(minutes=1),
+        club_seed.FOUNDING_DAY,
+        club_seed.FOUNDING_DAY + dt.timedelta(minutes=30),
+        club_seed.FOUNDING_DAY + dt.timedelta(hours=1),
+        dt.datetime(2026, 11, 20, 22, 0, tzinfo=IST),
+    ):
+        at = {who: club_seed._inducted("founding", when, now) for who, when in founding}
+        assert all(t < now for t in at.values()), now
+        assert sorted(at, key=lambda who: at[who]) == order, now
+        if now >= club_seed.FOUNDING_DAY + dt.timedelta(hours=1):
+            assert min(at.values()) == club_seed.FOUNDING_DAY, now
+        else:
+            assert max(at.values()) > now - dt.timedelta(hours=1), now
+        assert club_seed._inducted("accepted_idea", 8, now) == now - dt.timedelta(days=8)
