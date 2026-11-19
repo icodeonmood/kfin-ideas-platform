@@ -6,6 +6,7 @@
  * keyboard; 44px targets; Keep looking after a send. Synthetic people only: the pack's fictional cast (Kavya asks,
  * Ravi leads) and made-up colleagues.
  */
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, signIn } from "./helpers";
@@ -336,3 +337,33 @@ test("J-TEAMUP/1–2 at 375px: Team up sends, Keep looking moves on, Your crews 
   await expect(page.getByRole("listitem").filter({ has: row })).toContainText("Ravi Nair, Investor service");
   await expectNoSeriousAxeIssues(page);
 });
+
+// WCAG 2.5.8 (target size), docs/WCAG22_POST_LAUNCH.md row 4, BLD-F093: at rest nothing on the page sits over the
+// Filters button, at desktop and at 360px. Only axe's target-size rule, on the filter bar; the gate itself stays at
+// WCAG 2.1 AA (DEC-112) until lane A's BLD-A229. Axe's 2.2 inventory found the button partially obscured only after
+// J-TEAMUP's click on Team up had scrolled the page, which puts it under the phone's sticky bar (`.pnav`).
+for (const size of [
+  { name: "desktop", width: 1280, height: 800 },
+  { name: "360px", width: 360, height: 740 },
+]) {
+  test(`S-H2 WCAG 2.5.8 at ${size.name}: nothing sits over the Filters button; axe target-size passes`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await answerCrew(page, deck([C1, C2]));
+    await open(page);
+    const filters = page.getByRole("button", { name: "Filters", exact: true });
+    await expect(filters).toBeVisible();
+    await settleMotion(page);
+    const ownsItsMiddle = await filters.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return hit !== null && el.contains(hit);
+    });
+    expect(ownsItsMiddle).toBe(true);
+    const results = await new AxeBuilder({ page }).include(".crew-fbar").withRules(["target-size"]).analyze();
+    expect(results.violations.flatMap((v) => v.nodes.map((n) => `${v.id} ${n.target.join(" ")}`))).toEqual(
+      [],
+    );
+  });
+}

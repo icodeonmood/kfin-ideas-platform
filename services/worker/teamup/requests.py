@@ -471,6 +471,9 @@ def send(
         refused = team_up_refusal(conn, idea, code)
         if refused is not None:
             raise Refused(409, refused, TEAM_UP_REFUSED[refused])
+        # L-TEAMUP.rules/4, one waiting request per person per idea (a draft's merge request to it counts): read
+        # here under the idea's lock; the partial unique index `teamup_requests_one_open` (state = 'sent') backs it,
+        # and its UniqueViolation below gives the same refusal
         if waiting_from(conn, idea["id"], code):
             raise Refused(409, "already_requested", rules.waiting_for(lead.first))
         problem = rules.check_note(note, adapters.note_min())
