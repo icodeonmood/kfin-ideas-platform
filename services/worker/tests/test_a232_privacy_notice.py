@@ -96,8 +96,8 @@ def test_a232_p_product_privacy_the_dpos_three_lines_wait_while_draft() -> None:
         "The review desk and the Ones Committee see your name.",
         "Only you, the review desk and the Ones Committee read your words. Everyone else sees the short summary.",
         "Your crew also sees the idea's checked files, its conversation, the review desk's questions and your "
-        "answers, and the decision with its reason. A file that holds a customer detail is the exception (see Never "
-        "share). Once a build team is chosen, it sees the conversation too, and a colleague you mention in a message "
+        "answers, and the decision with its reason. A file in which our checks find a customer detail is the exception "
+        "(see Never share). Once a build team is chosen, it sees the conversation too, and a colleague you mention in a message "
         "sees that message.",
         "Your points are private to you.",
         # DEC-103, L-HIDE.rules/3, /4, /6, /7: hidden as far as the checks find, Show it, the desk's own hiding
@@ -105,10 +105,11 @@ def test_a232_p_product_privacy_the_dpos_three_lines_wait_while_draft() -> None:
         "our checks look for it and hide it before any other person or service sees your text. The review desk can "
         "hide one the checks missed.",
         "The full detail is stored encrypted, and only you can see it. If it isn't a customer's detail, such as a "
-        "scheme code, you can choose Show it and give a reason. It is then no longer hidden, and the review desk sees "
+        "scheme code, you can choose Show it and give a reason, unless the review desk hid it. It is then no longer hidden, and the review desk sees "
         "that you showed it and why.",
         # DEC-107: a file with a detail
-        "A file that holds a customer detail is not hidden. It opens only for you, the review desk and the Ones "
+        "A file in which our checks find a customer detail is not hidden. It opens only for you, the review desk and the "
+        "Ones "
         "Committee, and they see it as it is.",
         # DEC-108: voice notes, the pronoun, listening
         "it goes to an Indian speech service to turn it into text.",
@@ -119,14 +120,15 @@ def test_a232_p_product_privacy_the_dpos_three_lines_wait_while_draft() -> None:
         "refers to you correctly.",
         "The text that comes back is checked, and customers' details the checks find are hidden before anyone else, "
         "or any other service, sees it.",
-        "When you send an idea, its draft, with customers' details hidden, also goes to that service so it can be "
-        "read aloud to the review desk. This happens whether or not you recorded a voice note.",
+        "When you send an idea, its draft goes to that service so it can be read aloud to the review desk and the Ones "
+        "Committee, with the answers to the review desk's questions, the first name of whoever answered, and the names "
+        "of its files. This happens again after each change or answer, whether or not you recorded a voice note.",
         # Non-negotiable 2; the product lead, 19 Nov (review B3) with review B7: labels before the AI assistant, as
         # far as the checks find; for the speech service, customers' details only, and no claim about other names
         "Before the AI assistant reads your idea, our checks look for names and personal details in the text and "
         "replace them with labels.",
-        "Before text goes to that service, to make the English copy or to be read aloud, customers' details in it are "
-        "hidden.",
+        "Before text goes to that service, to make the English copy or to be read aloud, our checks look for customers' "
+        "details in it and hide what they find.",
         # The product lead, 19 Nov (review B6): kept as it is, though no download exists yet
         "You can see and download everything you have shared from My ideas.",
     ],
@@ -154,6 +156,7 @@ def test_a232_f_copy_vocabulary_no_banned_words_no_vendor_no_absolute_promise() 
         ),
         *("sarvam", "saaras", "mayura", "bulbul"),
         *("never sees", "public wall", "slips in"),
+        *("details in it are hidden", "with customers' details hidden", "that holds a customer detail"),
         *("one exception", "improve the suggestions", "worked example", "learning"),
     )
     for word in banned:
