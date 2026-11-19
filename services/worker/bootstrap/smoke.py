@@ -6,6 +6,9 @@ Checks that the services answer, signed-out people are sent to sign in, the data
 place, the company repo is valid OKF without any dev-only files, the index is at the repo's head, the rules load,
 the people are synthetic and no dev persona roles exist. Reports which scanner and file store are in use. Prints one line per check; exits 1 if any fails.
 Never prints data, only counts and states.
+
+Production mode (BLD-A235, `APP_ENV=prod` only): the install loads no people, so right after it (`--fresh`) the
+people check passes only with no people and no role grants; later, after HR's import and the grants, with people.
 """
 
 from __future__ import annotations
@@ -120,8 +123,11 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         n = int(files["n"]) if files else 0
         return at == head and n > 0, f"{n} files indexed; {'at head' if at == head else 'behind head'}"
 
+    prod = s.app_env == "prod"
+
     def people() -> tuple[bool, str]:
-        """Right after a fresh deploy: synthetic people only, and no role grants at all (no dev personas)."""
+        """Right after a fresh deploy: synthetic people only, and no role grants at all (no dev personas). With
+        APP_ENV=prod (BLD-A235): nobody and no grants right after the install; people once HR's file is in."""
         with connect(autocommit=True) as conn:
             row = conn.execute(
                 "SELECT count(*) AS n, count(*) FILTER (WHERE email NOT LIKE '%%@kfintech.example') AS other "
@@ -129,11 +135,19 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
             ).fetchone()
             grants = conn.execute("SELECT count(*) AS n FROM role_grants").fetchone()
         assert row is not None and grants is not None
+        if prod:
+            n, g = int(row["n"]), int(grants["n"])
+            return (n == 0 and g == 0) if fresh else n > 0, f"{n} people, {g} role grants"
         ok = int(row["n"]) > 0 and (not fresh or (int(row["other"]) == 0 and int(grants["n"]) == 0))
         return (
             ok,
             f"{row['n']} people, {row['other']} outside the synthetic domain, {grants['n']} role grants",
         )
+
+    if not prod:
+        people_check = "people are synthetic, no dev personas"
+    else:
+        people_check = "no people or roles yet (production)" if fresh else "people loaded (production)"
 
     def voice_notes() -> tuple[bool, str]:
         """DEC-108: voice is off, or on through Sarvam with `speech.hosted` on and its approval reference, or on
@@ -179,7 +193,7 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         ("company repo valid, no dev files", company_repo),
         ("rules load", rules),
         ("index at the repo head", index_at_head),
-        ("people are synthetic, no dev personas", people),
+        (people_check, people),
         ("voice notes: safe speech route, quarantine not versioned", voice_notes),
     ]
 

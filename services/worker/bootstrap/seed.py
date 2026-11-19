@@ -3,6 +3,9 @@ load the synthetic HR directory (200 people) with the dev personas' roles.
 
 Safe to re-run: an existing company repo is left alone (it is the source of truth after the first run);
 the HR import is an upsert; persona grants are idempotent and only applied in dev and test.
+
+Production mode (BLD-A235): with `APP_ENV=prod`, the launch server's install-time setting, no synthetic person is
+loaded and no role is granted. IT loads HR's file with `identity.hr_import` after the first admin (docs/UAT.md).
 """
 
 from __future__ import annotations
@@ -149,9 +152,19 @@ def main(argv: list[str] | None = None) -> int:
     return seed_people(dest)
 
 
+PROD_PEOPLE_LINE = (
+    "people: none loaded in production; IT loads HR's file with identity.hr_import (docs/UAT.md)"
+)
+
+
 def seed_people(repo: Path) -> int:
-    """Synthetic HR directory plus, in dev and test, the persona role grants."""
+    """Synthetic HR directory plus, in dev and test, the persona role grants. Nothing at all with APP_ENV=prod: the
+    launch server's people come from HR's file only (BLD-A235). Every other environment, uat included, is unchanged.
+    """
     settings = get_settings()
+    if settings.app_env == "prod":
+        print(PROD_PEOPLE_LINE)
+        return 0
     csv_path = write_csv(generate(repo), Path(settings.company_repo_path).parent / "hr" / "synthetic-hr.csv")
     with connect(autocommit=True) as conn:
         r = import_rows(conn, read_csv(csv_path), load_taxonomy(repo))
