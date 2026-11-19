@@ -30,6 +30,7 @@ from ideapage.shape import at_desk, my_ideas_label, public_idea, safe_back, simi
 from ideapage.track import STATUS_OF_CHOICE, Decided, decided
 from ideapage.words import (
     DECISION_LABEL,
+    affects_words,
     brings_words,
     count,
     countdown,
@@ -530,7 +531,7 @@ def _shared_rows(
     fix_row = read.fix(conn, uid)
     files = [_file(f) for f in read.files(conn, uid)]
     often = str(idea["often"] or "").strip()  # only spaces counts as left empty
-    who = join_words([str(a).strip() for a in idea["affects"] or []])
+    who = affects_words([str(a).strip() for a in idea["affects"] or []])
     rows = [
         {
             "part": "summary",

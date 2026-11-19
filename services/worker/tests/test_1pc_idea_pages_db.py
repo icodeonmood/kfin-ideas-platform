@@ -757,6 +757,19 @@ def test_s09_omits_the_name_when_hidden_on_the_wall(club: dict[str, Any]) -> Non
     assert "The sharer’s own words stay with them" in v["page"]["summary_note"]
 
 
+def test_s06_layout_5_s09_layout_5_who_it_affects_is_a_list_with_commas(club: dict[str, Any]) -> None:
+    """S-06.layout/5 and S-09.layout/5, BLD-E068 (lane G's walk of 19 Nov, row 4; J-SHARE/12, J-RECOVER/14, /15):
+    Status.md and Compose.md draw "Investors, KFin teams", Idea.md and PhoneIdea.md "Investors, branch teams": a list
+    with commas, never "Investors and KFin teams". What it's worth keeps its sentence ("Saves time and cost")."""
+    t8 = ref(club, "T8")  # Tanvi's, affecting investors and KFin teams
+    own = {r["part"]: r for r in view(club, t8, "tanvi")["page"]["shared"]["rows"]}
+    assert own["who"]["value"] == "Investors, KFin teams"
+    about = {a["label"]: a["value"] for a in view(club, t8, "rekha")["page"]["about"]}
+    assert about["Who it affects"] == "Investors, KFin teams"
+    one = {r["part"]: r for r in view(club, ref(club, "T6"), "tanvi")["page"]["shared"]["rows"]}
+    assert one["who"]["value"] == "Investors"
+
+
 def test_s09_layout_names_the_sharer_and_bld_e008_uses_no_pronoun(club: dict[str, Any]) -> None:
     v = view(club, ref(club, "R1"), "pallavi")
     page = v["page"]
