@@ -249,7 +249,8 @@ def why_for(
     if row_key == "often":
         return quoted(quotes) if quotes else None
     if row_key in ("who", "area"):
-        return because(reason, quotes)
+        # S-04B's who and area lines keep one quote, as before BLD-C194; only the sorting reason joins two (Review.md).
+        return because(reason, quotes[:1])
     if row_key == "value":
         return None if value == [NOT_SURE] or not quotes else quoted(quotes)
     return None

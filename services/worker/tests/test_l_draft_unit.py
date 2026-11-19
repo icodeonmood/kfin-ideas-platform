@@ -168,6 +168,11 @@ def test_l_draft_parts_2_every_suggestion_says_why() -> None:
         "who", ["Investors"], ["q"], "Because you mentioned investors and the branch", texts
     ) == ("Suggested because you mentioned investors and the branch.")
     assert parts.why_for("value", ["not_sure"], [], None, texts) is None
+    # BLD-C194: S-04B's who and area lines with no reason keep one quote; only the sorting reason joins two.
+    for key in ("who", "area"):
+        assert parts.why_for(
+            key, ["Investors"], ["about 40 calls a day", "5 to 10 minutes each"], None, texts
+        ) == ("Suggested because you said “about 40 calls a day”.")
 
 
 def test_l_draft_parts_8_receipt_copy_is_the_boards() -> None:
