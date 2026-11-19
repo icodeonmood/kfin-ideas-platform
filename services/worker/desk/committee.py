@@ -135,10 +135,12 @@ def _row_json(
             "max_closes_at": w.max_closes_at.isoformat(), "extended_times": w.extended_times,
             "left": ww.left, "until": ww.until, "extended": ww.extended, "extend_to": ww.extend_to,
             "limit_line": ww.limit_line, "closed_line": ww.closed_line,
-            "open_line": (
-                f"Open until {when.day(w.closes_at, at, tz)}. You can extend it 30 days at a time, up to "
-                f"{ww.max_until}. When it closes, the decision stands."
-            ) if open_ else None,
+            # S-R4.rules/2 (BLD-B268): at the 3-month limit no extension is left, so the middle sentence goes
+            "open_line": " ".join(x for x in (
+                f"Open until {when.day(w.closes_at, at, tz)}.",
+                f"You can extend it 30 days at a time, up to {ww.max_until}." if ww.extend_to is not None else "",
+                "When it closes, the decision stands.",
+            ) if x) if open_ else None,
         },
         "reversal": reversal,
         "can_extend": open_ and ww.extend_to is not None,
