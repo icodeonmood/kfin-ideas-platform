@@ -152,3 +152,12 @@ At the 3-month limit the committee's window can no longer be extended, and the b
 |---|---|---|
 | The Ones Committee, an open decision at the 3-month limit (not drawn; the board draws a window that can still be extended) | Open until Wednesday 16 December. You can extend it 30 days at a time, up to Tuesday 16 February 2027. When it closes, the decision stands. | Open until Tuesday 16 February 2027. When it closes, the decision stands. |
 | The reviewer's page, the listen strip's play button before the audio is ready (heard, not seen; not drawn) | Play the whole idea, 2 minutes 10 seconds | Play the whole idea (then "Play the whole idea, 2 minutes 10 seconds" once the audio is ready) |
+
+## 10. Lines changed for DEC-113 (19 Nov, BLD-B269)
+
+DEC-113 extends DEC-111 to the Ones Committee: a sharer, and the crew, never see the name of the committee member who reversed a decision. Where lane B's decision lines named the member to them, they now name the Ones Committee, with no avatar or initials beside it. "Rohan Mehta" stands for the committee member. The lines read the same whoever reads them. The review desk and the Ones Committee still see each other's names, so the committee page and the reviewer's page are unchanged. The committee's message in the conversation, the Inbox and the emails are in lanes E, F and A's lists.
+
+| Where | Before | On screen |
+|---|---|---|
+| The idea page, Reversed by the Ones Committee, the first line of the committee's card (the avatar "RM" goes too) | Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm | The Ones Committee, Tuesday 24 November, 5:40 pm |
+| The decision as sent to the sharer and the crew, the line under "Now: Not now" (the committee page's words; the idea page does not show this line today) | by Rohan Mehta, Tuesday 24 November | by the Ones Committee, Tuesday 24 November |
