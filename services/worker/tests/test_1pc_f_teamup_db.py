@@ -1167,6 +1167,48 @@ def test_BLD_F029_DEC_104_the_desk_and_the_committee_and_the_crew_always_see_the
     assert sent["after"]["line"] == "Waiting for Gopal"
 
 
+@pytest.mark.parametrize("how", ["hidden", "inactive"])
+def test_BLD_F029_DEC_104_C_SHEET_TEAMUP_after_a_member_who_left_the_crew_reads_the_lead_again_and_team_up(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, how: str
+) -> None:
+    """Once off the crew, a requester whose request was approved is a stranger to a lead who is not named again: no
+    name or users.id, and their approved request no longer shows "You’re on the crew" (`after_for`: an `approved_*`
+    request with no crew role gives no `after`, so the screen offers Team up again). BLD-F093 pins it."""
+    ravi, kavya, ref = cast["ravi"], cast["kavya"]["id"], cast["lead"]["idea_id"]
+    _unnamed(db, ravi, how)
+    sent = _send(db, cast)
+    requests.answer(db, sent["id"], ravi["id"], {"answer": "team_only"})
+    assert requests.my_state(db, ref, kavya)["lead"]["name"] == ravi["name"]  # on the crew: named (BLD-F042)
+    crew.leave(db, ref, kavya)
+    gone = requests.my_state(db, ref, kavya)
+    _hidden_lead(gone["lead"])
+    assert gone["me"] is None and gone["request"]["state"] == "approved_team_only"
+    assert gone["after"] is None and gone["can_request"] is True and gone["why_not"] is None
+    read = requests.read(db, sent["id"], kavya)
+    assert read["after"] is None
+    note = requests.draft_note(db, ref, kavya)
+    _hidden_lead(note["lead"])
+    _no_trace_of(ravi, gone, read, note)
+
+
+def test_BLD_F029_DEC_104_a_core_committee_viewer_reads_a_hidden_leads_name(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox
+) -> None:
+    """`lead_seen_by` names the lead to anyone `similar.preview.Viewer.of(...).desk` counts: DESK_ROLES there are
+    reviewer, committee, core_committee and core_chair, so a core_committee holder reads the name of a lead who hid
+    it, as the review desk and the Ones Committee do (DEC-104, P-PRODUCT.privacy; DEC-121: committee members hold
+    core_committee at launch). Pinned by BLD-F093 beside the reviewer, committee and core_chair cases above."""
+    ravi, ref = cast["ravi"], cast["lead"]["idea_id"]
+    _unnamed(db, ravi, "hidden")
+    core = f.person(db, "Sunita Bhatt", roles=("core_committee",))
+    seen = requests.my_state(db, ref, core["id"])
+    assert (seen["lead"]["id"], seen["lead"]["name"]) == (ravi["id"], ravi["name"])
+    assert requests.draft_note(db, ref, core["id"])["lead"]["first_name"] == "Ravi"
+    # Without the role, the same person reads "the lead"
+    db.execute("UPDATE role_grants SET valid_to = now() WHERE user_id = %s", (core["id"],))
+    _hidden_lead(requests.my_state(db, ref, core["id"])["lead"])
+
+
 def test_BLD_F075_the_lead_still_reads_the_name_of_a_requester_who_hid_theirs_from_the_wall(
     db: Conn, cast: dict[str, Any], inbox: f.Inbox
 ) -> None:
