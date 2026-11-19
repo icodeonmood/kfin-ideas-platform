@@ -45,8 +45,14 @@ step(
     await signInAs(page, "kunal");
     await page.goto("/admin");
     const form = page.getByRole("region", { name: "Picked ideas: choose the build team" });
-    await form.getByLabel("Idea", { exact: true }).selectOption(j1.ref as string);
+    const idea = form.getByLabel("Idea", { exact: true });
     const asked = form.getByRole("list", { name: "Asked to join" });
+    // The select is controlled, so a choice made before the page hydrates is lost: choose until the list follows it.
+    await expect(async () => {
+      await idea.selectOption(j1.ref as string);
+      await expect(idea).toHaveValue(j1.ref as string, { timeout: 1_000 });
+      await expect(asked).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 20_000 });
     // programme/view.py: "{name}, asked {D Mon YYYY}" in India time.
     await expect(asked.getByRole("listitem").first()).toHaveText(
       /^Jatin Khurana, asked \d{1,2} [A-Z][a-z]{2} \d{4}$/,

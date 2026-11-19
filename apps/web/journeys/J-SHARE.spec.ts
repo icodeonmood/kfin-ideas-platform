@@ -379,7 +379,7 @@ step(
       .getByRole("button", { name: "Submit" })
       .or(page.getByRole("link", { name: "Submit" }))
       .click();
-    await page.waitForURL(new RegExp(`/ideas/${REF}$`));
+    await page.waitForURL(new RegExp(`/ideas/${REF}(?:\\?from=share)?$`));
     carried.idea = new URL(page.url()).pathname;
     // S-06 opens as the first arrival (from=share, S-06.rules/6, S-06.states "Just shared"; BLD-C084): the way back
     // is Home, and the shared date carries how long it took (ideapage/sharer.py: always in seconds).
@@ -509,11 +509,14 @@ step(
     expect(title).not.toBe("Not given.");
     await page.getByRole("button", { name: "Looks right" }).click();
 
-    // Part 2: no area is picked; Confirm sorting keeps part 2 until one is (V-FIELDS: Send needs every field).
+    // Part 2: the words name no area and no one it affects, so neither is suggested, and Confirm sorting keeps
+    // part 2 until both are picked (V-FIELDS.sorting: Send needs every field; submit/sorting.py apply()).
     await expect(page.getByText("Check it, part 2 of 6")).toBeVisible();
     const areas = page.getByRole("radiogroup", { name: "Area" });
+    const affects = page.getByRole("group", { name: "Who it affects" });
     await expect(areas.getByRole("radio")).not.toHaveCount(0);
     await expect(areas.getByRole("radio", { checked: true })).toHaveCount(0);
+    await expect(affects.locator('button[aria-pressed="true"]')).toHaveCount(0);
     await expectNoSeriousAxeIssues(page);
     await page.getByRole("button", { name: "Confirm sorting" }).click();
     await expect(
@@ -523,7 +526,9 @@ step(
     const operations = areas.getByRole("radio", { name: "Operations" });
     await operations.click();
     await expect(operations).toBeChecked();
-    await expectNoSeriousAxeIssues(page);
+    const teams = affects.getByRole("button", { name: "KFin teams" });
+    await teams.click();
+    await expect(teams).toHaveAttribute("aria-pressed", "true");
     await page.getByRole("button", { name: "Confirm sorting" }).click();
     await expect(page.getByText("Check it, part 3 of 6")).toBeVisible();
 
