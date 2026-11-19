@@ -4,7 +4,7 @@ This is the notice every person accepts at first sign-in, before Home (`apps/web
 
 **On every server that runs this build, `PRIVACY_NOTICE_VERSION` in the app env file must read `0.2-draft`.** The notice page will not show a notice whose version differs from the configured one. A server left on `0.1-draft` therefore cannot take anyone through first sign-in. `scripts/uat/deploy.sh` now stops at preflight when the two versions differ. Where the install does not use that script, check this setting by hand.
 
-What changed: four topics, corrected to the product lead's decisions of 16 and 17 November, and then to an independent review against the code (the B and S findings below). Sentences not listed here are unchanged. Six sentences are still open: three wait for the product lead and three for the DPO.
+What changed: the notice was corrected to the product lead's decisions of 16 and 17 November. It was then checked against the code in an independent review, whose findings are cited as B and S below, and settled with the product lead's calls of 19 November on three of those findings. Sentences not listed here are unchanged. Three sentences still wait for the DPO.
 
 ## Changed and new sentences
 
@@ -14,9 +14,7 @@ What changed: four topics, corrected to the product lead's decisions of 16 and 1
 | What we use | new | How you'd like us to refer to you, if you choose to tell us in Profile. | DEC-108 (3): asked once in Profile, stored in `person_settings.refer_as` (review B4) |
 | Why we use it | Outside the app, your ideas carry a contributor code instead of your name. | Inside 1% Club, your ideas are stored under a contributor code, and the link from that code to you is kept in a separate table. | DEC-106 (1): nothing writes ideas outside the platform any more; DEC-104: names show inside it; non-negotiable 6. See the note for the DPO below (review S4) |
 | Why we use it | Your name is shown on the public wall only if you agree. | Removed here; replaced by the first two sentences of "Who sees what" | DEC-104 |
-| Why we use it | Before any AI assistant reads your idea, names and personal details are replaced with labels. The assistant never sees them. | Our checks look for names and personal details in your text and replace them with labels before the AI assistant reads it. | Non-negotiable 2 (tagging before every model call). The checks can miss, so nothing is promised absolutely (L-HIDE.detect, L-HIDE.rules/7; review B7) |
-| Why we use it | new | A voice recording is the one exception, because a recording can't be masked. | DEC-108 (5). **Waiting for the product lead (review B3)** |
-| Why we use it | new | See Voice notes below. | **Waiting for the product lead (review B3)** |
+| Why we use it | Before any AI assistant reads your idea, names and personal details are replaced with labels. The assistant never sees them. | Before the AI assistant reads your idea, our checks look for names and personal details in the text and replace them with labels. | Non-negotiable 2 (tagging before every model call). The wording is the product lead's of 19 Nov (review B3), with "our checks look for" kept because the checks can miss (L-HIDE.detect, L-HIDE.rules/7; review B7). What reaches the speech service is under Voice notes and listening |
 | Who sees what | new (section) | Your name shows on your ideas, on crew cards and on your requests to team up. | DEC-104; P-PRODUCT.privacy |
 | Who sees what | new | It also shows on the Wall next to your shared ideas, unless you turn that off in Profile. | DEC-104; Profile's switch "Show my name next to my ideas" |
 | Who sees what | new | The review desk and the Ones Committee see your name. | DEC-104 |
@@ -39,31 +37,28 @@ What changed: four topics, corrected to the product lead's decisions of 16 and 1
 | Voice notes and listening | new | The recording goes as you spoke it, because a recording can't be hidden. | DEC-108 (5); non-negotiable 2's voice exception |
 | Voice notes and listening | new | So don't say a customer's details in a voice note. | DEC-108 (5); DEC-103 (review S1) |
 | Voice notes and listening | new | If you chose 'she' or 'he' in Profile, that goes to the service with your voice note, so its English copy refers to you correctly. | DEC-108 (3); `speech/prefs.py`. Only "she" or "he" is sent; "they" and "Prefer not to say" send nothing (review B4) |
-| Voice notes and listening | new | Text we send to that service for translation or to be read aloud is masked first. | DEC-108 (3), (4), (5). **Waiting for the product lead (review B3)** |
+| Voice notes and listening | new | Before text goes to that service, to make the English copy or to be read aloud, customers' details in it are hidden. | DEC-108 (3), (4), (5); the product lead, 19 Nov (review B3). Only customers' details are hidden for this service; other names in the text reach it as written (see below) |
 | Voice notes and listening | new | The text that comes back is checked, and customers' details the checks find are hidden before anyone else, or any other service, sees it. | DEC-108 (5); DEC-103. F-COPY.vocabulary: no "transcript" (review S2) |
 | Voice notes and listening | new | When you send an idea, its draft, with customers' details hidden, also goes to that service so it can be read aloud to the review desk. | DEC-108 (4); L-LISTEN. `speech/listen.py` makes the audio when an idea is sent; `desk.listen` and `speech.hosted` are on at launch (review B2) |
 | Voice notes and listening | new | This happens whether or not you recorded a voice note. | DEC-108 (4) (review B2) |
-| How your ideas improve the suggestions | new (section) | When the review desk changes something the assistant suggested, such as the sorting, we keep that change as a worked example for later suggestions. | **Waiting for the product lead (review B5).** The ask's sources, ARCHITECTURE §5.1 and BLD-121, are retired (DEC-106; `docs/SHIP_PLAN_1PC.md` §6.2) |
-| How your ideas improve the suggestions | new | Names and personal details in it are replaced with labels. | **Waiting for the product lead (review B5)** |
-| How your ideas improve the suggestions | new | We also count how often suggestions are accepted, and look across ideas for new terms and areas. | **Waiting for the product lead (review B5)** |
-| How your ideas improve the suggestions | new | The product team approves or declines every change these point to. | **Waiting for the product lead (review B5)** |
-| How your ideas improve the suggestions | new | People decide every change. | **Waiting for the product lead (review B5)** |
-| How your ideas improve the suggestions | new | Nothing changes by itself. | **Waiting for the product lead (review B5)** |
+| How your ideas improve the suggestions | new (section; six sentences in the reviewed 0.2-draft) | Removed: the section is not in 0.2 | The product lead, 19 Nov (review B5): keep the notice minimal on this point, as 0.1 was. The learning loops it described are retired (DEC-106; `docs/SHIP_PLAN_1PC.md` §6.2) |
+| Your choices and questions | You can see and download everything you have shared from My ideas. | You can see and download everything you have shared from My ideas. | Kept as it is by the product lead's decision, 19 Nov (review B6). **No download feature exists yet** |
 
-## Waiting for the product lead
+## Decided by the product lead, 19 November
 
-These sentences are in 0.2-draft as they stand. The review found each one inaccurate, and each needs the product lead's call before it changes. Changing them later than tonight's install means another version, and everyone accepts again.
+The review raised three findings that needed the product lead's call. All three are settled for 0.2.
 
-| Finding | Sentence in 0.2-draft | What is wrong | The reviewer's proposed replacement |
-|---|---|---|---|
-| B3 | A voice recording is the one exception, because a recording can't be masked. See Voice notes below. | Text sent to the speech service is checked only by the patterns: customer details, plus ARN, EUIN, IFSC and KFin addresses. Names are not replaced, whether a colleague's or a customer's. So the recording is not the one exception. | Voice notes and read-aloud work differently: see below. |
-| B3 | Text we send to that service for translation or to be read aloud is masked first. | The same: names in that text go to the service as written. | Before text goes to that service, to make the English copy or to be read aloud, customers' details in it are hidden. Other names in it, such as a colleague's, are not. |
-| B5 | The whole section "How your ideas improve the suggestions" (six sentences above) | The learning loops are retired (DEC-106; `SHIP_PLAN_1PC.md` §6.2; `learning.run` is no longer scheduled). The 1% Club review desk writes no corrections, and the sharer, not the desk, confirms the sorting. What is kept is a count of how often people keep or change each suggested sorting field (L-SORT.rules/8, L-AUDIT.metrics). | Heading "How the assistant gets better": "We count how often people keep or change the assistant's suggestions, such as the sorting, to see how well it works." and "People decide any change to how the assistant works. Nothing changes by itself." |
-| B6 | You can see and download everything you have shared from My ideas. | This sentence is unchanged from 0.1. There is no download or export in My ideas or anywhere else. | You can see the ideas you have shared in My ideas. |
+| Finding | The lead's decision | What the notice now says |
+|---|---|---|
+| B3: text sent to the speech service, to make the English copy or to be read aloud, is checked only for customers' details (and ARN, EUIN, IFSC and KFin addresses). Other names in it, such as a colleague's or a customer's name, are not replaced. | The code stays as it is ("fine for now"). The notice must not claim that names are hidden for that service. | The "one exception" line is gone. The line about the assistant names only the AI assistant. The speech service line says that customers' details are hidden, and says nothing about other names. |
+| B5: the section "How your ideas improve the suggestions" described learning loops that are retired. | Remove the section; keep the notice minimal on this point, as 0.1 was. | Nothing on how suggestions improve. |
+| B6: "You can see and download everything you have shared from My ideas." There is no download or export. | Keep the sentence as it is. | Unchanged from 0.1. No download feature exists yet. |
+
+**For Legal and the DPO: names reach the speech service.** Text sent to the speech service, to make the English copy of a voice note or to read an idea aloud to the review desk, has customers' details hidden. Other names in that text, such as a colleague's, reach the service as written. This is by the product lead's decision of 19 November. Every idea that is sent is read aloud this way.
 
 ## What the notice deliberately does not say
 
-The notice names no speech vendor (DEC-096). In "an Indian speech service", the word "Indian" describes the company, not where the processing happens. The notice does not claim that processing is India-hosted, or that the speech service keeps nothing or trains on nothing: DEC-108 records these only as requests made to the vendor, not as agreed terms. It says nothing about any model provider's training. Until B3 is settled, it does not tell people that names in text sent to the speech service go as written.
+The notice names no speech vendor (DEC-096). In "an Indian speech service", the word "Indian" describes the company, not where the processing happens. The notice does not claim that processing is India-hosted, or that the speech service keeps nothing or trains on nothing: DEC-108 records these only as requests made to the vendor, not as agreed terms. It says nothing about any model provider's training. It does not tell people that names other than customers' details reach the speech service (the product lead's decision of 19 Nov, above).
 
 ## Still waiting for the DPO
 

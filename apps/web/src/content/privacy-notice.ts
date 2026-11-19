@@ -3,9 +3,9 @@
  * The version here must equal PRIVACY_NOTICE_VERSION (`.env.example`, `scripts/uat/rehearse.sh`, and every server's
  * app env file, which `scripts/uat/deploy.sh` checks); acceptance is stored against that version, and a new version
  * asks everyone again. 0.2-draft (BLD-A232) corrects who sees what (DEC-104, DEC-106), customer details (DEC-103,
- * DEC-107, L-HIDE.rules/6-7), voice notes and listening (DEC-108) and the pronoun from Profile (DEC-108 (3));
- * `docs/privacy-notice-0.2.md` lists every changed sentence for Legal and the DPO. Three sentences wait for the
- * product lead (review B3, B5, B6) and three for the DPO; the DPO's commit sets "0.2" and `draft: false`.
+ * DEC-107, L-HIDE.rules/6-7), voice notes and listening (DEC-108) and the pronoun from Profile (DEC-108 (3)),
+ * with the product lead's calls of 19 Nov on review B3, B5 and B6; `docs/privacy-notice-0.2.md` lists every changed
+ * sentence for Legal and the DPO. Three lines wait for the DPO; the DPO's commit sets "0.2" and `draft: false`.
  */
 export const PRIVACY_NOTICE = {
   version: "0.2-draft",
@@ -25,7 +25,7 @@ export const PRIVACY_NOTICE = {
       paragraphs: [
         "To run the ideas programme: to review ideas, find colleagues working on the same thing, keep you informed, and recognise contributions.",
         "Inside 1% Club, your ideas are stored under a contributor code, and the link from that code to you is kept in a separate table.",
-        "Our checks look for names and personal details in your text and replace them with labels before the AI assistant reads it. A voice recording is the one exception, because a recording can't be masked. See Voice notes below.",
+        "Before the AI assistant reads your idea, our checks look for names and personal details in the text and replace them with labels.",
         "Your contribution history is not used in performance appraisal unless HR policy says so. (To be confirmed by HR.)",
       ],
     },
@@ -54,16 +54,8 @@ export const PRIVACY_NOTICE = {
         "If you record a voice note, it goes to an Indian speech service to turn it into text. You can check the text before you send it.",
         "The recording goes as you spoke it, because a recording can't be hidden. So don't say a customer's details in a voice note.",
         "If you chose 'she' or 'he' in Profile, that goes to the service with your voice note, so its English copy refers to you correctly.",
-        "Text we send to that service for translation or to be read aloud is masked first. The text that comes back is checked, and customers' details the checks find are hidden before anyone else, or any other service, sees it.",
+        "Before text goes to that service, to make the English copy or to be read aloud, customers' details in it are hidden. The text that comes back is checked, and customers' details the checks find are hidden before anyone else, or any other service, sees it.",
         "When you send an idea, its draft, with customers' details hidden, also goes to that service so it can be read aloud to the review desk. This happens whether or not you recorded a voice note.",
-      ],
-    },
-    {
-      heading: "How your ideas improve the suggestions",
-      paragraphs: [
-        "When the review desk changes something the assistant suggested, such as the sorting, we keep that change as a worked example for later suggestions. Names and personal details in it are replaced with labels.",
-        "We also count how often suggestions are accepted, and look across ideas for new terms and areas. The product team approves or declines every change these point to.",
-        "People decide every change. Nothing changes by itself.",
       ],
     },
     {

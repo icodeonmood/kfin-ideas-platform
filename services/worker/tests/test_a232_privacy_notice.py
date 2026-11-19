@@ -6,8 +6,8 @@ the notice's text and its version pins are read from the files.
   stops at preflight when a server's app env file differs, and never prints a value that is not a version.
 - A draft version keeps `draft: true` (the go/no-go reads any version ending in "draft" as not live). A draft
   carries the DPO's three "to be confirmed" lines word for word; a final notice carries none.
-- The corrected sentences are pinned. Every sentence in `docs/privacy-notice-0.2.md`, the table Legal and the DPO
-  sign, appears in the notice word for word.
+- The corrected sentences are pinned, with the product lead's calls of 19 Nov on review B3, B5 and B6. Every
+  sentence in `docs/privacy-notice-0.2.md`, the table Legal and the DPO sign, appears in the notice word for word.
 - The words follow F-COPY.vocabulary, name no speech vendor or model (DEC-096, DEC-108) and promise no perfect
   detection (review B7)."""
 
@@ -121,9 +121,14 @@ def test_a232_p_product_privacy_the_dpos_three_lines_wait_while_draft() -> None:
         "or any other service, sees it.",
         "When you send an idea, its draft, with customers' details hidden, also goes to that service so it can be "
         "read aloud to the review desk. This happens whether or not you recorded a voice note.",
-        # Non-negotiable 2, review B7: labels before the assistant, as far as the checks find
-        "Our checks look for names and personal details in your text and replace them with labels before the AI "
-        "assistant reads it.",
+        # Non-negotiable 2; the product lead, 19 Nov (review B3) with review B7: labels before the AI assistant, as
+        # far as the checks find; for the speech service, customers' details only, and no claim about other names
+        "Before the AI assistant reads your idea, our checks look for names and personal details in the text and "
+        "replace them with labels.",
+        "Before text goes to that service, to make the English copy or to be read aloud, customers' details in it are "
+        "hidden.",
+        # The product lead, 19 Nov (review B6): kept as it is, though no download exists yet
+        "You can see and download everything you have shared from My ideas.",
     ],
 )
 def test_a232_p_product_privacy_l_hide_dec108_corrected_sentences(sentence: str) -> None:
@@ -132,12 +137,24 @@ def test_a232_p_product_privacy_l_hide_dec108_corrected_sentences(sentence: str)
 
 def test_a232_f_copy_vocabulary_no_banned_words_no_vendor_no_absolute_promise() -> None:
     text = " ".join([*_headings(), *_paragraphs()]).lower()
-    # F-COPY.vocabulary's never-say words; DEC-096: no vendor or model named; review B7 and DEC-104: no promise the
-    # system cannot keep.
+    # F-COPY.vocabulary's never-say words, and one word for hiding ("hidden", not "masked"); DEC-096: no vendor or
+    # model named; review B7 and DEC-104: no promise the system cannot keep; the product lead, 19 Nov: no "one
+    # exception" (review B3) and no section on improving suggestions (review B5).
     banned = (
-        *("block", "duplicate", "rejected", "appeal", "invalid", "already solved", "please", "transcript"),
+        *(
+            "block",
+            "duplicate",
+            "rejected",
+            "appeal",
+            "invalid",
+            "already solved",
+            "please",
+            "transcript",
+            "masked",
+        ),
         *("sarvam", "saaras", "mayura", "bulbul"),
         *("never sees", "public wall", "slips in"),
+        *("one exception", "improve the suggestions", "worked example", "learning"),
     )
     for word in banned:
         assert word not in text, word
@@ -154,13 +171,12 @@ def _doc_cells(section: str, column: int) -> list[str]:
 def test_a232_p_product_privacy_the_table_legal_signs_is_the_text_that_ships() -> None:
     text = _text()
     new = [c for c in _doc_cells("Changed and new sentences", 2) if not c.startswith("Removed")]
-    waiting = [
-        c for c in _doc_cells("Waiting for the product lead", 1) if not c.startswith("The whole section")
-    ]
     dpo = _doc_cells("Still waiting for the DPO", 1)
-    assert len(new) >= 30 and len(waiting) == 3 and dpo == list(WAITING)
-    for sentence in [*new, *waiting]:
+    assert len(new) >= 30 and dpo == list(WAITING)
+    for sentence in new:
         assert sentence in text, sentence
+    findings = [c.split(":", 1)[0] for c in _doc_cells("Decided by the product lead, 19 November", 0)]
+    assert findings == ["B3", "B5", "B6"]
 
 
 # ---- scripts/uat/deploy.sh: a server's version must be this build's -----------------------------------------------
