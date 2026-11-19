@@ -7,6 +7,7 @@ every idea on the desk except their own (SHIP_PLAN §8 fallback: any reviewer, n
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 from typing import Any
 
@@ -17,8 +18,10 @@ from desk.store import (
     CUSTOMER_DETAIL,
     DESK_SEES,
     FILES_CHECKED,
+    REVIEWERS,
     SHOWN_FILE,
     code_of,
+    has_role,
     joined,
     now,
     person_by_code,
@@ -95,6 +98,12 @@ def _row_json(row: queue.Row) -> dict[str, Any]:
     }  # fmt: skip
 
 
+def _read_only(row: queue.Row) -> queue.Row:
+    """A row for a reader who is not on the review desk, the Ones Committee (BLD-B270): "Remind {name}" writes, so it
+    becomes "Open"; "Open" and "Read answers" only go to S-R2."""
+    return dataclasses.replace(row, action="Open", action_kind="open") if row.action_kind == "remind" else row
+
+
 def desk(conn: Conn, user_id: str, tab: str = "waiting", sort: str = "time_left", q: str | None = None,
          at: dt.datetime | None = None) -> dict[str, Any]:  # fmt: skip
     """GET /desk: one tab's rows (sorted), every tab's count, the summary sentence and the sidebar's three most
@@ -116,6 +125,8 @@ def desk(conn: Conn, user_id: str, tab: str = "waiting", sort: str = "time_left"
     chosen: queue.Tab = tab if tab in queue.TABS else "waiting"
     tabbed = [(i, queue.tab_of(i, t, p.decided_this_week_days)) for i in ideas]
     shown = [queue.row(i, k, t) for i, k in tabbed if k == chosen]
+    if not has_role(conn, user_id, REVIEWERS):  # the desk's actions are the review desk's (BLD-B270)
+        shown = [_read_only(r) for r in shown]
     sort_by: queue.Sort = sort if sort in queue.SORTS else "time_left"
     waiting = sorted(
         (queue.row(i, "waiting", t) for i, k in tabbed if k == "waiting"), key=lambda r: r.due_at or t
@@ -519,7 +530,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     """Everything a reviewer needs to decide on one idea, on one page (S-R2.left, S-R2.panel). Raw words are the
     masked copy (L-REVIEW.open/3); unmasked hidden details never reach the desk."""
     from desk import revise, worth
-    from desk.store import READERS, has_role, is_own, load_idea, person_by_code
+    from desk.store import READERS, is_own, load_idea, person_by_code
 
     t = at or now()
     idea = load_idea(conn, ref)
@@ -612,7 +623,9 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         },
         "sharer": sharer.as_json(),
         "own": own,
-        "can_act": not own and idea["status"] in ON_DESK_STATUSES,
+        # Decide, Ask, worth, Merge and the reminder are the review desk's: a committee member reads without them
+        # (BLD-B270; the worker refuses their writes, `REVIEWERS`)
+        "can_act": not own and idea["status"] in ON_DESK_STATUSES and has_role(conn, user_id, REVIEWERS),
         "decide_by": {
             "at": decide_by.isoformat() if decide_by else None,
             "label": when.day(decide_by, t) if decide_by else None,
