@@ -28,6 +28,7 @@ from psycopg.types.json import Jsonb
 from core import killswitch
 from core.db import Conn
 from core.logging import get_logger
+from ideapage.read import COMMITTEE_ROLES, DESK_ROLES
 
 log = get_logger("notify")
 
@@ -62,7 +63,7 @@ NO_REFS_KINDS: frozenset[str] = frozenset({"detail_hidden_by_desk"})
 # its email, so no later read can name them; the reader shows "The review desk". DEC-111 (BLD-B257): every kind the
 # desk sends a sharer is one, so a sharer never sees a reviewer's name: the questions, their reminders, the decision,
 # a desk merge and a revised worth. The reader checks the kind, so an item stored earlier with a reviewer as its
-# sender reads as the desk too. A reversal is the Ones Committee's (`decision_reversed`): it keeps its sender.
+# sender reads as the desk too. A reversal is the Ones Committee's (`decision_reversed`): see AS_THE_COMMITTEE.
 AS_THE_DESK: frozenset[str] = frozenset(
     {"detail_hidden_by_desk", "questions", "answer_reminder", "decision", "desk_merge", "worth_revised"}
 )
@@ -75,6 +76,41 @@ AS_DESK_REF = "as_desk"
 def as_the_desk(kind: str, refs: Mapping[str, object] | None) -> bool:
     """True when an item is from the review desk as a whole, so no person is stored or shown (DEC-111)."""
     return kind in AS_THE_DESK or (refs or {}).get(AS_DESK_REF) is True
+
+
+# DEC-113 (BLD-A231): a sharer never sees a committee member's name either; it reads "The Ones Committee", with no
+# avatar or initials. The review desk and the committee still see each other's names. Kinds the committee sends: to a
+# reader who holds a desk or committee role now (`sees_names`) the member is stored and named; for everyone else the
+# member is never stored on the item or its outside messages, and the reader checks the role again, so an item stored
+# earlier (or by the club seed) with the member as its sender reads as the committee too.
+AS_THE_COMMITTEE: frozenset[str] = frozenset({"decision_reversed"})
+# DEC-113 (BLD-A231): any item whose refs say `as_committee: true` is the Ones Committee speaking as one, whatever its
+# kind. Lane F posts `comment` and `mention` with it, to recipients outside the desk and the committee, when a member
+# writes in the conversation (S-08). As with `as_desk`, the member is never stored on the item or its outside messages.
+AS_COMMITTEE_REF = "as_committee"
+# Who reads the names of the people at the review desk and on the Ones Committee: the same live role grants as
+# `ideapage.read.Viewer.sees_desk_names` (DEC-111, BLD-E053).
+NAMES_ROLES: frozenset[str] = DESK_ROLES | COMMITTEE_ROLES
+
+
+def as_the_committee(kind: str, refs: Mapping[str, object] | None) -> bool:
+    """True when an item is the Ones Committee speaking as one to whoever reads it (`as_committee: true`), so no member
+    is stored or shown (DEC-113). A committee kind (AS_THE_COMMITTEE) depends on the reader: see `sees_names`."""
+    return (refs or {}).get(AS_COMMITTEE_REF) is True
+
+
+def sees_names(conn: Conn, people: Sequence[str]) -> set[str]:
+    """Those of `people` (users.id values) who hold a review desk or Ones Committee role now, read from the live role
+    grants (DEC-111, DEC-113): they still read a committee member's name. Everyone else reads the committee as one."""
+    ids = [p for p in dict.fromkeys(str(p) for p in people) if _is_uuid(p)]
+    if not ids:
+        return set()
+    rows = conn.execute(
+        "SELECT DISTINCT user_id FROM role_grants WHERE user_id = ANY(%s::uuid[]) AND role = ANY(%s::text[]) "
+        "AND valid_from <= now() AND (valid_to IS NULL OR valid_to > now())",
+        (ids, sorted(NAMES_ROLES)),
+    ).fetchall()
+    return {str(r["user_id"]) for r in rows}
 
 
 Ref = str | int | bool | None
@@ -110,6 +146,14 @@ class Posted:
 
 class NotifyError(ValueError):
     pass
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _uuid(value: object, what: str) -> str:
@@ -191,7 +235,9 @@ def post(
     people = [p for p in people if p != from_user]
     if not people:
         return Posted()
-    stored_from = None if as_the_desk(kind, refs) else from_user
+    stored_from = None if as_the_desk(kind, refs) or as_the_committee(kind, refs) else from_user
+    # DEC-113: a committee kind keeps its member only on the rows of people who hold a desk or committee role now
+    named = sees_names(conn, people) if stored_from is not None and kind in AS_THE_COMMITTEE else None
 
     rows = conn.execute(
         "SELECT u.id, coalesce(p.email, true) AS email, coalesce(p.teams, true) AS teams, "
@@ -212,6 +258,7 @@ def post(
         pref = prefs.get(person)
         if pref is None:
             continue
+        sent_by = stored_from if named is None or person in named else None
         # A repeat key updates the open item in place (`xmax = 0` only on a fresh insert); a resolved one is left
         # alone and returns nothing.
         item = conn.execute(
@@ -228,7 +275,7 @@ def post(
                 payload,
                 event,
                 kind,
-                stored_from,
+                sent_by,
                 idea,
                 needs_you,
                 due_at,
@@ -257,7 +304,7 @@ def post(
                 "kind, from_user_id, idea_uuid, due_at, dedupe_key) "
                 "VALUES (%s, %s, %s, %s, %s, 'immediate', 'queued', now(), %s, %s, %s, %s, %s) "
                 "ON CONFLICT (user_id, channel, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING",
-                (person, channel, template, payload, event, kind, stored_from, idea, due_at, dedupe_key),
+                (person, channel, template, payload, event, kind, sent_by, idea, due_at, dedupe_key),
             )
     if ids or updated:
         log.info("notify.posted", inbox_kind=kind, item_count=len(ids), updated_count=len(updated))

@@ -1,8 +1,8 @@
 """DEC-111 part 2 (BLD-A221, BLD-A222) without a database: a sharer never reads the name of the person at the review
 desk. Every desk kind of Inbox item (L-INBOX.kinds, J-TRACK/2–6) comes from "The review desk" with the mark, and
 the 1% Club's own kinds name no one, whoever posted them: no reviewer users.id, name, first name or initials in the
-item's JSON, its template variables or its email, and the reviewer's row is never read. The Ones Committee still
-signs by name (DEC-111 hides only the review desk's people). The desk's emails for the old routes (J-REVIEW's
+item's JSON, its template variables or its email, and the reviewer's row is never read. The Ones Committee's sender
+is DEC-113's (tests/test_1pc_dec113_inbox_committee_sender.py). The desk's emails for the old routes (J-REVIEW's
 outgoing messages: question, redirected, reviewed) sign as the desk. Synthetic people only; the same flows against
 the real tables run in CI in tests/test_notify.py."""
 
@@ -61,14 +61,25 @@ class _Rows:
         return self.rows
 
 
+# Who holds a review desk or Ones Committee role now (DEC-113: they still read a committee member's name)
+STAFF = frozenset({REVIEWER, MEMBER})
+
+
 class _Conn:
     """The reads `notify.render` and `comms.render` make, answered from synthetic rows. `people_read` keeps every
-    users.id whose row was read, so a test can show the reviewer was never looked up."""
+    users.id whose row was read, so a test can show the reviewer was never looked up. `staff` are the people with a
+    live desk or committee role grant."""
 
-    def __init__(self) -> None:
+    def __init__(self, staff: frozenset[str] = STAFF) -> None:
         self.people_read: list[str] = []
+        self.staff = staff
 
     def execute(self, sql: str, params: tuple[Any, ...] = ()) -> _Rows:
+        if "FROM role_grants" in sql:  # notify.sees_names: the live grants of the desk and committee roles
+            assert "valid_to IS NULL OR valid_to > now()" in sql and "reviewer" in params[1]
+            return _Rows([{"user_id": u} for u in params[0] if u in self.staff])
+        if "i.reviewer_id = %s" in sql:  # decision_reversed: did this reader make the decision reversed?
+            return _Rows([{"one": 1}] if params[1] == REVIEWER else [])
         if (
             "FROM ideas WHERE id = %s" in sql
         ):  # notify.render's read; the old routes' read by idea_id finds none
@@ -207,20 +218,6 @@ def test_DEC_111_L_INBOX_kinds_a_desk_merge_still_names_the_other_sharer_not_the
     """`other.possessive` is the other sharer's first name (L-INBOX.kinds "merged your idea with Ravi’s")."""
     _, item, _, _ = _read("desk_merge", REVIEWER)
     assert item["line"] == "merged your idea with Ravi’s"
-
-
-def test_DEC_111_L_INBOX_kinds_the_ones_committee_still_signs_by_name() -> None:
-    """COMMITTEE_KINDS keep the member's full name, role and initials: DEC-111 hides only the review desk's people."""
-    _, item, _, mail = _read("decision_reversed", MEMBER)
-    assert item["body"]["sender"] == "Rohan Mehta from the Ones Committee"
-    assert item["from"] == {
-        "id": MEMBER,
-        "name": "Rohan Mehta",
-        "first_name": "Rohan",
-        "initials": "RM",
-        "role_label": "from the Ones Committee",
-    }
-    assert "Rohan Mehta from the Ones Committee reversed a decision on your idea" in mail
 
 
 def test_DEC_111_a_teamup_answer_still_names_its_lead() -> None:

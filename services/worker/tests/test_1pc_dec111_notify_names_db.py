@@ -1,7 +1,8 @@
 """DEC-111 (BLD-B257), L-NOTIFY and L-INBOX: every kind the review desk sends a sharer is sent as the review desk as a
 whole (`notify.AS_THE_DESK`), so neither the Inbox item, its JSON nor its email names the reviewer, and no sender is
 stored. An item stored before the change, with the reviewer as its sender, reads as the desk too. A reversal is the
-Ones Committee's and keeps its sender."""
+Ones Committee's: DEC-113 (BLD-A231) names its member only to the review desk and the committee, by live role grants;
+a sharer and the crew read "The Ones Committee", and their rows store no sender."""
 
 from __future__ import annotations
 
@@ -51,7 +52,9 @@ def _refs(db: Any, kind: str, p: dict[str, Any], ideas: dict[str, str]) -> dict[
 
 def test_DEC_111_L_NOTIFY_the_desks_kinds_are_sent_as_the_review_desk() -> None:
     assert set(DESK_KINDS) <= notify.AS_THE_DESK
-    assert "decision_reversed" not in notify.AS_THE_DESK  # the Ones Committee's: it keeps its sender
+    assert (
+        "decision_reversed" not in notify.AS_THE_DESK
+    )  # the Ones Committee's (DEC-113: notify.AS_THE_COMMITTEE)
 
 
 @pytest.mark.parametrize("kind", DESK_KINDS)
@@ -113,7 +116,7 @@ def test_DEC_111_L_INBOX_an_item_stored_with_the_reviewer_as_sender_reads_as_the
         mail = nrender.email(db, dict(row), WORKDAY_NOON)
         seen = json.dumps(item, ensure_ascii=False) + mail.subject + mail.text + mail.html
         assert "Meera" not in seen and meera not in seen, seen
-        # the committee's reversal still names its member
+        # the committee's reversal names the committee as one to the sharer (DEC-113)
         notify.post(db, "decision_reversed", [kavya], idea_id=ideas["mine"], sender=p["rohan"]["id"],
                     refs={"window_id": str(uuid.uuid4()), "to": "pick"})  # fmt: skip
         rev = next(
@@ -121,6 +124,113 @@ def test_DEC_111_L_INBOX_an_item_stored_with_the_reviewer_as_sender_reads_as_the
             for it in inbox.items(db, kavya, now=WORKDAY_NOON)["items"]
             if it["kind"] == "decision_reversed"
         )
-        assert rev["body"]["sender"] == "Rohan Mehta from the Ones Committee"
+        assert rev["body"]["sender"] == "The Ones Committee"
+    finally:
+        db.execute("DELETE FROM notifications WHERE user_id = %s", (kavya,))
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# DEC-113 (BLD-A231): the Ones Committee as one to the sharer and the crew; by name to the desk and the committee
+# ---------------------------------------------------------------------------------------------------------------
+
+AS_ONE = {"id": "", "name": "The Ones Committee", "first_name": "The Ones Committee", "initials": ""}
+
+
+def _reversal(db: Any, kavya: str) -> dict[str, Any]:
+    return next(
+        it for it in inbox.items(db, kavya, now=WORKDAY_NOON)["items"] if it["kind"] == "decision_reversed"
+    )
+
+
+def test_l_inbox_kinds_dec113_committee_sender_for_sharer_crew_and_reviewer_db(cast: Any) -> None:
+    """J-COMMITTEE: lane B tells the sharer, the crew and the reviewer. Only the reviewer's rows keep the member, and
+    only the reviewer reads "Rohan Mehta from the Ones Committee"; the sharer and the crew (Ravi, no role) read "The
+    Ones Committee" with no initials, in the Inbox and the email, and the member is in neither."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya, ravi, meera, rohan = (p[k]["id"] for k in ("kavya", "ravi", "meera", "rohan"))
+    db.execute("INSERT INTO role_grants (user_id, role) VALUES (%s, 'core_committee')", (rohan,))
+    try:
+        notify.post(db, "decision_reversed", [kavya, ravi, meera], idea_id=ideas["mine"], sender=rohan,
+                    refs={"window_id": str(uuid.uuid4()), "to": "pick"})  # fmt: skip
+        stored = db.execute(
+            "SELECT user_id::text AS u, channel, from_user_id::text AS f FROM notifications "
+            "WHERE kind = 'decision_reversed' AND user_id = ANY(%s::uuid[]) ORDER BY user_id, channel",
+            ([kavya, ravi, meera],),
+        ).fetchall()
+        assert {(r["u"], r["f"]) for r in stored} == {(kavya, None), (ravi, None), (meera, rohan)}
+        assert {r["channel"] for r in stored if r["u"] == kavya} == {"in_app", "email"}
+        for reader in (kavya, ravi):
+            item = _reversal(db, reader)
+            assert (item["from"], item["body"]["sender"]) == (AS_ONE, "The Ones Committee"), reader
+            row = db.execute(
+                "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email' AND kind = 'decision_reversed'",
+                (reader,),
+            ).fetchone()
+            mail = nrender.email(db, dict(row), WORKDAY_NOON)
+            seen = json.dumps(item, ensure_ascii=False) + mail.subject + mail.text + mail.html
+            assert "Rohan" not in seen and "Mehta" not in seen and rohan not in seen, seen
+            assert "The Ones Committee reversed a decision on your idea" in mail.text
+        mine = _reversal(db, meera)
+        assert mine["body"]["sender"] == "Rohan Mehta from the Ones Committee"
+        assert mine["from"]["id"] == rohan and mine["from"]["initials"] == "RM"
+    finally:
+        db.execute("DELETE FROM notifications WHERE user_id = ANY(%s::uuid[])", ([kavya, ravi, meera],))
+        db.execute("DELETE FROM role_grants WHERE user_id = %s", (rohan,))
+
+
+def test_l_inbox_kinds_dec113_a_row_stored_with_the_member_reads_the_committee_to_a_sharer_db(
+    cast: Any,
+) -> None:
+    """An item stored before DEC-113, or by the club seed, with the member as its sender: the role check at reading
+    time makes it read "The Ones Committee" to the sharer."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya, rohan = p["kavya"]["id"], p["rohan"]["id"]
+    try:
+        notify.post(db, "decision_reversed", [kavya], idea_id=ideas["mine"], sender=rohan,
+                    refs={"window_id": str(uuid.uuid4()), "to": "pick"})  # fmt: skip
+        db.execute("UPDATE notifications SET from_user_id = %s WHERE user_id = %s", (rohan, kavya))
+        item = _reversal(db, kavya)
+        assert (item["from"], item["body"]["sender"]) == (AS_ONE, "The Ones Committee")
+        assert rohan not in json.dumps(item) and "Rohan" not in json.dumps(item, ensure_ascii=False)
+    finally:
+        db.execute("DELETE FROM notifications WHERE user_id = %s", (kavya,))
+
+
+@pytest.mark.parametrize("kind", ("comment", "mention"))
+def test_l_inbox_kinds_dec113_as_committee_stores_no_sender_db(cast: Any, kind: notify.InboxKind) -> None:
+    """Lane F's seam (S-08): `as_committee: true` stores no sender and reads "The Ones Committee"."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya, rohan = p["kavya"]["id"], p["rohan"]["id"]
+    try:
+        notify.post(db, kind, [kavya], idea_id=ideas["mine"], sender=rohan,
+                    refs={"entry_id": str(uuid.uuid4()), "as_committee": True})  # fmt: skip
+        senders = db.execute(
+            "SELECT from_user_id FROM notifications WHERE user_id = %s AND kind = %s", (kavya, kind)
+        ).fetchall()
+        assert senders and all(r["from_user_id"] is None for r in senders)
+        item = inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]
+        assert (item["kind"], item["from"], item["body"]["sender"]) == (kind, AS_ONE, "The Ones Committee")
+    finally:
+        db.execute("DELETE FROM notifications WHERE user_id = %s", (kavya,))
+
+
+def test_l_notify_dec113_a_repeat_as_committee_key_keeps_no_sender_db(cast: Any) -> None:
+    """A second committee comment within the hour reuses lane F's key: one item, still with no sender, read as the
+    committee (BLD-A231, review N3)."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya, rohan = p["kavya"]["id"], p["rohan"]["id"]
+    key = f"convo.comment:{ideas['mine']}:20261119T11:committee"
+    try:
+        for _ in range(2):
+            notify.post(db, "comment", [kavya], idea_id=ideas["mine"], sender=rohan, dedupe_key=key,
+                        refs={"entry_id": str(uuid.uuid4()), "as_committee": True})  # fmt: skip
+        rows = db.execute(
+            "SELECT channel, from_user_id FROM notifications WHERE user_id = %s AND dedupe_key = %s",
+            (kavya, key),
+        ).fetchall()
+        assert sorted(r["channel"] for r in rows) == ["email", "in_app"]
+        assert all(r["from_user_id"] is None for r in rows)
+        item = inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]
+        assert (item["from"], item["body"]["sender"]) == (AS_ONE, "The Ones Committee")
     finally:
         db.execute("DELETE FROM notifications WHERE user_id = %s", (kavya,))

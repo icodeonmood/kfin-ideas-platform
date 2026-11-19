@@ -11,13 +11,14 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: RULE-comms
-  version: '1.1'
+  version: '1.2'
 ---
 
 How the communication module decides who hears what. For each event: audiences, template, channels, urgency, whether a person must approve, and who signs.
 Quiet hours and holidays come from `rules/calendar.md`. Routine messages respect each person's digest preference; immediate ones always send.
 Events with `day_one: false` are switched on as their stages go live (weeks 3–8). Wording lives in `comms/templates/` and is signed off by HR.
 The review desk signs as a whole, never by a reviewer's name (DEC-111; 1.1, BLD-A222).
+The Ones Committee signs as one, never by a member's name (DEC-113; 1.2, BLD-A231).
 
 ```yaml
 version: '1.0'
@@ -122,7 +123,7 @@ events:
     - email
     urgency: immediate
     approval: null
-    signer: vetoing_member
+    signer: ones_committee
     send_only_if_outcome_changed: true
   sla.reminder:
     day_one: true

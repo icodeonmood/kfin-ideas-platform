@@ -5,3 +5,10 @@
  */
 export const REVIEW_DESK = "the review desk";
 export const REVIEW_DESK_START = "The review desk";
+/**
+ * DEC-113: a sharer never sees a committee member's name either; the sentence names the Ones Committee as one, with
+ * no avatar or initials. The review desk and the committee still see each other's names. The worker's copy is
+ * `ONES_COMMITTEE` / `ONES_COMMITTEE_START` in `services/worker/onepc/words.py`; keep the two the same.
+ */
+export const ONES_COMMITTEE = "the Ones Committee";
+export const ONES_COMMITTEE_START = "The Ones Committee";

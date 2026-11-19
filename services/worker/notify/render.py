@@ -16,27 +16,32 @@ from comms import email_html
 from comms.templates import Template, load, render_text
 from core.config import get_settings
 from core.db import Conn
-from notify import AS_THE_DESK, as_the_desk
+from notify import AS_THE_COMMITTEE, AS_THE_DESK, as_the_committee, as_the_desk, sees_names
 from onepc import countdown as clock
-from onepc.words import REVIEW_DESK_START
+from onepc.words import ONES_COMMITTEE_START, REVIEW_DESK_START
 from similar.preview import HIDDEN_NAME, hidden_person
 
 IST = ZoneInfo("Asia/Kolkata")
 
-# Who the sender is (L-INBOX.kinds "Sender display", as DEC-111 changes it): the review desk's kinds come from the
-# review desk as a whole, the Ones Committee by full name, everyone else by full name, the system as "1% Club".
+# Who the sender is (L-INBOX.kinds "Sender display", as DEC-111 and DEC-113 change it): the review desk's kinds come
+# from the review desk as a whole, the Ones Committee by full name to the review desk and the committee only and as one
+# to everyone else (DEC-113, below), everyone else by full name, the system as "1% Club".
 # DEC-111 (BLD-A221): a sharer, a crew member or anyone outside the desk and the committee never sees the name of the
 # person at the review desk, so a desk kind reads "The review desk" with the mark, whoever reads it, and the reviewer
 # is never read: no users.id, name, first name or initials reach the item, its variables or its email. L-HIDE/7's
 # kind (`notify.AS_THE_DESK`, BLD-A205) is one of them, and its reviewer is not even stored. Any other item whose refs
 # say `as_desk: true` (lane F's comment and mention when a reviewer writes as the desk) reads the same way, and its
-# reviewer is not stored either (`notify.as_the_desk`).
+# reviewer is not stored either (`notify.as_the_desk`). DEC-113 (BLD-A231): the Ones Committee likewise. A committee
+# kind names its member only to a reader who holds a desk or committee role now (live role grants, as
+# `ideapage.read.Viewer.sees_desk_names`); everyone else reads "The Ones Committee", with no avatar or initials, and
+# the member is never read for them. An item whose refs say `as_committee: true` (lane F's comment and mention when a
+# member writes in the conversation) reads the same way to whoever reads it (`notify.as_the_committee`).
 DESK_KINDS = frozenset({"questions", "decision", "worth_revised", "desk_merge"}) | AS_THE_DESK
 # Kinds the 1% Club sends whoever set them off (DEC-111, BLD-A221): an idea sent to the review desk. It never names a
 # person, and the sender is never read. The reminder to answer the desk's questions is the desk's own
 # (`notify.AS_THE_DESK`, BLD-B257), so it reads "The review desk" through DESK_KINDS.
 SYSTEM_KINDS = frozenset({"sent_to_desk"})
-COMMITTEE_KINDS = frozenset({"decision_reversed"})
+COMMITTEE_KINDS = AS_THE_COMMITTEE
 COUNTDOWN_KINDS = frozenset({"questions", "answer_reminder"})  # "3 days left"; the rest read "By Thu, 19 Nov"
 STAGE_WORDS = {"picked": "Picked", "being_built": "Being built", "shipped": "Shipped"}
 SYSTEM = {"display": "1% Club", "name": "1% Club", "first_name": "1% Club", "initials": "1%", "system": True}
@@ -47,6 +52,16 @@ DESK_SENDER = {
     "display": REVIEW_DESK_START,
     "name": REVIEW_DESK_START,
     "first_name": REVIEW_DESK_START,
+}
+# The Ones Committee as one (DEC-113): a speaker with no person behind it. No users.id, no initials and no mark, so the
+# reader draws no avatar at all; not `system`, so the reader does not draw the 1% mark either.
+COMMITTEE_SENDER: dict[str, Any] = {
+    "id": "",
+    "name": ONES_COMMITTEE_START,
+    "first_name": ONES_COMMITTEE_START,
+    "initials": "",
+    "display": ONES_COMMITTEE_START,
+    "system": False,
 }
 # Kinds whose one action is the whole of it: no "Open the conversation" is added (L-HIDE/7: "Open your idea" only).
 ONE_ACTION_KINDS = frozenset({"detail_hidden_by_desk"})
@@ -145,9 +160,13 @@ def lead_seen_by_requester(
 
 def sender(kind: str, who: dict[str, Any] | None, refs: dict[str, Any] | None = None) -> dict[str, Any]:
     """The sender as the item shows them. A desk kind, or an item whose refs say `as_desk`, is the review desk as a
-    whole, and a system kind the 1% Club, whoever `who` is (DEC-111): neither carries a person."""
+    whole, and a system kind the 1% Club, whoever `who` is (DEC-111): neither carries a person. An item whose refs say
+    `as_committee`, or a committee kind with no member to name (`who` None: the reader may not see them, or none is
+    stored), is the Ones Committee as one (DEC-113)."""
     if kind in DESK_KINDS or as_the_desk(kind, refs):
         return dict(DESK_SENDER)
+    if as_the_committee(kind, refs) or (who is None and kind in COMMITTEE_KINDS):
+        return dict(COMMITTEE_SENDER)
     if who is None or kind in SYSTEM_KINDS:
         return dict(SYSTEM)
     if kind in COMMITTEE_KINDS:
@@ -158,9 +177,18 @@ def sender(kind: str, who: dict[str, Any] | None, refs: dict[str, Any] | None = 
 
 
 def names_no_one(kind: str, refs: dict[str, Any] | None = None) -> bool:
-    """An item whose sender is never read (DEC-111): the review desk's kinds and the 1% Club's own, and any item
-    whose refs say `as_desk`."""
-    return kind in DESK_KINDS or kind in SYSTEM_KINDS or as_the_desk(kind, refs)
+    """An item whose sender is never read (DEC-111, DEC-113): the review desk's kinds and the 1% Club's own, and any
+    item whose refs say `as_desk` or `as_committee`. A committee kind is read only for a reader who may see its member
+    (`names_member`)."""
+    return (
+        kind in DESK_KINDS or kind in SYSTEM_KINDS or as_the_desk(kind, refs) or as_the_committee(kind, refs)
+    )
+
+
+def names_member(conn: Conn, kind: str, viewer: str) -> bool:
+    """Whether this reader may read the committee member behind a committee kind (DEC-113): only the review desk and
+    the Ones Committee, by their role grants at the moment the item is read or sent (`notify.sees_names`)."""
+    return kind not in COMMITTEE_KINDS or viewer in sees_names(conn, [viewer])
 
 
 def _possessive(first_name: str | None) -> str:
@@ -407,9 +435,8 @@ def variables(
     refs = dict(row.get("payload") or {})
     idea = _idea(conn, row.get("idea_uuid"))
     me = person(conn, viewer) or {"first_name": "there"}
-    if names_no_one(
-        kind, refs
-    ):  # DEC-111: the reviewer who acted is not read at all, so no template can name them
+    if names_no_one(kind, refs) or not names_member(conn, kind, viewer):
+        # DEC-111, DEC-113: the reviewer, or the committee member, is not read at all, so no template can name them
         who = sender(kind, None, refs)
     elif kind == "teamup_answer" and refs.get("answer") == "decline":
         who = sender(kind, lead_seen_by_requester(conn, row.get("from_user_id"), idea, viewer))
