@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
  * C-PILL: a status as a dot and words, never the dot alone. Which status takes which colour is fixed by
  * E-ENUMS.idea-status, not chosen per screen: use StatusPill for an idea's status.
  */
-export type PillVariant = "neutral" | "blue" | "ok" | "warn" | "bad" | "band" | "soon";
+export type PillVariant = "neutral" | "blue" | "ok" | "warn" | "bad" | "band" | "soon" | "latest";
 
 /** C-PILL.rules/3, S-R1.layout/4: a countdown's look on the board (Desk `.due`) for the variant a screen picks. Warn is
  * under a day ("soon"), bad is overdue and solid ("over"), ok is a closed clock ("done"); anything else is neutral. */

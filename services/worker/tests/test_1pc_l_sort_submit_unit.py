@@ -203,6 +203,64 @@ def test_l_sort_s05_part2_lines_before_and_after_confirming() -> None:
     assert sorting.why_line(confirmed["brings"]) == "Suggested because you said “about 40 calls a day”."
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "why", "line"),
+    [
+        (  # what it would bring, the drawn case (Review.md, Edit.md)
+            "brings",
+            ["saves_time", "saves_cost"],
+            "From your words: “about 40 calls a day” and “5 to 10 minutes each”",
+            "Suggested because you said “about 40 calls a day” and “5 to 10 minutes each”. Add revenue or outside "
+            "tools if it does those too.",
+        ),
+        (  # another suggestion is not drawn: the first sentence alone
+            "brings",
+            ["saves_time"],
+            "From your words: “about 40 calls a day”",
+            "Suggested because you said “about 40 calls a day”.",
+        ),
+        (  # the masked copy, quoted exactly as the draft's part holds it
+            "brings",
+            ["saves_cost"],
+            "From your words: “one investor with folio Folio ••••17”",
+            "Suggested because you said “one investor with folio Folio ••••17”.",
+        ),
+        (
+            "affects",
+            ["Investors"],
+            "Suggested because you mentioned investors and the branch.",
+            "Suggested because you mentioned investors and the branch.",
+        ),
+        (
+            "area",
+            "Investor service",
+            "because it’s about investors and the SMS they get",
+            "Suggested because it’s about investors and the SMS they get.",
+        ),
+        (
+            "kind",
+            "problem",
+            "because you described something that goes wrong today.",
+            "Suggested because you described something that goes wrong today.",
+        ),
+        ("affects", ["Investors"], "you mentioned investors", "Suggested because you mentioned investors."),
+    ],
+    ids=["brings-drawn", "brings-other", "brings-masked", "affects", "area", "kind", "bare-reason"],
+)
+def test_l_sort_s05_part2_s06b_bld_c194_each_reason_reads_the_drawn_form(
+    field: Any, value: Any, why: str, line: str
+) -> None:
+    """J-RECOVER/10 (BLD-C194): every reason beside the sorting is "Suggested because …", built by L-DRAFT's one
+    builder (`draft.parts.because`); never "Suggested: from your words: …". The quotes keep their masking, exactly."""
+    from submit.sorting import Choice, why_line
+
+    for source in ("suggested", "confirmed"):
+        got = why_line(Choice(value, source, why), field)
+        assert got == line
+        assert "Suggested:" not in (got or "") and "from your words" not in (got or "").lower()
+        assert "1234567817" not in (got or "")
+
+
 def test_l_sort_rules_3_a_changed_value_is_the_persons_call() -> None:
     from submit.sorting import Choice, why_line
 
@@ -305,7 +363,36 @@ def test_l_submit_send_hands_over_what_s06_just_shared_shows(monkeypatch: pytest
         "Open to changes until Tuesday 17 November. Edit or withdraw it"
     )
     assert h["edit_window"]["countdown"]["label"] == "3 days left"
-    assert h["next"] == {"to": "/ideas/IDEA-2026-001481", "replace": True, "state": "just_shared"}
+    assert h["next"] == {"to": "/ideas/IDEA-2026-001481?from=share", "replace": True, "state": "just_shared"}
+    assert h["edit_window"]["edit"] == {"label": "Edit it", "to": "/ideas/IDEA-2026-001481/edit"}  # unchanged
+
+
+def test_l_submit_send_s06_rules_6_bld_c191_next_to_is_the_first_arrival_and_no_other_link_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """J-SHARE/11, J-RECOVER/14 (BLD-C084): the link Check it replaces to straight after a send ends `?from=share`, so
+    S-06 treats the visit as the first arrival (breadcrumb Home, "Done in N seconds"). A repeated Submit of an idea
+    already sent hands over the same link. "Edit it" stays the idea's own edit page, with no `from`."""
+    from submit.send import handover
+
+    _switches(monkeypatch, {"comms.teams": "on"})
+    shared = dt.datetime(2026, 11, 14, 4, 35, tzinfo=dt.UTC)
+    idea = {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "idea_id": "IDEA-2026-001482",
+        "status": "checking",
+        "title": "Synthetic title",
+        "shared_at": shared,
+        "decide_by": dt.datetime(2026, 11, 20, 12, 30, tzinfo=dt.UTC),
+        "edit_closes_at": shared + dt.timedelta(days=3),
+        "opened_at": None,
+    }
+    # The send, then a repeated Submit
+    for at in (shared + dt.timedelta(seconds=2), shared + dt.timedelta(hours=5)):
+        h = handover(None, idea, at)  # type: ignore[arg-type]
+        assert h["next"]["to"] == "/ideas/IDEA-2026-001482?from=share"
+        assert h["edit_window"]["edit"] == {"label": "Edit it", "to": "/ideas/IDEA-2026-001482/edit"}
+        assert "from=" not in repr({k: v for k, v in h.items() if k != "next"})
 
 
 DRAWN = (

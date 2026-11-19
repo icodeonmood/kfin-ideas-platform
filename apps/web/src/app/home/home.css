@@ -40,12 +40,16 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
+  container-type: inline-size;
 }
 
+/* S-03 (Home.dc.html:641-642, the board's last word): the question is one line that scales with the column, up to
+ * 28px (about 27px on the 720px column). The board's nowrap is left out on purpose: a long first name wraps to a
+ * balanced second line instead of pushing the page sideways (BLD-D017). */
 .hm-hello {
   margin: 0;
-  max-width: 26ch;
-  font: 500 40px/1.12 var(--fd);
+  max-width: none;
+  font: 500 clamp(16px, 3.75cqi, 28px) / 1.12 var(--fd);
   letter-spacing: -0.03em;
   text-wrap: balance;
   color: var(--ink);
@@ -331,6 +335,14 @@
   border-radius: 28px;
   background: var(--card);
   box-shadow: 0 0 0 1px var(--rule2);
+}
+
+/* Two columns: both start level. globals.css's old `section + section` gap pushed the second column 40px down;
+ * stacked (1100px and narrower) that gap stays as it was (BLD-D017). */
+@media (min-width: 1101px) {
+  .hm-grid > section {
+    margin-top: 0;
+  }
 }
 
 .hm-list {

@@ -31,7 +31,15 @@ from desk.store import (
     unseal,
 )
 from desk.window import Window, WindowRefused, extend, reverse, words
-from onepc.words import REVIEW_DESK, REVIEW_DESK_START
+from onepc.words import ONES_COMMITTEE, ONES_COMMITTEE_START, REVIEW_DESK, REVIEW_DESK_START
+
+# DEC-113 (BLD-B269): the committee itself, where a sharer, the crew or anyone outside the review desk and the Ones
+# Committee would otherwise read the member who reversed a decision. The person shape every lane sends, with
+# `Person.as_json()`'s keys, so S-06 draws no face for the empty id and initials (BLD-E058). Copy it, never mutate it.
+COMMITTEE_ITSELF: dict[str, str | None] = {
+    "id": "", "name": ONES_COMMITTEE_START, "first_name": ONES_COMMITTEE_START, "initials": "",
+    "city": None, "area": None,
+}  # fmt: skip
 
 Tab = Literal["window", "reversed", "expired"]
 TABS: tuple[Tab, ...] = ("window", "reversed", "expired")
@@ -412,7 +420,9 @@ def sharer_lines(
     (L-DECIDE.rules/5), and the committee's card once it reversed the decision (L-COMMITTEE.rules/5,
     V-ACC.committee/4). `joined_side`: the reader's idea is the one the Pick joined, so the line names the lead.
     DEC-111: the sharer and the crew read the review desk, never the reviewer's name ("Meera from the review desk
-    picked it on …" on the board); the committee member who reversed it is still named."""
+    picked it on …" on the board). DEC-113 (BLD-B269): nor the committee member who reversed it ("Rohan Mehta from the
+    Ones Committee, …" on the board): the card is from the Ones Committee itself. These lines never name either,
+    whoever reads them."""
     tz = when.IST
     w = _window(r)
     open_ = w.is_open(at)
@@ -432,14 +442,13 @@ def sharer_lines(
         "reversal": None,
     }  # fmt: skip
     if r["reversal_id"] is not None and r["to_choice"]:
-        member = person_by_user(conn, r["reversed_by"])
         was, now_label = decide.LABELS[str(r["choice"])], decide.LABELS[str(r["to_choice"])]
         final = "This is final."
         if r["to_choice"] == "not_now" and r["reversed_return_at"]:
             final += (f" It comes back to the review desk on {when.day(r['reversed_return_at'], at, tz)}, with your "
                       "answers and crew.")  # fmt: skip
         lines["reversal"] = {
-            "from_line": f"{member.name} from the Ones Committee, {when.day_time(r['reversed_at'], at, tz)}",
+            "from_line": f"{ONES_COMMITTEE_START}, {when.day_time(r['reversed_at'], at, tz)}",  # DEC-113
             "title": f"The Ones Committee changed the decision to {_lower(now_label)}",
             "note_heading": "The committee’s note to you",
             "was_line": f"Was: {was}",
@@ -506,8 +515,9 @@ def for_idea(
     """The latest decision on an idea with its window and any reversal, for the reviewer's page (S-R2 Decided)
     and the sharer's (S-06). None when the desk has not decided. `lines` adds that viewer's words under `lines`
     (`sharer_lines`, `reviewer_lines`); the rest of the row keeps the committee's (S-R4), except that the sharer's
-    names the review desk, not the reviewer, and has no reason heading (DEC-111). `joined_side`: read from the idea
-    the Pick joined (`decision_for_viewer`)."""
+    names the review desk, not the reviewer, and has no reason heading (DEC-111), and names the Ones Committee, not
+    the member, after a reversal (DEC-113). `joined_side`: read from the idea the Pick joined
+    (`decision_for_viewer`)."""
     t = at or now()
     p = promises.get()
     r = conn.execute(_ROWS + " WHERE d.idea_uuid = %s ORDER BY d.at DESC LIMIT 1", (idea_uuid,)).fetchone()
@@ -524,6 +534,11 @@ def for_idea(
         # draws no heading over the reason ("The review desk’s reason, as Kavya read it" is the committee's, S-R4)
         out["decision"]["by_line"] = f"by {REVIEW_DESK}, {when.day(row['opens_at'], t, when.IST)}"
         out["decision"]["reason_heading"] = None
+        # DEC-113 (BLD-B269): and the Ones Committee itself, never the member who reversed it
+        if out["reversal"] is not None:
+            out["reversal"]["by"] = dict(COMMITTEE_ITSELF)
+            reversed_day = when.day(row["reversed_at"], t, when.IST)
+            out["reversal"]["now_by_line"] = f"by {ONES_COMMITTEE}, {reversed_day}"
     elif lines == "reviewer":
         out["lines"] = reviewer_lines(conn, row, t, p, viewer_id)
     return out

@@ -226,6 +226,12 @@ def join_words(items: Sequence[str]) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
+def affects_words(items: Sequence[str]) -> str:
+    """Who it affects, as the boards list it: "Investors, KFin teams" (Status.md and Compose.md, S-06; "Investors,
+    branch teams" in Idea.md and PhoneIdea.md, S-09). A list, not a sentence, so no "and" (BLD-E068)."""
+    return ", ".join(i for i in items if i)
+
+
 # --- The status pill (C-PILL, E-ENUMS.idea-status) -----------------------------------------------------------------
 
 

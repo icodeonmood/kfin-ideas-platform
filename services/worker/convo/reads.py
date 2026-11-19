@@ -9,7 +9,8 @@ box while questions are open) are worked out here, so every screen agrees (A-API
 The person at the review desk is named only to the review desk and the Ones Committee (DEC-111). Everyone else (the
 sharer, the crew, the build team, a mentioned person) reads "The review desk" in their place, with no id and no
 initials, on messages, the questions and answers, "In this conversation", the box's placeholder and the line above it,
-and the people a message mentions (`Ctx.shown`, BLD-F082).
+and the people a message mentions (`Ctx.shown`, BLD-F082). A member of the Ones Committee likewise reads as "The Ones
+Committee" to those readers, and "the Ones Committee" inside a sentence (DEC-113, BLD-F091).
 
 The header's status is the one S-06 shows the reader (lane E's `ideapage.shape.display_status`): "Needs you" for the
 sharer while a question set is open, "With the review desk" for everyone else (J-TRACK/3, BLD-F085). A line that
@@ -35,7 +36,7 @@ from desk.when import deadline as answer_by
 from ideapage import read as page_read
 from ideapage.shape import at_desk, display_status
 from onepc.enums import labels
-from onepc.words import REVIEW_DESK
+from onepc.words import ONES_COMMITTEE, REVIEW_DESK
 
 REMOVE_WITHIN = dt.timedelta(minutes=5)  # L-CONVO/10 (NOT DRAWN default)
 OPEN_SET_STATES = ("sent", "seen", "partly_answered")
@@ -46,6 +47,7 @@ EMPTY_TITLE = "No messages yet"
 # Messages.md "No messages yet"; without its Teams clause while Teams is off (BLD-F086, for HR's sign-off)
 EMPTY_BODY = "If the review desk has a question, it shows here and in your Inbox, and we tell you on Teams."
 EMPTY_BODY_NO_TEAMS = "If the review desk has a question, it shows here and in your Inbox."
+FROM_COMMITTEE = f"From {ONES_COMMITTEE}"  # "In this conversation" (L-CONVO/8)
 
 
 def teams_on(conn: Conn) -> bool:
@@ -177,16 +179,22 @@ class _Speaking:
         return self.cache[user_id]  # type: ignore[no-any-return]
 
 
+def speaks_as(conn: Conn, idea: dict[str, Any], r: Reader) -> str | None:
+    """Whether a message this person writes is spoken as the review desk (DEC-111) or the Ones Committee (DEC-113),
+    as `_sender` reads it: `DESK` or `COMMITTEE` when written by users.id (the sharer and the crew write by their code)
+    by someone `_Speaking` places there (the reviewer role, else a committee role, and not on the idea's build team);
+    None otherwise."""
+    return None if r.sharer or r.crew else _Speaking(conn, idea).role(r.user_id)
+
+
 def speaks_as_desk(conn: Conn, idea: dict[str, Any], r: Reader) -> bool:
-    """Whether a message this person writes is spoken as the review desk, as `_sender` reads it (DEC-111): written by
-    users.id (the sharer and the crew write by their code) by someone `_Speaking` places at the review desk (the
-    reviewer role, and not on the idea's build team)."""
-    return not (r.sharer or r.crew) and _Speaking(conn, idea).role(r.user_id) == DESK
+    """Whether a message this person writes is spoken as the review desk (DEC-111), as `speaks_as` reads it."""
+    return speaks_as(conn, idea, r) == DESK
 
 
 def _sender(ctx: Ctx, x: dict[str, Any], staff_as: _Speaking) -> Person:
-    """Who wrote it, as this reader may see them: the review desk's people as the desk itself outside the desk and
-    the committee (DEC-111)."""
+    """Who wrote it, as this reader may see them: the review desk's people as the desk itself, and the Ones
+    Committee's as the committee itself, outside the desk and the committee (DEC-111, DEC-113)."""
     if x.get("author_user_id"):
         p = ctx.people.by_user(str(x["author_user_id"]))
         role = staff_as.role(str(x["author_user_id"]))
@@ -194,34 +202,39 @@ def _sender(ctx: Ctx, x: dict[str, Any], staff_as: _Speaking) -> Person:
     return ctx.people.by_code(x.get("author_code"))
 
 
-def _at_desk(ctx: Ctx, staff_as: _Speaking, user_id: str) -> bool:
-    """Whether a person named by users.id (a mention) is at the review desk, asked only when this reader may not see
-    the desk's names (DEC-111)."""
-    return not ctx.sees_desk and staff_as.role(user_id) == DESK
+def _acting(ctx: Ctx, staff_as: _Speaking, user_id: str) -> str | None:
+    """The role a person named by users.id (a mention) acts in, `DESK` or `COMMITTEE`, asked only when this reader may
+    not see the names of the desk and the committee (DEC-111, DEC-113)."""
+    return None if ctx.sees_desk else staff_as.role(user_id)
 
 
-# DEC-111: a mention of someone at the review desk, as anyone outside the desk and the committee reads it. Lower case,
-# so "@the review desk" sits inside a sentence and the screen still marks it as a mention.
+# DEC-111, DEC-113: a mention of someone at the review desk or on the Ones Committee, as anyone outside the desk and
+# the committee reads it. Lower case, so "@the review desk" and "@the Ones Committee" sit inside a sentence and the
+# screen still marks each as a mention.
 DESK_MENTION = {"id": "", "name": REVIEW_DESK, "first_name": REVIEW_DESK, "initials": ""}
+COMMITTEE_MENTION = {"id": "", "name": ONES_COMMITTEE, "first_name": ONES_COMMITTEE, "initials": ""}
 
 
 def _mentioned(
     ctx: Ctx, x: dict[str, Any], staff_as: _Speaking, text: str
 ) -> tuple[str, list[dict[str, Any]]]:
     """The people a message mentions, and its words, as this reader may see them: "@Meera Iyer" reads "@the review
-    desk" outside the desk and the committee (DEC-111). The words the person wrote are not changed otherwise."""
+    desk" (DEC-111) and "@Rohan Mehta" reads "@the Ones Committee" (DEC-113) outside the desk and the committee. The
+    words the person wrote are not changed otherwise."""
     refs: list[dict[str, Any]] = []
-    desk_named: list[str] = []
+    named: dict[str, str] = {}  # a masked person's full name -> the words read in its place
     for u in _mentions(x):
         p = ctx.people.by_user(u)
-        if _at_desk(ctx, staff_as, u) and not ctx.is_me(p):
-            desk_named.append(p.name)
-            if DESK_MENTION not in refs:
-                refs.append(DESK_MENTION)
+        shown = ctx.shown(p, acting=_acting(ctx, staff_as, u))
+        if shown.masked:
+            named[p.name] = shown.mid
+            ref = DESK_MENTION if shown.desk else COMMITTEE_MENTION
+            if ref not in refs:
+                refs.append(ref)
         else:
             refs.append(p.ref())
-    for name in sorted(set(desk_named), key=len, reverse=True):
-        text = text.replace(f"@{name}", f"@{REVIEW_DESK}")
+    for name in sorted(named, key=len, reverse=True):
+        text = text.replace(f"@{name}", f"@{named[name]}")
     return text, refs
 
 
@@ -245,7 +258,8 @@ def _entry(
             (REMOVED, []) if removed else _mentioned(ctx, x, staff_as, unseal(x["text_encrypted"], eid) or "")
         )
         own = [] if removed else files.get(eid, [])
-        if who.desk:  # the desk's files are added by the desk, not by a named person (DEC-111)
+        # The desk's files are added by the desk and the committee's by the committee, not by a person (DEC-111, -113)
+        if who.masked:
             own = [{**f, "added_by": who.ref()} for f in own]
         e = {
             "type": "message", "id": eid, "from": who.ref(), "from_label": ctx.name(who), "you": mine,
@@ -462,13 +476,15 @@ def _participants(
     rows: list[dict[str, Any]], staff_as: _Speaking, sharer: Person, t: dt.datetime,
 ) -> list[dict[str, Any]]:  # fmt: skip
     """'In this conversation' (L-CONVO/8): each person with what they are doing; the reader last, as "You". Outside
-    the review desk and the committee, the desk's people are one row, "The review desk" (DEC-111)."""
+    the review desk and the committee, the desk's people are one row, "The review desk" (DEC-111), and the Ones
+    Committee's one row, "The Ones Committee", "From the Ones Committee", however many of its members took part
+    (DEC-113)."""
     seen: dict[str, tuple[Person, str]] = {}
 
     def add(p: Person, doing: str) -> None:
-        key = "desk" if p.desk else p.id
+        key = "desk" if p.desk else "committee" if p.committee else p.id
         if key and key not in seen:
-            seen[key] = (p, doing)
+            seen[key] = (p, FROM_COMMITTEE if p.committee else doing)
 
     if team:
         if team["lead_user_id"]:
@@ -491,12 +507,12 @@ def _participants(
     for x in rows:
         if x["type"] == "message" and x["deleted_at"] is None:
             for u in _mentions(x):
-                add(ctx.shown(ctx.people.by_user(u), at_desk=_at_desk(ctx, staff_as, u)), "Mentioned")
+                add(ctx.shown(ctx.people.by_user(u), acting=_acting(ctx, staff_as, u)), "Mentioned")
     for x in rows:
         if x["type"] == "message":
             who = _sender(ctx, x, staff_as)
             add(who, "From the review desk" if who.desk or who.role_label == DESK else
-                "From the Ones Committee" if who.role_label == COMMITTEE else "In the conversation")  # fmt: skip
+                FROM_COMMITTEE if who.committee or who.role_label == COMMITTEE else "In the conversation")  # fmt: skip
     me = seen.pop(ctx.reader.user_id, None)
     out = [{"person": p.ref(), "label": p.label, "doing": d, "you": False} for p, d in seen.values()]
     if me:
@@ -564,7 +580,9 @@ def _placeholder(
     ctx: Ctx, audience: str, has_crew: bool, sharer: Person, rows: list[dict[str, Any]], staff_as: _Speaking
 ) -> str:
     r = ctx.reader
-    if not r.full:  # "Reply to Sanjay": whoever mentioned them last; "Reply to the review desk" (DEC-111)
+    # "Reply to Sanjay": whoever mentioned them last; "Reply to the review desk" (DEC-111), "Reply to the Ones
+    # Committee" (DEC-113)
+    if not r.full:
         last = next((x for x in reversed(rows) if r.user_id in _mentions(x)), None)
         if last is not None:
             return f"Reply to {_sender(ctx, last, staff_as).mid}"

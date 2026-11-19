@@ -495,7 +495,7 @@ def test_l_convo_5_a_committee_member_and_a_build_team_member_write_and_read_as_
     assert all(r["author_code"] is None for r in rows)
     assert built["entry"]["you"] and built["entry"]["from_label"] == "You"
     labels = [m["from_label"] for m in messages(conversation(db, idea["idea_id"], kavya["id"], at=NOW))]
-    assert labels == ["Rohan Mehta from the Ones Committee", "Arjun Rao"]
+    assert labels == ["The Ones Committee", "Arjun Rao"]  # the committee, not Rohan, for the sharer (DEC-113)
     assert [c["to"] for c in told if c["kind"] == "comment"] == [[kavya["id"]], [kavya["id"]]]
 
 

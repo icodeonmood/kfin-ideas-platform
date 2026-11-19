@@ -211,15 +211,31 @@ def from_sentence(quote: str, texts: Sequence[str]) -> str:
     return "From your words."
 
 
+def said(quotes: Sequence[str]) -> str:
+    """ "“about 40 calls a day” and “5 to 10 minutes each”": the first two quotes, as the boards join them."""
+    return " and ".join(f"“{q}”" for q in quotes[:2])
+
+
 def quoted(quotes: Sequence[str]) -> str:
-    return "From your words: " + " and ".join(f"“{q}”" for q in quotes[:2])
+    return "From your words: " + said(quotes)
+
+
+_QUOTE = re.compile(r"“([^”]+)”")
+
+
+def quotes_in(line: str) -> list[str]:
+    """The quotes in a line `quoted` made ("From your words: “a” and “b”" gives ["a", "b"]), as they stand: the
+    masked copy, never unmasked."""
+    return _QUOTE.findall(line)
 
 
 def because(reason: str | None, quotes: Sequence[str]) -> str:
+    """ "Suggested because you mentioned investors and the branch." (Compose.md); with no reason, the quotes:
+    "Suggested because you said “about 40 calls a day” and “5 to 10 minutes each”." (Review.md, BLD-C194)."""
     r = (reason or "").strip().rstrip(".")
     r = re.sub(r"^(?:suggested\s+)?because\s+", "", r, flags=re.I)
     if not r:
-        r = f"you said “{quotes[0]}”" if quotes else "of your words"
+        r = f"you said {said(quotes)}" if quotes else "of your words"
     return f"Suggested because {lower_first(r)}."
 
 
@@ -233,7 +249,8 @@ def why_for(
     if row_key == "often":
         return quoted(quotes) if quotes else None
     if row_key in ("who", "area"):
-        return because(reason, quotes)
+        # S-04B's who and area lines keep one quote, as before BLD-C194; only the sorting reason joins two (Review.md).
+        return because(reason, quotes[:1])
     if row_key == "value":
         return None if value == [NOT_SURE] or not quotes else quoted(quotes)
     return None

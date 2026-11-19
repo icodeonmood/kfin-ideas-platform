@@ -34,6 +34,20 @@ export const KIND_LABEL: Record<HiddenKind, string> = {
 
 const KEEP_CASE = new Set<HiddenKind>(["pan", "aadhaar"]);
 
+/** A word naming a kind, then (after a space, or ": ", "# " or "- ") that kind's masked form ("folio Folio ••••17",
+ * "PAN: PAN ••••8Z"). With the `i` flag the back-reference matches in any case. */
+const NAMED_TWICE = new RegExp(`\\b(${Object.values(KIND_LABEL).join("|")})[\\s:#-]*\\s(?=\\1 •)`, "gi");
+
+/**
+ * The masked copy of a person's words, as lane C's screens show it in a quote (BLD-C193): where the word typed just
+ * before a masked detail is that detail's own label, the label is said once ("one investor with folio Folio ••••17"
+ * reads "one investor with Folio ••••17"). Display only: the masked form L-HIDE makes, what is stored and what
+ * anyone else receives are untouched, and nothing is unmasked; only the repeated word goes.
+ */
+export function labelOnce(text: string): string {
+  return text.replace(NAMED_TWICE, "");
+}
+
 /** "Folio number, PAN and phone number": each kind once, in the order found; later ones in lower case. */
 export function kindsLine(details: Pick<HiddenDetail, "kind">[]): string {
   const kinds: HiddenKind[] = [];

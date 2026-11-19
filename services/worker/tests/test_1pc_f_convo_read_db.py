@@ -269,7 +269,7 @@ def test_l_convo_3_event_lines_render_at_read_time_with_names_and_you(db: Any, c
         "Checked and matched. 1 folio number hidden, 2 similar ideas found. 10:06 am",
         "The review desk opened it. Monday 16 November, 9:50 am",  # DEC-111
         "The review desk picked it. 3:00 pm",
-        "Rohan Mehta from the Ones Committee reversed the decision. It’s now Not now. Today, 9:00 am",
+        "The Ones Committee reversed the decision. It’s now Not now. Today, 9:00 am",  # DEC-113
         "It’s back with the review desk. 9:30 am",
     ]
     as_meera = texts(conversation(db, idea["idea_id"], meera["id"], at=NOW))
@@ -627,7 +627,7 @@ def test_l_convo_3_bld_f061_the_seeds_lines_read_as_the_codes_they_stand_for(
     ).fetchone()["id"]
     _seed_line(db, lead, "desk_merged", fx.at(17, 9, 15), {"merge_id": str(merge)})
     assert texts(conversation(db, turned["idea_id"], kavya["id"], at=NOW))[-1] == (
-        "Rohan Mehta from the Ones Committee reversed the decision. It’s now Picked. Today, 9:00 am"
+        "The Ones Committee reversed the decision. It’s now Picked. Today, 9:00 am"  # DEC-113
     )
     assert texts(conversation(db, lead["idea_id"], ravi["id"], at=NOW))[-1] == (
         f"The review desk joined it with {turned['idea_id']}. Today, 9:15 am"

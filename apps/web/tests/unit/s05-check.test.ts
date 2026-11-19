@@ -1472,7 +1472,7 @@ describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
               body: {
                 idea_id: "IDEA-2026-001481",
                 ref: "IDEA-2026-001481",
-                next: { to: "/ideas/IDEA-2026-001481", replace: true, state: "just_shared" },
+                next: { to: "/ideas/IDEA-2026-001481?from=share", replace: true, state: "just_shared" },
               },
             }
           : undefined,
@@ -1485,7 +1485,21 @@ describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
     const sent = calls.find((c) => c.url.endsWith("/submit"))!;
     expect(sent.body).toEqual({ declaration_version: "2026-11-17" });
     expect(sent.headers["Idempotency-Key"]).toMatch(/^s05:/);
-    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001481");
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001481?from=share");
+  });
+
+  it("S-06.rules/6 BLD-C084 J-SHARE/11: after a send, Check it replaces to the server's first-arrival link, or builds the same one when the answer has none", async () => {
+    await mount([
+      (m, u) =>
+        m === "POST" && u.endsWith("/submit")
+          ? { status: 201, body: { idea_id: "IDEA-2026-001484", ref: "IDEA-2026-001484" } }
+          : undefined,
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001484?from=share");
   });
 
   it("J-RECOVER/13 V-FIELDS.checkit/13: a failed send says the draft is safe, with Try again, and the retry reuses the key", async () => {
@@ -1520,7 +1534,7 @@ describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
               body: {
                 idea_id: "IDEA-2026-001482",
                 ref: "IDEA-2026-001482",
-                next: { to: "/ideas/IDEA-2026-001482" },
+                next: { to: "/ideas/IDEA-2026-001482?from=share" },
               },
             }
           : undefined,
@@ -1539,7 +1553,7 @@ describe("S-05 screen: send it (BLD-C135, L-SUBMIT)", () => {
     await act(async () => window.dispatchEvent(new Event("online")));
     await settle();
     expect(calls.some((c) => c.url.endsWith("/submit"))).toBe(true);
-    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001482");
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001482?from=share");
   });
 
   it("L-SUBMIT.pre: a refusal from the server says its own words under Submit (file_blocked)", async () => {
@@ -1716,7 +1730,11 @@ describe("S-05 review fixes: hidden details (C-HIDDEN.list)", () => {
 describe("S-05 review fixes: send it (L-SUBMIT.send, V-FIELDS.checkit)", () => {
   const submitted = {
     status: 201,
-    body: { idea_id: "IDEA-2026-001483", ref: "IDEA-2026-001483", next: { to: "/ideas/IDEA-2026-001483" } },
+    body: {
+      idea_id: "IDEA-2026-001483",
+      ref: "IDEA-2026-001483",
+      next: { to: "/ideas/IDEA-2026-001483?from=share" },
+    },
   };
   const refuse =
     (status: number, error: Record<string, string>): Route =>
@@ -1749,7 +1767,7 @@ describe("S-05 review fixes: send it (L-SUBMIT.send, V-FIELDS.checkit)", () => {
     const sent = calls.filter((c) => c.url.endsWith("/submit"));
     expect(sent).toHaveLength(1);
     expect(sent[0]!.headers["Idempotency-Key"]).toBe(kept.key);
-    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001483");
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001483?from=share");
     expect(localStorage.getItem(`1pc.s05.queued.${DRAFT_ID}`)).toBeNull();
     online.mockRestore();
   });
@@ -2363,5 +2381,98 @@ describe("S-05.layout J-RECOVER/9-13: the rail's Proof step counts links as link
     });
     await click(button("Add a link"));
     expect(proofRail()).toBe("4 Proof 1 link");
+  });
+});
+
+// --- Lane G's 09:30 walk: the task bar's saved line on an earlier day (BLD-C192) --------------------------------
+
+describe("S-05 C-TASKBAR.save BLD-C192: saved on an earlier day, the top bar says the day (J-RECOVER/3, /6, /16, J-SIMILAR/6b, /6c)", () => {
+  const status = () => text(document.querySelector('.tbar [role="status"]'));
+  const labels = (s: string) => ({
+    sidebar: "Monday, on your phone",
+    resume: "Last saved on your phone, Monday 10:59 pm.",
+    prompt_day: "Monday",
+    prompt_line: "Last saved on your phone, 10:59 pm.",
+    status: s,
+    my_ideas: "Saved 10:59 pm Monday, on your phone",
+  });
+
+  it("saved on an earlier day it reads the server's day and time; a save made here reads as now again", async () => {
+    const monday = draft({
+      saved_at: "2026-11-16T17:29:00Z",
+      saved_on: { device: "phone", this_device: false },
+      saved_labels: labels("Saved Monday, 10:59 pm"),
+    });
+    await mount(base({ draft: monday }));
+    expect(status()).toBe("Saved Monday, 10:59 pm");
+    await railTo("Sorting");
+    await click(button("Confirm sorting"));
+    expect(status()).toMatch(/^Saved at \d{1,2}:\d{2} (am|pm)$/);
+    expect(status()).not.toContain("Monday");
+  });
+
+  it("saved today it reads as now, exactly as before", async () => {
+    const today = draft({
+      saved_labels: { ...labels("Saved at 1:38 pm"), sidebar: "Today, on this laptop" },
+    });
+    await mount(base({ draft: today }));
+    expect(status()).toBe("Saved at 1:38 pm");
+  });
+
+  it("offline is unchanged", async () => {
+    const monday = draft({ saved_labels: labels("Saved Monday, 10:59 pm") });
+    await mount(base({ draft: monday }));
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    await act(async () => window.dispatchEvent(new Event("offline")));
+    expect(status()).toBe("Unsaved, you’re offline");
+    online.mockRestore();
+  });
+});
+
+// --- Lane G's 09:30 walk: a masked detail's label said once in a quote (BLD-C193) -------------------------------
+
+describe("S-05 C-HIDDEN L-HIDE BLD-C193: the sorting's quote says a masked detail's label once (J-RECOVER/10)", () => {
+  const quoting = (why: string): SortingResponse => {
+    const s = sorting();
+    return { ...s, brings: { ...s.brings, why: "from_words", why_line: why } };
+  };
+  const whys = () => Array.from(document.querySelectorAll(".ck-why")).map((p) => text(p));
+
+  it("'folio Folio ••••17' reads 'Folio ••••17' once; the value stays masked", async () => {
+    await mount(
+      base({ sorting: quoting("Suggested because you mentioned “one investor with folio Folio ••••17”.") }),
+    );
+    await railTo("Sorting");
+    expect(whys()).toContain("Suggested because you mentioned “one investor with Folio ••••17”.");
+    expect(document.body.textContent).not.toMatch(/folio Folio/i);
+    expect(document.body.innerHTML).not.toContain("88001234");
+  });
+
+  it("a different word before the masked form keeps the label", async () => {
+    await mount(
+      base({ sorting: quoting("Suggested because you mentioned “the investor at Folio ••••17”.") }),
+    );
+    await railTo("Sorting");
+    expect(whys()).toContain("Suggested because you mentioned “the investor at Folio ••••17”.");
+  });
+});
+
+// --- Lane G's 09:30 walk: the sorting reasons in the drawn form (BLD-C194) -------------------------------------
+
+describe("S-05 part 2 L-SORT BLD-C194: each sorting reason reads as Review.md draws it (J-RECOVER/10)", () => {
+  const DRAWN =
+    "Suggested because you said “about 40 calls a day” and “5 to 10 minutes each”. Add revenue or outside tools if it does those too.";
+
+  it("the four reasons read 'Suggested because …', the worth one with its quotes; no 'Suggested: from your words'", async () => {
+    const s = sorting();
+    await mount(base({ sorting: { ...s, brings: { ...s.brings, why: "from_words", why_line: DRAWN } } }));
+    await railTo("Sorting");
+    expect(Array.from(document.querySelectorAll(".ck-why")).map((p) => text(p))).toEqual([
+      "Suggested because you mentioned investors and the branch.",
+      "Suggested because you described something that goes wrong today.",
+      "Suggested because it’s about investors and the SMS they get.",
+      DRAWN,
+    ]);
+    expect(document.body.textContent).not.toContain("Suggested: from your words");
   });
 });

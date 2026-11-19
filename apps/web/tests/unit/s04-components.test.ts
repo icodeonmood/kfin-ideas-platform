@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DraftLoader } from "@/components/compose/draft-loader";
 import { DraftPanel, READINESS, waitingLine, type PanelProps } from "@/components/compose/draft-panel";
 import { HiddenDetails } from "@/components/compose/hidden";
+import { labelOnce } from "@/lib/compose/hidden";
 import { Prompt, PROMPT_COPY, type PromptProps } from "@/components/compose/prompt";
 import type { Draft, IdeaPreview, SimilarMatch } from "@/lib/contracts";
 import { fromDraft } from "@/lib/compose/live";
@@ -409,5 +410,59 @@ describe("S-04B similar ideas: Preview, then Team up through lane F's sheet (J-S
     expect(waitingLine(MATCH, {})).toBeUndefined();
     expect(waitingLine(MATCH, { "IDEA-2026-001412": "" })).toBe("Waiting for Ravi");
     expect(waitingLine(MATCH, { "IDEA-2026-001412": "Waiting for Ravi Nair" })).toBe("Waiting for Ravi Nair");
+  });
+});
+
+// ── Lane G's 09:30 walk: a masked detail's label said once in a quote (BLD-C193) ──────────────────────────────
+
+describe("C-DRAFT-PANEL C-HIDDEN L-HIDE BLD-C193: a quote says a masked detail's label once (J-RECOVER/3, /6)", () => {
+  /** A synthetic value that is never anywhere on the page: only its masked form is. */
+  const RAW = "8800123417";
+
+  it("labelOnce: the label typed just before its masked form goes; any other word stays; the masked form is kept", () => {
+    expect(labelOnce("one investor with folio Folio ••••17")).toBe("one investor with Folio ••••17");
+    expect(labelOnce("PAN PAN ••••8Z and pan: PAN ••••4F")).toBe("PAN ••••8Z and PAN ••••4F");
+    expect(labelOnce("call phone - Phone ••••10 twice")).toBe("call Phone ••••10 twice");
+    expect(labelOnce("one investor with Folio ••••17")).toBe("one investor with Folio ••••17");
+    expect(labelOnce("the number Folio ••••17")).toBe("the number Folio ••••17");
+    expect(labelOnce("portfolio Folio ••••17")).toBe("portfolio Folio ••••17");
+    expect(labelOnce("folio Phone ••••10")).toBe("folio Phone ••••10");
+    expect(labelOnce("our folio count is high")).toBe("our folio count is high");
+  });
+
+  it("the worth quote reads 'with Folio ••••17' once, and no raw value reaches the page", () => {
+    panel(
+      {},
+      {
+        ...READY,
+        value: {
+          state: "filled",
+          value: ["saves_time"],
+          why: "From your words: “about 2 hours a week for one investor with folio Folio ••••17”",
+        },
+      },
+    );
+    const whys = [...host.querySelectorAll(".why")].map((w) => w.textContent);
+    expect(whys).toContain("From your words: “about 2 hours a week for one investor with Folio ••••17”");
+    expect(host.textContent).not.toMatch(/folio Folio/i);
+    expect(host.textContent).toContain("••••17");
+    expect(host.innerHTML).not.toContain(RAW);
+    expect(host.innerHTML).not.toContain(RAW.slice(0, -2));
+  });
+
+  it("a different word before the masked form keeps the label as it was", () => {
+    panel(
+      {},
+      {
+        ...READY,
+        value: {
+          state: "filled",
+          value: ["saves_time"],
+          why: "From your words: “about 2 hours a week for the investor at Folio ••••17”",
+        },
+      },
+    );
+    const whys = [...host.querySelectorAll(".why")].map((w) => w.textContent);
+    expect(whys).toContain("From your words: “about 2 hours a week for the investor at Folio ••••17”");
   });
 });

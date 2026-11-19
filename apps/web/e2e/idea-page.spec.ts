@@ -162,8 +162,8 @@ test.describe("S-06 and S-09 on the 1% Club seed", () => {
     await expect(page.getByText(/^(?:\d+ days?|\d{2}:\d{2}) left$/).first()).toBeVisible();
     // C-QCARD.anatomy/4 in either of desk/when.py deadline()'s forms: "Thursday 19 November, 6 pm" (with the year
     // when it falls in another), or "6 pm today" / "11:52 pm tomorrow" (Answer.md) once the date is a day away. The
-    // seed sets T6 due in 2 days, so a run seeded before midnight in India and checked after it reads "tomorrow"
-    // (main run 44366827160)
+    // seed sets T6 due at 6 pm within the day, at least 2 hours after loading (BLD-E067), so it reads "6 pm today"
+    // or "6 pm tomorrow", and a run seeded before midnight in India and checked after it reads "today"
     await expect(
       page
         .getByText(

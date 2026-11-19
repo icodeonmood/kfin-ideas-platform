@@ -32,6 +32,15 @@ function monthOf(iso: string): string {
 export const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /**
+ * Whether a speaker on S-06 gets a face. The review desk itself (DEC-111) and the Ones Committee itself (DEC-113)
+ * come with no id and no initials for anyone outside the desk and the committee, so neither an avatar nor initials
+ * is drawn: in "You and the review desk" (BLD-E058) and on the reversal card (lane B's `reversal.by`; BLD-E071).
+ */
+export function hasFace(p: { id: string | null; initials: string }): boolean {
+  return Boolean(p.id) && Boolean(p.initials);
+}
+
+/**
  * The card's sentence for a decision, composed from lane B's decision (BLD-E012) in S-06.states' words: what was
  * decided and what happens next. The reason itself is shown below the card word for word, under its heading.
  *

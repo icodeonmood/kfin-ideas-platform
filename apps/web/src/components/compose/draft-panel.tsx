@@ -33,6 +33,7 @@ import { MultiChips } from "@/components/ui/chips";
 import { Field } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BRINGS_LABEL, type Brings, type DraftPartKey, type Part, type SimilarMatch } from "@/lib/contracts";
+import { labelOnce } from "@/lib/compose/hidden";
 import { allIn, hasValue, type Live } from "@/lib/compose/live";
 import { LOADER_TITLE, loaderLine } from "@/lib/compose/loader";
 
@@ -412,7 +413,8 @@ export function peekSummary(live: Live): string {
 function Why({ part, fallback }: { part: Part<unknown>; fallback?: string }) {
   if (part.state === "pinned") return <span className="why pin">{PANEL_COPY.yourCall}</span>;
   const why = part.why ?? fallback;
-  return why ? <span className="why">{why}</span> : null;
+  // A quote from the masked copy says a detail's label once ("with Folio ••••17", BLD-C193)
+  return why ? <span className="why">{labelOnce(why)}</span> : null;
 }
 
 function TitleSlot(props: SlotProps) {

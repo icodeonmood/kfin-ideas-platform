@@ -339,4 +339,51 @@ describe("S-06.states, reversed by the Ones Committee: the committee's card keep
     expect(css).toMatch(/\.ip-rcard \.ip-r-by \{\s*display: flex;/);
     expect(css).toMatch(/\.ip-rcard \.ip-r-h \{[^}]*font: 500 19px\/1\.3 var\(--fd\);/);
   });
+
+  it("S-06.layout/8 DEC-111 DEC-113 BLD-E071: for a sharer outside the desk and the committee, the card reads the Ones Committee with no face", () => {
+    const p = withCard("reversed", { lead: "", rest: "" });
+    const view = p.view as unknown as { page: Record<string, unknown> };
+    view.page.card = null;
+    // Lane B's `reversal.by` for such a reader: the committee itself, no id, no initials (the same keys as a person)
+    const itself = {
+      id: "",
+      name: "The Ones Committee",
+      first_name: "The Ones Committee",
+      initials: "",
+      city: null,
+      area: null,
+    };
+    const decision = {
+      decision: {
+        choice: "pick",
+        merged_into: null,
+        reason: "A reason the sharer reads.",
+        reason_heading: null,
+        by_line: "by the review desk, Monday 16 November",
+      },
+      decided_at: "2026-11-16T05:30:00Z",
+      return_at: "2027-02-16T04:00:00Z",
+      joined_into: null,
+      reversal: { to: "not_now", note: "Hold it till the quarter turns.", by: itself },
+      lines: {
+        committee_line: null,
+        reversal: {
+          from_line: "The Ones Committee, Tuesday 24 November, 5:40 pm",
+          title: "The Ones Committee changed the decision to not now",
+          note_heading: "The committee’s note to you",
+          was_line: "Was: Picked",
+          was_by_line: "by the review desk, Monday 16 November",
+          final_line: "This is final. It comes back to the review desk on Tuesday 16 February 2027.",
+          track_line: "Picked, then moved to not now by the Ones Committee",
+        },
+      },
+    };
+    const html = renderToStaticMarkup(createElement(SharerScreen, { ...p, decision } as unknown as Props));
+    expect(html).toContain(
+      '<div class="ip-rcard"><div class="ip-r-by"><p>The Ones Committee, Tuesday 24 November, 5:40 pm</p></div><h2 class="ip-r-h">',
+    );
+    const card = html.slice(html.indexOf('<div class="ip-rcard">'), html.indexOf('<h2 class="ip-r-h">'));
+    expect(card).not.toContain('class="av');
+    expect(html).not.toMatch(/Rohan|Mehta|>RM</);
+  });
 });

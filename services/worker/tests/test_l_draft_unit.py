@@ -168,6 +168,11 @@ def test_l_draft_parts_2_every_suggestion_says_why() -> None:
         "who", ["Investors"], ["q"], "Because you mentioned investors and the branch", texts
     ) == ("Suggested because you mentioned investors and the branch.")
     assert parts.why_for("value", ["not_sure"], [], None, texts) is None
+    # BLD-C194: S-04B's who and area lines with no reason keep one quote; only the sorting reason joins two.
+    for key in ("who", "area"):
+        assert parts.why_for(
+            key, ["Investors"], ["about 40 calls a day", "5 to 10 minutes each"], None, texts
+        ) == ("Suggested because you said “about 40 calls a day”.")
 
 
 def test_l_draft_parts_8_receipt_copy_is_the_boards() -> None:
@@ -222,7 +227,7 @@ def test_l_draft_autosave_4_saved_labels() -> None:
         "resume": "Last saved on your phone, Friday 8:42 pm.",
         "prompt_day": "Friday",
         "prompt_line": "Last saved on your phone, 8:42 pm.",
-        "status": "Saved at 8:42 pm",
+        "status": "Saved Friday, 8:42 pm",  # BLD-C192: an earlier day carries its day
         "my_ideas": "Saved 8:42 pm Friday, on your phone",
     }
     yesterday = dt.datetime(2026, 11, 16, 10, 5, tzinfo=IST)
@@ -241,6 +246,27 @@ def test_l_draft_autosave_4_saved_labels() -> None:
     assert labels.message_label(now - dt.timedelta(seconds=20), "laptop", True, now) == "Just now"
     assert labels.message_label(friday, "phone", False, now) == "Friday, 8:42 pm, on your phone"
     assert labels.day(dt.datetime(2026, 11, 2, 9, 0, tzinfo=IST), now) == "Monday 2 November"
+
+
+def test_l_draft_autosave_4_c_taskbar_save_bld_c192_the_save_status_names_an_earlier_day() -> None:
+    """J-RECOVER/3, /6, /16, J-SIMILAR/6b, /6c (BLD-C192): S-04B's and S-05's task bar read `saved_labels.status`.
+    Saved today it reads as now ("Saved at 1:12 pm"); saved on an earlier day it carries the day and time a picked-up
+    message reads (BLD-C185's `earlier_label`, the one helper), lower case mid-sentence."""
+    now = dt.datetime(2026, 11, 17, 13, 38, tzinfo=IST)  # a Tuesday
+
+    def status(at: dt.datetime) -> str:
+        got = labels.saved_labels(at, "phone", False, now)
+        assert got is not None
+        return got["status"]
+
+    assert status(dt.datetime(2026, 11, 17, 0, 5, tzinfo=IST)) == "Saved at 12:05 am"
+    assert status(now - dt.timedelta(minutes=26)) == "Saved at 1:12 pm"
+    assert status(dt.datetime(2026, 11, 16, 22, 59, tzinfo=IST)) == "Saved yesterday, 10:59 pm"
+    sunday = dt.datetime(2026, 11, 15, 22, 59, tzinfo=IST)
+    assert status(sunday) == "Saved Sunday, 10:59 pm"
+    # The same day and time the picked-up messages read (BLD-C185), from the same helper
+    assert labels.earlier_label(sunday, "phone", False, now) == "Sunday, 10:59 pm, on your phone"
+    assert status(dt.datetime(2026, 11, 2, 9, 0, tzinfo=IST)) == "Saved Monday 2 November, 9:00 am"
 
 
 def test_s04b_layout_1_an_earlier_message_reads_with_its_day_time_and_device() -> None:
@@ -700,3 +726,21 @@ def test_s04b_layout_2_own_receipts_keep_the_latest_non_empty_receipt_per_messag
         m2: retried,
     }
     assert own_receipts([], [run(m1, 0, hid)]) == {}
+
+
+def test_l_draft_parts_bld_c194_because_and_quotes_in_are_one_builder() -> None:
+    """The reason builder S-04B's parts and S-05's sorting both use (BLD-C194): a reason, or the first two quotes as
+    Review.md joins them; `quotes_in` reads back the quotes `quoted` wrote, still masked."""
+    line = parts.quoted(["about 40 calls a day", "5 to 10 minutes each", "a third"])
+    assert line == "From your words: “about 40 calls a day” and “5 to 10 minutes each”"
+    assert parts.quotes_in(line) == ["about 40 calls a day", "5 to 10 minutes each"]
+    assert parts.quotes_in("From your words: “with folio Folio ••••17”") == ["with folio Folio ••••17"]
+    assert (
+        parts.because(None, ["about 40 calls a day"]) == "Suggested because you said “about 40 calls a day”."
+    )
+    assert (
+        parts.because(None, ["about 40 calls a day", "5 to 10 minutes each"])
+        == "Suggested because you said “about 40 calls a day” and “5 to 10 minutes each”."
+    )
+    assert parts.because("Because it’s about investors", []) == "Suggested because it’s about investors."
+    assert parts.because(None, []) == "Suggested because of your words."

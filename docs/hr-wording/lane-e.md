@@ -175,3 +175,13 @@ The 1% Club seed (`make demo DEMO_SET=1pc`) never reaches production. Its drafts
 |---|---|---|---|
 | `S-04B`, `S-05` | A seeded draft's Who it affects, when the words name the groups (Compose.md, "Suggested because you mentioned investors.") | `services/worker/bootstrap/club_seed.py:514` | Suggested because you mentioned {groups}. |
 | `S-04B`, `S-05` | A seeded draft's Area (ComposeResume.md, "Suggested because it’s about distributor experience.") | `services/worker/bootstrap/club_seed.py:516` | Suggested because it’s about {area}. |
+
+## 11. The Ones Committee by name, only to the desk and the committee (S-06, DEC-113, BLD-E071)
+
+**Changed by DEC-113**, the product lead's decision of 19 Nov 2026, which extends DEC-111 to the Ones Committee: a sharer never sees a committee member's name. Anyone outside the review desk and the Ones Committee (the sharer, the crew, anyone else) now reads "The Ones Committee" where the member was named, with no avatar or initials beside it; someone on the review desk or the Ones Committee still reads the line in section 8, with the member's name and initials. The note the committee wrote, and the line when it cannot be read, are unchanged (section 8). {member} is the committee member's full name, {day} a date such as Tuesday 24 November and {time} a time such as 5:40 pm. Paths are from the repo root.
+
+| Module | Where it shows | File and line | Old → new |
+|---|---|---|---|
+| `S-06` | Your idea's page once the Ones Committee has changed the decision, You and the review desk: the line over the committee's message, after the desk's message (Status.md, "Reversed by the Ones Committee"). No face beside it now | `services/worker/ideapage/sharer.py:292`, `:325` | {member} from the Ones Committee, {day}, {time} → The Ones Committee, {day}, {time} |
+
+The reversal card above it on the same page ("{member} from the Ones Committee, {day}, {time}" over the committee's note) is lane B's line (`GET /ideas/:id/decision`, `from_line`), changed by lane B for DEC-113 and listed in lane B's sheet. Lane E's page draws whatever lane B sends there and, since BLD-E071, no face when it comes without the member's initials (`apps/web/src/app/ideas/[id]/sharer-screen.tsx:182`).
