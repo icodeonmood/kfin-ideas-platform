@@ -18,7 +18,7 @@ What changed: four topics, corrected to the product lead's decisions of 16 and 1
 | Who sees what | new (section) | Your name shows on your ideas, on crew cards and on your requests to team up. | DEC-104; P-PRODUCT.privacy |
 | Who sees what | new | It also shows on the Wall next to your shared ideas, unless you turn that off in Profile. | DEC-104; Profile's switch "Show my name next to my ideas" |
 | Who sees what | new | The review desk and the Ones Committee see your name. | DEC-104 |
-| Who sees what | new | Your words, as you typed or said them, go only to you, the review desk and the Ones Committee. | DEC-104; P-PRODUCT.privacy ("Their own words (raw text, voice)") |
+| Who sees what | new | Only you, the review desk and the Ones Committee read your words. | DEC-104; P-PRODUCT.privacy ("Their own words (raw text, voice)"; the hidden customer details stay hidden from the desk and the committee) |
 | Who sees what | new | Everyone else sees the short summary. | DEC-104; P-PRODUCT.privacy |
 | Who sees what | new | Your crew also sees the idea's checked files and its conversation. | DEC-104; P-PRODUCT.privacy (a file with a customer detail is the exception, below) |
 | Who sees what | new | Your points are private to you. | DEC-104; P-PRODUCT.privacy |

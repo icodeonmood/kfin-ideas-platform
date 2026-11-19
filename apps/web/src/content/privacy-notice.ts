@@ -32,7 +32,7 @@ export const PRIVACY_NOTICE = {
       paragraphs: [
         "Your name shows on your ideas, on crew cards and on your requests to team up. It also shows on the Wall next to your shared ideas, unless you turn that off in Profile.",
         "The review desk and the Ones Committee see your name.",
-        "Your words, as you typed or said them, go only to you, the review desk and the Ones Committee. Everyone else sees the short summary.",
+        "Only you, the review desk and the Ones Committee read your words. Everyone else sees the short summary.",
         "Your crew also sees the idea's checked files and its conversation.",
         "Your points are private to you.",
       ],
