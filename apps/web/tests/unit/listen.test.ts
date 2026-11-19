@@ -1,8 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { BANNERS, switchesFor } from "@/lib/killswitch-routes";
 import policy from "@/lib/rbac.json";
-import { isIdeaRef } from "@/server/listen";
+import { isIdeaRef, listenAudio, listenChapters } from "@/server/listen";
+
+const calls: string[] = [];
+vi.mock("@/server/worker", () => ({
+  workerFetch: async (path: string) => {
+    calls.push(path);
+    return Response.json({ error: "forbidden" }, { status: 403 });
+  },
+}));
 
 const id = "11111111-2222-4333-8444-555555555555";
 
@@ -32,5 +40,20 @@ describe("BLD-C114 Listen in Sarvam's voice (DEC-108 (4), L-LISTEN, C-LISTEN)", 
     expect(isIdeaRef("IDEA-2026-000123")).toBe(true);
     expect(isIdeaRef(id)).toBe(true);
     for (const bad of ["", "../x", "IDEA-26-1", `${id}/x`]) expect(isIdeaRef(bad)).toBe(false);
+  });
+
+  it("BLD-C198: the signed-in person goes to the worker, which refuses anyone not on the desk or committee", async () => {
+    calls.length = 0;
+    const who = "33333333-4444-4555-8666-777777777777";
+    const audio = await listenAudio(id, who, null);
+    const chapters = await listenChapters(id, who);
+    expect(calls).toEqual([
+      `/internal/listen/${id}?user_id=${who}`,
+      `/internal/listen/${id}/chapters?user_id=${who}`,
+    ]);
+    // An admin with no desk or committee grant: the worker's 403 reaches the player, which plays nothing.
+    expect(audio.status).toBe(403);
+    expect(await audio.json()).toEqual({ error: "forbidden" });
+    expect(chapters.status).toBe(403);
   });
 });

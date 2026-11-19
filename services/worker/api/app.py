@@ -250,22 +250,30 @@ def voice_config() -> JSONResponse:
     return JSONResponse({"notice": drafts.NOTICE, **drafts.chunk_contract()})
 
 
-# ---- Listen in Sarvam's voice (DEC-108 (4), BLD-C114): the web app checked the desk or committee role ----------
+# ---- Listen in Sarvam's voice (DEC-108 (4), BLD-C114) --------------------------------------------------------------
+# The review desk and the Ones Committee only (P-PRODUCT.privacy, DEC-104; BLD-C198). The web app's
+# `view_review_queue` also lets admins in, so the worker checks `user_id` against desk.store.READERS before it reads
+# anything, as every other desk read does (desk/store.py `require_role`). No `user_id`, or anyone else: 403
+# `forbidden`, whether or not the idea exists.
 
 
 @app.get("/internal/listen/{ref}", dependencies=[Depends(require_token)])
-def listen_audio(ref: str, range_header: str = Header(default="", alias="Range")) -> Response:
+def listen_audio(
+    ref: str, user_id: str = "", range_header: str = Header(default="", alias="Range")
+) -> Response:
     """The idea's audio (MP3). Cached: the whole file, or the asked byte range (seeking by chapter). Not cached:
     streamed as Sarvam makes it, part by part, and cached at the end."""
     from fastapi.responses import StreamingResponse
 
     from attachments import store
+    from desk.store import READERS, Refused, require_role
     from gateway import sarvam
     from gateway.speech import SpeechUnavailable
     from speech import listen
 
     try:
         with connect(autocommit=True) as conn:
+            require_role(conn, user_id, READERS)
             plan = listen.prepare(conn, ref)
             if plan.cached is None:
                 # Like drafts._hosted_check: the fake route needs no key (BLD-C117). On the Sarvam route,
@@ -273,7 +281,7 @@ def listen_audio(ref: str, range_header: str = Header(default="", alias="Range")
                 if get_settings().speech_mode == "sarvam":
                     sarvam.allowed(conn)
                 listen.outgoing(plan.script)  # every part passes the leak check before the first byte
-    except listen.ListenRefused as exc:
+    except (Refused, listen.ListenRefused) as exc:
         return JSONResponse({"error": exc.code}, status_code=exc.status)
     except SpeechUnavailable as exc:  # the player falls back to the on-device voice
         code = "listen_unavailable" if exc.code == "unmasked_text" else "paused"
@@ -302,14 +310,16 @@ def listen_audio(ref: str, range_header: str = Header(default="", alias="Range")
 
 
 @app.get("/internal/listen/{ref}/chapters", dependencies=[Depends(require_token)])
-def listen_chapters(ref: str) -> JSONResponse:
+def listen_chapters(ref: str, user_id: str = "") -> JSONResponse:
     """`{ parts: [{ part, start_s }], duration_s }` once the audio is cached; until then 202 `{ pending: true }`."""
+    from desk.store import READERS, Refused, require_role
     from speech import listen
 
     try:
         with connect(autocommit=True) as conn:
+            require_role(conn, user_id, READERS)
             got = listen.chapters(conn, ref)
-    except listen.ListenRefused as exc:
+    except (Refused, listen.ListenRefused) as exc:
         return JSONResponse({"error": exc.code}, status_code=exc.status)
     if got is None:
         return JSONResponse({"pending": True}, status_code=202)

@@ -11,5 +11,5 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   if (me instanceof NextResponse) return me;
   const { id } = await params;
   if (!isIdeaRef(id)) return NextResponse.json({ error: "not_found" }, { status: 404 });
-  return listenAudio(id, request.headers.get("range"));
+  return listenAudio(id, me.id, request.headers.get("range"));
 }

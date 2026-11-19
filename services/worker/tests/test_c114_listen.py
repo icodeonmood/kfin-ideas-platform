@@ -15,6 +15,7 @@ from speech import adapters, listen
 from tests.sarvam_fakes import FakeSarvamWs, MeterConn, configure, ws_server
 
 IDEA = "11111111-2222-4333-8444-555555555555"
+READER = "22222222-3333-4444-8555-666666666666"  # a synthetic reviewer's user id (BLD-C198)
 FRAME_S = 576 / 24000  # one silent MPEG-2 Layer III frame at 24 kHz
 
 
@@ -362,7 +363,9 @@ def test_BLD_C117_listen_in_fake_mode_needs_no_key(
         yield env["conn"]
 
     monkeypatch.setattr(app_module, "connect", fake_connect)
+    # A reviewer listens (BLD-C198: the worker checks the desk or committee role; the fake conn holds no grants).
+    monkeypatch.setattr("desk.store.has_role", lambda conn, user_id, roles: user_id == READER)
     client = TestClient(app_module.app)
-    r = client.get(f"/internal/listen/{IDEA}", headers={"X-Internal-Token": "t" * 32})
+    r = client.get(f"/internal/listen/{IDEA}?user_id={READER}", headers={"X-Internal-Token": "t" * 32})
     assert r.status_code == 200 and r.headers["content-type"] == "audio/mpeg"
     assert listen.mp3_seconds(r.content) > 0
