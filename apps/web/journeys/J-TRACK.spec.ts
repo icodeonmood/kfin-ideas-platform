@@ -357,13 +357,12 @@ step(
     ).toBeVisible();
 
     // The reversal: Inbox → Read the note → the page with the new decision (S-06 "Reversed by the Ones Committee").
+    // DEC-113 (BLD-A231): the sharer reads the Ones Committee as one, never the member's name, with no avatar.
     await page.goto("/inbox");
-    await inboxItem(
-      page,
-      "Manoj Agarwal from the Ones Committee",
-      "reversed a decision on your idea",
-      t9.title,
-    ).click();
+    await inboxItem(page, "The Ones Committee", "reversed a decision on your idea", t9.title).click();
+    await expect(page.locator(".ibx-from.noav")).toContainText(
+      /^The Ones Committee reversed a decision on your idea/,
+    );
     await page.getByRole("link", { name: "Read the note" }).click();
     await page.waitForURL(new RegExp(`${esc(ideaUrl(t9))}$`));
     await expect(page.getByText("The Ones Committee changed the decision to picked").first()).toBeVisible();
