@@ -15,8 +15,9 @@ without it (BLD-C107, lane E's check of non-negotiable 4, 18 Nov).
 
 What comes back is kinds and page numbers only, for the file row's lines (`reference/copy/Edit.md`,
 `reference/copy/DeskIdea.md`):
-- `found_line`: "Found a phone number on page 2. Nobody can open it until it’s hidden." (C-FILE.row, the
-  personal-data state), shown to the person who added the file;
+- `found_line`: "Found a phone number on page 2. Only you, the review desk and the Ones Committee can open it."
+  (C-FILE.row, the personal-data state, its second sentence as the product lead approved it on 20 Nov 2026 for
+  DEC-107: BLD-C199), shown to the person who added the file;
 - `hidden_note`: "A phone number on page 2 is hidden." or "Folio hidden" (L-HIDE.files/4), only once a black-out
   has hidden the regions in the stored copy ("Hide it for me", not built: DEC-107). A file with a detail found and
   nothing blacked out has no hidden note.
@@ -220,13 +221,15 @@ def _listed(words: list[str]) -> str:
 
 
 def found_line(finds: FileFinds) -> str | None:
-    """C-FILE.row, personal data found: "Found a phone number on page 2. Nobody can open it until it’s hidden."
-    Several kinds are listed with their articles; the page is said only when every detail is on one page."""
+    """C-FILE.row, personal data found: "Found a phone number on page 2. Only you, the review desk and the Ones
+    Committee can open it." The first sentence is the board's; the second is the product lead's, approved on
+    20 Nov 2026 for DEC-107 (BLD-C199), in place of the board's "Nobody can open it until it’s hidden." Several
+    kinds are listed with their articles; the page is said only when every detail is on one page."""
     if not finds.count:
         return None
     what = _listed([detect.noun(k, article=True) for k in finds.kinds])
     where = f" on page {finds.page}" if finds.page is not None else ""
-    return f"Found {what}{where}. Nobody can open it until it’s hidden."
+    return f"Found {what}{where}. Only you, the review desk and the Ones Committee can open it."
 
 
 def hidden_note(finds: FileFinds) -> str | None:

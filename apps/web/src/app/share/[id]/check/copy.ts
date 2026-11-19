@@ -158,8 +158,9 @@ export const CHECK_COPY = {
     checked: "Checked",
     failed: "Didn’t upload. Your other files are fine.",
     tooBig: (mb: number) => `Too big. Files can be up to ${mb} MB.`,
-    /** C-FILE.row "Personal data found", when the server sends no line of its own. */
-    found: "Nobody can open it until it’s hidden.",
+    /** C-FILE.row "Personal data found", when the server sends no line of its own: the second sentence as the
+     * product lead approved it for DEC-107 on 20 Nov 2026 (BLD-C199). */
+    found: "Only you, the review desk and the Ones Committee can open it.",
     hideForMe: "Hide it for me",
     /** C-FILE.row: "View" on a checked file (it opens in a new tab until C-FILE.view's pop-up is drawn). */
     view: "View",
