@@ -648,8 +648,6 @@ def test_s06_rules_4_a_merged_idea_shows_where_it_went(club: dict[str, Any]) -> 
     assert v["page"]["card"]["lead"] == f"Merged into {ref(club, 'R2')} by the review desk."
     assert merged["note"] == "Both ideas ask for one clear message after a failed debit."
     assert v["idea"]["stages"] == [] and v["idea"]["merged_into"] == ref(club, "R2")
-    # No board draws a merged page's conversation card; the rule names the sentence, the note and the link (BLD-E069)
-    assert v["page"]["conversation"] is None
 
 
 def _merge_lines(club: dict[str, Any], key: str, who: str) -> list[str]:
@@ -666,34 +664,31 @@ def test_s06_layout_8_l_merge_effects_6_j_similar_7_merged_pages_never_say_no_me
     club: dict[str, Any],
 ) -> None:
     """S-06.layout/8, L-MERGE.effects/6 (BLD-E065; J-SIMILAR/7): T11 was merged into R2 by the review desk. Lane F's
-    S-08 shows the merge line on both conversations, so R2's S-06 card does not say "No messages yet": the line is
-    counted, as the decision is (BLD-E058), and no message or new line is added for it. Without the merge line the
-    count drops by one, so it is that line that counts. T11, the merged idea, has no card at all (BLD-E069): no
-    board draws a merged page, and S-06.rules/4 gives it the sentence, the note and the link."""
+    S-08 shows the merge line on both conversations, so neither S-06 card says "No messages
+    yet": the line is counted, as the decision is (BLD-E058), and no message or new line is added for it. Without
+    the merge lines, the empty line is back, so it is those lines that count."""
     conn, m = club["conn"], club["m"]
     for key, who in (("T11", "tanvi"), ("R2", "rekha")):
         assert _merge_lines(club, key, who), key
-    assert view(club, ref(club, "T11"), "tanvi")["page"]["conversation"] is None
-    conv = view(club, ref(club, "R2"), "rekha")["page"]["conversation"]
-    assert conv is not None and conv["count"] >= 1
-    assert "empty_line" not in conv and "phone_empty_line" not in conv
-    assert "messages" not in conv
+        conv = view(club, ref(club, key), who)["page"]["conversation"]
+        assert conv is not None and conv["count"] >= 1, key
+        assert "empty_line" not in conv and "phone_empty_line" not in conv, key
+        assert "messages" not in conv, key
+    t11_before = view(club, ref(club, "T11"), "tanvi")["page"]["conversation"]["count"]
     conn.execute(
         "DELETE FROM conversation_entries WHERE idea_uuid = ANY(%s) AND event = 'desk_merged'",
         ([m["T11"].uuid, m["R2"].uuid],),
     )
-    after = view(club, ref(club, "R2"), "rekha")["page"]["conversation"]
-    assert after["count"] == conv["count"] - 1
-    assert ("empty_line" in after) == (after["count"] == 0)
+    conv = view(club, ref(club, "T11"), "tanvi")["page"]["conversation"]
+    assert conv["count"] == t11_before - 1 and conv["empty_line"].startswith("No messages yet.")
 
 
 def test_s06_layout_8_l_merge_desk_j_review_m3_after_a_desk_merge_both_pages_drop_no_messages_yet(
     club: dict[str, Any],
 ) -> None:
     """S-06.layout/8, L-MERGE.desk (BLD-E065; J-REVIEW/M3): Lavanya merges Jatin's J2 into Faisal's F2 from the desk,
-    as the walk does, through lane B's `desk_merge`. Lane F's S-08 shows the merge line on both. Faisal's S-06 card,
-    still with the review desk, no longer says "No messages yet", and Jatin's merged idea has no card (BLD-E069;
-    the walk's row 7: the card was the heading and the link only)."""
+    as the walk does, through lane B's `desk_merge`. Lane F's S-08 shows the merge line on both, and neither S-06
+    card says "No messages yet" any more, Jatin's merged idea or Faisal's, which is still with the review desk."""
     from desk import merging
 
     conn = club["conn"]
@@ -713,9 +708,8 @@ def test_s06_layout_8_l_merge_desk_j_review_m3_after_a_desk_merge_both_pages_dro
     )
     for key, who in (("J2", "jatin"), ("F2", "faisal")):
         assert _merge_lines(club, key, who), key
-    assert view(club, ref(club, "J2"), "jatin")["page"]["conversation"] is None
-    conv = view(club, ref(club, "F2"), "faisal")["page"]["conversation"]
-    assert conv is not None and "empty_line" not in conv and "messages" not in conv
+        conv = view(club, ref(club, key), who)["page"]["conversation"]
+        assert conv is not None and "empty_line" not in conv and "messages" not in conv, key
 
 
 def test_s06_sharer_sees_masked_words_until_lane_c_reader_lands(club: dict[str, Any]) -> None:
