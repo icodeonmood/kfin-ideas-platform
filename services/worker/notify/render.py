@@ -23,8 +23,9 @@ from similar.preview import HIDDEN_NAME, hidden_person
 
 IST = ZoneInfo("Asia/Kolkata")
 
-# Who the sender is (L-INBOX.kinds "Sender display", as DEC-111 changes it): the review desk's kinds come from the
-# review desk as a whole, the Ones Committee by full name, everyone else by full name, the system as "1% Club".
+# Who the sender is (L-INBOX.kinds "Sender display", as DEC-111 and DEC-113 change it): the review desk's kinds come
+# from the review desk as a whole, the Ones Committee by full name to the review desk and the committee only and as one
+# to everyone else (DEC-113, below), everyone else by full name, the system as "1% Club".
 # DEC-111 (BLD-A221): a sharer, a crew member or anyone outside the desk and the committee never sees the name of the
 # person at the review desk, so a desk kind reads "The review desk" with the mark, whoever reads it, and the reviewer
 # is never read: no users.id, name, first name or initials reach the item, its variables or its email. L-HIDE/7's

@@ -245,7 +245,8 @@ def variables(conn: Conn, user_id: str, event: str, refs: dict[str, Any]) -> dic
         reason = (
             _restore(conn, idea["idea_id"], item["veto_reason"], _owns(conn, user_id, idea)) if item else ""
         )
-        data["member"] = {"name": _name(conn, refs.get("member_user_id"))}
+        # DEC-113 (BLD-A231): the Ones Committee signs as one, so the member's name is never read for this message,
+        # as BLD-A222 did for the reviewer; no template can name them.
         data["outcome"] = {
             "text": OUTCOMES.get(str(refs.get("outcome")), OUTCOMES["changed"]),
             "reason": reason,

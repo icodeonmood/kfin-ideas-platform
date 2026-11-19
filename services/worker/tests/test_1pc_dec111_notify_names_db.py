@@ -212,3 +212,25 @@ def test_l_inbox_kinds_dec113_as_committee_stores_no_sender_db(cast: Any, kind: 
         assert (item["kind"], item["from"], item["body"]["sender"]) == (kind, AS_ONE, "The Ones Committee")
     finally:
         db.execute("DELETE FROM notifications WHERE user_id = %s", (kavya,))
+
+
+def test_l_notify_dec113_a_repeat_as_committee_key_keeps_no_sender_db(cast: Any) -> None:
+    """A second committee comment within the hour reuses lane F's key: one item, still with no sender, read as the
+    committee (BLD-A231, review N3)."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya, rohan = p["kavya"]["id"], p["rohan"]["id"]
+    key = f"convo.comment:{ideas['mine']}:20261119T11:committee"
+    try:
+        for _ in range(2):
+            notify.post(db, "comment", [kavya], idea_id=ideas["mine"], sender=rohan, dedupe_key=key,
+                        refs={"entry_id": str(uuid.uuid4()), "as_committee": True})  # fmt: skip
+        rows = db.execute(
+            "SELECT channel, from_user_id FROM notifications WHERE user_id = %s AND dedupe_key = %s",
+            (kavya, key),
+        ).fetchall()
+        assert sorted(r["channel"] for r in rows) == ["email", "in_app"]
+        assert all(r["from_user_id"] is None for r in rows)
+        item = inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]
+        assert (item["from"], item["body"]["sender"]) == (AS_ONE, "The Ones Committee")
+    finally:
+        db.execute("DELETE FROM notifications WHERE user_id = %s", (kavya,))

@@ -11,11 +11,11 @@ generated:
   at: '2026-11-08T00:00:00+05:30'
 kfin:
   id: TPL-reconsidered
-  version: '1.2'
+  version: '1.3'
   events:
   - idea.reconsidered
   subject: 'Update on {{idea.id}}: reconsidered by the core committee'
-  signed_as: '{{member.name}}, 1% Club core committee'
+  signed_as: 'The Ones Committee, 1% Club'
   hr_signed_off: false
 ---
 
@@ -34,6 +34,6 @@ If you disagree, open your idea and use **Disagree with this?** to tell us why.
 
 {{#links.idea}}[See your idea]({{links.idea}}){{/links.idea}}
 
-{{member.name}}, 1% Club core committee
+The Ones Committee, 1% Club
 
 A KFintech programme

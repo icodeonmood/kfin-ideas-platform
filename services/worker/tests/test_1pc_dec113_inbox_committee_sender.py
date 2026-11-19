@@ -223,3 +223,40 @@ def test_l_notify_dec113_the_seam_constants() -> None:
     assert notify.as_the_committee("comment", {"as_committee": True})
     assert not notify.as_the_committee("decision_reversed", None)  # the reversal depends on the reader
     assert notify.sees_names(desk._Conn(), ["not-a-uuid"]) == set()  # type: ignore[arg-type]  # no query for an ID that is not one
+
+
+class _Repeat(_Writes):
+    """A repeat post with the same key: the first post inserts, the second meets the open in-app item and brings it up
+    to date (`ON CONFLICT … DO UPDATE`), then refreshes the outside messages still waiting (`UPDATE`)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.updates: list[str] = []
+
+    def execute(self, sql: str, params: tuple[Any, ...] = ()) -> desk._Rows:
+        if sql.startswith("UPDATE notifications"):
+            self.updates.append(sql)
+            return desk._Rows([])
+        if sql.startswith("INSERT INTO notifications") and len(self.inserts) >= 2:  # the in-app item is there
+            self.inserts.append((sql, params))
+            return desk._Rows([{"id": 1, "inserted": False}])
+        return super().execute(sql, params)
+
+
+def test_l_notify_dec113_a_repeat_as_committee_key_never_restores_the_member(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lane F's hourly key (`convo.comment:{idea}:{hour}:committee`) makes a repeat the normal path for a second
+    committee comment within the hour: the item is brought up to date in place, and no SQL on that path sets
+    `from_user_id`, so the member is never stored on it (BLD-A231, review N3)."""
+    monkeypatch.setattr(notify.killswitch, "is_on", lambda *_: False)
+    conn = _Repeat()
+    refs = {**ENTRY, "as_committee": True}
+    key = "convo.comment:c3d9a1f2:20261119T11:committee"
+    first = notify.post(conn, "comment", [SHARER], idea_id=IDEA, sender=MEMBER, refs=refs, dedupe_key=key)  # type: ignore[arg-type]
+    again = notify.post(conn, "comment", [SHARER], idea_id=IDEA, sender=MEMBER, refs=refs, dedupe_key=key)  # type: ignore[arg-type]
+    assert (first.ids, again.ids, again.updated) == ([1], [], [1])
+    assert [stored for _, _, stored in conn.stored()] == [None, None, None]  # in-app, email, then the repeat
+    repeat_sql, _ = conn.inserts[-1]
+    assert "from_user_id" not in repeat_sql.split("DO UPDATE SET", 1)[1]
+    assert conn.updates and all("from_user_id" not in u for u in conn.updates)

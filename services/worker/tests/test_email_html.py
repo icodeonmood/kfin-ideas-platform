@@ -78,6 +78,7 @@ SAMPLE: dict[str, Any] = {
         "names": "Farhan and Lakshmi",
         "names_visible": True,
     },
+    # DEC-113 (BLD-A231): the Ones Committee signs as one; the name stays here to show no template reads it
     "member": {"name": "Farhan Qureshi"},
     "code": {"value": "481902", "valid_minutes": 10},
     "reminder": {"share_percent": 60},
@@ -327,3 +328,15 @@ def test_the_ember_uses_the_one_black_button() -> None:
 
     html = ember_render.compose(ISSUE, BASE, f"{BASE}/ember/1").html
     assert 'class="em-btn-cell" bgcolor="#111111"' in html and "#2B5BFF" not in html
+
+
+def test_dec113_the_reconsidered_email_signs_as_the_ones_committee() -> None:
+    """DEC-113 (BLD-A231): the old route's `idea.reconsidered` email (template 1.3) signs "The Ones Committee, 1% Club",
+    never the member who changed the outcome, even when a member's name is in the data."""
+    tpl = _load(REPO, "reconsidered")
+    raw = (REPO / "comms" / "templates" / "reconsidered.md").read_text(encoding="utf-8")
+    assert tpl.version == "1.3" and "signed_as: 'The Ones Committee, 1% Club'" in raw and "member." not in raw
+    email = email_html.compose(tpl, _sample("reconsidered"), BASE)
+    assert "The Ones Committee, 1% Club" in email.text and "The Ones Committee, 1% Club" in email.html
+    for seen in (email.subject, email.text, email.html):
+        assert "Farhan" not in seen and "Qureshi" not in seen
