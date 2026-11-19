@@ -227,7 +227,7 @@ def test_dec_113_l_convo_the_review_desk_and_the_committee_read_the_members_by_n
     assert [x["id"] for x in k["mentions"]] == [w["rohan"]["id"]]
     s = _message(view, "Adding the committee’s notes.")
     assert all(f["added_by"]["id"] == w["sunita"]["id"] for f in s["files"])
-    assert len(s["files"]) == (0 if me else 1)  # a plain committee holder opens no files (BLD-F062)
+    assert len(s["files"]) == 1  # BLD-B270: a committee-only member opens files too (DEC-107)
     people = {p["person"]["id"]: p for p in view["participants"]}
     assert w["rohan"]["id"] in people and w["sunita"]["id"] in people
     assert people[w[who]["id"]]["label"] == "You"

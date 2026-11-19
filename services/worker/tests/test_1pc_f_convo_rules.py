@@ -24,11 +24,8 @@ def test_bld_f062_file_roles_are_the_policys_view_review_queue_with_its_aliases(
     policy = yaml.safe_load(POLICY.read_text())
     roles = set(policy["capabilities"]["view_review_queue"])
     aliases = {alias for alias, target in (policy.get("role_aliases") or {}).items() if target in roles}
-    # BLD-B270 (DEC-121): `view_review_queue` gained `committee` for S-R2 and Listen. The conversation's files stay
-    # with BLD-F062's roles until lane F widens FILE_ROLES (P-PRODUCT.privacy would allow the committee them).
-    assert "committee" in roles
-    assert set(FILE_ROLES) == (roles | aliases) - {"committee"}
-    assert "committee" not in FILE_ROLES  # a plain committee holder neither opens nor adds files
+    assert set(FILE_ROLES) == roles | aliases
+    assert "committee" in FILE_ROLES  # BLD-B270: a committee-only member opens and adds files (DEC-107)
 
 
 def test_bld_f076_l_convo_10_forget_is_lane_cs_hide_forget_for_the_conversation_entry(
