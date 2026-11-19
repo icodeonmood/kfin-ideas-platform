@@ -721,3 +721,19 @@ def test_s04b_layout_2_own_receipts_keep_the_latest_non_empty_receipt_per_messag
         m2: retried,
     }
     assert own_receipts([], [run(m1, 0, hid)]) == {}
+
+
+def test_l_draft_parts_bld_c194_because_and_quotes_in_are_one_builder() -> None:
+    """The reason builder S-04B's parts and S-05's sorting both use (BLD-C194): a reason, or the first two quotes as
+    Review.md joins them; `quotes_in` reads back the quotes `quoted` wrote, still masked."""
+    line = parts.quoted(["about 40 calls a day", "5 to 10 minutes each", "a third"])
+    assert line == "From your words: “about 40 calls a day” and “5 to 10 minutes each”"
+    assert parts.quotes_in(line) == ["about 40 calls a day", "5 to 10 minutes each"]
+    assert parts.quotes_in("From your words: “with folio Folio ••••17”") == ["with folio Folio ••••17"]
+    assert parts.because(None, ["about 40 calls a day"]) == "Suggested because you said “about 40 calls a day”."
+    assert (
+        parts.because(None, ["about 40 calls a day", "5 to 10 minutes each"])
+        == "Suggested because you said “about 40 calls a day” and “5 to 10 minutes each”."
+    )
+    assert parts.because("Because it’s about investors", []) == "Suggested because it’s about investors."
+    assert parts.because(None, []) == "Suggested because of your words."

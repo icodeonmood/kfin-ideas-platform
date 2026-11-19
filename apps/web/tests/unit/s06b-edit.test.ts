@@ -1401,3 +1401,26 @@ describe("S-06B C-HIDDEN.list/3 J-RECOVER/7-10: an example already shown reads i
     expect(button("Show it")).toBeUndefined();
   });
 });
+
+// --- Lane G's 09:30 walk: the sorting reasons in the drawn form, a masked label said once (BLD-C194, BLD-C193) ---
+
+describe("S-06B L-SORT BLD-C194 BLD-C193: the sorting reasons read as Edit.md draws them (J-RECOVER/10)", () => {
+  const DRAWN =
+    "Suggested because you said “about 40 calls a day” and “5 to 10 minutes each”. Add revenue or outside tools if it does those too.";
+  const whys = () => all(".ck-why").map(text);
+
+  it("what it would bring reads the drawn reason the server sends; no 'Suggested: from your words'", async () => {
+    const s = sorting();
+    await mount(base(() => page({ sorting: { ...s, brings: { ...s.brings, why_line: DRAWN } } })));
+    expect(whys()).toContain(DRAWN);
+    expect(document.body.textContent).not.toContain("Suggested: from your words");
+  });
+
+  it("a quoted masked detail says its label once, still masked", async () => {
+    const s = sorting();
+    const line = "Suggested because you said “one investor with folio Folio ••••17”.";
+    await mount(base(() => page({ sorting: { ...s, brings: { ...s.brings, why_line: line } } })));
+    expect(whys()).toContain("Suggested because you said “one investor with Folio ••••17”.");
+    expect(document.body.innerHTML).not.toContain("88001234");
+  });
+});

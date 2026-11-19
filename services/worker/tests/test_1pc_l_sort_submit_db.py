@@ -676,6 +676,30 @@ def test_s06b_the_edit_page_has_its_dates_and_the_sorting_note(world: dict[str, 
         edit.page(world["conn"], ref, world["p"]["neha"], now=NOW)
 
 
+def test_l_sort_s05_part2_s06b_bld_c194_the_worth_reason_reads_the_drawn_form_on_check_it_and_edit(
+    world: dict[str, Any],
+) -> None:
+    """J-RECOVER/10 (BLD-C194): the draft's worth quote ("From your words: “…”") reads as Review.md and Edit.md draw
+    it beside What it would bring, on S-05 part 2 and, once sent, on S-06B; never "Suggested: from your words: …".
+    The quote is the masked copy, as the part holds it."""
+    conn = world["conn"]
+    conn.execute(
+        "UPDATE idea_parts SET why = %s WHERE idea_uuid = %s AND key = 'value'",
+        ("From your words: “about 40 calls a day” and “5 to 10 minutes each”", world["draft"]),
+    )
+    drawn = (
+        "Suggested because you said “about 40 calls a day” and “5 to 10 minutes each”. Add revenue or outside tools "
+        "if it does those too."
+    )
+    v = sorting.read_draft(conn, world["draft"], world["p"]["asha"])
+    assert v["brings"]["why_line"] == drawn
+    assert v["affects"]["why_line"] == "Suggested because you mentioned investors and the branch."
+    assert v["area"]["why_line"] == "Suggested because it’s about investors and the SMS they get."
+    page = edit.page(conn, _shared(world), world["p"]["asha"], now=NOW + dt.timedelta(hours=1))
+    assert page["sorting"]["brings"]["why_line"] == drawn
+    assert all("Suggested:" not in (page["sorting"][f]["why_line"] or "") for f in sorting.FIELDS)
+
+
 def test_l_submit_edit_4_each_save_is_a_version(world: dict[str, Any]) -> None:
     conn, asha = world["conn"], world["p"]["asha"]
     ref = _shared(world)

@@ -26,6 +26,7 @@ from typing import Any, Literal
 from psycopg.types.json import Jsonb
 
 from core.db import Conn
+from draft import parts
 from onepc import enums
 from submit import config, own
 from submit.errors import Refused
@@ -44,6 +45,11 @@ KIND_WHY = {
     "business_idea": "because you described something new KFintech could offer.",  # NOT DRAWN: default
 }
 MAX_PICKS = 20
+# Review.md and Edit.md draw the reason beside What it would bring with a second sentence, for the drawn suggestion
+# (saves time and saves cost): "… Add revenue or outside tools if it does those too." Other suggestions are not
+# drawn, so they read the first sentence alone (BLD-C194).
+BRINGS_DRAWN = frozenset({"saves_time", "saves_cost"})
+BRINGS_DRAWN_HINT = "Add revenue or outside tools if it does those too."
 
 
 @dataclass(frozen=True)
@@ -144,19 +150,25 @@ def is_complete(choices: dict[Field, Choice]) -> bool:
     return all(c.filled() for c in choices.values())
 
 
-def why_line(c: Choice) -> str | None:
+def why_line(c: Choice, field: Field | None = None) -> str | None:
     """'Suggested because you mentioned investors and the branch.' Shown while the value is the draft's, before
-    and after confirming (S-05 part 2, S-06B section 4); none for the person's own change."""
+    and after confirming (S-05 part 2, S-06B section 4); none for the person's own change. Every line is the drawn
+    form, from L-DRAFT's one builder (`draft.parts.because`): a reason reads "Suggested because …", and the draft's
+    quotes for what it's worth ("From your words: “…”") read "Suggested because you said “…”." (Review.md; BLD-C194).
+    The quotes are the masked copy, exactly as the draft's part holds them."""
     if c.source == "changed" or not c.why:
         return None
     w = " ".join(c.why.split())
-    if w.lower().startswith("suggested"):
-        line = w
-    elif w.lower().startswith("because"):
-        line = "Suggested " + w[0].lower() + w[1:]
+    low = w.lower()
+    if low.startswith("from your words"):
+        line = parts.because(None, parts.quotes_in(w))
+    elif low.startswith("suggested") and not low.startswith("suggested because"):
+        line = w if w.endswith((".", "!", "?")) else w + "."  # "Suggested, your call: …" stays as written
     else:
-        line = "Suggested: " + w[0].lower() + w[1:]
-    return line if line.endswith((".", "!", "?")) else line + "."
+        line = parts.because(w, [])
+    if field == "brings" and isinstance(c.value, list) and set(c.value) == BRINGS_DRAWN:
+        line = f"{line} {BRINGS_DRAWN_HINT}"
+    return line
 
 
 def _brings_words(brings: list[str]) -> list[str]:
@@ -187,7 +199,7 @@ def view(conn: Conn, idea: dict[str, Any], *, phase: Phase, li: config.Lists | N
     confirmed = is_confirmed(choices)
     complete = is_complete(choices)
     out: dict[str, Any] = {
-        f: {"value": c.value, "source": c.source, "why": c.why, "why_line": why_line(c)}
+        f: {"value": c.value, "source": c.source, "why": c.why, "why_line": why_line(c, f)}
         for f, c in choices.items()
     }
     if phase == "edit":

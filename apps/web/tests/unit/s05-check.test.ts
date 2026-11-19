@@ -2450,3 +2450,23 @@ describe("S-05 C-HIDDEN L-HIDE BLD-C193: the sorting's quote says a masked detai
     expect(whys()).toContain("Suggested because you mentioned “the investor at Folio ••••17”.");
   });
 });
+
+// --- Lane G's 09:30 walk: the sorting reasons in the drawn form (BLD-C194) -------------------------------------
+
+describe("S-05 part 2 L-SORT BLD-C194: each sorting reason reads as Review.md draws it (J-RECOVER/10)", () => {
+  const DRAWN =
+    "Suggested because you said “about 40 calls a day” and “5 to 10 minutes each”. Add revenue or outside tools if it does those too.";
+
+  it("the four reasons read 'Suggested because …', the worth one with its quotes; no 'Suggested: from your words'", async () => {
+    const s = sorting();
+    await mount(base({ sorting: { ...s, brings: { ...s.brings, why: "from_words", why_line: DRAWN } } }));
+    await railTo("Sorting");
+    expect(Array.from(document.querySelectorAll(".ck-why")).map((p) => text(p))).toEqual([
+      "Suggested because you mentioned investors and the branch.",
+      "Suggested because you described something that goes wrong today.",
+      "Suggested because it’s about investors and the SMS they get.",
+      DRAWN,
+    ]);
+    expect(document.body.textContent).not.toContain("Suggested: from your words");
+  });
+});
