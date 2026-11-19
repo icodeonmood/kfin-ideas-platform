@@ -22,7 +22,7 @@ from core.db import Conn
 from ideapage import read
 from ideapage.shape import REF, crew_of, public_idea, safe_back
 from ideapage.track import decided
-from ideapage.words import brings_words, count, day, join_words, pill
+from ideapage.words import affects_words, brings_words, count, day, pill
 
 CLOSED_FOR_TEAM_UP = (
     "not_picked",
@@ -196,7 +196,10 @@ def colleague_view(
             "summary_heading": "The problem",
             "summary_note": words_note,
             "about": [
-                {"label": "Who it affects", "value": join_words(list(idea["affects"] or []))},
+                {
+                    "label": "Who it affects",
+                    "value": affects_words([str(a).strip() for a in idea["affects"] or []]),
+                },
                 {"label": "What it’s worth", "value": brings_words(list(idea["brings"] or []))},
                 {"label": "Area", "value": idea["area"] or ""},
                 {"label": "Linked", "value": count(n_similar, "similar idea") + " linked"},

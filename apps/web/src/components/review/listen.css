@@ -19,6 +19,10 @@
   align-items: center;
   gap: 8px;
 }
+/* C-LISTEN.anatomy (BLD-B267): the time keeps its height, unseen and unread, until the length is known */
+.listen-wait {
+  visibility: hidden;
+}
 .lctl {
   display: flex;
   align-items: center;
@@ -70,7 +74,8 @@
   place-items: center;
   cursor: pointer;
 }
-.lplay[disabled] {
+.lplay[disabled],
+.lplay[aria-disabled="true"] {
   opacity: 0.4;
   cursor: default;
 }

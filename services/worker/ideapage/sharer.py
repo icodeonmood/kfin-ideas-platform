@@ -30,6 +30,7 @@ from ideapage.shape import at_desk, my_ideas_label, public_idea, safe_back, simi
 from ideapage.track import STATUS_OF_CHOICE, Decided, decided
 from ideapage.words import (
     DECISION_LABEL,
+    affects_words,
     brings_words,
     count,
     countdown,
@@ -228,6 +229,46 @@ def decision_message(conn: Conn, dec: Decided, now: dt.datetime, *, names_desk: 
         "at_label": at_label,
         "by_line": f"{from_label}, {at_label}",  # "The review desk, Monday 16 November, 4:58 pm"
         "text": f"{said}. {reason}" if reason else f"{said}.",
+    }
+
+
+def questions_message(
+    conn: Conn, qset: dict[str, Any], now: dt.datetime, *, names_desk: bool
+) -> dict[str, Any]:
+    """The desk's questions as its message in "You and the review desk" while the set is open (S-06.layout/8;
+    Status.md, "Questions from the review desk": "Meera from the review desk, Monday 16 November, 11:20 am" and "I
+    have 3 questions about your idea."), sent by the desk when it sent the set. The questions themselves are lane
+    B's card above (C-QCARD). A set partly answered is still open and keeps this message: no board draws a partly
+    answered S-06, and GAPS.md has no default for it, so the drawn questions state stays (BLD-E070, J-TRACK/5).
+    DEC-111: outside the review desk and the Ones Committee the sender is "The review desk" with no face, and the
+    line is lane F's for the same entry on S-08, "The review desk has 3 questions about your idea"
+    (docs/hr-wording/lane-f.md); inside them, the board's words with the reviewer's name and initials."""
+    n = len(qset.get("questions") or [])
+    person = read.person_by_user(conn, qset.get("by_user_id")) if names_desk else None
+    if person is not None:
+        role = "from the review desk"
+        speaker: dict[str, Any] = {
+            "id": person["id"],
+            "name": person["name"],
+            "first_name": person["first_name"],
+            "initials": person["initials"],
+            "role_label": role,
+        }
+        from_label, text = f"{person['first_name']} {role}", f"I have {count(n, 'question')} about your idea."
+    else:
+        speaker, from_label = dict(DESK_SPEAKER), REVIEW_DESK_START
+        text = f"{REVIEW_DESK_START} has {count(n, 'question')} about your idea."
+    sent = qset.get("sent_at") or qset["created_at"]
+    at_label = day_time(sent, now)
+    return {
+        "id": f"questions-{qset['id']}",
+        "kind": "questions",
+        "from": speaker,
+        "from_label": from_label,
+        "at": sent.isoformat(),
+        "at_label": at_label,
+        "by_line": f"{from_label}, {at_label}",
+        "text": text,
     }
 
 
@@ -530,7 +571,7 @@ def _shared_rows(
     fix_row = read.fix(conn, uid)
     files = [_file(f) for f in read.files(conn, uid)]
     often = str(idea["often"] or "").strip()  # only spaces counts as left empty
-    who = join_words([str(a).strip() for a in idea["affects"] or []])
+    who = affects_words([str(a).strip() for a in idea["affects"] or []])
     rows = [
         {
             "part": "summary",
@@ -723,11 +764,15 @@ def sharer_view(
         stands = dec is not None and state in DECIDED_STATES
         reversed_ = stands and dec is not None and dec.reversed
         messages: list[dict[str, Any]] = []
+        if open_questions and qset is not None:
+            messages.append(questions_message(conn, qset, now, names_desk=names_desk))
         if stands and dec is not None:
             messages.append(decision_message(conn, dec, now, names_desk=names_desk))
             if reversed_:
                 messages.append(committee_message(conn, dec, now))
-        n_entries = read.entry_count(conn, uid) + len(messages) + read.merge_line_count(conn, uid)
+        # The questions message is the set's own entry, which `entry_count` already counts (it is not added again)
+        said = sum(1 for m in messages if m["kind"] != "questions")
+        n_entries = read.entry_count(conn, uid) + said + read.merge_line_count(conn, uid)
         conversation = {
             "heading": "You and the review desk",
             "count": n_entries,

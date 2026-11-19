@@ -20,6 +20,13 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # The journey suite is a gate too (BLD-A230; the Thu 19 Nov 14:00 gates in SHIP_PLAN_1PC.md, added from 09:30 at
+  # lane G's ask): every run off main walks every journey (apps/web/journeys) on its own runner, beside the gates,
+  # with no retries. On main the suite runs from journeys.yml's own push trigger instead, and lane G reads those runs.
+  journeys:
+    if: github.ref != 'refs/heads/main'
+    uses: ./.github/workflows/journeys.yml
+
   gates:
     runs-on: ubuntu-24.04
     timeout-minutes: 75

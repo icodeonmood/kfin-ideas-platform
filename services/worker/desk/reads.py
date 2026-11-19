@@ -574,9 +574,12 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         artefacts.append({"kind": "versions", "title": "Draft history", "line": " ".join(bits), "action": "See changes"})  # fmt: skip
     sharer_worth, reviewer_worth, revision = revise.current(conn, str(idea["id"]))
     parts = _parts(_part_texts(conn, idea, files, hidden), _questions(conn, idea["id"], t, user_id))
+    # C-SHEET-MERGE.after (BLD-B266): a row is Merged both ways, when the other idea joined this one and when this
+    # idea joined it (the reviewer chose the other to lead, J-REVIEW/M3); one merged into some third idea is not
+    this_uuid, joined_to = str(idea["id"]), str(idea["merged_into"] or "")
     similar = [
         {"idea_id": s["idea_id"], "title": s["title"], "status": s["status"], "strength": s["strength"],
-         "reason": s["reason"], "merged": s["merged_into"] == idea["id"],
+         "reason": s["reason"], "merged": str(s["merged_into"] or "") == this_uuid or str(s["uuid"]) == joined_to,
          # S-R2.similar (BLD-B264): "IDEA-…, Ravi Nair, Investor service, Hyderabad. 4 on its crew", from the bits
          # that exist, so a sharer with no city or no area leaves no empty comma
          "meta": f"{joined(s['idea_id'], person_by_code(conn, s['contributor_code']).name, s['area'], s['city'])}. "
@@ -584,8 +587,8 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         # A link counts both ways: an idea found similar to this one while its sharer wrote (and later merged into
         # it, J-SIMILAR/6a) is this idea's similar idea too (S-R2.left/5, J-SIMILAR/7). This idea's own link wins.
         for s in conn.execute(
-            "SELECT * FROM (SELECT DISTINCT ON (o.id) o.idea_id, o.title, o.status, o.area, o.city, o.contributor_code, "
-            "o.merged_into, l.strength, l.reason, l.rank, l.idea_uuid = %(id)s AS own_link, "
+            "SELECT * FROM (SELECT DISTINCT ON (o.id) o.id AS uuid, o.idea_id, o.title, o.status, o.area, o.city, "
+            "o.contributor_code, o.merged_into, l.strength, l.reason, l.rank, l.idea_uuid = %(id)s AS own_link, "
             "(SELECT count(*) FROM crew_members c WHERE c.idea_uuid = o.id AND c.left_at IS NULL) AS crew "
             "FROM similar_links l JOIN ideas o "
             "ON o.id = CASE WHEN l.idea_uuid = %(id)s THEN l.other_idea_uuid ELSE l.idea_uuid END "

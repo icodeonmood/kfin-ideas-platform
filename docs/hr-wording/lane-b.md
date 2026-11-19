@@ -143,3 +143,12 @@ Before this, every empty part of an idea on the reviewer's page read "Not given.
 | The reviewer's page, a similar idea, when its sharer has no city (likewise with no area) | IDEA-2026-001412, Ravi Nair, Investor service, Hyderabad. 4 on its crew | IDEA-2026-001412, Ravi Nair, Investor service. 1 on its crew (was "…, Investor service, . 1 on its crew") |
 | The reviewer's page, the heading, when the idea has no city | Shared Saturday 14 November by Kavya Menon, Investor service, Hyderabad. | Shared Saturday 14 November by Kavya Menon, Investor service. (was "…, Investor service, .") |
 | The Ones Committee, the Idea column, when the idea has no area | IDEA-2026-001433, Swati Kulkarni, Distributor services, Mumbai | IDEA-2026-001433, Swati Kulkarni, Mumbai (was "…, Swati Kulkarni, , Mumbai") |
+
+## 9. Lines changed after lane G's 09:30 walk (19 Nov, BLD-B266 to BLD-B268)
+
+At the 3-month limit the committee's window can no longer be extended, and the button has already given way to "At the 3-month limit". The open line kept saying it could be extended, so at the limit its middle sentence goes; nothing is added. Before the limit the line is unchanged. The listen strip on the reviewer's page now stands from the first paint, with no new words: until the audio is ready, its time is not shown and its play button is announced as "Play the whole idea" without the length.
+
+| Where | Board copy | On screen |
+|---|---|---|
+| The Ones Committee, an open decision at the 3-month limit (not drawn; the board draws a window that can still be extended) | Open until Wednesday 16 December. You can extend it 30 days at a time, up to Tuesday 16 February 2027. When it closes, the decision stands. | Open until Tuesday 16 February 2027. When it closes, the decision stands. |
+| The reviewer's page, the listen strip's play button before the audio is ready (heard, not seen; not drawn) | Play the whole idea, 2 minutes 10 seconds | Play the whole idea (then "Play the whole idea, 2 minutes 10 seconds" once the audio is ready) |

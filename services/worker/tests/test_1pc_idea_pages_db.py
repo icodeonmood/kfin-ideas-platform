@@ -126,7 +126,8 @@ def test_s06_states_questions_from_the_review_desk_leaves_the_card_to_lane_b(clu
     assert "answer" not in page["actions"]
     assert not page["window"]["open"] and page["window"]["line"].startswith("The review desk opened it on")
     assert "withdraw" not in page["actions"] and "edit" not in page["actions"]
-    assert nodes(v)[2][2] == f"3 questions for you since {day(NOW - dt.timedelta(days=1), NOW)}"
+    # T6's set is due at 6 pm today, so it went on Friday 13 November (3 days to answer; club_seed, BLD-E067)
+    assert nodes(v)[2][2] == "3 questions for you since Friday 13 November"
 
 
 def test_s06_states_answers_sent_after_a_partial_send_keeps_the_open_set_for_its_card(
@@ -158,6 +159,60 @@ def test_s06_states_answers_sent_after_a_partial_send_keeps_the_open_set_for_its
     v = view(club, t6, "tanvi")
     assert v["page"]["state"] == "answers_sent" and v["idea"]["has_open_questions"] is False
     assert v["page"]["card"]["lead"] == "Sent. The review desk has your answers."
+
+
+def test_s06_layout_8_j_track_3_5_the_desks_questions_are_its_message_while_the_set_is_open(
+    club: dict[str, Any],
+) -> None:
+    """S-06.layout/8, Status.md "Questions from the review desk" (BLD-E070; lane G's walk of 19 Nov, row 1; J-TRACK/3,
+    /5): while T6's set is open, "You and the review desk" carries the desk's questions as its message, at the time
+    the set was sent; the questions themselves are lane B's card. Partly answered (2 of 3 sent, J-TRACK/4) the set is
+    still open and no board draws that S-06, so the drawn questions state stays: the same message, no "from Answer"
+    line and no "Write to the review desk". DEC-111: the desk as a whole, with lane F's S-08 words; a sharer on the
+    review desk reads the board's own. The message is the set's own entry, so the count does not grow."""
+    conn, t6 = club["conn"], ref(club, "T6")
+    sent = conn.execute(
+        "SELECT sent_at FROM question_sets WHERE idea_uuid = %s", (club["m"]["T6"].uuid,)
+    ).fetchone()["sent_at"]
+    count_before = None
+    for state, status in (("seen", "with_review_desk"), ("partly_answered", "needs_you")):
+        conn.execute(
+            "UPDATE question_sets SET state = %s WHERE idea_uuid = %s", (state, club["m"]["T6"].uuid)
+        )
+        conn.execute("UPDATE ideas SET status = %s WHERE idea_id = %s", (status, t6))
+        v = view(club, t6, "tanvi")
+        conv = v["page"]["conversation"]
+        assert [m["kind"] for m in conv["messages"]] == ["questions"], state
+        msg = conv["messages"][0]
+        assert msg["from_label"] == "The review desk" and msg["from"]["initials"] == ""
+        assert msg["text"] == "The review desk has 3 questions about your idea."
+        assert msg["at_label"] == day_time(sent, NOW) and msg["at"] == sent.isoformat()
+        assert (
+            "empty_line" not in conv
+            and "sub_line" not in conv
+            and set(conv)
+            == {
+                "heading",
+                "count",
+                "link",
+                "messages",
+            }
+        )
+        assert no_reviewer_named(v, club), state
+        count_before = count_before or conv["count"]
+        assert conv["count"] == count_before
+    assert v["page"]["state"] == "answers_sent" and nodes(v)[2][2].startswith("3 questions for you since ")
+
+    grant(club, "tanvi", "reviewer")
+    msg = view(club, t6, "tanvi")["page"]["conversation"]["messages"][0]
+    assert msg["from_label"] == "Harish from the review desk" and msg["from"]["initials"]
+    assert msg["text"] == "I have 3 questions about your idea."
+    revoke_all(club, "tanvi")
+
+    # Every answer in: the set is no longer open and its message goes with it ("Answers sent" is not built here)
+    conn.execute("UPDATE question_sets SET state = 'answered' WHERE idea_uuid = %s", (club["m"]["T6"].uuid,))
+    conn.execute("UPDATE ideas SET status = 'with_review_desk' WHERE idea_id = %s", (t6,))
+    assert "messages" not in view(club, t6, "tanvi")["page"]["conversation"]
 
 
 def test_s06_states_needs_you_as_lane_b_stores_it(club: dict[str, Any]) -> None:
@@ -562,11 +617,13 @@ def test_s06_layout_8_bld_e058_before_a_decision_and_withdrawn_the_card_is_uncha
     club: dict[str, Any],
 ) -> None:
     """BLD-E058 changes nothing before a decision or after a withdrawal: Just shared keeps its empty line and no
-    message, Questions from the review desk has no message, and a withdrawn idea has no card."""
+    message, Questions from the review desk has the desk's questions only (BLD-E070, no decision), and a withdrawn
+    idea has no card."""
     just = view(club, ref(club, "T5"), "tanvi")["page"]["conversation"]
     assert "messages" not in just and just["empty_line"].startswith("No messages yet.") and just["count"] == 0
     asked = view(club, ref(club, "T6"), "tanvi")["page"]
-    assert asked["state"] == "questions" and "messages" not in asked["conversation"]
+    assert asked["state"] == "questions"
+    assert [m["kind"] for m in asked["conversation"]["messages"]] == ["questions"]
     assert view(club, ref(club, "T10"), "tanvi")["page"]["conversation"] is None
 
 
@@ -754,6 +811,19 @@ def test_s09_omits_the_name_when_hidden_on_the_wall(club: dict[str, Any]) -> Non
     assert "Charulata" not in dump and v["idea"]["sharer"] is None
     assert v["page"]["shared_line"] == f"Shared {day(NOW - dt.timedelta(days=16), NOW)}, Compliance, Kolkata"
     assert "The sharer’s own words stay with them" in v["page"]["summary_note"]
+
+
+def test_s06_layout_5_s09_layout_5_who_it_affects_is_a_list_with_commas(club: dict[str, Any]) -> None:
+    """S-06.layout/5 and S-09.layout/5, BLD-E068 (lane G's walk of 19 Nov, row 4; J-SHARE/12, J-RECOVER/14, /15):
+    Status.md and Compose.md draw "Investors, KFin teams", Idea.md and PhoneIdea.md "Investors, branch teams": a list
+    with commas, never "Investors and KFin teams". What it's worth keeps its sentence ("Saves time and cost")."""
+    t8 = ref(club, "T8")  # Tanvi's, affecting investors and KFin teams
+    own = {r["part"]: r for r in view(club, t8, "tanvi")["page"]["shared"]["rows"]}
+    assert own["who"]["value"] == "Investors, KFin teams"
+    about = {a["label"]: a["value"] for a in view(club, t8, "rekha")["page"]["about"]}
+    assert about["Who it affects"] == "Investors, KFin teams"
+    one = {r["part"]: r for r in view(club, ref(club, "T6"), "tanvi")["page"]["shared"]["rows"]}
+    assert one["who"]["value"] == "Investors"
 
 
 def test_s09_layout_names_the_sharer_and_bld_e008_uses_no_pronoun(club: dict[str, Any]) -> None:
@@ -1329,7 +1399,7 @@ def test_s07_rows_next_step_and_action_per_status(club: dict[str, Any]) -> None:
     rows = {i["id"]: i for i in mine(club, "tanvi")["items"]}
     t6 = rows[ref(club, "T6")]
     assert t6["pill"]["label"] == "Needs you"
-    assert t6["next_step"]["sentence"] == "The review desk asked you 3 questions yesterday."
+    assert t6["next_step"]["sentence"] == "The review desk asked you 3 questions on Friday."
     # S-07.phone (PhoneMyIdeas.md) names who asked; DEC-111: only to the review desk and the Ones Committee, so the
     # sharer's phone says the desktop's sentence (test_s07_dec111_…)
     assert "phone_sentence" not in t6["next_step"]
@@ -1374,14 +1444,14 @@ def test_s07_dec111_my_ideas_names_the_review_desk_not_the_reviewer(club: dict[s
 
     out, row = t6_row()
     assert no_reviewer_named(out, club)
-    assert row["next_step"]["sentence"] == "The review desk asked you 3 questions yesterday."
+    assert row["next_step"]["sentence"] == "The review desk asked you 3 questions on Friday."
     assert "phone_sentence" not in row["next_step"]
     for role in ("committee", "reviewer"):
         grant(club, "tanvi", role)
         _, row = t6_row()
         assert (
             row["next_step"]["phone_sentence"]
-            == "Harish from the review desk asked you 3 questions yesterday."
+            == "Harish from the review desk asked you 3 questions on Friday."
         )
         revoke_all(club, "tanvi")
 
