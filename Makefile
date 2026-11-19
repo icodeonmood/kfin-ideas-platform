@@ -19,7 +19,7 @@ WEB     := cd apps/web &&
 # The Python that runs `make sarvam-live`; another checkout's worker venv works too (…/services/worker/.venv/bin/python).
 SARVAM_LIVE_PYTHON ?= uv run --frozen python
 
-.PHONY: help setup build up down health migrate db-users seed demo demo-reset demo-remove test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data uat-deploy uat-rehearsal sarvam-live
+.PHONY: help setup build up down health migrate db-users seed demo demo-reset demo-remove test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data uat-deploy uat-rehearsal uat-upgrade uat-rollback uat-rehearsal-upgrade sarvam-live
 
 help: ## List the commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-12s %s\n", $$1, $$2}'
@@ -128,3 +128,12 @@ uat-deploy: ## UAT from a clean database: make uat-deploy APP_ENV_FILE=… DB_EN
 
 uat-rehearsal: ## Rehearse the UAT deploy here with throwaway secrets, then tear it down (pauses the dev stack)
 	scripts/uat/rehearse.sh
+
+uat-upgrade: ## Update a running install to this checkout: make uat-upgrade APP_ENV_FILE=… DB_ENV_FILE=… [FROM=<tag or sha>] (docs/UAT.md)
+	FROM="$(FROM)" scripts/uat/upgrade.sh "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"
+
+uat-rollback: ## Put an install back to an upgrade's backup: make uat-rollback BACKUP=<dump> APP_ENV_FILE=… DB_ENV_FILE=…
+	scripts/uat/rollback.sh "$(BACKUP)" "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"
+
+uat-rehearsal-upgrade: ## Rehearse install FROM, upgrade, rollback, upgrade; stop the dev stack first: make uat-rehearsal-upgrade FROM=<ref>
+	FROM="$(FROM)" scripts/uat/rehearse-upgrade.sh
