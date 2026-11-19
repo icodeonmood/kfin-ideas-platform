@@ -265,7 +265,7 @@ export interface Draft {
   step: DraftStep;
   saved_at: IsoDate;
   saved_on: { device: Device; this_device: boolean };
-  /** L-DRAFT.parts/7: title, summary and area present, the minimum reached, nothing still building. */
+  /** "Move to Review" (DEC-118, overriding L-DRAFT.parts/7 for launch): the minimum reached, nothing still building. */
   ready: boolean;
   min_chars: number;
   char_count: number;
