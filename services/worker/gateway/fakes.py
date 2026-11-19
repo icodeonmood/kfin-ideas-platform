@@ -473,6 +473,15 @@ def _clip_chars(text: str, limit: int) -> str:
 
 SUMMARY_MAX = 600
 WHO_MAX = 8
+# LLM_MODE=fake only (this module is the fake route's): words holding this synthetic sentence get a title and a
+# summary but no area, whatever else they say, so lane G's J-SHARE/v3 reaches Check it with the area waiting
+# (DEC-118, BLD-C197). It names no area, holds no personal detail and is over the minimum characters to check.
+NO_AREA_SENTENCE = "Visitors wait at reception because no meeting room shows as free."
+
+
+def _holds_no_area_sentence(texts: list[str]) -> bool:
+    said = " ".join(" ".join(texts).split()).casefold()
+    return NO_AREA_SENTENCE.rstrip(".").casefold() in said
 
 
 def draft_part(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
@@ -507,6 +516,8 @@ def draft_part(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
                 phrase = m.group(0)
                 out.update(often=_neutral(phrase[:1].upper() + phrase[1:]), evidence=[phrase])
                 return out
+        return out
+    if part == "area" and _holds_no_area_sentence(texts):
         return out
     choices = [c for c in (inputs.get("options") or {}).get("choices") or [] if isinstance(c, dict)]
     if part in ("who", "area"):
