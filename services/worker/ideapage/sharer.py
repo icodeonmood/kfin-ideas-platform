@@ -713,14 +713,17 @@ def sharer_view(
         crumb = {"label": my_ideas_label(to), "to": to}
 
     conversation: dict[str, Any] | None = None
-    if state != "withdrawn":
+    # No card on a withdrawn idea, nor on a merged one: no board draws a merged page (S-06.states has no merged
+    # state; S-06.rules/4 gives it the card's sentence, the note and a link to where it went), so it keeps only what
+    # the rule names (BLD-E069; J-REVIEW/M3, J-SIMILAR/7). The idea it went into keeps its card.
+    if state != "withdrawn" and idea["status"] != "merged":
         # The short view of the conversation (S-06.layout/8). Its entries are lane F's (L-CONVO) and the questions
         # card in it is lane B's (C-QCARD); this card carries the count, the empty line and the link. Once the desk
         # has decided, the decision is the desk's message here, and after a reversal the committee's follows it, in
         # time order (BLD-E058): lane F's S-08 shows each as an event line, which `entry_count` does not count, so
         # they are counted here. A reversed decision stays reversed once it is built or shipped. So are the merge
-        # lines S-08 shows on both ideas (L-MERGE.effects/6; J-REVIEW/M3, J-SIMILAR/7; BLD-E065): the card has no
-        # message for them, but no "No messages yet" over a conversation that has them.
+        # lines S-08 shows on the idea a merge went into (L-MERGE.effects/6; J-REVIEW/M3, J-SIMILAR/7; BLD-E065):
+        # the card has no message for them, but no "No messages yet" over a conversation that has them.
         stands = dec is not None and state in DECIDED_STATES
         reversed_ = stands and dec is not None and dec.reversed
         messages: list[dict[str, Any]] = []
