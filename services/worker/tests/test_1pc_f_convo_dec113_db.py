@@ -288,8 +288,8 @@ def _items(db: Any, entry_id: str) -> dict[tuple[str, str], dict[str, Any]]:
     return {
         (str(r["kind"]), str(r["to_user"])): dict(r)
         for r in db.execute(
-            "SELECT kind, user_id::text AS to_user, payload, dedupe_key FROM notifications "
-            "WHERE channel = 'in_app' AND payload->>'entry_id' = %s",
+            "SELECT kind, user_id::text AS to_user, payload, from_user_id::text AS from_user, dedupe_key "
+            "FROM notifications WHERE channel = 'in_app' AND payload->>'entry_id' = %s",
             (entry_id,),
         ).fetchall()
     }
@@ -308,12 +308,15 @@ def test_dec_113_l_inbox_a_members_message_posts_comment_and_mention_as_the_ones
     # Outside the review desk and the committee: the committee speaks (IDs and a bool only)
     for key in (("comment", w["kavya"]["id"]), ("mention", w["tara"]["id"]), ("mention", w["ravi"]["id"])):
         assert items[key]["payload"] == {"entry_id": entry_id, "as_committee": True}, key
+        assert items[key]["from_user"] is None, key  # lane A's notify stores no member for it (BLD-A231)
     assert items[("comment", w["kavya"]["id"])]["dedupe_key"] == (
         f"convo.comment:{w['idea']['id']}:2026111710:committee"
     )
-    # The desk and the committee read the members' names in the conversation, so their items carry no flag
+    # The desk and the committee read the members' names in the conversation, so their items carry no flag and
+    # store the member who wrote
     for key in (("mention", w["meera"]["id"]), ("mention", w["sunita"]["id"])):
         assert items[key]["payload"] == {"entry_id": entry_id}, key
+        assert items[key]["from_user"] == w["rohan"]["id"], key
 
 
 def test_dec_113_l_inbox_the_committee_the_desk_and_the_crew_in_one_hour_post_three_comment_items(
@@ -324,16 +327,20 @@ def test_dec_113_l_inbox_the_committee_the_desk_and_the_crew_in_one_hour_post_th
     send(db, ref, w["rohan"]["id"], {"text": "Noted."}, at=fx.at(17, 11, 5))
     send(db, ref, w["ravi"]["id"], {"text": "Adding last week’s calls today."}, at=fx.at(17, 11, 10))
     send(db, ref, w["meera"]["id"], {"text": "Thanks for the log."}, at=fx.at(17, 11, 15))
-    keys = {
-        str(r["dedupe_key"]): dict(r["payload"])
+    found = {
+        str(r["dedupe_key"]): dict(r)
         for r in db.execute(
-            "SELECT dedupe_key, payload FROM notifications WHERE channel = 'in_app' AND kind = 'comment' "
-            "AND user_id = %s AND starts_with(dedupe_key, %s)",
+            "SELECT dedupe_key, payload, from_user_id::text AS from_user FROM notifications "
+            "WHERE channel = 'in_app' AND kind = 'comment' AND user_id = %s AND starts_with(dedupe_key, %s)",
             (w["kavya"]["id"], hour),
         ).fetchall()
     }
+    keys = {k: dict(r["payload"]) for k, r in found.items()}
     assert set(keys) == {hour, f"{hour}:committee", f"{hour}:desk"}
     committee, desk = keys[f"{hour}:committee"], keys[f"{hour}:desk"]
     assert committee.get("as_committee") is True and "as_desk" not in committee
     assert desk.get("as_desk") is True and "as_committee" not in desk
     assert set(keys[hour]) == {"entry_id"}
+    # The stored sender: none when the committee or the desk speaks as one; the crew member who wrote otherwise
+    senders = {k: r["from_user"] for k, r in found.items()}
+    assert senders == {f"{hour}:committee": None, f"{hour}:desk": None, hour: w["ravi"]["id"]}
