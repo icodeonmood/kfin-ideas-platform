@@ -14,9 +14,10 @@ The flow, one stream per note, held by the worker (the browser never holds the k
    far, the person's own (`text`, with `spans` for the customer details found), for them alone.
 3. `end` (or 20 seconds without a chunk, or the 3-minute cap): flush, wait briefly for the last words, close. The
    words are normalised (spoken numbers become digits), masked (`hide_text`, DEC-103), and the masked copy is
-   translated into English with mayura:v1, code-mixed, worded for the person's choice in Profile (`prefs`), then
-   masked again. The unmasked words are sealed with the vault key; only the masked copy and the masked English go
-   anywhere else.
+   tagged like a model call (names and client organisations as tags, then the leak check: BLD-C200), translated
+   into English with mayura:v1, code-mixed, worded for the person's choice in Profile (`prefs`), its tags checked
+   and swapped back for the sharer, then masked again (`_english`). The unmasked words are sealed with the vault
+   key; only the masked copy and the masked English go anywhere else.
 4. `voice_to_message`: lane C's draft builder (branch c/draft) takes it as a message (via `voice`) and the held
    copies are deleted. Otherwise `sweep` deletes them after 24 hours.
 
@@ -45,6 +46,9 @@ from core.db import Conn, connect
 from core.logging import get_logger
 from gateway import sarvam
 from gateway.speech import SpeechUnavailable
+from hide.core import scope_for
+from pii import vault
+from pii.restore import restore
 from speech import prefs
 from speech.adapters import hide_text, mask_for_service
 from voice.numbers import normalise
@@ -115,9 +119,9 @@ class VoiceMessage:
       anywhere else.
     - `text_masked`: the same words masked (DEC-103): the message's copy for the desk and the committee.
     - `spans`: where the details were in `text` ({start, end, kind}), for the person's own view.
-    - `text_en`: the English translation of the masked words, masked again; labelled `text_en_label`. The working
-      copy for drafting, matching and the review desk (DEC-108 (1), DEC-095). None if the translation failed: call
-      `gateway.sarvam.translate` again with `text_masked`.
+    - `text_en`: the English translation of the masked words (tagged on the way out, BLD-C200), masked again;
+      labelled `text_en_label`. The working copy for drafting, matching and the review desk (DEC-108 (1),
+      DEC-095). None if the translation failed: run `_english` again on `text_masked` (never `sarvam.translate` alone).
     - `translated`: False when the person spoke English and `text_en` is `text_masked` as is.
     - `lang`, `language`, `seconds`, `summary`: "Voice message, 1 minute 12 seconds, in Telugu" (L-DRAFT.voice/4).
     """
@@ -433,7 +437,9 @@ def _finish(conn: Conn, live: _Live, ended_by: EndedBy) -> dict[str, Any]:
         return {"id": stream_id, "state": "failed", "failure": code, "ended_by": ended_by}
     hidden = hide_text(own)
     lang = heard.language if heard.language in LANGUAGES else None
-    text_en, translated, translation_failure = _english(conn, stream_id, hidden.text, lang, live.user_id)
+    text_en, translated, translation_failure = _english(
+        conn, stream_id, hidden.text, lang, live.user_id, idea_uuid=live.idea_uuid
+    )
     store.done(
         stream_id,
         {
@@ -465,25 +471,39 @@ def _finish(conn: Conn, live: _Live, ended_by: EndedBy) -> dict[str, Any]:
 
 
 def _english(
-    conn: Conn, stream_id: str, masked: str, lang: str | None, user_id: str | None
+    conn: Conn, stream_id: str, masked: str, lang: str | None, user_id: str | None, *, idea_uuid: str
 ) -> tuple[str | None, bool | None, str | None]:
-    """The English copy of the masked words, masked again as it returns. (text_en, translated, failure code)."""
+    """The English copy of the masked words (text_en, translated, failure code), as a model call is made and its
+    output kept (BLD-C200, non-negotiable 2; `draft.runs._restored`):
+
+    1. masked for the service (`mask_for_service`: no pattern hit at all is left);
+    2. tagged in the draft's vault scope and leak-checked (`sarvam.tag_for_service`): colleagues' and other names,
+       client organisations and codes go as tags, never as written;
+    3. translated (`sarvam.translate`), then every tag checked back (`sarvam.tags_back`). A tag the service broke
+       fails the English copy (`translation_hosted_tags_broken`) the way any failed translation does: the person
+       keeps their own words, with no English copy;
+    4. the tags sent swapped back for the masked words they stand for, for the sharer, whose copy this is (it is read
+       by them alone, and a model call re-tags it), then masked again as it returns (`hide_text`)."""
     if lang == "en-IN":
         return masked, False, None
     gender = prefs.speaker_gender(prefs.refer_as(conn, user_id))
+    scope = scope_for(idea_uuid)
     try:
+        sent = sarvam.tag_for_service(mask_for_service(masked), conn=conn, scope_id=scope)
         got = sarvam.translate(
-            mask_for_service(
-                masked
-            ),  # the gateway's leak check passes only a copy with no pattern hit at all
+            sent.text,
             gender=gender,
             conn=conn,
             ref_id=f"stream:{stream_id}",
             source=lang if lang in MAYURA_SOURCES else "auto",
         )
+        english = sarvam.tags_back(sent, got.text)
     except SpeechUnavailable as exc:
         return None, None, f"translation_{exc.code}"[:60]
-    return hide_text(got.text).text, got.translated, None
+    if sent.tags:  # only the tags this call sent: tags_back let no other through
+        known = vault.mapping(conn, scope)
+        english = restore(english, {t: known[t] for t in sent.tags if t in known}, "real")
+    return hide_text(english).text, got.translated, None
 
 
 def _ctx(column: str, stream_id: str) -> str:
@@ -551,7 +571,7 @@ def voice_to_message(
     person has checked the words. Returns None when the stream is not theirs, not finished, already handed over or
     past its 24 hours. With `consume` (the default) the held copies are deleted once returned: store `text` sealed
     in `idea_words_sealed` and `text_masked` in `idea_messages`. If the person edited the words before sending,
-    save their edited text instead and re-run `gateway.sarvam.translate` on its masked copy.
+    save their edited text instead and re-run `_english` on its masked copy (it tags before `sarvam.translate`).
     """
     row = _store(conn).row(stream_id)
     if (

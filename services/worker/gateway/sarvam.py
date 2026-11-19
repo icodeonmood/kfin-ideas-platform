@@ -14,6 +14,9 @@ words stay in their script; or `transcribe`), language detected.
 DEC-108 bends non-negotiable 2 for audio only: raw voice goes to Sarvam untagged. Text going out (translate, tts)
 must already be masked (DEC-103): `check_masked` re-runs the level-1 patterns on it and refuses with
 `unmasked_text` on any hit, like the gateway's leak check. Transcripts are masked by the caller as they return.
+Text for mayura is also tagged like a model call (BLD-C200, non-negotiable 2): `tag_for_service` is `run_agent`'s
+steps 1 and 2 (the gateway's own tagger, then its leak check on the tagged text), and `tags_back` is step 7 for the
+reply: every tag sent must come back intact, or the reply is refused as `hosted_tags_broken`.
 
 Every call needs `SPEECH_HOSTED_APPROVAL` (DEC-108), the `speech.hosted` switch read fresh, past the cache, and
 `SARVAM_API_KEY` from the worker-only env. Every call is metered in `speech_calls` (IDs, seconds, characters,
@@ -47,8 +50,11 @@ from websockets.sync.client import connect as ws_connect
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
+from gateway.core import _alert, leak_hits
 from gateway.speech import FAKE_MARKER, FAKE_SAMPLE, SpeechUnavailable, Transcript, hosted_allowed
+from pii.detect import Directory
 from pii.patterns import scan
+from pii.tagger import TAG_RE, tag_payload, tags_in
 
 log = get_logger("sarvam")
 _ws_log = logging.getLogger("kfin.sarvam.websockets")
@@ -149,6 +155,44 @@ def check_masked(text: str) -> None:
     covers audio only; text going out is masked first (`speech.adapters.mask_for_service`)."""
     if scan(text, kfin_domains=[]):
         raise SarvamFailed("unmasked_text")
+
+
+# ---- text going out, tagged like a model call (BLD-C200) ---------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Outgoing:
+    """Text for Sarvam after `run_agent`'s steps 1 and 2: `text` is the only copy that may go to the service, and
+    `tags` maps every tag in it to its type (never a value)."""
+
+    text: str
+    tags: dict[str, str]
+
+
+# What is left of a tag the reply broke: a bracket pair, or a tag's name and number without them.
+_TAG_PIECE = re.compile(r"\[\[|\]\]|\b[A-Z][A-Z_]*_[0-9]+\b")
+
+
+def tag_for_service(text: str, *, conn: Conn, scope_id: str, d: Directory | None = None) -> Outgoing:
+    """The masked text tagged in the idea's vault scope by the gateway's own tagger (`pii.tagger.tag_payload`:
+    colleagues from `users`, other names, client organisations, codes and any pattern value), then the gateway's leak
+    check (`gateway.core.leak_hits`) on the tagged text, in `run_agent`'s order. A hit means detection missed
+    something: an `alert.leak_check` row (pattern ids only) and `unmasked_text`, before anything is sent."""
+    tagged = tag_payload(conn, scope_id, text, d=d)
+    hits = leak_hits(tagged.payload)
+    if hits:
+        _alert(conn, "alert.leak_check", "speech:sarvam", {"patterns": hits, "ref_id": scope_id})
+        raise SarvamFailed("unmasked_text")
+    return Outgoing(text=str(tagged.payload), tags=dict(tagged.tags))
+
+
+def tags_back(sent: Outgoing, text: str) -> str:
+    """`run_agent`'s step 7 for the service's reply, stricter: every tag sent is back intact, and no other tag or
+    piece of one is there. A translation can translate, split or drop a tag; that is a failed reply
+    (`hosted_tags_broken`), never a leak, because no value behind a tag was ever sent. Returns `text` as it is."""
+    if tags_in(text) != set(sent.tags) or _TAG_PIECE.search(TAG_RE.sub(" ", text)):
+        raise SarvamFailed("hosted_tags_broken")
+    return text
 
 
 # ---- metering and the automatic switch-off -----------------------------------------------------------------

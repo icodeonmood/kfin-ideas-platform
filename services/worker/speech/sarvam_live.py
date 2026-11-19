@@ -10,7 +10,7 @@ path, never an SDK and never raw httpx or websockets here:
 | `tts` | Listen: `listen.outgoing` (masked for the service, leak-checked), then `listen._synthesise` into `gateway.sarvam.tts`; the audio parsed as Listen parses it | bulbul:v4-flash |
 | `stt_rest` | Voice notes, the service itself: `voice.service.transcribe` on a note of the check's own draft (scan, probe, `gateway.speech.transcribe` into `gateway.sarvam.stt_rest`, `leave_out_blocked` on return), read back with `voice.service.status` | saaras:v4, codemix |
 | `stt_stream` | Drafts "By voice": `speech.drafts.start`, `chunk` (one second of PCM at a time, a second apart, as the browser sends it), `end`, into `gateway.sarvam.stt_stream`; masked on return by `hide_text` | saaras:v4, codemix |
-| `translate` | The English copy: `speech.drafts._english` (masked for the service, into `gateway.sarvam.translate`, masked again on return) | mayura:v1, code-mixed |
+| `translate` | The English copy: `speech.drafts._english` (masked for the service, tagged and leak-checked by `gateway.sarvam.tag_for_service`, into `gateway.sarvam.translate`, its tags checked back, masked again on return) | mayura:v1, code-mixed |
 
 The speech-to-text calls hear the audio tts made, decoded to 16 kHz mono s16le by macOS's own `afconvert` (no new
 dependency): as a WAV file for the REST call, as raw one-second chunks for the stream. `ONLY=stt_rest` (or
@@ -21,7 +21,10 @@ quarantine bucket (read and delete) and the virus scan (clean). Their SQL and I/
 Per call it checks that the reply parses the way our code expects; that the text was masked on its way through the
 worker, in two parts: the text the path hands on (to Sarvam, or back to its caller) is what the real masking function
 returned for that call, and, before any network call, each masking function tags a synthetic vector from
-`pii.vectors` (which never leaves the process); that `speech_calls` has its row (call, model, outcome, our codes and
+`pii.vectors` (which never leaves the process); for translate, also that the text sent is what the tagging step
+(`gateway.sarvam.tag_for_service`, BLD-C200) returned for what `mask_for_service` returned, and that, before any
+network call, the tagging step puts tags in place of a synthetic colleague's name (from `users`, inside a transaction
+that is rolled back) and of a vector's values; that `speech_calls` has its row (call, model, outcome, our codes and
 IDs only, no text in any column); and that with `speech.hosted` off the same call refuses before any network call:
 the client's two network entry points (`gateway.sarvam._post` and `_ws_open`) are replaced by tripwires, and reaching
 either fails the check. For speech to text it also checks that a word of each spoken sentence came back,
@@ -97,6 +100,11 @@ MASKERS = {
     "drafts.hide_text": ("speech.drafts", "hide_text"),  # stt_stream and translate, on return
     "drafts.mask_for_service": ("speech.drafts", "mask_for_service"),  # translate, on the way out
 }
+# The tagging step for translate (BLD-C200): watched like a masking function, but it needs the database, so
+# `tagger_tags` proves it apart from `maskers_tag`.
+TAGGER = ("drafts.tag_for_service", ("gateway.sarvam", "tag_for_service"))
+# A synthetic colleague, in `users` only inside the rolled-back transaction of `tagger_tags`. Never sent or printed.
+TAG_NAME = "Tarini Kulasekaran"
 # What a `speech_calls` row may hold besides numbers: one of the worker's own codes, and an ID or a uuid (optionally
 # `kind:`). The prefixes are those of every code `gateway/sarvam.py` (SarvamFailed) and `gateway/speech.py`
 # (SpeechUnavailable, HostedRefused) raise; tests/test_sarvam_live.py reads both files and holds this list to them.
@@ -287,7 +295,7 @@ def _watching(spy: _Spy, mark: frozenset[str] = frozenset()) -> Iterator[None]:
 
     with contextlib.ExitStack() as stack:
         stack.enter_context(_patched(sarvam, "_ws_open", ws_open))
-        for name, (module, attr) in MASKERS.items():
+        for name, (module, attr) in (*MASKERS.items(), TAGGER):
             mod = importlib.import_module(module)
             stack.enter_context(_patched(mod, attr, recording(name, getattr(mod, attr))))
         for call in ("tts", "translate"):
@@ -320,6 +328,51 @@ def maskers_tag() -> dict[str, bool]:
             and not any(v in got for v in values)
         )
     return tagged
+
+
+class _Undo(Exception):
+    """Rolls back `tagger_tags`' transaction: the synthetic colleague and the vault rows go with it."""
+
+
+def tagger_tags(conn: Any) -> bool:
+    """The translate path's tagging step (`gateway.sarvam.tag_for_service`, BLD-C200), run once before any network
+    call on a synthetic vector's text with a synthetic colleague's name in it: the name, found in `users` as the
+    tagger finds colleagues, must come back as a `KFIN_EMPLOYEE` tag and every value the patterns block as a tag, with
+    the leak check passing. The colleague and the vault rows exist only inside a transaction that is rolled back; the
+    text stays in this process: never sent, printed or logged."""
+    from gateway import sarvam
+    from pii import vectors
+    from pii.tagger import tags_in
+
+    vector = next(v for v in vectors.build(n=1)["vectors"] if v["expect"]["blocks"])
+    text = f"{TAG_NAME} said: {vector['text']}"
+    at = len(TAG_NAME) + len(" said: ")
+    values = [text[at + h["start"] : at + h["end"]] for h in vector["python"] if h["action"] == "block"]
+    ok = False
+    try:
+        with conn.transaction():
+            conn.execute(
+                "INSERT INTO users (emp_id_hash, name, email, source) VALUES (%s, %s, %s, 'hr')",
+                (
+                    f"sarvam-live:{secrets.token_hex(4)}",
+                    TAG_NAME,
+                    f"tagger.{secrets.token_hex(4)}@kfintech.example",
+                ),
+            )
+            out = sarvam.tag_for_service(text, conn=conn, scope_id=f"DRAFT-{uuid.uuid4()}")
+            ok = (
+                bool(values)
+                and TAG_NAME not in out.text
+                and not any(v in out.text for v in values)
+                and "KFIN_EMPLOYEE" in out.tags.values()
+                and tags_in(out.text) == set(out.tags)
+            )
+            raise _Undo
+    except _Undo:
+        pass
+    except Exception:
+        return False
+    return ok
 
 
 @contextlib.contextmanager
@@ -829,7 +882,9 @@ def _stt_stream(run: _Run) -> Line:
             line.reason = (
                 "not_masked"  # the English copy is the masked words, or hide_text's output on the translation
             )
-        elif not run.masking_works("drafts.hide_text", *(["drafts.mask_for_service"] if translated else [])):
+        elif not run.masking_works(
+            "drafts.hide_text", *(["drafts.mask_for_service", TAGGER[0]] if translated else [])
+        ):
             line.reason = "masking_no_op"
         elif not line.words:
             line.reason = "words_missing"
@@ -841,10 +896,12 @@ def _stt_stream(run: _Run) -> Line:
 
 
 def _translate(run: _Run) -> Line:
-    """The English copy: `speech.drafts._english` masks the words for the service, sends them through
-    `gateway.sarvam.translate` (mayura:v1, code-mixed, into English) and masks what comes back (`hide_text`). Masked:
-    the text sent is the very object `mask_for_service` returned, and the text returned is the very object `hide_text`
-    returned; both functions tag a vector."""
+    """The English copy: `speech.drafts._english` masks the words for the service, tags them and runs the leak check
+    (`gateway.sarvam.tag_for_service`, BLD-C200), sends them through `gateway.sarvam.translate` (mayura:v1,
+    code-mixed, into English), checks the tags came back, and masks what comes back (`hide_text`). Masked: the
+    tagging step was given the very object `mask_for_service` returned, the text sent is the very text the tagging
+    step returned, and the text returned is the very object `hide_text` returned; both masking functions tag a vector
+    and the tagging step tags a colleague's name and a vector."""
     from gateway import sarvam
     from speech import drafts
     from speech.adapters import hide_text
@@ -853,7 +910,9 @@ def _translate(run: _Run) -> Line:
     masked = hide_text(HINGLISH).text  # as the stream hands it over: the masked copy of the words heard
 
     def english() -> tuple[str | None, bool | None, str | None]:
-        return drafts._english(run.conn, str(uuid.uuid4()), masked, HINGLISH_LANG, None)
+        return drafts._english(
+            run.conn, str(uuid.uuid4()), masked, HINGLISH_LANG, None, idea_uuid=str(uuid.uuid4())
+        )
 
     def refused() -> str | None:
         _text, _translated, failure = english()
@@ -872,11 +931,15 @@ def _translate(run: _Run) -> Line:
         return line
     if not isinstance(text_en, str) or not text_en.strip() or translated is not True:
         line.reason = "hosted_bad_reply"
-    elif not _same_objects(spy.sent.get("translate", []), spy.outputs("drafts.mask_for_service")):
-        line.reason = "not_masked"  # what went to mayura is the very object mask_for_service returned
+    elif not _same_objects(
+        [given for given, _out in spy.calls(TAGGER[0])], spy.outputs("drafts.mask_for_service")
+    ):
+        line.reason = "not_masked"  # the tagging step was given the very object mask_for_service returned
+    elif not _same_objects(spy.sent.get("translate", []), [_text_of(out) for out in spy.outputs(TAGGER[0])]):
+        line.reason = "not_masked"  # what went to mayura is the very text the tagging step returned
     elif len(back) != 1 or text_en is not getattr(back[0], "text", None):
         line.reason = "not_masked"  # what came back to the caller is the very object hide_text returned
-    elif not run.masking_works("drafts.mask_for_service", "drafts.hide_text"):
+    elif not run.masking_works("drafts.mask_for_service", "drafts.hide_text", TAGGER[0]):
         line.reason = "masking_no_op"
     else:
         line.reason = _metered(
@@ -1084,8 +1147,10 @@ def _run_in(
                     reason="Live check: on in its own database (BLD-C177)",
                     actor=ACTOR,
                 )
-            # Before any network call: each masking function must tag a synthetic vector (never sent or printed).
-            state = _Run(conn=conn, decode=decode, pace_s=pace_s, notes=notes, tagged=maskers_tag())
+            # Before any network call: each masking function must tag a synthetic vector, and the tagging step a
+            # synthetic colleague's name too (never sent or printed).
+            tagged = {**maskers_tag(), TAGGER[0]: tagger_tags(conn)}
+            state = _Run(conn=conn, decode=decode, pace_s=pace_s, notes=notes, tagged=tagged)
             for call in calls:
                 try:
                     line = CHECKS[call](state)
