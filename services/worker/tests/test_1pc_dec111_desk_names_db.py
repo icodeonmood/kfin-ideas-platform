@@ -1,7 +1,8 @@
 """DEC-111 (BLD-B257): a sharer, and the crew, never see the name of the person at the review desk. What lane B sends
 them names "the review desk": the decision's lines and row words (L-DECIDE, S-06, Status.md), the open question set
 (L-QUESTIONS, C-QCARD, S-R3), the sent answers' lines and the answers under each part. The review desk and the Ones
-Committee still read each other's names, and the committee member who reversed a decision is still named.
+Committee still read each other's names. DEC-113: nor do the sharer and the crew see the committee member who
+reversed a decision; they read the Ones Committee.
 
 Needs Postgres with the handoff cut-over applied (`make up`, then the tests migrate their own database).
 """
@@ -129,7 +130,7 @@ def test_DEC_111_L_DECIDE_S_06_the_sharer_and_the_crew_read_the_desk_and_the_des
         assert got["decision"]["reason_heading"] == "The review desk’s reason, as Kavya read it", who
 
 
-def test_DEC_111_L_COMMITTEE_S_06_after_a_reversal_the_sharer_reads_the_desk_and_the_member_by_name(
+def test_DEC_111_DEC_113_L_COMMITTEE_S_06_after_a_reversal_the_sharer_reads_the_desk_and_the_committee(
     db: Conn, cast: dict[str, Any]
 ) -> None:
     d = decide.send(
@@ -143,8 +144,9 @@ def test_DEC_111_L_COMMITTEE_S_06_after_a_reversal_the_sharer_reads_the_desk_and
     assert got is not None and got["lines"]["reversal"] is not None
     rev = got["lines"]["reversal"]
     assert rev["was_by_line"] == "by the review desk, Monday 16 November"
-    assert rev["from_line"].startswith("Rohan Mehta from the Ones Committee, ")  # committee names stay
-    assert got["reversal"]["by"]["name"] == "Rohan Mehta"
+    # DEC-113 (BLD-B269): nor the member who reversed it; the committee itself, with no face
+    assert rev["from_line"].startswith("The Ones Committee, ")
+    assert (got["reversal"]["by"]["name"], got["reversal"]["by"]["initials"]) == ("The Ones Committee", "")
     _no_reviewer(got, cast)
     # the committee's own row still names the reviewer (S-R4)
     rows = committee.listing(db, cast["rohan"]["id"], "reversed", at=f.at(20, 12))["items"]

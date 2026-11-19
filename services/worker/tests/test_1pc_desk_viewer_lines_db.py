@@ -97,7 +97,7 @@ def test_V_ACC_committee_4_the_sharer_reads_the_committees_card_and_this_is_fina
     got = _sharer(db, cast, f.at(24, 18))
     assert got["lines"]["committee_line"] is None and got["reversal"]["note"] == NOTE
     assert got["lines"]["reversal"] == {
-        "from_line": "Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm",
+        "from_line": "The Ones Committee, Tuesday 24 November, 5:40 pm",  # DEC-113: not the member
         "title": "The Ones Committee changed the decision to not now",
         "note_heading": "The committee’s note to you",
         "was_line": "Was: Picked",
