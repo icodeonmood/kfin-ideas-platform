@@ -60,7 +60,7 @@ The shipping plan built on this mapping is `docs/SHIP_PLAN_1PC.md`. **Phase**: s
 | `C-TASKBAR` | built (BLD-D011): `components/shell/taskbar.tsx`; task screens mount it as the first child of `main` | S to M | P0 | D |
 | `C-BUTTON` | built: `offer.css` (`.btn` family, `.tb`), `components/ui/button.tsx` (`Button`, `ButtonLink`, `buttonClass`); the legacy `.button` classes take the same look in `globals.css` | M | P0 | D |
 | `C-CHIP` | built: `components/ui/chips.tsx` (`ChoiceChips` radio group with arrows, `MultiChips` pressed; `filter` shows the tick on a phone only), `components.css`; the sliding ring waits for the FLIP polish | M | P0 | D |
-| `C-PILL` | built: `components/ui/pill.tsx` (`Pill`, `StatusPill`, `IDEA_STATUS` from `E-ENUMS.idea-status`; `Pill countdown` is the board's countdown, a clock in place of the dot) | S | P0 | D |
+| `C-PILL` | built: `components/ui/pill.tsx` (`Pill`, `StatusPill`, `IDEA_STATUS` from `E-ENUMS.idea-status`; `Pill countdown` is the board's countdown, a clock in place of the dot; `latest` is the Wall's warm Ember pill, BLD-D016) | S | P0 | D |
 | `C-FIELD`, `C-FIELD-MSG` | built: `components/ui/field.tsx` (`Field` wires label, help, message, `aria-describedby`, `aria-invalid`; `FieldMsg`); 3:1 border; `code-field.tsx` (six boxes, paste, auto-advance, Backspace, shake, autofill) and `question-box.tsx` ("Pinned to" a part, Enter adds) | S | P0 | D |
 | `C-CARD` | built: `components.css` (`.card`, `.panel`, `.tile`, `.well`, `.note`, `.note.blue`, `.slab`, `.placeholder`, `.card-link`); glass inside the shell (`shell.css`) | M | P0 | D |
 | `C-AVATAR` | built: `components/ui/avatar.tsx` (`Avatar` with sizes, neutral and tier rings, the system mark; `CrewFaces` and `crewLine`) | S | P0 | D |

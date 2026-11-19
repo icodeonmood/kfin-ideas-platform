@@ -766,7 +766,10 @@ function IssueLatest({ issue }: { issue: EmberIssueView }) {
         <p className="wl-eb">
           Issue {issue.number}, {issue.month}
         </p>
-        <span className="pill band">Latest</span>
+        <span className="pill latest">
+          <i aria-hidden="true" />
+          Latest
+        </span>
       </div>
       {issue.headline ? <h3 className="wl-issue-h">{issue.headline}</h3> : null}
       {issue.items.length ? (
