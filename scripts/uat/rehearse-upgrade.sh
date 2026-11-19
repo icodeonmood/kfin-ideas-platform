@@ -17,6 +17,7 @@ DEV_PROJECT=kfin-ideas
 fail() { printf 'STOPPED: %s\n' "$*" >&2; exit 1; }
 running() { docker ps -q --filter "label=com.docker.compose.project=$1"; }
 
+[[ "$PROJECT" != "$DEV_PROJECT" ]] || fail "the rehearsal never uses the dev stack's project"
 [[ -n "${FROM:-}" ]] || fail "say which version to install first: FROM=<tag or sha>, for example FROM=launch-2026-11-20-r2"
 if [[ -n "$(running "$DEV_PROJECT")" ]]; then
   echo "stop the dev stack first from the main checkout: make down"
@@ -24,10 +25,57 @@ if [[ -n "$(running "$DEV_PROJECT")" ]]; then
 fi
 [[ -z "$(running "$PROJECT")" ]] || fail "compose project $PROJECT is running (an earlier KEEP=1 run?): tear it down first"
 [[ -e "$WORK" ]] && fail "$WORK exists from an earlier run; remove it first"
-[[ -z "$(git status --porcelain)" ]] || fail "this checkout has changes (git status): upgrade.sh refuses them"
+[[ -z "$(git status --porcelain)" ]] || fail "this checkout has changes or untracked files (git status --porcelain): upgrade.sh refuses them"
 FROM_SHA="$(git rev-parse --verify --quiet "${FROM}^{commit}")" || fail "FROM=$FROM is not a commit here: git fetch --tags first"
 TO_SHA="$(git rev-parse HEAD)"
 [[ "$FROM_SHA" != "$TO_SHA" ]] || fail "FROM is this checkout: nothing to upgrade"
+
+SUMMARY=""
+run_phase() {  # <name> <command…>: its output to the screen and $WORK/<name>.log; a line for the summary
+  local name="$1" t0=$SECONDS rc=0 smoke="no smoke line"
+  shift
+  printf '\n######## %s\n' "$name"
+  "$@" 2>&1 | tee "$WORK/$name.log" || rc=$?
+  grep -q '^smoke: all checks passed$' "$WORK/$name.log" && smoke="smoke: all checks passed"
+  grep -q '^smoke: [0-9]* check(s) failed$' "$WORK/$name.log" && smoke="smoke: FAILED"
+  SUMMARY="$SUMMARY$(printf '%-18s %-7s %-26s %ss' "$name" "$([[ $rc -eq 0 ]] && echo PASS || echo FAIL)" "$smoke" \
+    "$(( SECONDS - t0 ))")"$'\n'
+  return $rc
+}
+
+cleanup() {
+  local status=$?
+  set +e   # the teardown always runs to its end, whatever fails in it
+  printf '\n== Summary (upgrade rehearsal)\nFROM %s (%s)\nTO   %s\n' "$FROM_SHA" "$FROM" "$TO_SHA"
+  local rec
+  rec="$(ls "$WORK"/data/ops/upgrade-*.json 2>/dev/null | head -1 || true)"
+  if [[ -n "$rec" ]]; then
+    printf 'migrations applied by the upgrade: %s\n' "$(sed -nE 's/.*"migrations_applied": \[([^]]*)\].*/\1/p' "$rec")"
+  fi
+  printf '%s' "$SUMMARY"
+  [[ $status -eq 0 ]] && echo "rehearsal: upgrade, rollback and upgrade again all passed" || echo "rehearsal: FAILED (exit $status)"
+  if [[ "${KEEP:-0}" == "1" ]]; then
+    echo "KEEP=1: project $PROJECT is left running with its data in $WORK; tear it down by hand when done"
+  else
+    echo; echo "== Tearing down the rehearsal"
+    if [[ -f "$WORK/app.env" && -f "$WORK/db.env" ]]; then   # without them nothing was started
+      UAT_APP_ENV_FILE="$WORK/app.env" UAT_DATA_DIR="$WORK/data" docker compose -p "$PROJECT" \
+        -f infra/docker-compose.yml -f infra/uat/compose.uat.yml --project-directory . \
+        --env-file "$WORK/app.env" --env-file "$WORK/db.env" down -v --rmi local --remove-orphans >/dev/null 2>&1 || true
+    fi
+    docker image ls --filter "reference=$PROJECT-*:rollback-*" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
+      | while read -r img; do docker image rm "$img" >/dev/null 2>&1 || true; done || true
+    rm -rf "$WORK/data" "$WORK"/*.env "$WORK"/*.env.new 2>/dev/null \
+      || echo "could not remove all of $WORK/data (files of uid 10001?): remove it with sudo"
+    if [[ -d "$WORK/from" ]]; then
+      git worktree remove "$WORK/from" || echo "could not remove the worktree $WORK/from: remove it by hand (git worktree remove)"
+    fi
+    [[ -d "$WORK/from" ]] || rm -rf "$WORK" || true
+  fi
+  echo "start the dev stack again from the main checkout: make up"
+  exit $status
+}
+trap cleanup EXIT
 
 mkdir -p "$WORK/data"
 rand() { openssl rand -hex 24; }
@@ -75,48 +123,6 @@ set_notice() {
   chmod 600 "$WORK/app.env"
 }
 
-SUMMARY=""
-run_phase() {  # <name> <command…>: its output to the screen and $WORK/<name>.log; a line for the summary
-  local name="$1" t0=$SECONDS rc=0 smoke="no smoke line"
-  shift
-  printf '\n######## %s\n' "$name"
-  "$@" 2>&1 | tee "$WORK/$name.log" || rc=$?
-  grep -q '^smoke: all checks passed$' "$WORK/$name.log" && smoke="smoke: all checks passed"
-  grep -q '^smoke: [0-9]* check(s) failed$' "$WORK/$name.log" && smoke="smoke: FAILED"
-  SUMMARY="$SUMMARY$(printf '%-18s %-7s %-26s %ss' "$name" "$([[ $rc -eq 0 ]] && echo PASS || echo FAIL)" "$smoke" \
-    "$(( SECONDS - t0 ))")"$'\n'
-  return $rc
-}
-
-cleanup() {
-  local status=$?
-  printf '\n== Summary (upgrade rehearsal)\nFROM %s (%s)\nTO   %s\n' "$FROM_SHA" "$FROM" "$TO_SHA"
-  local rec
-  rec="$(ls "$WORK"/data/ops/upgrade-*.json 2>/dev/null | head -1 || true)"
-  if [[ -n "$rec" ]]; then
-    printf 'migrations applied by the upgrade: %s\n' "$(sed -nE 's/.*"migrations_applied": \[([^]]*)\].*/\1/p' "$rec")"
-  fi
-  printf '%s' "$SUMMARY"
-  [[ $status -eq 0 ]] && echo "rehearsal: upgrade, rollback and upgrade again all passed" || echo "rehearsal: FAILED (exit $status)"
-  if [[ "${KEEP:-0}" == "1" ]]; then
-    echo "KEEP=1: project $PROJECT is left running with its data in $WORK; tear it down by hand when done"
-  else
-    echo; echo "== Tearing down the rehearsal"
-    UAT_APP_ENV_FILE="$WORK/app.env" UAT_DATA_DIR="$WORK/data" docker compose -p "$PROJECT" \
-      -f infra/docker-compose.yml -f infra/uat/compose.uat.yml --project-directory . \
-      --env-file "$WORK/app.env" --env-file "$WORK/db.env" down -v --rmi local --remove-orphans >/dev/null 2>&1 || true
-    docker image ls --filter "reference=$PROJECT-*:rollback-*" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
-      | while read -r img; do docker image rm "$img" >/dev/null 2>&1 || true; done || true
-    rm -rf "$WORK/data" "$WORK"/*.env "$WORK"/*.env.new
-    if [[ -d "$WORK/from" ]]; then
-      git worktree remove "$WORK/from" || echo "could not remove the worktree $WORK/from: remove it by hand (git worktree remove)"
-    fi
-    [[ -d "$WORK/from" ]] || rm -rf "$WORK"
-  fi
-  echo "start the dev stack again from the main checkout: make up"
-  exit $status
-}
-trap cleanup EXIT
 
 git worktree add --detach "$WORK/from" "$FROM_SHA"
 export UAT_PROJECT="$PROJECT" UAT_DATA_DIR="$WORK/data"

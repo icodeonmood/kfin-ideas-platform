@@ -23,6 +23,7 @@ export UAT_DATA_DIR="${UAT_DATA_DIR:-$ROOT/.data-uat}"
 PROJECT="${UAT_PROJECT:-kfin-ideas-uat}"
 # shellcheck source=scripts/uat/lib.sh
 . "$ROOT/scripts/uat/lib.sh"
+[[ "$PROJECT" != "kfin-ideas" ]] || fail "UAT_PROJECT is kfin-ideas, the dev stack's project with the product lead's demo: never upgrade it"
 
 compose() {
   docker compose -p "$PROJECT" -f infra/docker-compose.yml -f infra/uat/compose.uat.yml --project-directory . \
@@ -37,6 +38,7 @@ SERVICES="worker web"
 FROM_SHORT=""
 BASE=""
 DUMP=""
+LOCK=""
 
 restore_tags() {  # the :latest tags back to the running images, so a later `up` cannot start a half-built version
   local svc
@@ -46,6 +48,7 @@ restore_tags() {  # the :latest tags back to the running images, so a later `up`
 }
 on_exit() {
   local status=$?
+  [[ -z "$LOCK" ]] || rmdir "$LOCK" 2>/dev/null || true
   [[ $status -eq 0 ]] && return 0
   case "$PHASE" in
     keep)
@@ -67,7 +70,7 @@ on_exit() {
 trap on_exit EXIT
 
 step "1/8 Checks: a clean checkout, the install, the env files, the AI mode, free disk"
-[[ -z "$(git status --porcelain)" ]] || fail "this checkout has changes (git status): check out the new tag cleanly"
+[[ -z "$(git status --porcelain)" ]] || fail "this checkout has changes or untracked files (git status --porcelain): check out the new tag cleanly"
 TO_SHA="$(git rev-parse HEAD)"
 TO_TAG="$(git describe --tags --exact-match HEAD 2>/dev/null || true)"
 INSTALLED="$UAT_DATA_DIR/ops/installed.json"
@@ -94,15 +97,29 @@ printf 'FROM %s %s\nTO   %s %s\n' "$FROM_SHA" "$(git describe --tags --exact-mat
 uat_env_checks "$(notice_version_of < apps/web/src/content/privacy-notice.ts 2>/dev/null || true)"
 SERVICES="worker web${SPEECH_BUILD:+ $SPEECH_BUILD}"
 
-[[ -d "$UAT_DATA_DIR/kfin-ideas" ]] || fail "no company repo at $UAT_DATA_DIR/kfin-ideas: set UAT_DATA_DIR to the install's data folder"
 if ! { mkdir -p "$UAT_DATA_DIR/ops" "$UAT_DATA_DIR/backups" 2>/dev/null && chmod 700 "$UAT_DATA_DIR/backups" 2>/dev/null \
   && [[ -w "$UAT_DATA_DIR/ops" && -w "$UAT_DATA_DIR/backups" ]]; }; then
   fail "cannot write $UAT_DATA_DIR/ops and $UAT_DATA_DIR/backups: run once  sudo install -d -m 700 -o $(id -un) $UAT_DATA_DIR/ops $UAT_DATA_DIR/backups"
 fi
+[[ -d "$UAT_DATA_DIR/kfin-ideas" ]] || fail "no company repo at $UAT_DATA_DIR/kfin-ideas: set UAT_DATA_DIR to the install's data folder"
+# One upgrade or rollback at a time; the folder goes when this run ends, however it ends (short of kill -9).
+mkdir "$UAT_DATA_DIR/ops/.lock" 2>/dev/null \
+  || fail "another upgrade or rollback holds $UAT_DATA_DIR/ops/.lock: if none is running (one was cut off), remove that folder"
+LOCK="$UAT_DATA_DIR/ops/.lock"
 [[ -n "$(compose ps --status running -q postgres)" ]] \
   || fail "Postgres is not running in project $PROJECT: is UAT_PROJECT the install's project?"
 [[ "$(sql "SELECT to_regclass('public.schema_migrations') IS NOT NULL")" == "t" ]] \
   || fail "the database has no schema_migrations: nothing is installed here (a fresh install is make uat-deploy)"
+# A database that an earlier, failed run already migrated is rolled back with that run's backup, never upgraded again:
+# a new backup would hold the new schema, and its rollback would start the old images on it.
+from_versions="$(git ls-tree --name-only "$FROM_SHA" db/migrations/ | sed -nE 's#^db/migrations/([0-9]+)_.*#\1#p')"
+[[ -n "$from_versions" ]] || fail "could not list the migrations of $FROM_SHORT (git ls-tree)"
+ahead="$(sql "SELECT version FROM schema_migrations ORDER BY version" | LC_ALL=C sort \
+  | LC_ALL=C comm -23 - <(printf '%s\n' "$from_versions" | LC_ALL=C sort))" || fail "could not read schema_migrations"
+if [[ -n "$ahead" ]]; then
+  hint="$(ls -t "$UAT_DATA_DIR"/backups/*.dump 2>/dev/null | head -1 || true)"
+  fail "an earlier upgrade already migrated this database ($(printf '%s ' $ahead)are not in $FROM_SHORT): roll back with that run's backup (make uat-rollback BACKUP=${hint:-<the .dump of that run>}) instead of running the upgrade again"
+fi
 for svc in $SERVICES; do
   [[ -n "$(compose ps --status running -q "$svc")" ]] || fail "$svc is not running: an upgrade starts from a running install"
 done

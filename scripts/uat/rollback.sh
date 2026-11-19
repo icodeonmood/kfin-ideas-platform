@@ -23,6 +23,7 @@ export UAT_DATA_DIR="${UAT_DATA_DIR:-$ROOT/.data-uat}"
 PROJECT="${UAT_PROJECT:-kfin-ideas-uat}"
 # shellcheck source=scripts/uat/lib.sh
 . "$ROOT/scripts/uat/lib.sh"
+[[ "$PROJECT" != "kfin-ideas" ]] || fail "UAT_PROJECT is kfin-ideas, the dev stack's project with the product lead's demo: never roll it back"
 
 BASE="${DUMP%.dump}"
 FROMDIR="$BASE.from"
@@ -37,8 +38,13 @@ sql() {  # <database> <statement>
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 STARTED=$SECONDS
 PHASE=checks
+LOCK=""
+switches() {  # names and states only, never the reasons
+  sql ideas "SELECT name || ' ' || state FROM kill_switches ORDER BY name" | sed 's/^/  /'
+}
 on_exit() {
   local status=$?
+  [[ -z "$LOCK" ]] || rmdir "$LOCK" 2>/dev/null || true
   [[ $status -eq 0 || "$PHASE" == "checks" ]] && return 0
   printf '\nThe rollback stopped. The backup is untouched at %s: fix what stopped it and run the rollback again.\n' \
     "$DUMP" >&2
@@ -65,6 +71,11 @@ for svc in $SERVICES; do
 done
 [[ -n "$(compose ps --status running -q postgres)" ]] \
   || fail "Postgres is not running in project $PROJECT: is UAT_PROJECT the install's project?"
+mkdir -p "$UAT_DATA_DIR/ops"
+# One upgrade or rollback at a time; the folder goes when this run ends, however it ends (short of kill -9).
+mkdir "$UAT_DATA_DIR/ops/.lock" 2>/dev/null \
+  || fail "another upgrade or rollback holds $UAT_DATA_DIR/ops/.lock: if none is running (one was cut off), remove that folder"
+LOCK="$UAT_DATA_DIR/ops/.lock"
 
 PHASE=stop
 step "2/8 Stop $SERVICES (Postgres keeps running)"
@@ -77,6 +88,8 @@ for svc in $SERVICES; do
 done
 
 step "4/8 Database: drop and recreate ideas, then restore the backup"
+echo "kill switches now:"
+switches || echo "  (could not read them: an earlier attempt may have left the database empty)"
 # Not pg_restore --clean: it would leave behind the tables a newer migration added.
 sql postgres "DROP DATABASE IF EXISTS ideas WITH (FORCE)"
 sql postgres "CREATE DATABASE ideas"
@@ -84,6 +97,9 @@ compose exec -T postgres pg_restore -U ideas -d ideas --exit-on-error < "$DUMP"
 sql ideas "SELECT version FROM schema_migrations ORDER BY version" | cmp -s - "$FROMDIR/migrations.txt" \
   || fail "the restored database's migrations differ from the backup's list"
 echo "database restored: migrations as at the backup ($(grep -c . "$FROMDIR/migrations.txt"))"
+echo "kill switches restored:"
+switches
+echo "kill switches are back to their state at backup time: check them on the Admin page"
 
 step "5/8 Company repo: back from its archive (always restored)"
 compose run --rm --no-deps -T worker sh -c 'rm -rf /data/kfin-ideas && tar -C /data -xf -' < "$BASE.repo.tar"

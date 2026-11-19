@@ -39,6 +39,7 @@ case "$a" in
   "image ls "*) for f in "$FAKE_STATE"/tag-*@rollback-*; do [[ -e "$f" ]] && basename "$f" | sed 's/^tag-//; s/@/:/'; done ;;
   "image rm "*) set -- $a; rm -f "$FAKE_STATE/tag-$(key "$3")" ;;
   *"to_regclass"*) echo t ;;
+  *"FROM kill_switches"*) printf 'ai.all off\nsubmissions on\n' ;;
   *"pg_database_size"*) echo 1048576 ;;
   *"SELECT version FROM schema_migrations"*) printf '20261101000000\n20261102000000\n'; [[ -f "$FAKE_STATE/migrated" ]] && echo 20261120000100 ;;
   *"DROP DATABASE"*) rm -f "$FAKE_STATE/migrated" ;;
@@ -65,6 +66,7 @@ case "$*" in
   "rev-parse HEAD") echo "$FAKE_TO" ;;
   "rev-parse --verify --quiet "*) echo "$FAKE_FROM" ;;
   "cat-file -e "*) : ;;
+  "ls-tree --name-only "*) printf 'db/migrations/20261101000000_a.sql\ndb/migrations/20261102000000_b.sql\n' ;;
   "describe --tags --exact-match HEAD") echo launch-2026-11-20-r3 ;;
   "describe --tags --exact-match "*) echo launch-2026-11-20-r2 ;;
   "show "*":apps/web/src/content/privacy-notice.ts") echo "  version: \"$FAKE_NOTICE\"," ;;
@@ -286,6 +288,45 @@ def test_a234_upgrade_after_the_backup_prints_the_rollback_and_does_not_roll_bac
     assert not (tmp_path / "data" / "ops" / "installed.json").exists()
 
 
+def test_a234_upgrade_refuses_a_database_an_earlier_run_already_migrated(tmp_path: Path) -> None:
+    """Review S1: a second run after a failure past dbmate would back up the new schema, and its rollback would start
+    the old images on it. It points at the first run's backup instead."""
+    assert _upgrade(tmp_path, FROM="launch-2026-11-20-r2", FAKE_SMOKE_FAIL="1").returncode == 1
+    (dump,) = (tmp_path / "data" / "backups").glob("*.dump")
+    (tmp_path / "calls.log").unlink()
+    run = _upgrade(tmp_path, FROM="launch-2026-11-20-r2")
+    assert run.returncode == 1
+    assert f"already migrated this database (20261120000100 are not in {FROM_SHA[:8]})" in run.stderr
+    assert f"(make uat-rollback BACKUP={dump}) instead of running the upgrade again" in run.stderr
+    assert f"git ls-tree --name-only {FROM_SHA} db/migrations/" in _calls(tmp_path)
+    assert not any(" build " in c or "pg_dump" in c or "image tag" in c for c in _calls(tmp_path))
+    assert len(list((tmp_path / "data" / "backups").glob("*.dump"))) == 1
+    assert not (tmp_path / "data" / "ops" / ".lock").exists()
+
+
+def test_a234_upgrade_takes_one_lock_and_leaves_anothers_alone(tmp_path: Path) -> None:
+    lock = tmp_path / "data" / "ops" / ".lock"
+    lock.mkdir(parents=True)
+    run = _upgrade(tmp_path, FROM="launch-2026-11-20-r2")
+    assert run.returncode == 1 and "another upgrade or rollback holds" in run.stderr and lock.exists()
+    assert not any(" build " in c or "pg_dump" in c for c in _calls(tmp_path))
+    lock.rmdir()
+    assert _upgrade(tmp_path, FROM="launch-2026-11-20-r2").returncode == 0 and not lock.exists()
+
+
+@pytest.mark.parametrize("script", ["upgrade", "rollback"])
+def test_a234_upgrade_and_rollback_refuse_the_dev_stacks_project(tmp_path: Path, script: str) -> None:
+    """Review S2: the dev project holds the product lead's demo, and a rollback drops its database."""
+    app, db = _env_files(tmp_path)
+    dump = tmp_path / "x.dump"
+    dump.write_text("synthetic")
+    args = [str(app), str(db)] if script == "upgrade" else [str(dump), str(app), str(db)]
+    env = _env(tmp_path, UAT_PROJECT="kfin-ideas", FROM="launch-2026-11-20-r2")
+    run = _run(["bash", str(UAT / f"{script}.sh"), *args], env)
+    assert run.returncode == 1 and "UAT_PROJECT is kfin-ideas, the dev stack's project" in run.stderr
+    assert _calls(tmp_path) == []
+
+
 # ---- rollback.sh ---------------------------------------------------------------------------------------------------
 
 
@@ -323,6 +364,12 @@ def test_a234_rollback_drops_and_recreates_before_pg_restore_and_starts_the_old_
     assert installed["sha"] == FROM_SHA
     assert len(list((tmp_path / "data" / "ops").glob("rollback-*.json"))) == 1
     assert "Anything written after the backup is lost" in run.stdout
+    # Review S4: the switches, names and states only, before the drop and after the restore.
+    switches = [i for i, c in enumerate(calls) if "FROM kill_switches" in c]
+    assert len(switches) == 2 and switches[0] < order[2] and order[4] < switches[1]
+    assert "  ai.all off" in run.stdout
+    assert "kill switches are back to their state at backup time: check them on the Admin page" in run.stdout
+    assert not (tmp_path / "data" / "ops" / ".lock").exists()
 
 
 def test_a234_rollback_refuses_a_notice_version_the_old_build_does_not_have(tmp_path: Path) -> None:
@@ -354,6 +401,18 @@ def test_a234_rollback_refuses_without_the_kept_images(tmp_path: Path) -> None:
 
 
 # ---- rehearse-upgrade.sh -------------------------------------------------------------------------------------------
+
+
+def _only_rehearsal_targets(calls: list[str], work: Path) -> None:
+    """Review S3b: every destructive call names the rehearsal's project, its images or its worktree."""
+    for c in calls:
+        if any(f" {r}" in c for r in ("down", "--rmi", "image rm", "DROP DATABASE", "worktree remove")):
+            assert "-p kfin-ideas " not in c and "-p kfin-ideas-uat " not in c, c
+            assert (
+                "-p kfin-ideas-uat-rehearsal " in c
+                or " image rm kfin-ideas-uat-rehearsal-" in c
+                or f" worktree remove {work}/from" in c
+            ), c
 
 
 def test_a234_rehearsal_refuses_while_the_dev_stack_runs_and_never_calls_make(tmp_path: Path) -> None:
@@ -396,6 +455,26 @@ def test_a234_rehearsal_installs_from_upgrades_rolls_back_upgrades_and_tears_dow
     )
     assert f"git worktree remove {work}/from" in calls and not any("--force" in c for c in calls)
     assert not work.exists() and not (tmp_path / "calls.log.make").exists()
+    _only_rehearsal_targets(calls, work)
+
+
+def test_a234_rehearsal_tears_down_when_a_phase_fails(tmp_path: Path) -> None:
+    """Review S3a: the upgrade's smoke check fails; the rehearsal stops, says so and still tears everything down."""
+    work = tmp_path / "w"
+    env = _env(tmp_path, FROM="launch-2026-11-20-r2", UPGRADE_REHEARSAL_WORK=str(work), FAKE_SMOKE_FAIL="1")
+    run = _run(["bash", str(REHEARSE)], env)
+    out = run.stdout
+    assert run.returncode != 0
+    assert re.search(r"^upgrade\s+FAIL\s+smoke: FAILED", out, re.M), out
+    assert "rehearsal: FAILED" in out and "rollback " not in out.split("== Summary", 1)[1]
+    assert out.rstrip().endswith("start the dev stack again from the main checkout: make up")
+    calls = _calls(tmp_path)
+    assert any(
+        "-p kfin-ideas-uat-rehearsal" in c and "down -v --rmi local --remove-orphans" in c for c in calls
+    )
+    assert f"git worktree remove {work}/from" in calls
+    assert not work.exists() and not (tmp_path / "calls.log.make").exists()
+    _only_rehearsal_targets(calls, work)
 
 
 def test_a234_rehearsal_never_runs_make_and_never_starts_the_dev_stack() -> None:
