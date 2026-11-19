@@ -140,5 +140,7 @@ def test_BLD_C198_against_postgres_an_admin_is_refused_the_desk_and_committee_pa
         "VALUES (%s, 'reviewer', now() - interval '2 days', now() - interval '1 day')",
         (ended,),
     )
-    r = client.get(f"{ROUTES[1]}?user_id={ended}", headers=TOKEN)
-    assert r.status_code == 403
+    for route in ROUTES:
+        r = client.get(f"{route}?user_id={ended}", headers=TOKEN)
+        assert r.status_code == 403 and r.json() == {"error": "forbidden"}, route
+    assert passed == ["chapters", "audio"] * 3
