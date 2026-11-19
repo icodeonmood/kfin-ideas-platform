@@ -59,3 +59,15 @@ Each is in `comms/templates/` with `hr_signed_off: false`. The Inbox shows each 
 | The admin page (`/admin`), its headings, hints and messages | The page's own staff-facing lines | The pack leaves the admin screens undrawn (L-DECIDE.after, L-IMPACT/8). Only the programme team sees them, so they are listed for HR's read in BLD-A210, with no sign-off needed for launch |
 
 The Landing page (S-01), "How it works" (S-H4), the launch screen (S-LAUNCH) and the office display (S-OFFICE) show only the boards' copy: no NOT DRAWN line is open on them.
+
+## 4. DEC-113, the Ones Committee as one (19 Nov 2026)
+
+The product lead extended DEC-111 on 19 Nov: a sharer never sees a committee member's name either. It reads "the Ones Committee", with no avatar or initials. The review desk and the committee still see each other's names. The boards' "Rohan Mehta from the Ones Committee" is the demo committee member. No template's text changed: the reversal's template (`inbox/decision_reversed` 1.1) already opens with the sender, which is now "The Ones Committee" for these readers. HR is asked to sign off each line below.
+
+| Where | Was | Now | Why |
+|---|---|---|---|
+| The Inbox (S-H5), the row and the open item's header, the sender of a reversed decision, to the sharer and the crew | Rohan Mehta from the Ones Committee reversed a decision on your idea (with the initials RM) | The Ones Committee reversed a decision on your idea (no avatar or initials) | DEC-113 (BLD-A231). An item sent before the change reads the same way |
+| The email for a reversed decision (template `inbox/decision_reversed` 1.1), its first line, to the sharer and the crew | Rohan Mehta from the Ones Committee reversed a decision on your idea: {title}. | The Ones Committee reversed a decision on your idea: {title}. | DEC-113. The subject, "The Ones Committee reversed a decision", names no one and is unchanged |
+| The same item and email, to the reviewer whose decision was reversed, or anyone on the review desk or the committee | Rohan Mehta from the Ones Committee reversed your decision on this idea | Unchanged | DEC-113 keeps the names between the desk and the committee |
+| The Inbox, a comment or a mention a committee member writes in the conversation, to someone outside the desk and the committee | Rohan Mehta commented on your idea / Rohan Mehta mentioned you (with the initials RM) | The Ones Committee commented on your idea / The Ones Committee mentioned you (no avatar or initials) | DEC-113, with lane F, who marks these items (BLD-A231) |
+| The emails for that comment and mention (templates `inbox/comment` 1.0, `inbox/mention` 1.0), subject and first line | Rohan Mehta commented on your idea / Rohan Mehta commented on {title}. / Rohan Mehta mentioned you / Rohan Mehta mentioned you in the conversation about {title}. | The Ones Committee commented on your idea / The Ones Committee commented on {title}. / The Ones Committee mentioned you / The Ones Committee mentioned you in the conversation about {title}. | DEC-113. The template text is unchanged; only the sender is |
