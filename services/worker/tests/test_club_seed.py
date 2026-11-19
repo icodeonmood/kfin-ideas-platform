@@ -736,3 +736,15 @@ def test_gap_seed_j_recover_3_j_recover_6_l_draft_parts_2_each_part_reads_the_en
         str(rec.get("why")) for r in rows for rec in (r["sorting_sources"] or {}).values() if rec.get("why")
     }
     assert "From your words" not in whys
+
+
+def test_gap_seed_bld_e066_p_decisions_19_every_seeded_person_is_on_the_launch_default(
+    db: Any, made: dict[str, club_seed.Made]
+) -> None:
+    """GAP-SEED, P-DECISIONS #19 (BLD-E066): at launch S1-S3 give everyone the default, so the seed puts nobody on an
+    alternative and the demo and the journeys walk what employees get. The assignments and exposures are still there
+    for the admin experiments page."""
+    variants = _set(db, "SELECT DISTINCT variant FROM flag_assignments")
+    assert variants == {"default"}
+    assert _set(db, "SELECT DISTINCT flag_key FROM flag_assignments") == {"s1", "s2", "s3"}
+    assert _set(db, "SELECT DISTINCT variant FROM flag_exposures") == {"default"}

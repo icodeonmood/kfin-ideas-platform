@@ -29,6 +29,40 @@ export function sortingCount(s: SortingResponse | null): number {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// The order of the parts: flag S2 "Check first" (P-DECISIONS.experiments, L-SIMILAR "Flag S2"; BLD-C176)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The parts as drawn: your words, sorting, similar ideas, proof, your fix, who would help, send it. */
+export const DEFAULT_ORDER: readonly PartNo[] = [1, 2, 3, 4, 5, 6, 7];
+/** "Check first" on a close match: similar ideas first, then your words and sorting, then the rest (Review.md,
+ * `simulatorS2=Check first`). */
+export const CHECK_FIRST_ORDER: readonly PartNo[] = [3, 1, 2, 4, 5, 6, 7];
+
+/** The match that puts the comparison first: the top match, when L-SIMILAR calls it `close`. None otherwise. */
+export function strongMatch(load: SimilarLoad): SimilarMatch | null {
+  const top = load.state === "ok" ? load.matches[0] : undefined;
+  return top && top.strength === "close" ? top : null;
+}
+
+/** The part after `n` in this order, or `n` itself at the end. */
+export function nextIn(order: readonly PartNo[], n: PartNo): PartNo {
+  const i = order.indexOf(n);
+  return i >= 0 && i < order.length - 1 ? order[i + 1]! : n;
+}
+
+/** The part before `n` in this order, or null when `n` comes first. */
+export function prevIn(order: readonly PartNo[], n: PartNo): PartNo | null {
+  const i = order.indexOf(n);
+  return i > 0 ? order[i - 1]! : null;
+}
+
+/** Where `n` stands in this order, counting from 1: the rail's number and "Check it, part 1 of 6". */
+export function placeIn(order: readonly PartNo[], n: PartNo): number {
+  const i = order.indexOf(n);
+  return i >= 0 ? i + 1 : n;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Similar ideas and the merge request
 // ---------------------------------------------------------------------------------------------------------------
 

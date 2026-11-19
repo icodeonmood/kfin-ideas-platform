@@ -31,13 +31,15 @@ export const PartFrame = forwardRef<
     id?: string;
     /** The heading's own id, for the phone's count links (#pr-sort-h, #pr-sim-h). */
     headingId?: string;
+    /** Where the part stands in the order shown, when it is not its own number (flag S2 "Check first"). */
+    place?: number;
   }
->(function PartFrame({ n, heading, line, phone, children, foot, id, headingId }, ref) {
+>(function PartFrame({ n, heading, line, phone, children, foot, id, headingId, place }, ref) {
   const made = useId();
   const hid = headingId ?? made;
   return (
     <section className="ck-part" aria-labelledby={hid} id={id} data-part={n}>
-      {phone ? null : <p className="ck-count meta">{n === 7 ? C.sendCounter : C.counter(n)}</p>}
+      {phone ? null : <p className="ck-count meta">{n === 7 ? C.sendCounter : C.counter(place ?? n)}</p>}
       {phone ? (
         <h2 id={hid} ref={ref} tabIndex={-1} className="h2 ck-h">
           {heading}

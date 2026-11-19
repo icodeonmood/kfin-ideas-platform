@@ -28,6 +28,7 @@ HIDDEN_FROM_WEB = {
 APPEND_ONLY_FOR_WEB = {
     "idea_decisions", "decision_reversals", "idea_versions", "flag_exposures", "idea_opens", "idea_status_history",
     "wall_removals",
+    "flag_events",  # the experiments' deciding events, codes only (P-DECISIONS.experiments, BLD-C174)
 }  # fmt: skip
 
 
@@ -87,3 +88,18 @@ def test_the_web_role_cannot_change_final_records_e_entities() -> None:
         APPEND_ONLY_FOR_WEB
     )
     assert all(r["can_insert"] for r in readable if r["table_name"] in APPEND_ONLY_FOR_WEB)
+
+
+def test_the_web_role_cannot_read_the_experiments_metrics() -> None:
+    """P-DECISIONS.experiments (BLD-C174): the deciding metrics are for HR and ops as the owner or the worker role
+    (RUNBOOK §2c); the web app never reads them."""
+    with connect(autocommit=True) as owner:
+        for view in ("flag_s1_metrics", "flag_s2_metrics", "flag_s3_metrics"):
+            row = owner.execute(
+                "SELECT has_table_privilege('ideas_web_svc', format('public.%%I', %s::text), 'SELECT') AS web, "
+                "has_table_privilege('ideas_worker_svc', format('public.%%I', %s::text), 'SELECT') AS worker",
+                (view, view),
+            ).fetchone()
+            assert row is not None
+            assert row["web"] is False, view
+            assert row["worker"] is True, view

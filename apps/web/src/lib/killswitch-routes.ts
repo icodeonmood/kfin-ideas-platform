@@ -281,6 +281,10 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   // Passing a card on Find your crew, undoing it and "See them again" are the person's own place in the deck
   // (L-CREW/6); they change nothing about any idea, so they keep working in read-only mode.
   /^\/api\/crew\/pass(?:\/(?:undo|reset))?\/?$/,
+  // The experiments' deciding events (P-DECISIONS.experiments, BLD-C174): codes about what a screen showed, nothing
+  // about ideas; logging must never depend on what is paused. The interview's answers stay behind submissions
+  // (/api/drafts above).
+  /^\/api\/flags\/events\/?$/,
 ];
 
 export function switchesFor(method: string, pathname: string): SwitchName[] {

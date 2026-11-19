@@ -566,6 +566,18 @@ export interface FlagAssignments {
   variant: string;
 }
 
+export interface FlagEvents {
+  at: Generated<Timestamp>;
+  draft_id: string | null;
+  event: string;
+  flag_key: string;
+  id: Generated<Int8>;
+  outcome: string;
+  screen: string;
+  user_id: string | null;
+  variant: string;
+}
+
 export interface FlagExposures {
   at: Generated<Timestamp>;
   flag_key: string;
@@ -1534,6 +1546,7 @@ export interface DB {
   draft_runs: DraftRuns;
   ember_issues: EmberIssues;
   flag_assignments: FlagAssignments;
+  flag_events: FlagEvents;
   flag_exposures: FlagExposures;
   flags: Flags;
   hidden_details: HiddenDetails;

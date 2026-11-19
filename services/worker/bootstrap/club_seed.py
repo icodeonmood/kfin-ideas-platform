@@ -1499,7 +1499,8 @@ def _inbox(
 
 
 def _wall_and_flags(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
-    """Opened this week (L-WALL.justin/4), per day and per person, and the S1–S3 assignments with exposures."""
+    """Opened this week (L-WALL.justin/4), per day and per person, and the S1–S3 assignments with exposures, all on
+    the default, as at launch (BLD-E066)."""
     viewers = [k for k in p if k not in ("hyderabad", FIRST_VISIT)]
     popularity = {"R1": 14, "P1": 9, "T6": 6, "Z1": 11, "B1": 3, "T5": 5, "R2": 7, "E1": 1, "C1": 8, "J1": 4}
     for key, count in popularity.items():
@@ -1512,8 +1513,11 @@ def _wall_and_flags(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made]
                 "INSERT INTO idea_opens (idea_uuid, user_id, day) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
                 (m[key].uuid, p[viewer]["id"], day),
             )
-    for who, flag, variant in (("tanvi", "s1", "default"), ("tanvi", "s3", "alternative"), ("naveen", "s1", "alternative"),
-                               ("rekha", "s2", "alternative")):  # fmt: skip
+    # Everyone sees the launch build (BLD-E066): S1-S3 are on with alternative_percent 0 at launch, so nobody is on an
+    # alternative and the demo walks what employees get. The rows stay so the admin experiments page has exposures to
+    # show; an admin can still put one person on an alternative to demo it (P-DECISIONS #19).
+    for who, flag in (("tanvi", "s1"), ("tanvi", "s3"), ("naveen", "s1"), ("rekha", "s2")):
+        variant = "default"
         conn.execute(
             "INSERT INTO flag_assignments (flag_key, user_id, variant, assigned_by) VALUES (%s, %s, %s, 'rule')",
             (flag, p[who]["id"], variant),

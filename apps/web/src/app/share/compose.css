@@ -1141,6 +1141,144 @@
   color: var(--mute2);
 }
 
+/* ---------- Flag S1 "Interview" (BLD-C172): the questions after the first telling (Compose.dc.html .iv) ---------- */
+.cz .ivi {
+  margin-top: 14px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: var(--sunk);
+}
+
+.cz .ivi-t {
+  margin: 0;
+  font: 500 15.5px/1.4 var(--ft);
+  color: var(--ink);
+}
+
+.cz .ivi ol {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  font-size: 14.5px;
+  line-height: 1.7;
+  color: var(--mute2);
+}
+
+.cz .ivg .iv {
+  margin: 10px 0 4px;
+}
+
+.cz .iv {
+  margin-top: 14px;
+  padding: 18px;
+  border-radius: 12px;
+  background: var(--wash);
+  border: 1px solid #d5ddff;
+}
+
+.cz .ivd {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.cz .ivd span {
+  width: 22px;
+  height: 4px;
+  border-radius: 2px;
+  background: #c8d1ff;
+}
+
+.cz .ivd span.d {
+  background: var(--blueT);
+}
+
+.cz .ivd span.n {
+  background: var(--blue);
+}
+
+.cz .ivc {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--mute2);
+}
+
+.cz .ivq {
+  margin: 6px 0 0;
+  font: 600 18px/1.3 var(--fd);
+  color: var(--ink);
+}
+
+.cz .ivs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.cz .ivs .chip {
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 14px;
+  text-align: left;
+}
+
+.cz .iv .fld {
+  width: 100%;
+  margin-top: 12px;
+}
+
+.cz .iv .fmsg {
+  margin-top: 8px;
+}
+
+.cz .ivb {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+/* the phone's sheet while the questions wait: its status and Done, then what was found so far */
+.cz .dhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cz .rcpt {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--mute2);
+}
+
+/* ---------- Flag S3 "Voice first" (BLD-C175): the dock while listening (PhoneCompose.md, state Speaking) ---------- */
+.cz .vdock {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.cz .vdock .tinst {
+  flex: none;
+  min-height: 44px;
+}
+
+.cz .vdock .stopb {
+  flex: 1;
+  width: auto;
+}
+
+.cz .stopsq {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: currentColor;
+}
+
 /* ---------- C-DRAFT-LOADER ---------- */
 .cz .dload {
   margin: 14px 24px 2px;

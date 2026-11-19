@@ -261,6 +261,22 @@ export const CHECK_COPY = {
   },
 
   /** PhoneReview.md: Check it as one scrolling page (S-05.phone). */
+  /** Flag S2 "Check first" on a phone (PhoneReview.md, `simulatorS2=Check first`): the comparison before the rest
+   * of the page. The day is the close idea's ("9 November"); "1 colleague" and a close match with no related one are
+   * NOT DRAWN (BLD-C176). */
+  checkFirst: {
+    heading: "Is it one of these?",
+    line: (day: string) =>
+      `Something very close was shared on ${day}. Adding yours to it gets both decided together, and you’re credited.`,
+    ref: (ref: string, day: string) => `${ref}, shared ${day}`,
+    where: (area: string, city: string, n: number) =>
+      `${[area, city].filter(Boolean).join(", ")}, ${plural(n, "colleague")}`,
+    alsoRelated: (title: string, area: string, city: string) =>
+      `Also related: ${[title, area, city].filter(Boolean).join(", ")}. You’ll see it on the next part.`,
+    teamUp: "Team up",
+    different: "Mine is different",
+  },
+
   phone: {
     heading: "Check it, then send it",
     line: "Written only from your words. Change anything that isn’t right.",
