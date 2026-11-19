@@ -16,6 +16,12 @@ SECRETS = ("INTERNAL_API_TOKEN", "SESSION_SECRET", "CONTRIBUTOR_HMAC_SECRET", "V
 DEV_VALUES = {"ideas", "minio", "minio-secret", "dev-web-only", "dev-worker-only", "change-me"}
 
 
+def is_production(app_env: str) -> bool:
+    """Production mode (BLD-A235): APP_ENV is `prod` as this preflight reads it, stripped and case-sensitive, so a
+    value preflight passes as prod is prod in the seed and the smoke checks too. Anything else is not production."""
+    return app_env.strip() == "prod"
+
+
 def check(env: Mapping[str, str]) -> tuple[list[str], list[str]]:
     """(problems, warnings) for a UAT or prod environment."""
     problems: list[str] = []

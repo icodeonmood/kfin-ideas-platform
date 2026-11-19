@@ -15,6 +15,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from bootstrap.preflight import is_production
 from bootstrap.synthetic_hr import PERSONAS, generate, write_csv
 from core.config import REPO_ROOT, get_settings
 from core.db import connect
@@ -162,7 +163,7 @@ def seed_people(repo: Path) -> int:
     launch server's people come from HR's file only (BLD-A235). Every other environment, uat included, is unchanged.
     """
     settings = get_settings()
-    if settings.app_env == "prod":
+    if is_production(settings.app_env):
         print(PROD_PEOPLE_LINE)
         return 0
     csv_path = write_csv(generate(repo), Path(settings.company_repo_path).parent / "hr" / "synthetic-hr.csv")

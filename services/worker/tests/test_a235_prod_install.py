@@ -23,12 +23,15 @@ from typing import Any
 
 import pytest
 
-from bootstrap import seed, smoke, synthetic_hr
+from bootstrap import preflight, seed, smoke, synthetic_hr
 from identity import hr_import
 from identity.hr_import import HEADER, ImportResult, read_stream
 from tests import helpers
 
 REHEARSE = helpers.ROOT / "scripts" / "uat" / "rehearse.sh"
+DEPLOY = helpers.ROOT / "scripts" / "uat" / "deploy.sh"
+# APP_ENV values preflight passes as prod (it strips, case-sensitive): each one is production mode (review nit).
+PROD_VALUES = ["prod", " prod ", "prod\n", "\tprod"]
 UAT_DOC = helpers.ROOT / "docs" / "UAT.md"
 
 
@@ -93,10 +96,11 @@ def _stub_seed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, app_env: str) ->
     return calls
 
 
+@pytest.mark.parametrize("app_env", PROD_VALUES)
 def test_a235_l_auth_rules_6_seed_in_prod_loads_no_person_and_grants_nothing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str], app_env: str
 ) -> None:
-    calls = _stub_seed(monkeypatch, tmp_path, "prod")
+    calls = _stub_seed(monkeypatch, tmp_path, app_env)
     assert seed.seed_people(tmp_path / "repo") == 0
     assert calls == {"generate": [], "import_rows": [], "grant": [], "connect": []}  # not even a connection
     assert not (tmp_path / "data" / "hr").exists()  # no synthetic CSV written
@@ -106,7 +110,19 @@ def test_a235_l_auth_rules_6_seed_in_prod_loads_no_person_and_grants_nothing(
     )
 
 
-@pytest.mark.parametrize("app_env", ["uat", "production", "PROD", "", "staging"])
+NOT_PROD_VALUES = ["uat", "production", "PROD", "Prod", "", "staging", "pro d"]
+
+
+def test_a235_production_mode_reads_app_env_as_preflight_validates_it() -> None:
+    """Every value preflight passes as prod is production mode; every value it refuses, or reads as uat, is not."""
+    for value in PROD_VALUES + NOT_PROD_VALUES:
+        accepted_as_prod = preflight.check({"APP_ENV": value})[0].count(
+            "APP_ENV must be uat or prod"
+        ) == 0 and (value.strip() != "uat")
+        assert preflight.is_production(value) == accepted_as_prod, repr(value)
+
+
+@pytest.mark.parametrize("app_env", NOT_PROD_VALUES)
 def test_a235_l_auth_rules_6_only_app_env_prod_skips_the_people_uat_loads_them_as_before(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str], app_env: str
 ) -> None:
@@ -184,10 +200,17 @@ def _people_check(
         (1, 1, 0, False),  # someone signed in before the smoke ran: not a fresh install
     ],
 )
+@pytest.mark.parametrize("app_env", PROD_VALUES)
 def test_a235_l_auth_rules_6_prod_fresh_smoke_passes_only_with_no_people_and_no_grants(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, n: int, other: int, grants: int, ok: bool
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    app_env: str,
+    n: int,
+    other: int,
+    grants: int,
+    ok: bool,
 ) -> None:
-    name, passed, detail, count = _people_check(monkeypatch, tmp_path, "prod", True, n, other, grants)
+    name, passed, detail, count = _people_check(monkeypatch, tmp_path, app_env, True, n, other, grants)
     assert (passed, count) == (ok, 13)
     assert name == "no people or roles yet (production)"
     assert detail == f"{n} people, {grants} role grants"
@@ -214,7 +237,8 @@ def test_a235_l_auth_rules_7_prod_smoke_after_the_hr_import_and_grants_passes_wi
         ("uat", True, 200, 0, 1, False),
         ("uat", False, 200, 3, 4, True),
         ("uat", False, 0, 0, 0, False),
-        ("production", True, 0, 0, 0, False),  # only the exact value prod is production mode
+        ("production", True, 0, 0, 0, False),  # only prod, as preflight reads it, is production mode
+        ("PROD", True, 0, 0, 0, False),  # preflight refuses it, so it is never production mode
         ("dev", True, 200, 0, 0, True),
         ("test", False, 7, 7, 7, True),
     ],
@@ -320,6 +344,30 @@ def test_a235_hr_import_error_names_the_line_never_a_value(
     assert not [v for v in _personal(people) if v and v in out]
 
 
+def test_a235_hr_import_line_numbers_are_the_files_own_lines_when_a_field_holds_a_newline(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review S3: lines 2-3 are one row (a quoted job title over two lines), so the row with no email is line 4."""
+    people = _people(3)
+    rows = [",".join(HEADER)]
+    first = dict(people[0], job_title='"Team Lead\nOperations"')
+    rows.append(",".join(first[k] for k in HEADER))
+    rows.append(",".join(dict(people[1], email="")[k] for k in HEADER))
+    out = _failed(monkeypatch, capsys, ("\n".join(rows) + "\n").encode("utf-8"))
+    assert out == "failed: line 4: employee_id, name and email are required; nothing was changed\n"
+    assert people[1]["name"] not in out
+
+
+def test_a235_hr_import_a_row_over_two_lines_is_named_by_its_first_line(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    people = _people(3)
+    broken = dict(people[1], email="", job_title='"Team Lead\r\nOperations"')
+    rows = [",".join(HEADER), ",".join(people[0][k] for k in HEADER), ",".join(broken[k] for k in HEADER)]
+    out = _failed(monkeypatch, capsys, ("\r\n".join(rows) + "\r\n").encode("utf-8"))
+    assert out == "failed: line 3: employee_id, name and email are required; nothing was changed\n"
+
+
 def test_a235_hr_import_wrong_header_names_the_expected_header_only(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -339,6 +387,28 @@ def test_a235_hr_import_a_row_that_is_not_csv_names_its_line(
     out = _failed(monkeypatch, capsys, data)
     assert out == "failed: line 5: not a valid CSV row; nothing was changed\n"
     assert "x" * 20 not in out and "a@kfintech.example" not in out
+
+
+def test_a235_hr_import_a_bad_row_after_a_two_line_row_names_the_files_line(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    people = _people(2)
+    first = dict(people[0], job_title='"Team Lead\nOperations"')  # lines 2-3
+    head = ",".join(HEADER) + "\n" + ",".join(first[k] for k in HEADER) + "\n"
+    data = (
+        (head + ",".join(people[1][k] for k in HEADER) + "\n").encode()
+        + b"SYN-09999,"
+        + b"x" * 200_000
+        + b"\n"
+    )
+    assert _failed(monkeypatch, capsys, data) == "failed: line 5: not a valid CSV row; nothing was changed\n"
+
+
+def test_a235_hr_import_stdin_is_left_open_for_the_caller(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_import(monkeypatch)
+    _stdin(monkeypatch, _csv_bytes(_people(2)))
+    assert hr_import.main(["-", "--repo", str(helpers.SEED)]) == 0
+    assert not sys.stdin.buffer.closed  # the wrapper is detached, never closes the stream it was given
 
 
 def test_a235_hr_import_a_file_that_is_not_utf8_prints_the_type_only(
@@ -464,6 +534,45 @@ def test_a235_uat_runbook_hr_import_step_in_lane_as_order_with_one_command_form(
     positions = [after.index(s) for s in order]
     assert positions == sorted(positions)
     assert "docker compose" not in after  # one form for the import, the grants and the smoke check
-    assert "**The first admin must be in HR's file:**" in after
+    assert "**The first admin must be in HR's file with the same email they sign in with.**" in after
+    assert (
+        "refused" not in after.split("**1b.", 1)[1].split("Pass:", 1)[0]
+    )  # the guard counts HR's rows only (S1)
+    assert '--reason "First admin at launch, <ticket>"' in after
     assert "chmod 600" in after and "--force" in after and "never a name or an email" in after
     assert "0 people, 0 role grants" in doc
+
+
+# ---- scripts/uat/deploy.sh: the last line points production at the steps after the deploy (review S2) -------------
+
+
+@pytest.mark.parametrize(
+    ("line", "production"),
+    [
+        ("APP_ENV=prod", True),
+        ('APP_ENV="prod "', True),
+        ("APP_ENV=prod   # launch", True),
+        ("APP_ENV=uat", False),
+    ],
+)
+def test_a235_deploy_next_line_in_production_points_at_the_runbook(
+    tmp_path: Path, line: str, production: bool
+) -> None:
+    """Runs only deploy.sh's own `value` helper and its last lines, never docker."""
+    script = DEPLOY.read_text("utf-8")
+    [value_fn] = [x for x in script.splitlines() if x.startswith("value() {")]
+    tail = "printf '\\nUAT stack is up" + script.split("printf '\\nUAT stack is up", 1)[1]
+    app = tmp_path / "app.env"
+    app.write_text(f"{line}\n")
+    snippet = f'set -euo pipefail\nAPP_ENV_FILE="{app}"\nPROJECT=kfin-ideas-uat\n{value_fn}\n{tail}'
+    run = subprocess.run(["bash", "-c", snippet], capture_output=True, text=True, check=False, timeout=30)
+    assert run.returncode == 0, run.stderr
+    if production:
+        assert "Next (APP_ENV=prod, no people yet): docs/UAT.md After the deploy, 1a to 2b" in run.stdout
+        assert "identity.grants" not in run.stdout
+    else:
+        assert (
+            "Next: grant the first admin with\n  docker compose -p kfin-ideas-uat ... exec worker"
+            in run.stdout
+        )
+        assert "APP_ENV=prod" not in run.stdout

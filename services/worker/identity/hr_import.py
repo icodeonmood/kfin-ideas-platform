@@ -74,7 +74,11 @@ def read_csv(path: Path) -> list[HrRow]:
 
 def read_stdin() -> list[HrRow]:
     """HR's file through stdin (`-`), read as bytes so a byte-order mark and Windows line ends read as in a file."""
-    return read_stream(io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8-sig", newline=""))
+    text = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8-sig", newline="")
+    try:
+        return read_stream(text)
+    finally:
+        text.detach()  # the wrapper never owned stdin: leave its buffer as it was
 
 
 def read_stream(fh: TextIO) -> list[HrRow]:
@@ -82,15 +86,18 @@ def read_stream(fh: TextIO) -> list[HrRow]:
     if reader.fieldnames is None or [f.strip() for f in reader.fieldnames] != HEADER:
         raise ValueError(f"HR CSV header must be exactly: {','.join(HEADER)}")
     rows = []
-    n = 1  # the header; a row that is not CSV is the one after the last row read
     try:
-        for n, raw in enumerate(reader, start=2):
+        for raw in reader:
+            # Line numbers are the file's own lines, as HR sees them: a quoted field can hold a newline, so the row
+            # starts that many lines before the one the reader has reached.
+            line = reader.line_num - sum(v.count("\n") for v in raw.values() if isinstance(v, str))
             values = {k: (raw.get(k) or "").strip() for k in HEADER}
             if not values["employee_id"] or not values["email"] or not values["name"]:
-                raise ValueError(f"line {n}: employee_id, name and email are required")
+                raise ValueError(f"line {line}: employee_id, name and email are required")
             rows.append(HrRow(**values))
     except csv.Error:
-        raise ValueError(f"line {n + 1}: not a valid CSV row") from None
+        # The inner reader's count: DictReader's own is only updated after a row is read whole.
+        raise ValueError(f"line {reader.reader.line_num}: not a valid CSV row") from None
     ids = [r.employee_id.upper() for r in rows]
     if len(ids) != len(set(ids)):
         raise ValueError("HR CSV has the same employee_id more than once")

@@ -21,6 +21,7 @@ import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 
+from bootstrap.preflight import is_production
 from core.config import get_settings
 from core.db import connect
 from core.speech_route import hosted_problem, key_set, voice_problem
@@ -123,7 +124,7 @@ def checks(web: str, worker: str, fresh: bool = False) -> list[tuple[str, Callab
         n = int(files["n"]) if files else 0
         return at == head and n > 0, f"{n} files indexed; {'at head' if at == head else 'behind head'}"
 
-    prod = s.app_env == "prod"
+    prod = is_production(s.app_env)
 
     def people() -> tuple[bool, str]:
         """Right after a fresh deploy: synthetic people only, and no role grants at all (no dev personas). With
