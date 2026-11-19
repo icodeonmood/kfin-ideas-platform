@@ -80,6 +80,8 @@ LANGUAGES = {
     "ta-IN": "Tamil", "te-IN": "Telugu", "ur-IN": "Urdu",
 }  # fmt: skip
 EndedBy = Literal["person", "idle", "limit", "replaced", "paused"]
+# The English copy failed in the tagging or the swapping back, not at the service (BLD-C200): a code, never text.
+TAGGING_FAILED = "translation_tagging_failed"
 
 
 def max_seconds() -> int:
@@ -483,13 +485,18 @@ def _english(
        fails the English copy (`translation_hosted_tags_broken`) the way any failed translation does: the person
        keeps their own words, with no English copy;
     4. the tags sent swapped back for the masked words they stand for, for the sharer, whose copy this is (it is read
-       by them alone, and a model call re-tags it), then masked again as it returns (`hide_text`)."""
+       by them alone, and a model call re-tags it), then masked again as it returns (`hide_text`).
+
+    Any other error in the tagging or the swapping back (the database, the vault key, a bad id) is
+    `translation_tagging_failed`, like any failed translation: the person keeps their own words, never lost to a
+    `stream_lost`. Both run in savepoints, so the caller's transaction stays usable for `store.done`. The translation
+    itself runs outside any savepoint: no transaction is held open over the call, and its metering row is kept."""
     if lang == "en-IN":
         return masked, False, None
     gender = prefs.speaker_gender(prefs.refer_as(conn, user_id))
-    scope = scope_for(idea_uuid)
     try:
-        sent = sarvam.tag_for_service(mask_for_service(masked), conn=conn, scope_id=scope)
+        scope = scope_for(idea_uuid)
+        sent = sarvam.tag_for_service(mask_for_service(masked), conn=conn, scope_id=scope)  # in a savepoint
         got = sarvam.translate(
             sent.text,
             gender=gender,
@@ -498,12 +505,18 @@ def _english(
             source=lang if lang in MAYURA_SOURCES else "auto",
         )
         english = sarvam.tags_back(sent, got.text)
-    except SpeechUnavailable as exc:
+        if sent.tags:  # only the tags this call sent: tags_back let no other through
+            with conn.transaction():  # a savepoint inside the caller's transaction
+                known = vault.mapping(conn, scope)
+            english = restore(english, {t: known[t] for t in sent.tags if t in known}, "real")
+        return hide_text(english).text, got.translated, None
+    except SpeechUnavailable as exc:  # the leak check's refusal, a broken tag, or the service's own failure
         return None, None, f"translation_{exc.code}"[:60]
-    if sent.tags:  # only the tags this call sent: tags_back let no other through
-        known = vault.mapping(conn, scope)
-        english = restore(english, {t: known[t] for t in sent.tags if t in known}, "real")
-    return hide_text(english).text, got.translated, None
+    except Exception as exc:  # the type only: a message could quote a value
+        log.warning(
+            "voice_stream.translation_tagging_failed", stream_id=stream_id, error_type=type(exc).__name__
+        )
+        return None, None, TAGGING_FAILED
 
 
 def _ctx(column: str, stream_id: str) -> str:
