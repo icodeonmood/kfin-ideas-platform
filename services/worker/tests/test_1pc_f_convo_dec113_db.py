@@ -206,6 +206,29 @@ def test_dec_113_l_convo_6_a_mentioned_person_replies_to_the_ones_committee(
     assert rows.count(("The Ones Committee", "From the Ones Committee")) == 1
 
 
+def test_dec_113_l_convo_8_bld_f092_a_member_only_mentioned_reads_mentioned_until_a_member_writes(
+    db: Any,
+) -> None:
+    """The review desk mentions a member before any member has written: the sharer's committee row reads "Mentioned".
+    Once a member writes, the same one row reads "From the Ones Committee" (BLD-F092)."""
+    kavya = fx.person(db, "Kavya Menon")
+    meera = fx.person(db, "Meera Iyer", roles=(("reviewer", None),))
+    rohan = fx.person(db, "Rohan Mehta", roles=(("committee", None),))
+    idea = fx.idea(db, kavya, reviewer_id=meera["id"], opened_by=meera["id"])
+    send(db, idea["idea_id"], meera["id"],
+         {"text": "@Rohan Mehta can you look at this before Friday?", "mentions": [rohan["id"]]},
+         at=fx.at(17, 9))  # fmt: skip
+
+    def rows() -> list[tuple[str, str]]:
+        view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
+        _clean_of(_blob(view), rohan, meera)
+        return [(p["label"], p["doing"]) for p in view["participants"] if p["label"] == "The Ones Committee"]
+
+    assert rows() == [("The Ones Committee", "Mentioned")]
+    send(db, idea["idea_id"], rohan["id"], {"text": "Looked at it; the numbers hold."}, at=fx.at(17, 9, 30))
+    assert rows() == [("The Ones Committee", "From the Ones Committee")]
+
+
 # --- The review desk and the committee keep the names ------------------------------------------------------------
 @pytest.mark.parametrize("who", NAMED)
 def test_dec_113_l_convo_the_review_desk_and_the_committee_read_the_members_by_name(
