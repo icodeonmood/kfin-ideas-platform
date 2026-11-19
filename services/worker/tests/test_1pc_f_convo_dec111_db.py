@@ -424,8 +424,11 @@ def test_dec_111_bld_f084_l_inbox_a_message_from_the_sharer_the_crew_the_committ
     for i in items:
         assert not _as_desk(i), i["kind"]
         assert not i["dedupe_key"].endswith(":desk")
-        if who != "rohan":  # the committee speaks as itself (DEC-113): test_1pc_f_convo_dec113_db.py
-            assert i["from_user"] == writer["id"], i["kind"]
+        # DEC-113 (lane A's BLD-A231): the committee speaks as one to these readers, so lane A's notify stores no
+        # sender for an `as_committee` item, as for `as_desk`; any other item stores the writer (BLD-F092)
+        as_committee = i["payload"].get("as_committee") is True
+        assert as_committee is (who == "rohan"), i["kind"]
+        assert i["from_user"] == (None if as_committee or _as_desk(i) else writer["id"]), i["kind"]
 
 
 def _comments_to(db: Any, sharer: dict[str, str], key_start: str) -> dict[str, dict[str, Any]]:
