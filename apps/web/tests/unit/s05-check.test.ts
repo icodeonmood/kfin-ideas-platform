@@ -2426,3 +2426,27 @@ describe("S-05 C-TASKBAR.save BLD-C192: saved on an earlier day, the top bar say
     online.mockRestore();
   });
 });
+
+// --- Lane G's 09:30 walk: a masked detail's label said once in a quote (BLD-C193) -------------------------------
+
+describe("S-05 C-HIDDEN L-HIDE BLD-C193: the sorting's quote says a masked detail's label once (J-RECOVER/10)", () => {
+  const quoting = (why: string): SortingResponse => {
+    const s = sorting();
+    return { ...s, brings: { ...s.brings, why: "from_words", why_line: why } };
+  };
+  const whys = () => Array.from(document.querySelectorAll(".ck-why")).map((p) => text(p));
+
+  it("'folio Folio ••••17' reads 'Folio ••••17' once; the value stays masked", async () => {
+    await mount(base({ sorting: quoting("Suggested because you mentioned “one investor with folio Folio ••••17”.") }));
+    await railTo("Sorting");
+    expect(whys()).toContain("Suggested because you mentioned “one investor with Folio ••••17”.");
+    expect(document.body.textContent).not.toMatch(/folio Folio/i);
+    expect(document.body.innerHTML).not.toContain("88001234");
+  });
+
+  it("a different word before the masked form keeps the label", async () => {
+    await mount(base({ sorting: quoting("Suggested because you mentioned “the investor at Folio ••••17”.") }));
+    await railTo("Sorting");
+    expect(whys()).toContain("Suggested because you mentioned “the investor at Folio ••••17”.");
+  });
+});

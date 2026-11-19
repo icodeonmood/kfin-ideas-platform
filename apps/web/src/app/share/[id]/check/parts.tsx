@@ -13,6 +13,7 @@ import { IconTick } from "@/components/shell/icons";
 import { Button, buttonClass } from "@/components/ui/button";
 import { ChoiceChips, MultiChips } from "@/components/ui/chips";
 import { FieldMsg } from "@/components/ui/field";
+import { labelOnce } from "@/lib/compose/hidden";
 import type { Brings, ConfigResponse, FileItem, SendViewResponse, SortingResponse } from "@/lib/contracts";
 
 import { CHECK_COPY, type PartNo } from "./copy";
@@ -410,7 +411,8 @@ function SortField({
         <p className="meta">{rule}</p>
       </div>
       {children}
-      {why ? <p className="ck-why">{why}</p> : null}
+      {/* A quote from the masked copy says a detail's label once (BLD-C193) */}
+      {why ? <p className="ck-why">{labelOnce(why)}</p> : null}
     </div>
   );
 }
