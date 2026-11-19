@@ -64,7 +64,7 @@ Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answe
 
 ## Updating the live server (upgrade and rollback)
 
-Every fix after the install reaches the server this way, never by hand (BLD-A234). Run it in a quiet window and tell the review desk first: a rollback loses anything written after the backup. Use the same checkout, data folder and env files as the install. The commands below use the paths from Deploy.
+Every fix after the install reaches the server this way, never by hand (BLD-A234). Run it in a quiet window and tell the review desk first: a rollback loses anything written after the backup. Use the same checkout, data folder and env files as the install. The commands below use the paths from Deploy. Never run two upgrades or rollbacks at once: a lock (`ops/.lock`) stops the second. Run each one inside `tmux` or `screen`, so a dropped SSH session does not stop it halfway.
 
 **Once, before the first upgrade,** if the deploy account is not root: `sudo install -d -m 700 -o <deploy account> /srv/kfin-ideas-uat/ops /srv/kfin-ideas-uat/backups`. The upgrade writes its records and backups there. The worker runs as uid 10001 and cannot read them. Without this step the upgrade stops at step 1 and prints the same command.
 
@@ -106,7 +106,7 @@ Every fix after the install reaches the server this way, never by hand (BLD-A234
 | 7 Smoke | The thirteen checks, without `--fresh`: real people and their roles are expected now | any check fails |
 | 8 Record | `ops/installed.json` and `ops/upgrade-<time>.json` (from, to, backup, migrations, seconds) | — |
 
-Before step 5 a failure changes nothing: the old version keeps serving. From step 5 on, a failure prints the rollback command and stops. It never rolls back by itself: decide with the product lead, then run it.
+Before step 5 a failure changes nothing: the old version keeps serving. From step 5 on, a failure prints the rollback command and stops. It never rolls back by itself: decide with the product lead, then run it. **A failed upgrade is rolled back, not run again:** once a run has migrated the database, the upgrade refuses to start again and names the backup to roll back with.
 
 4. Rollback, from the same new checkout, with the backup the upgrade printed:
 
@@ -114,7 +114,7 @@ Before step 5 a failure changes nothing: the old version keeps serving. From ste
    UAT_DATA_DIR=/srv/kfin-ideas-uat make uat-rollback BACKUP=/srv/kfin-ideas-uat/backups/upgrade-<time>-<old>.dump APP_ENV_FILE=/secure/.env.uat DB_ENV_FILE=/secure/.env.uat.db
    ```
 
-   It stops web and worker, puts the kept images back, drops and recreates the database and restores the backup, always restores the company repo from its archive, starts web and worker with the old version's compose files, runs the smoke checks and records the old version as installed. If you changed `PRIVACY_NOTICE_VERSION` for the upgrade, set it back first: the rollback stops and names the old version.
+   It stops web and worker, puts the kept images back, drops and recreates the database and restores the backup, always restores the company repo from its archive, starts web and worker with the old version's compose files, runs the smoke checks and records the old version as installed. If you changed `PRIVACY_NOTICE_VERSION` for the upgrade, set it back first: the rollback stops and names the old version. It prints the kill switches before and after: they go back to their state at backup time, so check them on the Admin page.
 
    Pass: `database restored: migrations as at the backup (N)`, `smoke: all checks passed`, and the last line `rollback: back on <old> in Ns.`
 
