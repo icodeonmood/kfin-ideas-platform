@@ -126,7 +126,8 @@ def test_s06_states_questions_from_the_review_desk_leaves_the_card_to_lane_b(clu
     assert "answer" not in page["actions"]
     assert not page["window"]["open"] and page["window"]["line"].startswith("The review desk opened it on")
     assert "withdraw" not in page["actions"] and "edit" not in page["actions"]
-    assert nodes(v)[2][2] == f"3 questions for you since {day(NOW - dt.timedelta(days=1), NOW)}"
+    # T6's set is due at 6 pm today, so it went on Friday 13 November (3 days to answer; club_seed, BLD-E067)
+    assert nodes(v)[2][2] == "3 questions for you since Friday 13 November"
 
 
 def test_s06_states_answers_sent_after_a_partial_send_keeps_the_open_set_for_its_card(
@@ -1329,7 +1330,7 @@ def test_s07_rows_next_step_and_action_per_status(club: dict[str, Any]) -> None:
     rows = {i["id"]: i for i in mine(club, "tanvi")["items"]}
     t6 = rows[ref(club, "T6")]
     assert t6["pill"]["label"] == "Needs you"
-    assert t6["next_step"]["sentence"] == "The review desk asked you 3 questions yesterday."
+    assert t6["next_step"]["sentence"] == "The review desk asked you 3 questions on Friday."
     # S-07.phone (PhoneMyIdeas.md) names who asked; DEC-111: only to the review desk and the Ones Committee, so the
     # sharer's phone says the desktop's sentence (test_s07_dec111_…)
     assert "phone_sentence" not in t6["next_step"]
@@ -1374,14 +1375,14 @@ def test_s07_dec111_my_ideas_names_the_review_desk_not_the_reviewer(club: dict[s
 
     out, row = t6_row()
     assert no_reviewer_named(out, club)
-    assert row["next_step"]["sentence"] == "The review desk asked you 3 questions yesterday."
+    assert row["next_step"]["sentence"] == "The review desk asked you 3 questions on Friday."
     assert "phone_sentence" not in row["next_step"]
     for role in ("committee", "reviewer"):
         grant(club, "tanvi", role)
         _, row = t6_row()
         assert (
             row["next_step"]["phone_sentence"]
-            == "Harish from the review desk asked you 3 questions yesterday."
+            == "Harish from the review desk asked you 3 questions on Friday."
         )
         revoke_all(club, "tanvi")
 

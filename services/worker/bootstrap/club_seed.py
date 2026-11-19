@@ -182,7 +182,7 @@ IDEAS: dict[str, Spec] = {
                ["New folios are held when the PAN name and the form name differ by one letter. An investor "
                 "with {pan} waited six days last week and nobody told them why."],
                often="About 30 folios a week", hidden={"{pan}": ("pan", "AAAPZ9999Z")},
-               shared_days=2.5, opened_days=1.6, reviewer="harish", brings=["saves_time"]),
+               shared_days=4.5, opened_days=3.6, reviewer="harish", brings=["saves_time"]),
     "T7": Spec("tanvi", "picked", "fix", "Plain words for transaction rejection codes",
                "Rejection letters show codes like R07 that investors cannot read. A short plain sentence per "
                "code would cut the calls that follow.",
@@ -371,14 +371,67 @@ def _ago(days: float, now: dt.datetime) -> dt.datetime:
     return now - dt.timedelta(days=days)
 
 
-def _working_days_after(start: dt.datetime, n: int) -> dt.datetime:
-    """Weekends only; the real clock uses the holiday calendar. Good enough for synthetic dates."""
-    day = start
-    while n:
-        day += dt.timedelta(days=1)
-        if day.astimezone(IST).weekday() < 5:
-            n -= 1
-    return day
+# --- Clocks: the live functions, never a copy (BLD-E067) -------------------------------------------------------------
+# Each seeded date is the one the app itself would write for the same moment, so a seeded idea and one shared,
+# decided or asked during a walk read the same.
+
+
+def _decide_by(shared: dt.datetime) -> dt.datetime:
+    """L-REVIEW.clock/1 as a share writes it (submit/send.py `clock.decide_by`): 5 working days at 6 pm office time,
+    the share day counted as day 1 when it is a working day and the share is before 6 pm (BLD-B231)."""
+    from submit import clock, config
+
+    return clock.decide_by(shared, config.promises())
+
+
+def _team_by(decided: dt.datetime) -> dt.datetime:
+    """L-DECIDE.rules/6 as a Pick (desk/decide.py `dates_for`) or a reversal to Picked (desk/join_build.py) writes it:
+    10 working days at 6 pm office time, counted as `_decide_by` counts (BLD-B231)."""
+    from desk import clock, promises
+
+    return clock.team_by(decided, promises.get(), clock.office_calendar())
+
+
+def _answer_due(sent: dt.datetime, time_to_answer: str = "3d") -> dt.datetime:
+    """L-QUESTIONS.clock/5 as the desk's send writes it (desk/asking.py `clock.answer_due`): 6 pm office time on the
+    due day; a 1-day set is 24 hours from sending."""
+    from desk import clock, promises
+
+    return clock.answer_due(sent, time_to_answer, promises.get(), clock.office_calendar())
+
+
+# Time for a walk after loading before T6's deadline passes; its day-before reminder has gone by then (L-NOTIFY/5).
+WALK_ROOM = dt.timedelta(hours=2)
+DAY_BEFORE = dt.timedelta(hours=24)  # L-NOTIFY/5, L-QUESTIONS.clock/2: the first reminder, 24 hours before
+
+
+def _due_within_a_day(now: dt.datetime) -> dt.datetime:
+    """T6's deadline: 6 pm office time (L-QUESTIONS.clock/5) on the first day whose 6 pm is at least `WALK_ROOM`
+    after loading. So it is under a day away (just over, for a load in the last two hours before 6 pm), the
+    day-before reminder (L-NOTIFY/5) has gone, and a walk straight after the load never finds it overdue."""
+    from desk import clock, promises
+
+    cal, hour = clock.office_calendar(), promises.get().deadline_hour
+    due = cal.at(now.astimezone(cal.tz).date(), hour)
+    return due if due - now >= WALK_ROOM else cal.at(due.date() + dt.timedelta(days=1), hour)
+
+
+def _sent_for(due: dt.datetime, time_to_answer: str = "3d", hour: int = 11, minute: int = 20) -> dt.datetime:
+    """When a set must have been sent, at 11:20 am office time (Status.md's "11:20 am"), for `_answer_due` to give
+    `due`: the deadline's day less the days to answer."""
+    from desk import clock, promises
+
+    days = promises.get().answer_days_for(time_to_answer)
+    day = due.astimezone(IST).date() - dt.timedelta(days=days)
+    sent = dt.datetime.combine(day, dt.time(hour, minute), tzinfo=IST)
+    assert clock.answer_due(sent, time_to_answer, promises.get(), clock.office_calendar()) == due
+    return sent
+
+
+def _day_before(due: dt.datetime, now: dt.datetime) -> dt.datetime:
+    """When the day-before reminder went (L-NOTIFY/5): 24 hours before the deadline, or the load itself when that is
+    still ahead (a load in the last two hours before 6 pm; `_due_within_a_day`). Either way it reads "1 day left"."""
+    return min(due - DAY_BEFORE, now)
 
 
 def _email(name: str) -> str:
@@ -590,7 +643,7 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             40 + (len(s.title) % 50) if shared else None, DECLARATION if shared else None, shared,
             (min(opened, shared + dt.timedelta(days=3)) if opened else shared + dt.timedelta(days=3)) if shared else None,
             _ago(s.withdrawn_days, now) if s.withdrawn_days is not None else None,
-            _working_days_after(shared, 5) if shared else None, reviewer, opened, reviewer if opened else None,
+            _decide_by(shared) if shared else None, reviewer, opened, reviewer if opened else None,
             path[0][1], similar_check,
         ),
     )  # fmt: skip
@@ -756,20 +809,21 @@ def _message(
 
 
 def _questions(
-    conn: Conn, made: Made, by: str, sharer_code: str, now: dt.datetime, *, state: str, sent_days: float | None,
-    due_days: float | None, qs: list[tuple[str, str, bool, str | None, bool]],
+    conn: Conn, made: Made, by: str, sharer_code: str, now: dt.datetime, *, state: str, sent: dt.datetime | None,
+    qs: list[tuple[str, str, bool, str | None, bool]], reminded: dt.datetime | None = None,
 ) -> str:  # fmt: skip
-    """qs: (part, question, suggested, answer or None, answer sent)."""
+    """qs: (part, question, suggested, answer or None, answer sent). A sent set is due when the desk's own send would
+    make it due: 3 days to answer, 6 pm office time on the day (L-QUESTIONS.clock/5, `_answer_due`). `reminded` is
+    when its last reminder went (L-NOTIFY/5), as lane B's reminder stores it."""
     sid = str(uuid.uuid4())
-    sent = _ago(sent_days, now) if sent_days is not None else None
-    due = now + dt.timedelta(days=due_days) if due_days is not None else None
+    due = _answer_due(sent) if sent is not None else None
     conn.execute(
         "INSERT INTO question_sets (id, idea_uuid, by_user_id, state, time_to_answer, sent_at, seen_at, due_at, "
-        "answered_at, closed_at, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        "answered_at, closed_at, created_at, reminded_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (sid, made.uuid, by, state, "3d" if state != "queued" else None, sent,
          sent + dt.timedelta(hours=2) if sent and state != "sent" else None, due,
          now - dt.timedelta(hours=1) if state == "answered" else None,
-         _ago(5.2, now) if state == "closed" else None, sent or now),
+         _ago(5.2, now) if state == "closed" else None, sent or now, reminded),
     )  # fmt: skip
     for seq, (part, text, suggested, answer, answer_sent) in enumerate(qs, start=1):
         qid = str(uuid.uuid4())
@@ -809,7 +863,7 @@ def _decide(
     did = str(uuid.uuid4())
     # L-DECIDE.rules/7, L-COMMITTEE.rules/2 (BLD-B258): 3 months on the office calendar, as the desk writes them
     return_at = add_months(at, 3) if choice == "not_now" else None
-    team_by = _working_days_after(at, 10) if choice == "pick" else None
+    team_by = _team_by(at) if choice == "pick" else None
     conn.execute(
         "INSERT INTO idea_decisions (id, idea_uuid, choice, reason_encrypted, by_user_id, at, joined_with, return_in, "
         "return_at, team_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
@@ -860,8 +914,11 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
              encrypt_json({"title": m["T5"].spec.title, "n": n}, sealed_context("idea_versions", "snapshot_encrypted", f"{m['T5'].uuid}:{n}")),
              _ago(1.0 - 0.1 * n, now)),
         )  # fmt: skip
-    # T6: questions sent and seen, one answer saved but not sent (Needs you).
-    _questions(conn, m["T6"], p["harish"]["id"], tanvi["code"], now, state="seen", sent_days=1.0, due_days=2.0,
+    # T6: questions sent and seen, one answer saved but not sent (Needs you). Due at 6 pm within the day, so its
+    # day-before reminder has gone (L-NOTIFY/5; the Inbox item in `_inbox`), sent 3 days before at 11:20 am.
+    t6_due = _due_within_a_day(now)
+    _questions(conn, m["T6"], p["harish"]["id"], tanvi["code"], now, state="seen", sent=_sent_for(t6_due),
+               reminded=_day_before(t6_due, now),
                qs=[("often", "How many folios were held last month?", True, "About 120, mostly in one region.", False),
                    ("who", "Which teams see the hold first?", False, None, False),
                    ("evidence", "Is there a report that shows the holds?", True, None, False)])  # fmt: skip
@@ -869,15 +926,14 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
              code=tanvi["code"])  # fmt: skip
     # Z1: overdue. B1: answered, back with the desk. P1 and K1 have no set: the desk has not opened either, and
     # J-REVIEW/1 and /A1-A3 walk their first open (L-REVIEW.open/1).
-    _questions(conn, m["Z1"], p["harish"]["id"], p["zoya"]["code"], now, state="sent", sent_days=4.0, due_days=-1.0,
+    _questions(conn, m["Z1"], p["harish"]["id"], p["zoya"]["code"], now, state="sent", sent=_ago(4.0, now),
                qs=[("cost", "What would a distributor pay per report?", True, None, False),
                    ("who", "Which distributors have asked for it?", False, None, False)])  # fmt: skip
-    _questions(conn, m["B1"], p["lavanya"]["id"], p["bhavesh"]["code"], now, state="answered", sent_days=3.0,
-               due_days=0.5,
+    _questions(conn, m["B1"], p["lavanya"]["id"], p["bhavesh"]["code"], now, state="answered", sent=_ago(3.0, now),
                qs=[("often", "How many couriers come back in a week?", True, "Around 60 a week.", True),
                    ("fix", "Would a scan at the counter be enough?", False, "Yes, one scan and a search box.", True)])  # fmt: skip
     # T7: answered before the pick, set closed with the decision.
-    _questions(conn, m["T7"], p["harish"]["id"], tanvi["code"], now, state="closed", sent_days=7.5, due_days=-4.5,
+    _questions(conn, m["T7"], p["harish"]["id"], tanvi["code"], now, state="closed", sent=_ago(7.5, now),
                qs=[("often", "Is the 40 a day across all branches?", False, "Yes, across the six largest branches.", True)])  # fmt: skip
 
     reasons = {
@@ -907,7 +963,7 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
         "VALUES (%s, %s, 'pick', %s, %s, %s, %s)",
         (rid, windows["T9"], seal_text("decision_reversals", "note_encrypted", rid,
          "We can ask the exchange to move the reminder. Failed dividends cost more than the change."),
-         p["manoj"]["id"], _ago(2, now), _working_days_after(_ago(2, now), 10)),
+         p["manoj"]["id"], _ago(2, now), _team_by(_ago(2, now))),
     )  # fmt: skip
     conn.execute("UPDATE decision_windows SET state = 'reversed' WHERE id = %s", (windows["T9"],))
     _event(conn, m["T9"].uuid, "decision_reversed", _ago(2, now), {"reversal_id": rid})
@@ -1430,10 +1486,11 @@ def _inbox(
 ) -> None:
     """Every Inbox kind (E-ENUMS.inbox) at least once. Text is rendered from templates at read time (BLD-088)."""
     items = (
-        # (to, kind, from, idea, days ago, needs you, due in days, read, archived, actions)
-        ("tanvi", "questions", "harish", "T6", 1.0, True, 2.0, True, False,
+        # (to, kind, from, idea, days ago, needs you, due in days, read, archived, actions). The desk's questions and
+        # their reminder take their times from the set (None here): see the loop.
+        ("tanvi", "questions", "harish", "T6", None, True, None, True, False,
          [{"label": "Answer the questions", "to": "answer", "style": "primary"}]),
-        ("tanvi", "answer_reminder", None, "T6", 0.1, True, 2.0, False, False,
+        ("tanvi", "answer_reminder", None, "T6", None, True, None, False, False,
          [{"label": "Answer the questions", "to": "answer", "style": "primary"}]),
         ("tanvi", "decision", "harish", "T7", 5.0, False, None, True, False,
          [{"label": "Read the decision", "to": "idea", "style": "line"}]),
@@ -1468,16 +1525,30 @@ def _inbox(
          [{"label": "Say hello", "to": f"/ideas/{m['T7'].ref}/conversation#say-hello", "style": "primary"}]),
         ("faisal", "decision", "harish", "F1", 3.0, False, None, False, False,
          [{"label": "Read the decision", "to": "idea", "style": "line"}]),
-        ("zoya", "questions", "harish", "Z1", 4.0, True, -1.0, True, False,
+        ("zoya", "questions", "harish", "Z1", None, True, None, True, False,
          [{"label": "Answer the questions", "to": "answer", "style": "primary"}]),
         ("lavanya", "decision_reversed", "manoj", "T9", 2.0, False, None, False, False,
          [{"label": "Read the note", "to": "idea", "style": "line"}]),
     )  # fmt: skip
+    sets = {
+        str(r["idea_uuid"]): r
+        for r in conn.execute(
+            "SELECT idea_uuid, sent_at, due_at, reminded_at FROM question_sets WHERE idea_uuid = ANY(%s::uuid[])",
+            ([m["T6"].uuid, m["Z1"].uuid],),
+        ).fetchall()
+    }
     for to, kind, sender, key, days, needs, due, read, archived, actions in items:
+        if days is None:
+            # The set's own clock, as lane B posts them: the questions arrive when it is sent, the reminder when it
+            # went (24 hours before the deadline, L-NOTIFY/5), and both are due when the set is (L-QUESTIONS.clock/5)
+            qset = sets[m[key].uuid]
+            at = qset["reminded_at"] if kind == "answer_reminder" else qset["sent_at"]
+            due_at = qset["due_at"]
+        else:
+            at, due_at = _ago(days, now), now + dt.timedelta(days=due) if due is not None else None
         _inbox_item(conn, p[to]["id"], kind, p[sender]["id"] if sender else None, m[key].uuid,
-                    {"idea_id": m[key].ref}, _ago(days, now), actions=actions, needs=needs,
-                    due=now + dt.timedelta(days=due) if due is not None else None, read=read, archived=archived,
-                    dedupe_key=_draft_key(m[key].uuid) if kind == "draft_kept" else None)  # fmt: skip
+                    {"idea_id": m[key].ref}, at, actions=actions, needs=needs, due=due_at, read=read,
+                    archived=archived, dedupe_key=_draft_key(m[key].uuid) if kind == "draft_kept" else None)  # fmt: skip
     # Needs you: every request still waiting on a lead (Esha's on Tanvi's T5 with E1 brought, Bhavesh's on Rekha's R1
     # with nothing brought, and T2's, N2's and G2's drafts on R1), exactly as lane F's `tell_lead` posts it
     # (teamup/requests.py): refs the real request row, which kind it is and how many ideas it brings, and the lead's
