@@ -253,7 +253,7 @@ def test_L_INBOX_tabs_counts_read_archive_and_the_kinds_lines(cast: Any) -> None
     lines = [(it["body"]["sender"], it["line"]) for it in got["items"]]
     assert lines == [
         ("1% Club", "kept your draft from your phone"),
-        ("Rohan Mehta from the Ones Committee", "reversed a decision on your idea"),
+        ("The Ones Committee", "reversed a decision on your idea"),  # DEC-113: the committee as one
         ("The review desk", "asked you 3 questions"),  # DEC-111: the desk, never the reviewer's name
     ]
     q = got["items"][2]
