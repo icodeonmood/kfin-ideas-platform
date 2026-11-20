@@ -4,7 +4,7 @@
  * attach button, DEC-124 and DEC-126). axe at both widths, then each component's keyboard and state rules.
  * The kit exists in dev and test only.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
 
@@ -257,6 +257,46 @@ test("C-ONES-FAN.behaviour: the fan spreads and moves by Next and ← →; 'Post
   await expect(fan.getByText("Post 3 of 3")).toBeVisible();
   await expect(fan.getByRole("button", { name: "Next post" })).toHaveAttribute("aria-disabled", "true");
   await expectNoSeriousAxeIssues(page);
+});
+
+test("C-ONES-FAN.states (BLD-D020): none, one with its companion and Cheer pressed, several stacked; See details spreads it; axe on each, 44px targets", async ({
+  page,
+}, info) => {
+  const phone = info.project.name === "phone-360";
+  const atLeast44 = async (target: Locator) => {
+    const box = (await target.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.width).toBeGreaterThanOrEqual(44);
+  };
+  await expect(page.getByText("No Ones yet", { exact: true })).toBeVisible();
+  const one = page.getByRole("region", { name: "One post from the Ones" });
+  await expect(one.getByText("The next One could be you", { exact: true })).toBeVisible();
+  await expect(one.getByText("Post 1 of 1")).toBeVisible();
+  await expect(one.getByRole("button", { name: "Next post" })).toHaveCount(0);
+  const cheer = one.getByRole("button", { name: /^Cheer Neha Kapoor’s fix, 99 cheers$/ });
+  await expect(cheer).toHaveAttribute("aria-pressed", "true");
+  const fan = page.getByRole("region", { name: "Posts from the Ones" });
+  const see = fan.getByRole("button", { name: "See details" });
+  // PhoneHome draws no stack and no side panel: the row shows at rest
+  if (phone) await expect(see).toHaveCount(0);
+  else await expect(fan.getByText("3 fixes, 3 people")).toBeVisible();
+  await expectNoSeriousAxeIssues(page); // at rest: several, the one post cheered, and none
+  await atLeast44(cheer);
+  await atLeast44(one.getByRole("link", { name: "Read the thread 12" }));
+  await atLeast44(one.getByRole("link", { name: "Share a problem" }));
+  if (phone) {
+    await fan.getByRole("button", { name: "Next post" }).click();
+    await expect(fan.getByText("Post 2 of 3")).toBeVisible();
+  } else {
+    await atLeast44(see);
+    await see.click();
+    await expect(see).toHaveCount(0);
+    await expect(fan.getByRole("button", { name: "Next post" })).toBeFocused();
+    await expect(fan.getByText("Post 1 of 3")).toBeVisible();
+  }
+  await atLeast44(fan.getByRole("button", { name: "Previous post" }));
+  await atLeast44(fan.getByRole("button", { name: "Next post" }));
+  await expectNoSeriousAxeIssues(page); // spread
 });
 
 test("C-FIELD.kinds: paste fills the six code boxes; a wrong code is said under them", async ({ page }) => {
