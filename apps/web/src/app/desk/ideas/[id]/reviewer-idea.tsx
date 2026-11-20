@@ -741,11 +741,14 @@ export function ReviewerIdea({
                 <h2 id="panel-t" ref={title} tabIndex={-1} className="h3">
                   Review this idea
                 </h2>
-                <p className="meta">
-                  {revised
-                    ? `You’ve revised what it’s worth. ${first} sees your figures next to theirs when you decide.`
-                    : page.worth.line}
-                </p>
+                {/* The worth line tells the reader to decide or revise: the review desk's only (BLD-B270 follow-up) */}
+                {page.can_act ? (
+                  <p className="meta">
+                    {revised
+                      ? `You’ve revised what it’s worth. ${first} sees your figures next to theirs when you decide.`
+                      : page.worth.line}
+                  </p>
+                ) : null}
                 {page.can_act ? (
                   <>
                     <Button variant="text" className="ri-revise" onClick={openWorth}>

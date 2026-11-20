@@ -99,8 +99,8 @@ def _row_json(row: queue.Row) -> dict[str, Any]:
 
 
 def _read_only(row: queue.Row) -> queue.Row:
-    """A row for a reader who is not on the review desk, the Ones Committee (BLD-B270): "Remind {name}" writes, so it
-    becomes "Open"; "Open" and "Read answers" only go to S-R2."""
+    """A row for a reader who is not on the review desk (BLD-B270): "Remind {name}" writes, so it becomes "Open";
+    "Open" and "Read answers" only go to S-R2."""
     return dataclasses.replace(row, action="Open", action_kind="open") if row.action_kind == "remind" else row
 
 
@@ -613,6 +613,9 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     ]  # fmt: skip
     decide_by = idea["decide_by"]
     c = clock.countdown(decide_by, t) if decide_by else None
+    # Decide, Ask, worth, Merge and the reminder are the review desk's: a committee member reads without them
+    # (BLD-B270; the worker refuses their writes, `REVIEWERS`)
+    can_act = not own and idea["status"] in ON_DESK_STATUSES and has_role(conn, user_id, REVIEWERS)
     return {
         "idea": {
             "id": idea["idea_id"],
@@ -626,9 +629,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         },
         "sharer": sharer.as_json(),
         "own": own,
-        # Decide, Ask, worth, Merge and the reminder are the review desk's: a committee member reads without them
-        # (BLD-B270; the worker refuses their writes, `REVIEWERS`)
-        "can_act": not own and idea["status"] in ON_DESK_STATUSES and has_role(conn, user_id, REVIEWERS),
+        "can_act": can_act,
         "decide_by": {
             "at": decide_by.isoformat() if decide_by else None,
             "label": when.day(decide_by, t) if decide_by else None,
@@ -641,8 +642,12 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
             "tiles": [vars(x) for x in worth.tiles(sharer_worth, reviewer_worth)],
             "revised": reviewer_worth is not None,
             "revision": revision,
+            # The board's lines tell the reviewer to decide or revise, so only the review desk acting on the idea reads
+            # them; anyone who can't act (a committee member, BLD-B270) reads none (S-R2.panel; the BLD-B270 follow-up)
             "line": (
-                f"You’ve revised what it’s worth. {first} sees your figures next to theirs when you decide."
+                None
+                if not can_act
+                else f"You’ve revised what it’s worth. {first} sees your figures next to theirs when you decide."
                 if reviewer_worth is not None
                 else f"Clear enough? Decide now. If it’s worth more than {first} could put into numbers, revise what it’s "
                 f"worth first. {first} sees your figures next to theirs."

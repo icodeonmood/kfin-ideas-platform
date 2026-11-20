@@ -1222,7 +1222,8 @@ export interface ReviewerIdeaResponse {
   artefacts: ReviewerArtefact[];
   own_words: ReviewerOwnWords[];
   parts: ReviewerPart[];
-  worth: { tiles: WorthTile[]; revised: boolean; revision: WorthRevision | null; line: string };
+  // `line` tells the reader to decide or revise, so it is null for anyone who can't act (BLD-B270 follow-up)
+  worth: { tiles: WorthTile[]; revised: boolean; revision: WorthRevision | null; line: string | null };
   similar: ReviewerSimilar[];
   shown: ReviewerShown[]; // L-HIDE.rules/6: the desk and the committee only; empty for anyone else
   contributions: ReviewerContribution[];
