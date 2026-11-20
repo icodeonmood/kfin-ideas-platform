@@ -18,7 +18,13 @@
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, restoreSwitches, setSwitch, signIn } from "../e2e/helpers";
+import {
+  expectNoSeriousAxeIssues,
+  restoreSwitches,
+  setSwitch,
+  signIn,
+  type SwitchState,
+} from "../e2e/helpers";
 import { withSwitchLock } from "../e2e/switch-lock";
 import { carriedFor, expectWithDesk, pdfWith, runSeconds, step } from "./lib";
 
@@ -621,7 +627,8 @@ step(
   "S-03",
   'Home\'s "+": the picker, a file that makes the draft, then the same file on the draft page and under Proof',
   { needs: ["S-03", "C-PROMPT.attach", "C-FILE", "S-04B", "S-05"] },
-  async ({ page }) => {
+  async ({ page }, info) => {
+    info.setTimeout(120_000); // the file's checks can take up to 30 s of it
     const words =
       "Walk-in investors fill the same change form twice because the branch copy and the scanned copy never match.";
     const name = "branch-change-form.pdf";
@@ -679,7 +686,8 @@ step(
   "S-04B",
   'Share a problem\'s "+": a file with a customer detail opens only for you, the review desk and the Ones Committee, and stays with the draft until Remove',
   { needs: ["S-04", "S-04B", "C-PROMPT.attach", "C-FILE", "L-HIDE"] },
-  async ({ page }) => {
+  async ({ page }, info) => {
+    info.setTimeout(120_000); // the file's checks can take up to 30 s of it
     const words =
       "Couriers call the branch to confirm investor addresses because the dispatch list has no landmark field.";
     const name = "courier-callback-notes.pdf";
@@ -715,7 +723,10 @@ step(
   "S-04B",
   'Capture first (the assistant off): no draft panel, the conversation at full width, "+" then Move to Review with its line; the phone keeps its dock, and Full mode brings the panel back',
   { needs: ["S-04", "S-04B", "C-PROMPT.attach", "C-DRAFT-PANEL", "L-DRAFT"] },
-  async ({ page, browser }) => {
+  async ({ page, browser }, info) => {
+    // Two admin visits, three waits of up to 30 s and the 11 s below: the default 60 s is too short, and a step that
+    // times out must still reach its `finally` and put the switch back.
+    info.setTimeout(150_000);
     const words =
       "Every month-end the branch prints the same SIP report three times because the export drops the last page.";
     let draft = "";
@@ -725,8 +736,10 @@ step(
 
     // DEC-125 (1): Capture first is `ai.all` off. Switched on the admin page, as an admin would, and always put back.
     await withSwitchLock("ai.all", async () => {
-      const before = await setSwitch(browser, "ai.all", "off");
+      // DEC-088: every switch starts on, so "on" is the state to put back if setSwitch fails half-way.
+      let before: SwitchState = "on";
       try {
+        before = await setSwitch(browser, "ai.all", "off");
         await signInAsFresh(page, CAPTURE);
         // The web reads switches through a 10-second cache, which a change clears (server/killswitch.ts).
         await expect(async () => {
