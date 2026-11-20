@@ -296,6 +296,196 @@
   outline-offset: 2px;
 }
 
+/* ---------- C-PROMPT.attach (DEC-124, BLD-C213): the "+" first in the tool row, the picker, the rows ---------- */
+/* Lane C's `.attach-btn` until lane D's shared AttachButton (BLD-D019) is on main: subtle, the mic's size and look */
+.cz .cfoot.tools {
+  padding-left: 10px;
+}
+
+.cz .attach-w {
+  display: inline-flex;
+  flex: none;
+}
+
+.cz .attach-btn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-round);
+  background: transparent;
+  color: var(--ink2);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.cz .attach-btn:hover,
+.cz .attach-btn[aria-expanded="true"] {
+  background: var(--hover-fill-strong);
+  color: var(--ink);
+}
+
+.cz .attach-btn:focus-visible,
+.cz .cfile-x:focus-visible,
+.cz .cpick-folder:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* the rows, inside the box above the words (the Home board's `attachments` states) */
+.cz .cfiles {
+  padding: 12px 12px 0;
+}
+
+.cz .cfiles .flist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+
+.cz .cfiles .frow {
+  flex: 0 1 260px;
+  min-width: 0;
+}
+
+.cz .cfiles .frow:has(.fmsg) {
+  flex-basis: 100%;
+}
+
+.cz .cfiles .frow-in {
+  gap: 10px;
+  padding: 8px 8px 8px 10px;
+}
+
+.cz .cfiles .fbadge {
+  width: 36px;
+  height: 30px;
+  font-size: 11px;
+}
+
+.cz .cfiles .frow-n {
+  overflow: hidden;
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+
+.cz .cfiles .frow-s {
+  font-size: 12.5px;
+}
+
+.cz .cfiles .frow-a {
+  align-items: center;
+  gap: 4px;
+}
+
+.cz .cfile-x {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-round);
+  background: transparent;
+  color: var(--mute2);
+  cursor: pointer;
+}
+
+.cz .cfile-x:hover {
+  background: var(--hover-fill-strong);
+  color: var(--ink);
+}
+
+/* the picker, between the words and the tool row (Home.md, `attachments=Picker open`) */
+.cz .cpick {
+  display: grid;
+  gap: 10px;
+  margin: 4px 12px 0;
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 1px var(--rule2);
+}
+
+.cz .cpick-drop {
+  position: relative;
+}
+
+.cz .cpick-drop .fdrop {
+  padding-top: 64px;
+}
+
+.cz .cpick-folder {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--wash);
+  color: var(--blueT);
+  cursor: pointer;
+}
+
+.cz .cpick-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cz .cpick-link .fld {
+  flex: 1;
+  min-width: 0;
+  padding-left: 38px;
+}
+
+.cz .cpick-li {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  color: var(--mute);
+  pointer-events: none;
+}
+
+.cz .cpick-h {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--mute);
+}
+
+/* ---------- Capture first (DEC-125, BLD-C212): Move to Review after the "+", the readiness line beside it ---------- */
+.cz .cmove {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: 4px;
+}
+
+.cz .cmove > .btn {
+  flex: none;
+}
+
+.cz .cmove-l {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--mute);
+}
+
 .cz .vhint {
   position: absolute;
   right: -4px;
@@ -1438,6 +1628,16 @@
   40% {
     transform: scale(1.4);
   }
+}
+
+/* Capture first on a desk (DEC-125): no draft panel, so the conversation and the box take the full width */
+.cz.capture .cmain {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cz.capture.has .tin,
+.cz.capture.has .cdock > * {
+  max-width: none;
 }
 
 /* ---------- narrower: the draft below the words ---------- */

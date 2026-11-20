@@ -5,7 +5,8 @@
  * it, the review desk and the Ones Committee). These handlers check the session, pass the signed-in person on as
  * `user_id`, and hand back the worker's FileItem or its error in the pack's shape, `{ error: { code, message } }`.
  *
- * Routes: `POST /api/files` (multipart: `file` and one of `draft_id`, `idea_id`, `answer_id`), `POST /api/links`,
+ * Routes: `POST /api/files` (multipart: `file`, one of `draft_id`, `idea_id`, `answer_id`, and `for: "conversation"`
+ * beside `idea_id` for the conversation's "+", BLD-C216), `POST /api/links`,
  * `GET /api/files/:id` (polling), `GET /api/files/:id/view` (the checked copy), `GET /api/config/uploads`,
  * `POST /api/files/:id/retry`, `DELETE /api/files/:id`, and `POST /api/files/:id/hide` ("Hide it for me", which
  * answers `not_available` while `files.blackout` is off; black-out is not built, DEC-107).
@@ -97,6 +98,10 @@ export async function addFile(me: CurrentUser, request: Request): Promise<NextRe
     const value = form.get(key);
     if (typeof value === "string" && value) out.set(key, value.slice(0, 100));
   }
+  // `for: "conversation"` beside `idea_id`: the "+" in the conversation's box (DEC-124, BLD-C216). The worker takes
+  // only that value, and only with an idea (422 otherwise), and stores it as the file's purpose.
+  const purpose = form.get("for");
+  if (typeof purpose === "string" && purpose) out.set("for", purpose.slice(0, 40));
   out.set("file", file, file.name.slice(-255) || "file");
   return forward("/internal/files", { method: "POST", body: out, signal: AbortSignal.timeout(120_000) });
 }

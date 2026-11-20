@@ -21,14 +21,19 @@
  * S3 "Voice first" starts listening at once on a phone's empty S-04 once the page is shown and the microphone is
  * allowed, with "Type instead" and "Stop, 0:14" in the dock. Without `flags` (and with both at their default) the
  * screen is exactly the default.
+ * Attach (C-PROMPT.attach, DEC-124, BLD-C213, C214): the "+" first in the box's tool row; files are the draft's rows
+ * in the box (`useBoxFiles`), made on the first file when S-04 has no draft yet, put back in the box on S-04B.
+ * Capture first (DEC-125, BLD-C212): with `ai.all` off, a desk shows no draft panel, the full width, and Move to
+ * Review with its readiness line after the "+"; the phone is unchanged.
  */
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import { IconDevice, IconLaptop, IconMail, IconPencil } from "@/components/compose/icons";
 import {
   DraftPanel,
   PANEL_COPY,
+  READINESS,
   readinessOf,
   type PanelHandle,
   type PanelInterview,
@@ -86,6 +91,8 @@ import { flagEvent } from "@/lib/flags-client";
 import { BANNERS } from "@/lib/killswitch-routes";
 import { useVoiceCapture } from "@/lib/use-voice-capture";
 import type { VoiceCaptureState, VoiceNote } from "@/lib/voice-capture";
+
+import { boxFilesOf, useBoxFiles } from "./box-files";
 
 export const COMPOSE_COPY = {
   title: "Share a problem",
@@ -227,9 +234,14 @@ export function Compose({
   startNew = false,
   flags = null,
   interviewPlace = null,
+  captureFirst = false,
 }: {
   firstName: string;
   draftId: string | null;
+  /** Capture first (DEC-125): `ai.all` is off, the state that shows "The assistant is taking a break…", read on the
+   * server from the same switch table as that banner. On a desk the draft panel is hidden, the conversation and the
+   * box take the full width, and Move to Review sits after the "+" in the tool row. The phone is unchanged. */
+  captureFirst?: boolean;
   /** `/share?new=1`: "Start a new one instead", so no offer of the earlier draft. */
   startNew?: boolean;
   /** S1 and S3 as the server decided them for this person (P-DECISIONS.experiments). Null: the default, and no
@@ -330,6 +342,36 @@ export function Compose({
     routerRef.current = router;
   });
 
+  /** A draft with no words yet, for a voice note or a file before anything is typed (the same call as the first
+   * send, `POST /api/drafts`). */
+  const ensureDraft = useCallback(async (): Promise<string | null> => {
+    if (idRef.current) return idRef.current;
+    try {
+      const made = await client.create(createKey.current);
+      idRef.current = made.draft.id;
+      setDraftId(made.draft.id);
+      adopt(made.draft, made.run_id);
+      return made.draft.id;
+    } catch (err) {
+      failed(err);
+      return null;
+    }
+  }, [client, adopt, failed]);
+
+  // ── C-PROMPT.attach (DEC-124, BLD-C214): files in the box belong to the draft. An empty S-04 makes the draft on
+  // the first file, in turn with the box's own saves, so a file and the first words never make two drafts. ──────
+  const draftForFiles = useCallback((): Promise<string | null> => {
+    if (idRef.current) return Promise.resolve(idRef.current);
+    const run = async () => {
+      if (!idRef.current) await ensureDraft();
+    };
+    chain.current = chain.current.then(run, run);
+    return chain.current.then(() => idRef.current);
+  }, [ensureDraft]);
+  const boxFiles = useBoxFiles({ draftId, resolveDraft: draftForFiles });
+  const loadBoxFiles = boxFiles.load;
+  const settleBoxFiles = boxFiles.settle;
+
   // ── loading ─────────────────────────────────────────────────────────────────────────────────────────────────
   useEffect(() => {
     let gone = false;
@@ -345,6 +387,7 @@ export function Compose({
             return;
           }
           adopt(d, d.run?.state === "running" ? d.run.id : null);
+          loadBoxFiles(boxFilesOf(d.files)); // the draft's files, back in the box (C-PROMPT.attach)
           setSave("saved");
           const ageMs = Date.now() - new Date(d.saved_at).getTime();
           const back =
@@ -382,7 +425,7 @@ export function Compose({
     return () => {
       gone = true;
     };
-  }, [givenId, startNew, client, adopt]);
+  }, [givenId, startNew, client, adopt, loadBoxFiles]);
 
   // ── the stream: one run at a time, from its start (A-API.draft-stream `?run=`) ───────────────────────────────
   // C-DRAFT-LOADER.failure: a part past 10 × its mean is given up; a stream that is closed, sends the server's
@@ -583,20 +626,6 @@ export function Compose({
   }, [boxTyped, conversation, saveBox, netTick]);
 
   // ── voice ─────────────────────────────────────────────────────────────────────────────────────────────────
-  const ensureDraft = useCallback(async (): Promise<string | null> => {
-    if (idRef.current) return idRef.current;
-    try {
-      const made = await client.create(createKey.current);
-      idRef.current = made.draft.id;
-      setDraftId(made.draft.id);
-      adopt(made.draft, made.run_id);
-      return made.draft.id;
-    } catch (err) {
-      failed(err);
-      return null;
-    }
-  }, [client, adopt, failed]);
-
   const voiceOptions = useMemo(
     () => ({ fetch: client.fetch, resolveDraft: ensureDraft }),
     [client, ensureDraft],
@@ -795,6 +824,7 @@ export function Compose({
       setVoiceNotes([]);
       logNotes(id);
       handedOver.add(id);
+      await settleBoxFiles(); // every file the box holds is on the draft before the conversation reads it
       router.push(`/share/${id}`);
       return;
     }
@@ -839,7 +869,20 @@ export function Compose({
     }
     logNotes(id);
     setSave(client.outbox(id).length ? "offline" : "saved");
-  }, [box, voiceNotes, conversation, client, adopt, failed, saveBox, router, flags, phone, screen]);
+  }, [
+    box,
+    voiceNotes,
+    conversation,
+    client,
+    adopt,
+    failed,
+    saveBox,
+    router,
+    flags,
+    phone,
+    screen,
+    settleBoxFiles,
+  ]);
 
   // ── Team up from a similar idea (C-PREVIEW → lane F's C-SHEET-TEAMUP; J-SIMILAR/3–5) ───────────────────────
   const [waiting, setWaiting] = useState<Record<string, string>>({});
@@ -1036,6 +1079,37 @@ export function Compose({
   const signInHref = `/sign-in?next=${encodeURIComponent(draftId ? `/share/${draftId}` : "/share")}`;
   const count = countLine(conversation ? chars + box.trim().length : box.trim().length, minChars);
 
+  // DEC-125 (BLD-C212): in Capture first on a desk, Move to Review follows the "+" in the tool row, with DEC-118's
+  // readiness line beside it in mute text, tied to it for screen readers. The phone keeps it in its dock.
+  const capture = captureFirst && !phone;
+  const moveLineId = useId();
+  const moveInBox = capture ? (
+    <span className="cmove">
+      {readiness === "ready" && checkHref ? (
+        <ButtonLink
+          href={checkHref}
+          size="sm"
+          aria-describedby={moveLineId}
+          onClick={question ? moveDuringQuestions : undefined}
+        >
+          {PANEL_COPY.move}
+        </ButtonLink>
+      ) : (
+        <Button
+          size="sm"
+          disabled
+          aria-describedby={moveLineId}
+          onDisabledClick={() => boxRef.current?.focus()}
+        >
+          {PANEL_COPY.move}
+        </Button>
+      )}
+      <span className="cmove-l" id={moveLineId}>
+        {READINESS[readiness]}
+      </span>
+    </span>
+  ) : null;
+
   const prompt = (
     <Prompt
       ref={boxRef}
@@ -1060,9 +1134,11 @@ export function Compose({
       }
       keyHint={!conversation}
       spans={!conversation && boxIsSaved ? boxSpans : null}
-      // C-PROMPT.anatomy/2: the attach button (C-FILE.uploader) mounts in `attach` once POST /api/files lands
-      // (c/files-2); a later round passes it here (BLD-C124, P-GAPS).
       source={!conversation ? quoteRange(box, quote) : null}
+      attach={boxFiles.button}
+      files={boxFiles.rows}
+      picker={boxFiles.picker}
+      move={moveInBox}
       voice={{
         state: voice.state,
         start: () => void voice.start(),
@@ -1115,7 +1191,9 @@ export function Compose({
   }
 
   return (
-    <div className={`cz${conversation ? " has" : " start"}${!hasWords && !existing ? " blank" : ""}`}>
+    <div
+      className={`cz${conversation ? " has" : " start"}${!hasWords && !existing ? " blank" : ""}${capture ? " capture" : ""}`}
+    >
       {conversation || hasWords || existing ? taskbar : null}
       <p className="pstep ph-only">
         {COMPOSE_COPY.stepPhone} <b>{COMPOSE_COPY.stepNowPhone}</b>
@@ -1206,7 +1284,9 @@ export function Compose({
                       running={live.running}
                       onSuggestion={(s) => {
                         // A suggestion does what it says: "Change the title" opens the title (behaviour/5).
-                        if (s === PANEL_COPY.changeTitle && changePart) panelRef.current?.editTitle();
+                        // With no panel (Capture first, DEC-125) it goes back to the box.
+                        if (s === PANEL_COPY.changeTitle && changePart && panelRef.current)
+                          panelRef.current.editTitle();
                         else boxRef.current?.focus();
                       }}
                     />
@@ -1295,21 +1375,24 @@ export function Compose({
         <p className="vh ph-only" aria-live="polite">
           {count === COMPOSE_COPY.enough ? count : ""}
         </p>
-        <DraftPanel
-          ref={panelRef}
-          live={live}
-          readiness={readiness}
-          moveHref={checkHref}
-          hidden={hiddenActions}
-          onChangePart={changePart}
-          onFocusQuote={setQuote}
-          phone={phone}
-          offline={save === "offline"}
-          onBlocked={() => boxRef.current?.focus()}
-          teamUp={{ open: teamUp.open, waiting, opener: teamUpOpener }}
-          interview={panelInterview}
-          onMove={question ? moveDuringQuestions : undefined}
-        />
+        {/* Capture first (DEC-125): no draft panel and no "Forms as you write" on a desk. */}
+        {capture ? null : (
+          <DraftPanel
+            ref={panelRef}
+            live={live}
+            readiness={readiness}
+            moveHref={checkHref}
+            hidden={hiddenActions}
+            onChangePart={changePart}
+            onFocusQuote={setQuote}
+            phone={phone}
+            offline={save === "offline"}
+            onBlocked={() => boxRef.current?.focus()}
+            teamUp={{ open: teamUp.open, waiting, opener: teamUpOpener }}
+            interview={panelInterview}
+            onMove={question ? moveDuringQuestions : undefined}
+          />
+        )}
         {teamUp.sheet}
       </div>
       {phone && listening ? (

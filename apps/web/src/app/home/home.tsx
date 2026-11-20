@@ -8,6 +8,10 @@
  * Sending from the box (P-ROUTES.graph, V-ACC.share/3): `POST /api/drafts { text }` makes the draft with the words as
  * its first message, and the person lands on S-04B on that draft; they never see the empty S-04. Enter sends; Shift
  * and Enter adds a line (C-PROMPT.keys). A starter puts its opener in the box and does not send.
+ * Attach (C-PROMPT.attach, DEC-124, BLD-C214): the "+" first in the box's tool row. Home has no draft until it sends,
+ * so the first file makes it, with the same call Share a problem's first send makes (`POST /api/drafts`), once; the
+ * file goes into it and its row stays in the box. Sending then adds the words to THAT draft as its first message and
+ * opens it, never a new one. Left unsent, it stays a private draft like any other.
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -38,6 +42,8 @@ import {
   type HomePost,
   type NeedsCard,
 } from "@/lib/home/data";
+
+import { useBoxFiles } from "../share/box-files";
 
 import { CrewCardView, shownAsColleague } from "./crew-card";
 
@@ -310,6 +316,37 @@ export function HomeScreen({
   const createKey = useRef<string>("");
   const boxRef = useRef<HTMLTextAreaElement>(null);
 
+  const refused = useCallback((err: unknown) => {
+    if (err instanceof DraftError && err.offline) setProblem({ text: HOME_COPY.offline, kind: "warn" });
+    else if (err instanceof DraftError && err.text) setProblem({ text: err.text, kind: "error" });
+  }, []);
+
+  // ── files in the box (C-PROMPT.attach, BLD-C214): the first file makes the draft, once ────────────────────────
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const fileDraft = useRef<Promise<string | null> | null>(null);
+  const fileDraftKey = useRef<string>("");
+  const draftForFiles = useCallback((): Promise<string | null> => {
+    if (fileDraft.current) return fileDraft.current;
+    if (!fileDraftKey.current) fileDraftKey.current = newClientId(); // a retried create finds the same draft
+    const made = client.create(fileDraftKey.current).then(
+      (r) => {
+        setDraftId(r.draft.id);
+        return r.draft.id;
+      },
+      (err: unknown) => {
+        fileDraft.current = null; // the next file tries again
+        refused(err);
+        return null;
+      },
+    );
+    fileDraft.current = made;
+    return made;
+  }, [client, refused]);
+  const files = useBoxFiles({ draftId, resolveDraft: draftForFiles });
+  const settleFiles = files.settle;
+  /** The words' message key when they go into the file's draft: one message however often the send is retried. */
+  const messageKey = useRef<string>("");
+
   const send = useCallback(async () => {
     const text = box.trim();
     if (!text || sending) return;
@@ -319,28 +356,37 @@ export function HomeScreen({
     }
     setProblem(null);
     setSending(true);
-    if (!createKey.current) createKey.current = newClientId(); // one draft per send, however often it is retried
     let id: string;
     try {
-      id = (await client.create(createKey.current, box)).draft.id;
+      const made = fileDraft.current ? await fileDraft.current : null;
+      if (made) {
+        // A file made the draft: the words go into THAT draft as its first message, never a new draft.
+        if (!messageKey.current) messageKey.current = newClientId();
+        await client.addMessage(made, { clientId: messageKey.current, text: box, via: "typed" });
+        id = made;
+      } else {
+        if (!createKey.current) createKey.current = newClientId(); // one draft per send, however often it is retried
+        id = (await client.create(createKey.current, box)).draft.id;
+      }
     } catch (err) {
       setSending(false);
-      if (err instanceof DraftError && err.offline) setProblem({ text: HOME_COPY.offline, kind: "warn" });
-      else if (err instanceof DraftError && err.text) setProblem({ text: err.text, kind: "error" });
+      refused(err);
       return;
     }
+    await settleFiles(); // every file in the box is on the draft before Tell it reads it
     try {
       router.push(`/share/${id}`);
     } catch {
       // The draft is made; the box is free again, and sending once more opens the same draft (same key).
       setSending(false);
     }
-  }, [box, sending, client, router]);
+  }, [box, sending, client, router, refused, settleFiles]);
 
   const pick = (opener: string) => {
     setBox(opener);
     setProblem(null);
     createKey.current = "";
+    messageKey.current = "";
     requestAnimationFrame(() => {
       const el = boxRef.current;
       if (!el) return;
@@ -491,6 +537,7 @@ export function HomeScreen({
               setBox(v);
               if (problem) setProblem(null);
               createKey.current = "";
+              messageKey.current = "";
             }}
             onSend={() => void send()}
             sendLabel={HOME_COPY.send}
@@ -501,6 +548,9 @@ export function HomeScreen({
             device="desktop"
             sending={sending}
             className="hm-prompt"
+            attach={files.button}
+            files={files.rows}
+            picker={files.picker}
           >
             {problem ? <FieldMsg kind={problem.kind}>{problem.text}</FieldMsg> : null}
           </Prompt>

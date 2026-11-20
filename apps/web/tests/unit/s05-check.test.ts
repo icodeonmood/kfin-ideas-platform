@@ -1060,6 +1060,26 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
     expect(button(/Proof 1 file$/)).toBeTruthy();
   });
 
+  it("C-PROMPT.attach (DEC-124, BLD-C214): a file added in the prompt box is listed again on Check it under Proof", async () => {
+    // As the draft read sends a file added in the box (draft/store.py `_files`): on the draft, with no message_id.
+    const f = {
+      id: "ATT-2026-000101",
+      kind: "file",
+      name: "Rejection codes reference.pdf",
+      type: "application/pdf",
+      size: 880640,
+      state: "checked",
+      added_by: { id: KAVYA.id },
+      added_at: "2026-11-20T10:00:00.000Z",
+    } as unknown as FileItem;
+    await mount(base({ draft: draft({ files: [f] }) }));
+    await railTo("Proof");
+    expect(h1()).toBe("Anything that shows it?");
+    expect(text(document.querySelector(".ck-proof .flist"))).toContain("Rejection codes reference.pdf");
+    expect(button("Remove Rejection codes reference.pdf")).toBeTruthy();
+    expect(button(/Proof 1 file$/)).toBeTruthy();
+  });
+
   it("J-RECOVER/9 BLD-E001: a link is kept as typed, never opened, with Remove; not a link says what a link looks like", async () => {
     await mount([
       (m, u, b) =>
