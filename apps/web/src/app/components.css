@@ -900,6 +900,21 @@ textarea:is(.fld, .textarea) {
   grid-column: 1 / -1;
 }
 
+/* The kit draws a focused state at rest with the same ring (F-A11Y.rules/2), so it can be seen beside the others */
+.kit .kit-focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* A crew card's foot in the kit: the button, and the quiet link under it (DEC-126) */
+.kit-stack {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  max-width: 360px;
+}
+
 /* ---------- C-SEARCH: the bar ---------- */
 .qwrap {
   position: relative;
