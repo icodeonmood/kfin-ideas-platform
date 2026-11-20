@@ -139,4 +139,9 @@ step "8/8 Smoke tests"
 compose exec -T worker python -m bootstrap.smoke --web-url http://web:3000 --fresh
 
 printf '\nUAT stack is up: web on port %s (project %s).\n' "${UAT_WEB_PORT:-3100}" "$PROJECT"
-printf 'Next: grant the first admin with\n  docker compose -p %s ... exec worker python -m identity.grants grant --employee-id <ID> --role admin --reason "…" --actor ops:<code>\n' "$PROJECT"
+# Production mode (BLD-A235): APP_ENV read as preflight reads it (stripped). The install loaded nobody.
+if [[ "$(value APP_ENV "$APP_ENV_FILE" | tr -d '[:space:]')" == "prod" ]]; then
+  printf 'Next (APP_ENV=prod, no people yet): docs/UAT.md After the deploy, 1a to 2b: the first admin signs in, then the HR import through stdin, then the grants.\n'
+else
+  printf 'Next: grant the first admin with\n  docker compose -p %s ... exec worker python -m identity.grants grant --employee-id <ID> --role admin --reason "…" --actor ops:<code>\n' "$PROJECT"
+fi

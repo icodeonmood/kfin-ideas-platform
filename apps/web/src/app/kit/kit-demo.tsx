@@ -323,7 +323,7 @@ export function KitDemo() {
             statusText="Waiting for you"
             message={{
               kind: "warn",
-              text: "Found a phone number on page 2. Nobody can open it until it’s hidden.",
+              text: "Found a phone number on page 2. Only you, the review desk and the Ones Committee can open it.",
             }}
           >
             <button type="button" className="tb">
