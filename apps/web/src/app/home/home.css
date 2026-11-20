@@ -656,10 +656,9 @@
   letter-spacing: -0.02em;
 }
 
+/* The second line is the heading's size in the board's grey, #9C9CA6 on the slab: 6.5:1 (BLD-D020) */
 .hm-o-title span {
-  font: 400 16px/1.4 var(--ft);
-  letter-spacing: 0;
-  color: #b4b4bd;
+  color: #9c9ca6;
 }
 
 .hm-o-empty {
@@ -823,5 +822,9 @@
   .hm-o-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .hm-o-title {
+    font-size: 24px;
   }
 }

@@ -13,7 +13,7 @@ import { Dropdown } from "@/components/ui/dropdown";
 import { Empty } from "@/components/ui/empty";
 import { Field } from "@/components/ui/field";
 import { DropArea, FileList, FileRow } from "@/components/ui/file";
-import { OnesFan, OnesPost } from "@/components/ui/ones-fan";
+import { OnesEmpty, OnesFan, OnesNext, OnesPost } from "@/components/ui/ones-fan";
 import { QuestionBox } from "@/components/ui/question-box";
 import { SearchBar } from "@/components/ui/search";
 import { IDEA_STATUS, Pill, StatusPill, type IdeaStatus } from "@/components/ui/pill";
@@ -43,7 +43,7 @@ export function KitDemo() {
   const [worth, setWorth] = useState<string[]>(["time"]);
   const [sort, setSort] = useState("latest");
   const [tab, setTab] = useState("yours");
-  const [cheered, setCheered] = useState<number[]>([]);
+  const [cheered, setCheered] = useState<number[]>([9]);
   const [busy, setBusy] = useState(false);
   const [title, setTitle] = useState("");
   const [tried, setTried] = useState(false);
@@ -464,54 +464,108 @@ export function KitDemo() {
         <h2 id="k-fan" className="h2">
           The Ones
         </h2>
-        <OnesFan
-          empty={<p className="body">No Ones yet.</p>}
-          companion={
-            <article className="opost" data-tier="0">
-              <p className="opost-s">The next One could be you.</p>
-            </article>
-          }
-          cards={[
-            {
-              n: 1,
-              t: 4,
-              tn: "Blaze",
-              who: "Asha Shetty",
-              i: "AS",
-              f: "1,240",
-              u: "failed debits avoided last quarter",
-            },
-            { n: 17, t: 2, tn: "Glow", who: null, i: "", f: "38%", u: "fewer calls about rejections" },
-            {
-              n: 5,
-              t: 6,
-              tn: "Blue flame",
-              who: "Imran Qureshi",
-              i: "IQ",
-              f: "6 hrs",
-              u: "saved each week at one branch",
-            },
-          ].map((p) => (
-            <OnesPost
-              key={p.n}
-              name={p.who}
-              initials={p.i}
-              number={p.n}
-              tier={p.t}
-              tierName={p.tn}
-              ago="2d"
-              sentence="Rejection messages now say what went wrong and what to do next."
-              adopted="Adopted by 3 teams"
-              figure={p.f}
-              unit={p.u}
-              cheers={24 + (cheered.includes(p.n) ? 1 : 0)}
-              cheered={cheered.includes(p.n)}
-              onCheer={() => setCheered((c) => (c.includes(p.n) ? c.filter((n) => n !== p.n) : [...c, p.n]))}
-              replies={6}
-              threadHref="/kit#k-fan"
+        {/* C-ONES-FAN.states on the slab it is drawn for: none, one with its companion (cheered), several stacked
+            (See details or a first move spreads it) */}
+        <div className="kit-slab">
+          <div>
+            <h3 className="kit-slab-h">None</h3>
+            <OnesFan
+              label="No posts from the Ones"
+              cards={[]}
+              empty={
+                <OnesEmpty
+                  title="No Ones yet"
+                  body="When a shared fix ships and its result is measured, the people behind it are posted here first."
+                />
+              }
+              companion={null}
             />
-          ))}
-        />
+          </div>
+          <div>
+            <h3 className="kit-slab-h">One</h3>
+            <OnesFan
+              label="One post from the Ones"
+              empty={null}
+              companion={
+                <OnesNext
+                  title="The next One could be you"
+                  body="Every fix here started with one person saying what kept going wrong."
+                  action="Share a problem"
+                  href="/kit#k-fan"
+                />
+              }
+              cards={[
+                <OnesPost
+                  key={9}
+                  name="Neha Kapoor"
+                  initials="NK"
+                  number={9}
+                  tier={5}
+                  tierName="White heat"
+                  ago="1w"
+                  sentence="Redemption requests now show a live status, so investors can see where their money is without calling."
+                  figure="52%"
+                  unit="fewer calls asking where the money is"
+                  cheers={98 + (cheered.includes(9) ? 1 : 0)}
+                  cheered={cheered.includes(9)}
+                  onCheer={() => setCheered((c) => (c.includes(9) ? c.filter((n) => n !== 9) : [...c, 9]))}
+                  replies={12}
+                  threadHref="/kit#k-fan"
+                />,
+              ]}
+            />
+          </div>
+          <div>
+            <h3 className="kit-slab-h">Several</h3>
+            <OnesFan
+              empty={null}
+              companion={null}
+              people={3}
+              cards={[
+                {
+                  n: 1,
+                  t: 4,
+                  tn: "Blaze",
+                  who: "Asha Shetty",
+                  i: "AS",
+                  f: "1,240",
+                  u: "failed debits avoided last quarter",
+                },
+                { n: 17, t: 2, tn: "Glow", who: null, i: "", f: "38%", u: "fewer calls about rejections" },
+                {
+                  n: 5,
+                  t: 6,
+                  tn: "Blue flame",
+                  who: "Imran Qureshi",
+                  i: "IQ",
+                  f: "6 hrs",
+                  u: "saved each week at one branch",
+                },
+              ].map((p) => (
+                <OnesPost
+                  key={p.n}
+                  name={p.who}
+                  initials={p.i}
+                  number={p.n}
+                  tier={p.t}
+                  tierName={p.tn}
+                  ago="2d"
+                  sentence="Rejection messages now say what went wrong and what to do next."
+                  adopted="Adopted by 3 teams"
+                  figure={p.f}
+                  unit={p.u}
+                  cheers={24 + (cheered.includes(p.n) ? 1 : 0)}
+                  cheered={cheered.includes(p.n)}
+                  onCheer={() =>
+                    setCheered((c) => (c.includes(p.n) ? c.filter((n) => n !== p.n) : [...c, p.n]))
+                  }
+                  replies={6}
+                  threadHref="/kit#k-fan"
+                />
+              ))}
+            />
+          </div>
+        </div>
       </section>
 
       <section className="card" aria-labelledby="k-track">

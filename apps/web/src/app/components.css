@@ -1670,20 +1670,50 @@ textarea:is(.fld, .textarea) {
   background: #ffffff;
 }
 
-/* ---------- C-ONES-FAN: a fan of the Ones' posts ---------- */
+/* ---------- C-ONES-FAN: the Ones' posts on the dark slab (Home.dc.html .ofan, .ocard, PhoneHome.dc.html; BLD-D020) ---------- */
+/* Static in this slot: the stack's angled pose and the row's angled edge are drawn, not animated (the fly out, the
+   tilt's new pose, cheerPop and the spread glide come with the motion slot). Tier colour only ever comes from the
+   tokens, through data-tier: --heat is var(--tier-N) (offer.css) and --opost-ring is var(--tier-N-ring) (below). */
 .fan {
   --fan-w: 341px;
+  --fan-h: 511px;
   --fan-gap: 12px;
+  --focus: #8fa8ff;
+  container: fan / inline-size;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
+  margin-top: 20px;
 }
 
+/* PhoneHome.dc.html: the row runs out to the slab's edges (its 20px padding), each card 84% of it and 1.5 times as
+   tall as it is wide */
 @media (max-width: 640px) {
   .fan {
-    --fan-w: min(300px, calc(100vw - 72px));
+    --fan-bleed: 20px;
+    --fan-w: calc((100cqi + 2 * var(--fan-bleed)) * 0.84);
+    --fan-h: calc(var(--fan-w) * 1.5);
+    margin-top: 10px;
   }
+
+  .fan-view {
+    margin-inline: calc(-1 * var(--fan-bleed));
+    padding-inline: var(--fan-bleed);
+    scroll-padding-inline: var(--fan-bleed);
+  }
+}
+
+.fan-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+}
+
+/* Stacked, the side panel sits beside the stack, as wide as the board's (28%, at most 280px) */
+.fan.several:not(.spread) .fan-stage {
+  grid-template-columns: minmax(0, 1fr) min(28%, 280px);
 }
 
 /* The row of cards never sets the page's width: the view clips it and may shrink (WCAG 1.4.10) */
@@ -1701,34 +1731,152 @@ textarea:is(.fld, .textarea) {
   transition: transform var(--mo-move) var(--mo-out);
 }
 
-.fan-view.spread .fan-track {
+.fan.spread .fan-track {
   transform: translateX(calc(var(--at) * -1 * (var(--fan-w) + var(--fan-gap))));
 }
 
 .fan-card {
   position: relative;
   flex: none;
+  display: flex;
   width: var(--fan-w);
-  transition:
-    transform var(--mo-move) var(--mo-out),
-    opacity var(--mo-state) ease;
-}
-
-/* Stacked: every card pulled back over the first, peeking with a slight turn; only three show */
-.fan-view:not(.spread) .fan-card {
-  z-index: calc(10 - var(--i));
-  transform: translateX(calc(var(--i) * -1 * (var(--fan-w) + var(--fan-gap)) + var(--i) * 22px))
-    rotate(calc(var(--i) * 3deg)) scale(calc(1 - var(--i) * 0.04));
-  transform-origin: 50% 100%;
-}
-
-.fan-view:not(.spread) .fan-card:nth-child(n + 4) {
-  opacity: 0;
 }
 
 .fan-card > * {
+  flex: 1;
+  min-width: 0;
   transform: perspective(900px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg));
   transition: transform 0.3s var(--mo-out);
+}
+
+/* One post: the post and the companion card side by side; on a phone the row scrolls by swipe with snap */
+.fan.one .fan-view {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  touch-action: auto;
+}
+
+.fan.one .fan-view::-webkit-scrollbar {
+  display: none;
+}
+
+.fan.one .fan-card {
+  scroll-snap-align: start;
+}
+
+/* Stacked (several posts at rest, wider than a phone): the first card faces you and up to three sit behind it,
+   offset to the right and darker. This flat offset is the pose under reduced motion (F-MOTION.reduced) */
+@media (min-width: 641px) {
+  .fan.several:not(.spread) .fan-card {
+    z-index: calc(20 - var(--i));
+  }
+
+  .fan.several:not(.spread) .fan-card:not(:first-child) {
+    transform: translateX(calc(var(--i) * -1 * (var(--fan-w) + var(--fan-gap)) + var(--i) * 28px))
+      scale(calc(1 - var(--i) * 0.05));
+    transform-origin: 100% 50%;
+    filter: brightness(calc(1 - var(--i) * 0.15));
+  }
+
+  .fan.several:not(.spread) .fan-card:nth-child(n + 5) {
+    visibility: hidden;
+  }
+
+  .fan.several:not(.spread) .fan-card:first-child > .opost {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+      0 46px 90px -34px rgba(0, 0, 0, 0.85);
+  }
+
+  .fan.several:not(.spread) .fan-card:not(:first-child) > .opost {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+      -30px 30px 60px -24px rgba(0, 0, 0, 0.75);
+  }
+
+  /* Spread: the card coming up at the row's edge, and the ones after it, sit darker */
+  .fan.spread .fan-card.edge {
+    filter: brightness(0.8);
+  }
+
+  .fan.spread .fan-card.far {
+    filter: brightness(0.66);
+  }
+}
+
+/* With motion allowed, the board's pose: the cards behind angled into the page, and the card at the row's edge
+   angled in. A still pose: no transition or animation on it in this slot */
+@media (min-width: 641px) and (prefers-reduced-motion: no-preference) {
+  .fan.several:not(.spread) .fan-card:not(:first-child) {
+    transform: translateX(calc(var(--i) * -1 * (var(--fan-w) + var(--fan-gap)))) perspective(1400px)
+      translateX(calc(var(--fan-w) * 0.6 + 52px * (var(--i) - 1))) translateZ(calc(var(--i) * -70px))
+      rotateY(-24deg);
+    transform-origin: 0% 50%;
+  }
+
+  .fan.spread .fan-card.edge {
+    transform: perspective(1400px) translateZ(-60px) rotateY(-16deg);
+    transform-origin: 0% 50%;
+  }
+
+  .fan.spread .fan-card.far {
+    transform: perspective(1400px) translateZ(-90px) rotateY(-24deg);
+    transform-origin: 0% 50%;
+  }
+}
+
+/* The stack's side panel: how many fixes and people, and See details to spread them; gone once spread */
+.fan-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.fan-side-t {
+  margin: 0;
+  color: #ffffff;
+  font: 500 24px/1.2 var(--fd);
+  letter-spacing: -0.02em;
+}
+
+/* #A9A9B2 on the slab #18191D: 7.5:1 (F-COLOR.contrast/1) */
+.fan-side-p {
+  margin: 0;
+  color: #a9a9b2;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.fan-side-b {
+  margin-top: 10px;
+  padding: 0 18px;
+}
+
+/* Narrower than the stack and the panel side by side, the panel sits under the stack */
+@container fan (max-width: 860px) {
+  .fan.several:not(.spread) .fan-stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fan-side {
+    align-items: flex-start;
+    max-width: 46ch;
+    text-align: start;
+  }
+}
+
+@media (max-width: 640px) {
+  .fan.several:not(.spread) .fan-stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fan-side {
+    display: none;
+  }
 }
 
 .fan-ctl {
@@ -1737,8 +1885,20 @@ textarea:is(.fld, .textarea) {
   gap: 10px;
 }
 
+/* On the slab: the position line in the board's quiet grey, the round buttons in white with a light ring
+   (F-COLOR.contrast; WCAG 1.4.3, 1.4.11) */
 .fan-pos {
   margin-right: auto;
+  color: #a9a9b2;
+}
+
+.fan-ctl .round-btn {
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+.fan-ctl .round-btn:hover {
+  box-shadow: inset 0 0 0 1px #ffffff;
 }
 
 .fan-ctl .round-btn[aria-disabled="true"] {
@@ -1748,28 +1908,53 @@ textarea:is(.fld, .textarea) {
 
 @media (prefers-reduced-motion: reduce) {
   .fan-track,
-  .fan-card,
   .fan-card > * {
     transition: none;
   }
 }
 
-/* A One's post on the dark slab, lit by their tier (F-COLOR.tiers/3: the key colour at 32% to nothing) */
+/* A One's post: the dark card, lit by the tier's glows in its media block */
 .opost {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 16px;
   box-sizing: border-box;
-  min-height: 511px;
-  padding: 24px;
+  min-height: var(--fan-h, 511px);
+  padding: 20px 20px 16px;
   border-radius: var(--r-lg);
-  background:
-    radial-gradient(120% 70% at 85% 0%, color-mix(in srgb, var(--heat) 32%, transparent), transparent 62%),
-    var(--slab);
+  background: var(--slab);
   color: #ffffff;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 40px 80px -40px rgba(17, 17, 17, 0.6);
+    0 30px 60px -34px rgba(0, 0, 0, 0.8);
+}
+
+.opost[data-tier="1"] {
+  --opost-ring: var(--tier-1-ring);
+}
+
+.opost[data-tier="2"] {
+  --opost-ring: var(--tier-2-ring);
+}
+
+.opost[data-tier="3"] {
+  --opost-ring: var(--tier-3-ring);
+}
+
+.opost[data-tier="4"] {
+  --opost-ring: var(--tier-4-ring);
+}
+
+.opost[data-tier="5"] {
+  --opost-ring: var(--tier-5-ring);
+}
+
+.opost[data-tier="6"] {
+  --opost-ring: var(--tier-6-ring);
+}
+
+.opost[data-tier="7"] {
+  --opost-ring: var(--tier-7-ring);
 }
 
 .opost-h {
@@ -1778,79 +1963,172 @@ textarea:is(.fld, .textarea) {
   gap: 12px;
 }
 
+/* The avatar keeps C-AVATAR's tier ring (shell.css .av-tN): the light disc, the conic ring, the white inner ring */
+.opost-av {
+  width: 42px;
+  height: 42px;
+  font-size: 13px;
+}
+
 .opost-who {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 3px;
   min-width: 0;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.74);
 }
 
 .opost-who b {
   color: #ffffff;
-  font: 500 15.5px/1.2 var(--ft);
+  font: 600 15px/1.2 var(--ft);
+}
+
+.opost-who > span {
+  overflow: hidden;
+  color: #a9a9b2;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .opost-ago {
+  align-self: flex-start;
   margin-left: auto;
-  color: rgba(255, 255, 255, 0.74);
+  color: #a9a9b2;
   font-size: 13px;
 }
 
+/* The sentence, five lines at most */
 .opost-s {
-  margin: 0;
-  font: 500 21px/1.3 var(--fd);
-  letter-spacing: -0.014em;
+  display: -webkit-box;
+  flex: none;
+  margin: 14px 0 0;
+  overflow: hidden;
+  color: #f2f2f4;
+  font: 400 17px/1.45 var(--ft);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
 }
 
-.opost-pills {
+/* The media block: the tier ring blurred low on the right, the key colour blurred high on the left. The top padding
+   keeps the tags clear of the figure when the block is at its smallest */
+.opost-m {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 120px;
+  margin-top: 16px;
+  padding: 48px 18px 18px;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+.opost-m::before,
+.opost-m::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: 50%;
+}
+
+.opost-m::before {
+  right: -70px;
+  bottom: -110px;
+  width: 240px;
+  height: 240px;
+  background: var(--opost-ring, var(--heat));
+  filter: blur(34px);
+  opacity: 0.62;
+}
+
+.opost-m::after {
+  top: -60px;
+  left: -40px;
+  width: 120px;
+  height: 120px;
+  background: var(--heat);
+  filter: blur(40px);
+  opacity: 0.22;
+}
+
+.opost-tags {
+  position: absolute;
+  top: 14px;
+  left: 14px;
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.opost-fig {
-  display: grid;
   gap: 6px;
-  margin: auto 0 0;
 }
 
-.opost-fig .fig {
-  font-size: 64px;
+.opost-tag {
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font: 500 12.5px/1.4 var(--ft);
+}
+
+/* "Shipped": the status green, not a tier's */
+.opost-tag.ok {
+  background: rgba(77, 209, 135, 0.18);
+  color: #8df3c1;
+}
+
+/* The figure and its unit line sit over the tier ring's glow: a dark halo keeps them readable over the lightest
+   tiers (F-COLOR.contrast/1, measured against the glow's brightest) */
+.opost-big {
+  margin: 0;
+  color: #ffffff;
+  font: 600 44px/1 var(--fd);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 18px rgba(0, 0, 0, 0.35);
 }
 
 .opost-unit {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 14px;
+  margin: 6px 0 0;
+  color: #ffffff;
+  font: 500 14px/1.35 var(--ft);
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.6),
+    0 0 10px rgba(0, 0, 0, 0.5);
 }
 
+/* The two pills keep their size; on a narrow card or with larger text, Read the thread drops under Cheer */
 .opost-f {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 13.5px;
+  gap: 8px;
+  margin-top: 14px;
 }
 
+.opost-f > * {
+  flex: none;
+}
+
+/* Cheer, left: a pill with the count; pressed, the heart fills in and the pill takes the spark's tint */
 .opost-cheer {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 44px;
   min-height: 44px;
-  padding: 0 10px 0 6px;
-  margin-left: -6px;
+  box-sizing: border-box;
+  padding: 0 14px;
   border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  color: #e4e4ea;
+  font: 600 14px/1 var(--ft);
+  font-variant-numeric: tabular-nums;
 }
 
 button.opost-cheer {
@@ -1858,43 +2136,150 @@ button.opost-cheer {
 }
 
 button.opost-cheer:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--spark) 16%, transparent);
+  color: #ffc2a6;
 }
 
 button.opost-cheer[aria-pressed="true"] {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.14);
+  background: color-mix(in srgb, var(--spark) 20%, transparent);
+  color: #ff9a6e;
 }
 
-/* Pressed is more than a lighter fill: the flame fills in, as on the boards (F-A11Y.rules/4); static, no pop (DEC-109) */
+/* Pressed is more than a tint: the heart fills in, as on the boards (F-A11Y.rules/4); static, no pop (DEC-109) */
 button.opost-cheer[aria-pressed="true"] svg {
   fill: currentColor;
 }
 
-.opost-n {
-  margin-left: 8px;
-  color: rgba(255, 255, 255, 0.8);
+/* Read the thread (right), the companion card's action and See details: the board's quiet pill on the slab */
+.opost-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font: 500 14.5px/1 var(--ft);
+  white-space: nowrap;
   text-decoration: none;
+  cursor: pointer;
+}
+
+.opost-pill:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
 }
 
 .opost-t {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: #ffffff;
-  text-decoration: underline;
-  text-underline-offset: 4px;
-  text-decoration-color: rgba(255, 255, 255, 0.5);
+  padding: 0 8px 0 16px;
 }
 
-.opost .av-ring {
-  --avatarInRing: #2a2b30;
-  color: #ffffff;
-  box-shadow: inset 0 0 0 2px var(--slab);
+.opost-n {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.12);
+  font: 600 12.5px/1 var(--ft);
+  font-variant-numeric: tabular-nums;
 }
 
-.fan-empty {
-  max-width: 62ch;
+/* The companion card: an outline on the slab with a soft blue light, its words at the foot */
+.opost.opost-next {
+  justify-content: flex-end;
+  gap: 10px;
+  background: radial-gradient(
+    260px 220px at 80% 20%,
+    color-mix(in srgb, var(--blue) 22%, transparent),
+    transparent 70%
+  );
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.18);
+}
+
+.opost-nt {
+  margin: 0;
+  color: #ffffff;
+  font: 500 24px/1.2 var(--fd);
+  letter-spacing: -0.02em;
+}
+
+.opost-np {
+  margin: 0 0 8px;
+  color: #a9a9b2;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.opost-next .opost-t {
+  align-self: flex-end;
+  padding: 0 18px;
+}
+
+/* PhoneHome.dc.html's card */
+@media (max-width: 640px) {
+  .opost {
+    padding: 18px 16px 14px;
+  }
+
+  .opost-s {
+    font-size: 16px;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+  }
+
+  .opost-big {
+    font-size: 40px;
+  }
+}
+
+/* None: "No Ones yet" on the slab */
+.opost-empty {
+  padding: 26px 28px;
+  border-radius: var(--r-lg);
+  background: var(--slab);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.opost-et {
+  margin: 0;
+  color: #ffffff;
+  font: 500 20px/1.3 var(--fd);
+}
+
+.opost-ep {
+  max-width: 56ch;
+  margin: 8px 0 0;
+  color: #a9a9b2;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* The kit shows the fan on the slab it is drawn for (Home's Ones block) */
+.kit-slab {
+  display: grid;
+  gap: 40px;
+  padding: 44px 48px 48px;
+  border-radius: var(--r-lg);
+  background: var(--slab);
+  color: #ffffff;
+}
+
+.kit-slab-h {
+  margin: 0;
+  color: #ffffff;
+  font: 500 20px/1.3 var(--fd);
+}
+
+@media (max-width: 640px) {
+  .kit-slab {
+    padding: 28px 20px 32px;
+  }
 }
 
 /* ---------- C-FIELD.kinds: the 6-digit code and the question box ---------- */

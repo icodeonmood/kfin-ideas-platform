@@ -19,7 +19,7 @@ import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
 import { ButtonLink } from "@/components/ui/button";
 import { Deck } from "@/components/ui/deck";
 import { FieldMsg } from "@/components/ui/field";
-import { OnesFan, OnesPost } from "@/components/ui/ones-fan";
+import { OnesFan, OnesNext, OnesPost } from "@/components/ui/ones-fan";
 import { Pill, type PillVariant } from "@/components/ui/pill";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { DraftClient, DraftError, newClientId } from "@/lib/compose/client";
@@ -782,14 +782,14 @@ export function HomeScreen({
                 </div>
               }
               companion={
-                <article className="opost hm-o-next" data-tier="0">
-                  <p className="hm-o-nt">{HOME_COPY.nextOne}</p>
-                  <p className="hm-o-np">{HOME_COPY.nextOneBody}</p>
-                  <Link href={HOME_LINKS.share} className="hm-o-more">
-                    {HOME_COPY.share}
-                  </Link>
-                </article>
+                <OnesNext
+                  title={HOME_COPY.nextOne}
+                  body={HOME_COPY.nextOneBody}
+                  action={HOME_COPY.share}
+                  href={HOME_LINKS.share}
+                />
               }
+              people={new Set((ones.value ?? []).map((p) => p.one.number)).size}
               cards={(ones.value ?? []).map((p) => (
                 <OnesPost
                   key={p.id}
