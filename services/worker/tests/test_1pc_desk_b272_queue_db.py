@@ -4,12 +4,17 @@ L-QUESTIONS.ask/4, L-QUESTIONS.states "queued (reviewer only)").
 `asking.save_queue` stores the panel's whole queue as the reviewer's queued set, masked as Send masks it (L-HIDE), and
 the next read of S-R2 opens with it. One queued set per reviewer per idea; a save is kept only from the revision stored
 for its reviewer (`base`, compare-and-swap), so a stale tab keeps nothing. A save that comes too late (after Send, a
-decision or a merge) keeps nothing either, and nobody but the reviewer who queued the questions reads them. Synthetic
-people only; the customer details are generated at run time (eval/golden/generators.py).
+decision or a merge) keeps nothing either, and nobody but the reviewer who queued the questions reads them. Wherever a
+queued set goes (a save that replaces it, Send, a decision, a merge), what hide kept for its questions goes with it,
+and every vault value another row of the idea holds stays (`asking.drop_queued`, lane C's `forget`). Synthetic people
+only; the customer details are generated at run time (eval/golden/generators.py).
 """
 
 from __future__ import annotations
 
+import secrets
+import string
+import uuid
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -303,3 +308,111 @@ def test_bld_b272_s_r2_panel_each_reviewer_keeps_their_own_queue_and_send_drops_
                     f.at(16, 11, 30))  # fmt: skip
     assert _stored(db, cast["idea"]["id"]) == []
     assert _queued(db, cast) is None and _queued(db, cast, "harish") is None
+
+
+# ---- L-HIDE: what hide kept for a queued question never lingers (BLD-B272's fix round) ----------------------------
+
+
+@pytest.fixture
+def vault_scope(db: Conn, cast: dict[str, Any]) -> Iterator[str]:
+    """The idea's hide scope; its vault values and counters are removed afterwards (the people and the idea go with
+    `clean_up_desk_rows`)."""
+    scope = f"DRAFT-{cast['idea']['id']}"
+    yield scope
+    db.execute("DELETE FROM pseudonym_vault WHERE scope_id = %s", (scope,))
+    db.execute("DELETE FROM vault_counters WHERE scope_id = %s", (scope,))
+
+
+def _vault(db: Conn, idea_uuid: Any) -> dict[str, str]:
+    """The idea's vault values, tag -> value, read the way only the worker's restore reads them."""
+    from pii import vault
+
+    rows = db.execute(
+        "SELECT count(*) AS n FROM pseudonym_vault WHERE scope_id = 'DRAFT-' || %s::text", (str(idea_uuid),)
+    ).fetchone()
+    values = {tag: value for tag, (_, value) in vault.mapping(db, f"DRAFT-{idea_uuid}").items()}
+    assert rows is not None and rows["n"] == len(values)
+    return values
+
+
+def _details(db: Conn, idea_uuid: Any, source: str | None = None) -> list[dict[str, Any]]:
+    return [
+        dict(r)
+        for r in db.execute(
+            "SELECT id, source, source_id, vault_tag FROM hidden_details WHERE idea_uuid = %s "
+            "AND (%s::text IS NULL OR source = %s::text) ORDER BY id",
+            (idea_uuid, source, source),
+        ).fetchall()
+    ]
+
+
+def _queued_ids(db: Conn, idea_uuid: Any) -> set[str]:
+    return {
+        str(r["id"])
+        for r in db.execute(
+            "SELECT q.id FROM questions q JOIN question_sets s ON s.id = q.set_id WHERE s.idea_uuid = %s "
+            "AND s.state = 'queued'",
+            (idea_uuid,),
+        ).fetchall()
+    }
+
+
+def _sharer_message(db: Conn, cast: dict[str, Any], text: str) -> str:
+    """One of Kavya's messages on her idea, hidden as lane C hides a sharer's message (her own words sealed for her)
+    and stored as the masked copy. The patterns only: the gatekeeper is not asked here."""
+    from hide import hide_message
+    from onepc.context import seal_text
+
+    mid, idea_uuid = str(uuid.uuid4()), str(cast["idea"]["id"])
+    with db.transaction():
+        out = hide_message(db, idea_uuid, text, by=cast["kavya"]["id"], source_id=mid, gatekeeper=False)
+        db.execute(
+            "INSERT INTO idea_messages (id, idea_uuid, seq, via, text_encrypted, char_count) "
+            "VALUES (%s, %s, 1, 'typed', %s, %s)",
+            (mid, idea_uuid, seal_text("idea_messages", "text_encrypted", mid, out.masked), len(text)),
+        )
+    return mid
+
+
+@pytest.mark.parametrize("ending", ["save", "send", "decide", "merge"])
+def test_l_hide_s_r2_panel_bld_b272_hide_this_leaves_no_row_for_a_queued_question_once_its_set_goes(
+    db: Conn, cast: dict[str, Any], told: f.FakeNotify, vault_scope: str, monkeypatch: pytest.MonkeyPatch,
+    ending: str,
+) -> None:  # fmt: skip
+    """L-HIDE.rules/7, S-R2.panel, BLD-B272: a customer's name the checks missed is in Kavya's message and in a
+    question Meera queued. Meera's "Hide this" (lane C's `desk_hide`) masks it everywhere and writes a
+    `hidden_details` row for each copy, the queued question's included. A save that replaces the set, Send, a
+    decision and a merge each leave no `hidden_details` row keyed by a question that is gone; the name stays hidden
+    on Kavya's message, its vault value with it."""
+    from hide import desk_hide
+
+    # lane C's notice to the sharer is not posted here
+    monkeypatch.setattr(told, "INBOX_KINDS", (), raising=False)
+    name = "Kiran Ra" + "".join(secrets.choice(string.ascii_lowercase) for _ in range(4))  # synthetic, missed
+    idea_uuid, meera, ref = cast["idea"]["id"], cast["meera"]["id"], cast["idea"]["idea_id"]
+    text = f"The agent {name} keeps asking why the redemption is late."
+    mid = _sharer_message(db, cast, text)
+    asked = {"part": "who", "text": f"Did {name} call the branch twice?"}
+    _save(db, cast, [asked, Q1])
+    assert any(name in t for t in _stored(db, idea_uuid)[0]["texts"])  # the checks missed it here too
+    start = text.index(name)
+    end = start + len(name)
+    desk_hide(db, str(idea_uuid), source_kind="message", source_id=mid, start=start, end=end, by=meera)
+    gone = _queued_ids(db, idea_uuid)
+    # "Hide this" wrote a row for the queued copy
+    assert {r["source_id"] for r in _details(db, idea_uuid, "desk")} & gone
+    at = f.at(16, 11, 30)
+    if ending == "save":
+        _save(db, cast, [asked, Q1], base=1)  # the browser still holds the words as typed
+        gone |= _queued_ids(db, idea_uuid)  # the new set's questions keep nothing either
+    elif ending == "send":
+        asking.send_set(db, ref, meera, {"questions": [Q1], "time_to_answer": "3d"}, at)
+    elif ending == "decide":
+        decide.send(db, ref, meera, {"choice": "pick", "reason": REASON}, at)
+    else:  # Kavya's idea was shared second, so it joins Ravi's (L-MERGE.desk/2)
+        merging.desk_merge(db, ref, meera, {"other_idea_id": cast["ravis"]["idea_id"],
+                                            "note": "You both found the same R07 calls."}, at)  # fmt: skip
+    left = [r for r in _details(db, idea_uuid) if r["source_id"] in gone]
+    assert left == [], ending
+    on_message = [r for r in _details(db, idea_uuid, "message") if r["source_id"] == mid]
+    assert len(on_message) == 1 and _vault(db, idea_uuid)[on_message[0]["vault_tag"]] == name

@@ -317,6 +317,29 @@ def _latest_set(conn: Conn, idea_uuid: Any) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
+def drop_queued(conn: Conn, idea_uuid: Any, user_id: str | None = None) -> list[str]:
+    """Delete the idea's queued sets (only `user_id`'s when given) with their questions, and first, for each of those
+    questions, what hide kept for it (`adapters.forget_question`, lane C's `forget`; BLD-B272, L-HIDE). A reviewer's
+    "Hide this" masks every question on the idea and writes `hidden_details` rows keyed by each question's id, and the
+    sharer's page lists every such row of the idea, so none may outlive its question. `forget` keeps each vault value
+    another row of the idea still holds (the sharer's own words, a sent question). Call it inside the caller's
+    transaction, after lane C's lock on the idea (taken first, BLD-B247): Send, a decision, a merge and `save_queue`
+    do. Returns the deleted sets' ids."""
+    who = {"idea": idea_uuid, "by": user_id}
+    for q in conn.execute(
+        "SELECT q.id FROM questions q JOIN question_sets s ON s.id = q.set_id WHERE s.idea_uuid = %(idea)s "
+        "AND s.state = 'queued' AND (%(by)s::uuid IS NULL OR s.by_user_id = %(by)s::uuid) ORDER BY q.id",
+        who,
+    ).fetchall():
+        adapters.forget_question(conn, str(idea_uuid), str(q["id"]))
+    gone = conn.execute(
+        "DELETE FROM question_sets WHERE idea_uuid = %(idea)s AND state = 'queued' "
+        "AND (%(by)s::uuid IS NULL OR by_user_id = %(by)s::uuid) RETURNING id",
+        who,
+    ).fetchall()
+    return [str(r["id"]) for r in gone]
+
+
 def save_queue(
     conn: Conn, ref: str, user_id: str, body: dict[str, Any], at: dt.datetime | None = None
 ) -> dict[str, Any]:
@@ -326,7 +349,7 @@ def save_queue(
 
     - One queued set per reviewer per idea (`question_sets_one_queued`): a save replaces only this reviewer's set;
       another reviewer's queue is theirs and is never touched. Send, a decision and a merge drop every queued set on
-      the idea.
+      the idea (`drop_queued`).
     - Compare-and-swap on the reviewer's own revision: `base` is the revision the page last knew was stored (the
       read's `queued.rev`, 0 when the reviewer has none, then the `rev` each kept save returns). The save is kept only
       when this reviewer's stored set has that revision (0 when none); it is then replaced and stored as `base + 1`,
@@ -334,7 +357,8 @@ def save_queue(
       that overtook one its page never heard back from. The panel stops saving for that page view.
     - Each question is hidden before it is stored (`adapters.hide_queued`, the same `hide` as Send; L-HIDE): only the
       masked copy is kept, sealed as Send seals it. A question stored by this reviewer and sent back unchanged (the
-      page shows the masked copy) is already masked and is kept as it is, with no second model call.
+      page shows the masked copy) is already masked and is kept as it is, with no second model call. What hide kept
+      for the replaced set's questions goes with them (`drop_queued`).
     - A save that comes too late keeps nothing: the idea has left the desk (decided or merged:
       `review.ensure_on_desk`, 409 `already_decided`); or a set was sent since the panel's read (`after`, the latest
       set the panel knew, `desk.reads._panel`'s `set_id`; null when none), or one is still waiting on answers (409
@@ -385,8 +409,7 @@ def save_queue(
             if current is not None
             else set()
         )
-        if current is not None:  # this reviewer's set: this save replaces it (its questions go with it)
-            conn.execute("DELETE FROM question_sets WHERE id = %s", (current["id"],))
+        drop_queued(conn, idea["id"], user_id)  # this reviewer's set, and what hide kept for its questions
         set_id = str(uuid.uuid4())
         conn.execute(
             "INSERT INTO question_sets (id, idea_uuid, by_user_id, state, time_to_answer, queue_rev, created_at) "
@@ -450,8 +473,9 @@ def send_set(
         time_to_answer = str(chosen or p.answer_default)
         due = clock.answer_due(t, time_to_answer, p, cal)
         set_id = str(uuid.uuid4())
-        # The body carries the queue: every queued set on the idea goes, each reviewer's (BLD-B272)
-        conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (idea["id"],))
+        # The body carries the queue: every queued set on the idea goes, each reviewer's, with what hide kept for
+        # their questions (BLD-B272)
+        drop_queued(conn, idea["id"])
         conn.execute(
             "INSERT INTO question_sets (id, idea_uuid, by_user_id, state, time_to_answer, sent_at, due_at, created_at) "
             "VALUES (%s, %s, %s, 'sent', %s, %s, %s, %s)",
