@@ -110,17 +110,22 @@ def test_L_CREW_4_every_card_field(db: Conn, world: dict[str, Any]) -> None:
     assert "looking_for" not in area  # no answer and no picks: left out (BLD-F031)
 
 
-def test_L_CREW_1_not_on_not_asked_not_passed(db: Conn, world: dict[str, Any]) -> None:
+def test_L_CREW_1_DEC_126_not_on_not_declined_not_passed_and_an_idea_asked_about_stays_last(
+    db: Conn, world: dict[str, Any]
+) -> None:
     w = world
     leela = w["leela"]
     f.join(db, w["close"], leela)
-    f.request(db, w["touch"], leela)
-    f.request(db, w["office"], leela, state="withdrawn")  # withdrawn: may ask again, so it stays
+    rid = f.request(db, w["touch"], leela)  # DEC-126: asked about, so it stays, last, as "Requested"
+    f.request(db, w["office"], leela, state="withdrawn")  # withdrawn: as if never asked
     deck.pass_idea(db, leela["id"], w["area"]["idea_id"])
-    assert _ids(deck.deck(db, leela["id"], now=NOW)) == [w["office"]["idea_id"]]
+    body = deck.deck(db, leela["id"], now=NOW)
+    assert _ids(body) == [w["office"]["idea_id"], w["touch"]["idea_id"]]
+    assert "request" not in body["items"][0]
+    assert body["items"][1]["request"] == {"id": rid, "kind": "teamup"}
     f.request(db, w["office"], leela, state="declined")
     body = deck.deck(db, leela["id"], now=NOW)
-    assert body["items"] == [] and body["state"] == "everyone_seen"
+    assert _ids(body) == [w["touch"]["idea_id"]] and body["state"] == "cards"
     assert (body["joined"], body["pending"], body["passed"], body["asked"]) == (1, 1, 1, 2)
 
 
@@ -149,24 +154,29 @@ def test_L_CREW_5_filters_with_live_counts_and_chips(db: Conn, world: dict[str, 
     assert _ids(both) == [world["close"]["idea_id"]]
 
 
-def test_V_ACC_teamup_8_pass_every_card_then_undo_last_then_reset(db: Conn, world: dict[str, Any]) -> None:
+def test_V_ACC_teamup_8_DEC_126_pass_every_card_then_undo_last_then_reset(
+    db: Conn, world: dict[str, Any]
+) -> None:
+    """After a reload, Next on a requested card passes it like any other card (BLD-F094); the request stays."""
     leela = world["leela"]["id"]
-    f.request(db, world["touch"], world["leela"])  # she asked on one card, then passes the rest
+    rid = f.request(db, world["touch"], world["leela"])  # she asked on one card, then passes every card
     ids = _ids(deck.deck(db, leela, now=NOW))
+    assert len(ids) == 4 and ids[-1] == world["touch"]["idea_id"]  # DEC-126: the card asked about is last
     for ref in ids:
         out = deck.pass_idea(db, leela, ref)
         assert out["last_passed"] == ref
     assert deck.pass_idea(db, leela, ids[-1])["passed"] == len(ids)  # passing twice changes nothing
     end = deck.deck(db, leela, now=NOW)
-    # "That's everyone for now. You asked to team up on 1 idea." … "3 passed" with "Undo last pass".
+    # "That's everyone for now. You asked to team up on 1 idea." … "4 passed" with "Undo last pass".
     assert end["state"] == "everyone_seen" and end["items"] == []
-    assert (end["asked"], end["passed"], end["last_passed"]) == (1, 3, ids[-1])
+    assert (end["asked"], end["pending"], end["passed"], end["last_passed"]) == (1, 1, 4, ids[-1])
     undo = deck.undo_last(db, leela, now=NOW)
-    assert undo["restored"] == ids[-1] and undo["card"]["id"] == ids[-1] and undo["passed"] == 2
+    assert undo["restored"] == ids[-1] and undo["card"]["id"] == ids[-1] and undo["passed"] == 3
+    assert undo["card"]["request"] == {"id": rid, "kind": "teamup"}
     assert undo["last_passed"] == ids[-2]
     assert _ids(deck.deck(db, leela, now=NOW)) == [ids[-1]]
     again = deck.reset(db, leela)
-    assert again == {"reset": 2, "passed": 0, "last_passed": None}
+    assert again == {"reset": 3, "passed": 0, "last_passed": None}
     assert _ids(deck.deck(db, leela, now=NOW)) == ids
     assert deck.undo_last(db, leela, now=NOW) == {
         "restored": None,
@@ -292,6 +302,107 @@ def test_L_CREW_10_home_shows_the_top_three(db: Conn, world: dict[str, Any]) -> 
     )
 
 
+# --- DEC-126 (WF-03b, BLD-F094): an idea asked about stays in the deck, last, as "Requested" -------------------
+_CARD_KEYS = {
+    "id", "title", "status", "area", "city", "shared_at", "lead", "crew_faces", "crew_count", "in_their_words",
+    "hue", "reason_kind", "reason",
+}  # fmt: skip
+
+
+def test_DEC_126_L_CREW_1_3_a_sent_request_stays_in_the_deck_last_with_its_request_and_no_note(
+    db: Conn, world: dict[str, Any]
+) -> None:
+    w = world
+    rid = f.request(db, w["close"], w["leela"])  # the strongest card, asked about
+    body = deck.deck(db, w["leela"]["id"], now=NOW)
+    assert _ids(body) == [
+        w["touch"]["idea_id"],
+        w["area"]["idea_id"],
+        w["office"]["idea_id"],
+        w["close"]["idea_id"],
+    ]
+    card = body["items"][-1]
+    assert card["request"] == {"id": rid, "kind": "teamup"}
+    # The viewer's own request id and its kind only: no state, no times, no lead's answer and never the note.
+    assert set(card) == _CARD_KEYS | {"looking_for", "request"} and set(card["request"]) == {"id", "kind"}
+    assert "I see this at my counter every week" not in str(body)
+    assert all("request" not in c for c in body["items"][:-1])
+    assert body["total"] == body["deck_total"] == 4 and body["state"] == "cards"
+    # Your crews keeps "Waiting for {lead}" for it (DEC-126 (5)).
+    assert [(r["id"], r["label"]) for r in body["your_crews"]["items"]] == [
+        (w["close"]["idea_id"], "Waiting for Omkar")
+    ]
+
+
+def test_DEC_126_L_CREW_3_requested_cards_sort_by_when_they_were_asked_oldest_first(
+    db: Conn, world: dict[str, Any]
+) -> None:
+    w = world
+    f.request(db, w["close"], w["leela"], days=0.2)  # asked last
+    f.request(db, w["area"], w["leela"], days=2)  # asked first
+    assert _ids(deck.deck(db, w["leela"]["id"], now=NOW)) == [
+        w["touch"]["idea_id"], w["office"]["idea_id"], w["area"]["idea_id"], w["close"]["idea_id"],
+    ]  # fmt: skip
+
+
+def test_DEC_126_L_CREW_1_declined_stays_out_and_a_withdrawn_request_goes_back_to_its_place(
+    db: Conn, world: dict[str, Any]
+) -> None:
+    w = world
+    leela = w["leela"]
+    rid = f.request(db, w["touch"], leela)
+    f.request(db, w["area"], leela, state="declined", days=3)
+    assert _ids(deck.deck(db, leela["id"], now=NOW)) == [
+        w["close"]["idea_id"], w["office"]["idea_id"], w["touch"]["idea_id"],
+    ]  # fmt: skip
+    # Withdrawn through the service the card's Withdraw calls (DELETE /team-up/:id): back to Team up, in place.
+    from teamup import requests as teamup_requests
+
+    teamup_requests.withdraw(db, rid, leela["id"])
+    body = deck.deck(db, leela["id"], now=NOW)
+    assert _ids(body) == [w["close"]["idea_id"], w["touch"]["idea_id"], w["office"]["idea_id"]]
+    assert all("request" not in c for c in body["items"]) and body["your_crews"]["items"] == []
+
+
+def test_DEC_126_L_CREW_5_filters_counts_and_total_include_requested_cards(
+    db: Conn, world: dict[str, Any]
+) -> None:
+    w = world
+    rid = f.request(db, w["office"], w["leela"])  # the Hyderabad card
+    body = deck.deck(db, w["leela"]["id"], {"location": ["Hyderabad"]}, now=NOW)
+    assert _ids(body) == [w["office"]["idea_id"]] and body["items"][0]["request"]["id"] == rid
+    assert body["total"] == 1 and body["deck_total"] == 4 and body["counts"]["location:Hyderabad"] == 1
+    assert body["counts"]["status:checking"] == 1  # the requested card's status still counts
+    ops = deck.deck(db, w["leela"]["id"], {"category": ["Operations"]}, now=NOW)
+    assert _ids(ops) == [w["close"]["idea_id"], w["touch"]["idea_id"], w["office"]["idea_id"]]
+
+
+def test_DEC_126_L_CREW_10_limit_3_with_three_others_and_two_requested_reads_other_other_latest_requested(
+    db: Conn, world: dict[str, Any], client: TestClient
+) -> None:
+    """Lane F's reading of DEC-126 (2) for Home (S-03, BLD-F094): Home reads `limit=3`; past three cards the latest
+    requested card is the third, so it does not drop off Home after a reload. `total` stays the whole deck's."""
+    w = world
+    newer = f.idea(db, w["tarun"], "Investors queue twice for KYC", area="Investor service", city="Kolkata",
+                   shared_days=0.2)  # fmt: skip
+    f.request(db, w["close"], w["leela"], days=1)
+    latest = f.request(db, w["touch"], w["leela"], days=0.3)
+    leela = w["leela"]["id"]
+    whole = _ids(deck.deck(db, leela, now=NOW))
+    assert whole == [newer["idea_id"], w["area"]["idea_id"], w["office"]["idea_id"], w["close"]["idea_id"],
+                     w["touch"]["idea_id"]]  # fmt: skip
+    short = deck.deck(db, leela, limit=3, now=NOW)
+    assert _ids(short) == [newer["idea_id"], w["area"]["idea_id"], w["touch"]["idea_id"]]
+    assert short["items"][-1]["request"] == {"id": latest, "kind": "teamup"} and short["total"] == 5
+    top = deck.home(db, leela, now=NOW)
+    assert [c["id"] for c in top["top"]] == _ids(short) and top["total"] == 5
+    over_http = client.get("/internal/crew", params={"user_id": leela, "limit": 3}).json()
+    assert [c["id"] for c in over_http["items"]] == _ids(short) and over_http["total"] == 5
+    # A deck that fits in the limit comes whole, in order.
+    fits = deck.deck(db, leela, {"category": ["Operations"]}, limit=3, now=NOW)
+    assert _ids(fits) == [w["office"]["idea_id"], w["close"]["idea_id"], w["touch"]["idea_id"]]
+
+
 def test_L_CREW_2_close_to_yours_from_a_newer_idea_that_matched_hers(db: Conn, world: dict[str, Any]) -> None:
     w = world
     later = f.idea(db, w["tarun"], "SMS codes again", area="Sales", city="Kolkata", shared_days=0.1)
@@ -301,13 +412,23 @@ def test_L_CREW_2_close_to_yours_from_a_newer_idea_that_matched_hers(db: Conn, w
     assert cards[1]["reason"] == "Close to your idea from Saturday"
 
 
-def test_J_SIMILAR_4b_a_waiting_merge_request_is_asking_to_join(db: Conn, world: dict[str, Any]) -> None:
-    """BLD-F038: a draft's merge request to an idea takes it off the deck and puts it in Your crews, waiting."""
+def test_J_SIMILAR_4b_DEC_126_a_waiting_merge_request_stays_last_with_kind_merge(
+    db: Conn, world: dict[str, Any]
+) -> None:
+    """BLD-F038 under DEC-126: a draft's merge request to an idea asks to join it, so the card stays, last, with
+    `request.kind` "merge" (one DELETE /team-up/:id withdraws either kind), and Your crews lists it, waiting."""
     w = world
     draft = f.idea(db, w["leela"], "Rejection SMS again, from my counter", shared_days=None)
     rid = f.merge_request(db, draft, w["area"], w["leela"])
     body = deck.deck(db, w["leela"]["id"], now=NOW)
-    assert w["area"]["idea_id"] not in _ids(body)
+    assert _ids(body) == [
+        w["close"]["idea_id"],
+        w["touch"]["idea_id"],
+        w["office"]["idea_id"],
+        w["area"]["idea_id"],
+    ]
+    assert body["items"][-1]["request"] == {"id": rid, "kind": "merge"}
+    assert "Mine is the same problem" not in str(body["items"])  # the merge note never rides on the card
     rows = body["your_crews"]["items"]
     assert [(r["id"], r["state"], r["label"], r["request_id"]) for r in rows] == [
         (w["area"]["idea_id"], "waiting", "Waiting for Ritu", rid)
@@ -315,7 +436,13 @@ def test_J_SIMILAR_4b_a_waiting_merge_request_is_asking_to_join(db: Conn, world:
     assert (body["pending"], body["asked"]) == (1, 1)
     db.execute("UPDATE merge_requests SET state = 'withdrawn' WHERE id = %s", (rid,))
     again = deck.deck(db, w["leela"]["id"], now=NOW)
-    assert w["area"]["idea_id"] in _ids(again) and again["your_crews"]["items"] == []
+    assert _ids(again) == [
+        w["close"]["idea_id"],
+        w["touch"]["idea_id"],
+        w["area"]["idea_id"],
+        w["office"]["idea_id"],
+    ]
+    assert all("request" not in c for c in again["items"]) and again["your_crews"]["items"] == []
 
 
 @pytest.fixture

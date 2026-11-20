@@ -434,6 +434,20 @@ export interface CrewCard extends IdeaPreview {
   reason_kind: CrewReason;
   /** "Same R07 SMS as your idea from Saturday". */
   reason: string;
+  /**
+   * DEC-126 (BLD-F094): the viewer's own request still waiting on this idea. The card stays in the deck, last, and
+   * reads "Requested" with "Withdraw" (`DELETE /api/team-up/:id` withdraws either kind). Absent when they have not
+   * asked, or withdrew.
+   */
+  request?: CrewCardRequest;
+}
+
+/** A waiting request on a crew card (DEC-126): its id and kind only, never its note. */
+export interface CrewCardRequest {
+  /** `teamup_requests.id` or `merge_requests.id`. */
+  id: string;
+  /** "teamup" for a team-up request, "merge" for a draft's merge request (BLD-F038). */
+  kind: "teamup" | "merge";
 }
 
 // ---------------------------------------------------------------------------------------------------------------

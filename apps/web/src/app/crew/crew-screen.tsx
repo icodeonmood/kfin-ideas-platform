@@ -6,12 +6,16 @@
  * Ideas close to yours, one card at a time, from `GET /api/crew`. Lane D's `Deck` draws the pile and its controls;
  * this screen gives it the cards and decides what Next and Previous mean here:
  * - Next passes the front card (`POST /api/crew/pass`), and on the last card ends the deck ("That's everyone for
- *   now"); a card the person has just asked about is not passed, Next only moves on.
+ *   now"); a card the person has just asked about is not passed, Next only moves on. After a reload a requested
+ *   card is passed like any other (BLD-F094); the request stays.
  * - Previous brings back the card passed just before (`POST /api/crew/pass/undo`).
  * - "Undo last pass" and "See them again" in the side card (L-CREW/6).
  * - The card's title opens lane C's preview (C-PREVIEW); its primary button and the card's "Team up" open lane F's
- *   team-up sheet. After a send the card shows "Waiting for {lead}" and "Keep looking" moves to the next card
- *   (S-H2.rules/3); the request joins "Your crews".
+ *   team-up sheet. After a send the card reads "Requested", greyed and inactive, with "Withdraw" under it (DEC-126,
+ *   `RequestedAction`); when the sheet closes ("Keep looking") it flies to the end of the deck and the next card
+ *   comes to the front (S-H2.rules/3; with reduced motion it just moves). The server keeps it there, last, after a
+ *   reload. "Withdraw" turns it back to "Team up" where it stands. The request joins "Your crews" as "Waiting for
+ *   {lead}" and leaves it on a withdraw.
  * - Filters (L-CREW/5): a glass dialog "Filter ideas" with live counts; "Show N ideas" applies; the filters in use
  *   show as removable chips above the deck.
  *
@@ -32,9 +36,10 @@ import {
 
 import { IdeaPreviewDialog } from "@/components/preview/idea-preview";
 import { PhoneBar } from "@/components/shell/phone";
+import { REQUESTED_COPY, RequestedAction } from "@/components/teamup/requested-action";
 import { teamUpOpener, useTeamUpSheet, type TeamUpSent } from "@/components/teamup/teamup-sheet";
 import { CrewFaces } from "@/components/ui/avatar";
-import { Button, ButtonLink } from "@/components/ui/button";
+import { Button, ButtonLink, buttonClass } from "@/components/ui/button";
 import { MultiChips } from "@/components/ui/chips";
 import { Deck } from "@/components/ui/deck";
 import { Empty } from "@/components/ui/empty";
@@ -200,19 +205,32 @@ function TeamUpIcon() {
   );
 }
 
+const noop = () => {};
+
+/** Whether the person asked for less motion (F-MOTION): then a card asked about moves without its flight. */
+function reducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true
+  );
+}
+
 function CardView({
   card,
   front,
-  waiting,
+  ghost = false,
   onPreview,
   onTeamUp,
+  onWithdrawn,
   titleRef,
 }: {
   card: CrewCard;
   front: boolean;
-  waiting: string | null;
+  /** The copy that flies to the back of the pile after a request (DEC-126): drawn only, none of it reachable. */
+  ghost?: boolean;
   onPreview(): void;
   onTeamUp(): void;
+  /** After "Withdraw" under "Requested" (DEC-126). */
+  onWithdrawn(sent: TeamUpSent): void;
   titleRef?: (el: HTMLButtonElement | null) => void;
 }) {
   const id = useId();
@@ -254,11 +272,24 @@ function CardView({
           total={card.crew_count}
           leadName={card.lead.name}
         />
-        {waiting ? (
-          <button type="button" className="crew-wait" onClick={onTeamUp} {...teamUpOpener(card.id)}>
-            <i aria-hidden="true" />
-            {waiting}
-          </button>
+        {ghost ? (
+          card.request ? (
+            <div className="tu-req">
+              <span className={buttonClass("primary", "full", "crew-join is-inactive")}>
+                {REQUESTED_COPY.requested}
+              </span>
+              <span className="link-quiet">{REQUESTED_COPY.withdraw}</span>
+            </div>
+          ) : null
+        ) : card.request ? (
+          // DEC-126: "Requested", greyed and inactive but read out, with "Withdraw" under it.
+          <RequestedAction
+            ideaId={card.id}
+            title={card.title}
+            request={card.request}
+            className="crew-join"
+            onWithdrawn={onWithdrawn}
+          />
         ) : (
           <Button
             variant="primary"
@@ -267,6 +298,7 @@ function CardView({
             icon={<TeamUpIcon />}
             aria-label={CREW_COPY.teamUpOn(card.title, leadFirst(card.lead))}
             onClick={onTeamUp}
+            {...teamUpOpener(card.id)}
           >
             {CREW_COPY.teamUp}
           </Button>
@@ -392,6 +424,12 @@ export function CrewScreen(): JSX.Element {
   const [passedHere, setPassedHere] = useState<string[]>([]);
   const [sent, setSent] = useState<Record<string, TeamUpSent>>({});
   const [added, setAdded] = useState<YourCrew[]>([]);
+  /** Requests withdrawn here (DEC-126): their "Your crews" rows from the last read go. */
+  const [dropped, setDropped] = useState<string[]>([]);
+  /** Requests from the last read withdrawn here, for "You asked to team up on N ideas". */
+  const [unasked, setUnasked] = useState(0);
+  /** The card asked about, flying to the back of the pile over the slot that was in front (DEC-126). */
+  const [flying, setFlying] = useState<{ card: CrewCard; slot: number; n: number } | null>(null);
   const [passed, setPassed] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
@@ -412,6 +450,9 @@ export function CrewScreen(): JSX.Element {
     setPassedHere([]);
     setAdded([]);
     setSent({});
+    setDropped([]);
+    setUnasked(0);
+    setFlying(null);
     setLoad({ kind: "ready" });
   }, []);
 
@@ -445,13 +486,17 @@ export function CrewScreen(): JSX.Element {
     });
   }, []);
 
-  const asked = (data?.asked ?? 0) + Object.keys(sent).length;
+  const asked = Math.max(0, (data?.asked ?? 0) + Object.keys(sent).length - unasked);
 
   // --- Team up (C-SHEET-TEAMUP) ---------------------------------------------------------------------------------
   const onSent = useCallback(
     (s: TeamUpSent) => {
       justSent.current = s.ideaId;
       setSent((m) => ({ ...m, [s.ideaId]: s }));
+      // DEC-126: the card reads "Requested" with "Withdraw" now; it moves to the end of the deck as the sheet closes.
+      setCards((cs) =>
+        cs.map((c) => (c.id === s.ideaId ? { ...c, request: { id: s.id, kind: s.kind } } : c)),
+      );
       const card = cards.find((c) => c.id === s.ideaId);
       if (card) {
         const label = s.after?.line ?? CREW_COPY.waiting(leadFirst(card.lead));
@@ -472,24 +517,45 @@ export function CrewScreen(): JSX.Element {
     },
     [cards],
   );
-  const onWithdrawn = useCallback((s: TeamUpSent) => {
-    justSent.current = null;
-    setSent((m) => {
-      const next = { ...m };
-      delete next[s.ideaId];
-      return next;
-    });
-    setAdded((rows) => rows.filter((r) => r.id !== s.ideaId));
-  }, []);
+  // From the sheet's "Withdraw request" or the card's "Withdraw" (DEC-126 (4)): back to "Team up", and the card stays
+  // where it is; "Your crews" drops the row. RequestedAction moves focus to the "Team up" drawn again.
+  const onWithdrawn = useCallback(
+    (s: TeamUpSent) => {
+      justSent.current = null;
+      if (sent[s.ideaId]?.id !== s.id) setUnasked((n) => n + 1);
+      setSent((m) => {
+        const next = { ...m };
+        delete next[s.ideaId];
+        return next;
+      });
+      setCards((cs) => cs.map((c) => (c.id === s.ideaId ? { ...c, request: undefined } : c)));
+      setAdded((rows) => rows.filter((r) => r.id !== s.ideaId));
+      if (s.id) setDropped((d) => [...d, s.id]);
+    },
+    [sent],
+  );
   const onSheetClose = useCallback(() => {
-    // "Keep looking" (S-H2.rules/3): after a send, the next card comes to the front. Nothing is passed.
+    // "Keep looking" (S-H2.rules/3): after a send, the next card comes to the front. Nothing is passed. DEC-126: the
+    // card asked about goes to the end of the deck, where the server keeps it after a reload (L-CREW/3), flying to the
+    // back of the pile unless the person asked for less motion. On the last card the deck ends, as before.
     const id = justSent.current;
     justSent.current = null;
-    if (!id || cards[at]?.id !== id || ended) return;
+    const card = cards[at];
+    if (!id || !card || card.id !== id || ended) return;
     if (at >= cards.length - 1) setEnded(true);
-    else setAt(at + 1);
+    else {
+      setCards([...cards.slice(0, at), ...cards.slice(at + 1), card]);
+      if (!reducedMotion()) setFlying({ card, slot: at, n: Date.now() });
+    }
     focusFront();
   }, [at, cards, ended, focusFront]);
+
+  // The flight is 620 ms; drop the copy if its end never fires (a hidden tab, say).
+  useEffect(() => {
+    if (!flying) return;
+    const t = window.setTimeout(() => setFlying(null), 900);
+    return () => window.clearTimeout(t);
+  }, [flying]);
   const teamUp = useTeamUpSheet({
     onSent,
     onWithdrawn,
@@ -599,7 +665,9 @@ export function CrewScreen(): JSX.Element {
   // --- Rendering --------------------------------------------------------------------------------------------------
   const crews = [
     ...added,
-    ...(data?.your_crews?.items ?? []).filter((r) => !added.some((a) => a.id === r.id)),
+    ...(data?.your_crews?.items ?? []).filter(
+      (r) => !added.some((a) => a.id === r.id) && !(r.request_id && dropped.includes(r.request_id)),
+    ),
   ];
   const inUse = filterCount(applied);
 
@@ -691,17 +759,39 @@ export function CrewScreen(): JSX.Element {
         <Deck
           label={CREW_COPY.deckLabel}
           cards={cards.map((c, i) => (
-            <CardView
-              key={c.id}
-              card={c}
-              front={i === at}
-              waiting={sent[c.id] ? (sent[c.id]?.after?.line ?? CREW_COPY.waiting(leadFirst(c.lead))) : null}
-              onPreview={() => setPreview(c.id)}
-              onTeamUp={() => teamUp.open(c.id)}
-              titleRef={(el) => {
-                frontTitle.current = el;
-              }}
-            />
+            <div key={c.id} className="crew-slot">
+              <CardView
+                key="card"
+                card={c}
+                front={i === at}
+                onPreview={() => setPreview(c.id)}
+                onTeamUp={() => teamUp.open(c.id)}
+                onWithdrawn={onWithdrawn}
+                titleRef={(el) => {
+                  frontTitle.current = el;
+                }}
+              />
+              {flying && flying.slot === i ? (
+                <div
+                  key={flying.n}
+                  className="crew-fly"
+                  aria-hidden="true"
+                  inert
+                  onAnimationEnd={(e) => {
+                    if (e.target === e.currentTarget) setFlying(null);
+                  }}
+                >
+                  <CardView
+                    card={flying.card}
+                    front={false}
+                    ghost
+                    onPreview={noop}
+                    onTeamUp={noop}
+                    onWithdrawn={noop}
+                  />
+                </div>
+              ) : null}
+            </div>
           ))}
           index={at}
           onIndexChange={onIndexChange}
@@ -873,7 +963,9 @@ export function CrewScreen(): JSX.Element {
           primaryDone={
             previewSent
               ? (previewSent.after?.line ?? CREW_COPY.waiting(leadFirst(previewCard.lead)))
-              : undefined
+              : previewCard.request
+                ? CREW_COPY.waiting(leadFirst(previewCard.lead))
+                : undefined
           }
         />
       ) : null}

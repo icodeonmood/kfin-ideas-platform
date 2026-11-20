@@ -340,31 +340,74 @@
   font-size: 16.5px;
 }
 
-/* "Waiting for Ravi": what stands where Team up was; opens the sheet on its sent step */
-.crew-wait {
-  display: flex;
+/* DEC-126 (BLD-F094): after a request, "Requested" stands where Team up was, greyed and inactive, with "Withdraw"
+   under it (components/teamup/requested-action.tsx). The two class names are lane D's shared ones (BLD-D019); until
+   that is on main they are drawn here, from tokens and scoped to this screen, and lane D folds them into the shared
+   copy at QA. */
+.crew-page .btn.is-inactive,
+.crew-page .btn.is-inactive:hover {
+  background: var(--rule2);
+  color: var(--placeholder);
+  box-shadow: none;
+  cursor: default;
+}
+
+/* Grey sub-text (F-TYPE `meta`), underlined: --mute is 6.3:1 on the card's white; the shared focus ring; a 44px
+   target (F-SPACE.targets/1; WCAG 2.5.8 asks 24px) */
+.crew-page .link-quiet {
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
-  min-height: 54px;
-  padding: 0 16px;
+  justify-content: center;
+  min-width: var(--target);
+  min-height: var(--target);
+  padding: 0 var(--sp-8);
   border: 0;
-  border-radius: var(--r-sm);
-  background: var(--wash);
-  color: var(--blueT);
-  font: 500 15.5px/1 var(--ft);
-  text-align: left;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--mute);
+  font: 400 13.5px/1.45 var(--ft);
+  letter-spacing: 0.004em;
+  text-decoration: underline;
+  text-decoration-color: var(--underline);
+  text-underline-offset: 3px;
   cursor: pointer;
 }
 
-.crew-wait i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--blue);
+.crew-page .link-quiet:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
 }
 
-.crew-wait:hover {
-  box-shadow: inset 0 0 0 1px var(--blue);
+.crew-page .link-quiet[aria-busy="true"] {
+  cursor: progress;
+}
+
+/* Each card sits in a slot; after a request the card asked about flies to the back of the pile over the next one,
+   with lane D's own flight (components.css `deckToBack`), and with reduced motion it just moves */
+.crew-slot {
+  position: relative;
+}
+
+.crew-slot > .crew-card {
+  position: relative;
+  z-index: 2;
+}
+
+.crew-fly {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 4;
+  pointer-events: none;
+  animation: deckToBack 0.62s cubic-bezier(0.45, 0, 0.25, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crew-fly {
+    display: none;
+    animation: none;
+  }
 }
 
 /* The end of the deck, nothing yet, filtered to nothing, did not load */

@@ -6,5 +6,6 @@ For whoever builds `GET /home` (A-API.home `crew: { total, top: CrewCard[3] }`):
 
     crew.deck.home(conn, user_id: str, limit: int = 3, now: datetime | None = None) -> {"total": int, "top": [CrewCard]}
 
-or over HTTP, `GET /internal/crew?user_id=…&limit=3` (the deck response with `items` cut to three, `total` whole).
+or over HTTP, `GET /internal/crew?user_id=…&limit=3` (the deck response with `items` cut to three, `total` whole;
+past three cards, an idea the person asked to join comes as the third, the latest one: `deck.limited`, DEC-126).
 """
