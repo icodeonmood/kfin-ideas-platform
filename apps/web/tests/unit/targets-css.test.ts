@@ -148,7 +148,10 @@ describe("F-SPACE.targets/2, C-BUTTON.variants (DEC-126): the quiet link is padd
     expect(pad.get("position")).toBe("absolute");
     // The inset shorthand, expanded as CSS does: 1 to 4 values for top, right, bottom, left.
     const v = (pad.get("inset") ?? "").trim().split(/\s+/).map(px);
-    const [top, right, bottom, left] = [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]];
+    const top = v[0] ?? NaN;
+    const right = v[1] ?? top;
+    const bottom = v[2] ?? top;
+    const left = v[3] ?? right;
     // "Withdraw" sits 4px under "Requested" (.tu-req gap --sp-4): the layer may not reach up into it.
     expect(top).toBeGreaterThanOrEqual(-2);
     expect(px(quiet.get("min-height")) - top - bottom).toBeGreaterThanOrEqual(44);
