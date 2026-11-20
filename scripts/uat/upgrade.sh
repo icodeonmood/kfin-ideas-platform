@@ -4,7 +4,7 @@
 #
 #   [FROM=<installed tag or sha>] scripts/uat/upgrade.sh <app env file> <database env file>
 #
-# FROM is read from $UAT_DATA_DIR/ops/installed.json; an install without one (launch-2026-11-20-r2) needs FROM.
+# FROM is read from $UAT_DATA_DIR/ops/installed.json; an install without one (launch-2026-11-20-r3) needs FROM.
 # Steps: checks → keep the running images for rollback → build the new images and run preflight on them (the old
 # containers keep serving) → fresh backup of the database and company repo, or stop → dbmate up → restart web and
 # worker on the new images (Postgres keeps running) → the 13 smoke checks → record. Stops at the first failure.
@@ -94,7 +94,7 @@ elif [[ -n "$recorded" ]]; then
   FROM_SHA="$recorded"
   git cat-file -e "${FROM_SHA}^{commit}" 2>/dev/null || fail "the installed $FROM_SHA is not in this checkout: git fetch --tags first"
 else
-  fail "no install record at $INSTALLED: say what is installed, for example FROM=launch-2026-11-20-r2"
+  fail "no install record at $INSTALLED: say what is installed (the tag git describe printed before you checked out the new one), for example FROM=launch-2026-11-20-r3"
 fi
 [[ "$FROM_SHA" != "$TO_SHA" ]] || fail "this checkout ($TO_SHA) is what is installed: nothing to upgrade"
 FROM_SHORT="${FROM_SHA:0:8}"

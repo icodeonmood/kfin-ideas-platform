@@ -77,7 +77,7 @@ Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answe
    The person must have signed in once, or be in the HR import.
 
    **1d. The first admin signs in again** (the launch server only), in a new private browser window, and opens the Admin page. If the sign-in is refused, or the Admin page is, stop before step 2 and tell the product team. Check first that 1c printed `granted` (or `already granted`); otherwise the usual cause is that the employee ID or the email checked in 1b does not match.
-2. Ones Committee members (the product lead's decisions, DEC-121; BLD-B270): give each member **Ones Committee** on the Admin page. It is the 1% Club role and stays. Builds from `main` 7b648174 on, the first update after r3 included, carry lane B's committee role check (BLD-B270), and the conversation's file rule follows it (`FILE_ROLES`): a member with only Ones Committee can use the Ones Committee page, open ideas, play an idea read aloud (Listen), read the review desk's pages, and open and attach the files on an idea's conversation. r3, the launch install, has the role check but not the file rule, so at launch IT also gave each member `core_committee` with the command in 1c (`--role core_committee --reason "Ones Committee at launch, <ticket>"`). `core_committee` also shows some older pages (Delivery, The Ember note) and, while no chair is named, its holders receive the overdue emails of the older timers that escalate to the chair (the 1% Club's own review clock sends none). On any install, give both until the product lead says otherwise. The Admin page cannot give `core_committee` (it lists it as a retired role), and the command cannot give Ones Committee. **Do not remove `core_committee`** from a member, even though the Admin page calls it retired, until both of these hold: the first update with this role fix is installed on the launch server (Updating the live server, below), and the product lead says so. Lane A tells IT. Then remove it on the Admin page (the row reads "Core committee member (retired role)"), except from anyone the product lead names as core committee. On the launch server the members already exist from the HR import, so they need not sign in first.
+2. Ones Committee members (the product lead's decisions, DEC-121; BLD-B270): give each member **Ones Committee** on the Admin page. It is the 1% Club role and stays. Builds from `main` 7b648174 on, the first update after r3 included, carry lane B's committee role check (BLD-B270), and the conversation's file rule follows it (`FILE_ROLES`): a member with only Ones Committee can use the Ones Committee page, open ideas, play an idea read aloud (Listen), read the review desk's pages, and open and attach the files on an idea's conversation. r3, the launch install, has the role check but not the file rule, so at launch IT also gave each member `core_committee` with the command in 1c (`--role core_committee --reason "Ones Committee at launch, <ticket>"`). `core_committee` also shows some older pages (Delivery, The Ember note) and, while no chair is named, its holders receive the overdue emails of the older timers that escalate to the chair (the 1% Club's own review clock sends none). On any install, give both until the product lead says otherwise. The Admin page cannot give `core_committee` (it lists it as a retired role), and the command cannot give Ones Committee. **Do not remove `core_committee`** from a member, even though the Admin page calls it retired, until lane A tells IT. That happens only when all three hold (BLD-B270): the first update with this role fix is installed on the launch server (Updating the live server, below), the product lead says so, and DEC-121's open question is settled with lane E. Then remove it on the Admin page (the row reads "Core committee member (retired role)"), except from anyone the product lead names as core committee. On the launch server the members already exist from the HR import, so they need not sign in first.
 
    **2b. On the launch server, the smoke checks without `--fresh`**, once the HR import and these grants are in:
 
@@ -103,12 +103,13 @@ Run it in a quiet window, and tell the review desk first: a rollback loses anyth
 1. Before you start, record what runs now, from the checkout:
 
    ```bash
+   cat /srv/kfin-ideas-uat/ops/installed.json 2>/dev/null
    git describe --tags --exact-match
    git rev-parse HEAD
    docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list
    ```
 
-   Paste back: all of it. Pass: the tag and commit installed (the first time, `launch-2026-11-20-r3` and `ecd9266411c02de0d14ce9c18ed0412218d13398`), and every switch as the product lead set it. Keep this list for step 5.
+   Paste back: all of it (the record holds only a commit, a tag and a time). Pass: the tag and commit installed (the first time, no record yet, then `launch-2026-11-20-r3` and `ecd9266411c02de0d14ce9c18ed0412218d13398`), and every switch as the product lead set it. When the record is there, it is what runs: after a rollback the checkout can still be on the newer tag (step 6 says how to put it back). Keep the switch list for step 5.
 
 2. Check out the new tag:
 
@@ -136,11 +137,11 @@ Run it in a quiet window, and tell the review desk first: a rollback loses anyth
    UAT_DATA_DIR=/srv/kfin-ideas-uat make uat-upgrade APP_ENV_FILE=/secure/.env.uat DB_ENV_FILE=/secure/.env.uat.db FROM=launch-2026-11-20-r3
    ```
 
-   **`FROM=launch-2026-11-20-r3` is needed the first time only:** the r3 install wrote no record of what it installed. Every upgrade, and every install from a later tag, writes `/srv/kfin-ideas-uat/ops/installed.json`, so leave `FROM` out after that. If you give it, it must match the record.
+   **`FROM=launch-2026-11-20-r3` is needed the first time only:** the r3 install wrote no record of what it installed. Every upgrade writes `/srv/kfin-ideas-uat/ops/installed.json` (an install from a later tag does too, when the deploy account can write `ops/`, as after the **Once** step above; otherwise it prints "Could not write" and the next upgrade needs `FROM` again). Once the record is there, leave `FROM` out. If you give it, it must match the record.
 
    Paste back: the whole output, each `==` step line and what follows it. Pass:
-   - at the top, `FROM ecd9266411c02de0d14ce9c18ed0412218d13398 launch-2026-11-20-r3` (the first time) and `TO <the commit from step 2> <new tag>`;
-   - `ai.all off; model route fake` (unless the product lead has switched AI on);
+   - at the top, `FROM ecd9266411c02de0d14ce9c18ed0412218d13398 launch-2026-11-20-r3` (the first time) and `TO   <the commit from step 2> <new tag>`;
+   - `ai.all off; model route not configured (LLM_MODE=fake: Mode B)` (unless the product lead has switched AI on);
    - `backup: … (N tables with data)`;
    - `Pending: 0` and `migrations applied now: N`;
    - `people loaded (production)` and `smoke: all checks passed`;
@@ -157,7 +158,7 @@ Run it in a quiet window, and tell the review desk first: a rollback loses anyth
 | 7 Smoke | The thirteen checks, without `--fresh`: real people and their roles are expected now | any check fails |
 | 8 Record | `ops/installed.json` and `ops/upgrade-<time>.json` (from, to, backup, migrations, seconds) | — |
 
-Before step 5 a failure changes nothing: the old version keeps serving. From step 5 on, a failure prints the rollback command and stops. It never rolls back by itself: decide with the product lead, then run it. **A failed upgrade is rolled back, not run again:** once a run has migrated the database, the upgrade refuses to start again and names the backup to roll back with.
+Before step 5/8 (Migrations) a failure changes nothing: the old version keeps serving. From step 5/8 on, a failure prints the rollback command and stops. It never rolls back by itself: decide with the product lead, then run it. **A failed upgrade is rolled back, not run again:** once a run has migrated the database, the upgrade refuses to start again and names the backup to roll back with.
 
 5. After the upgrade, check the switches and the Admin page:
 
@@ -177,7 +178,11 @@ Before step 5 a failure changes nothing: the old version keeps serving. From ste
 
    It stops web and worker, puts the kept images back, drops and recreates the database and restores the backup, always restores the company repo from its archive, starts web and worker with the old version's compose files, runs the smoke checks and records the old version as installed. If you changed `PRIVACY_NOTICE_VERSION` for the upgrade, set it back first: the rollback stops and names the old version. It prints the kill switches before and after: they go back to their state at backup time, so check them on the Admin page.
 
-   Paste back: the whole output. Pass: `database restored: migrations as at the backup (N)`, `smoke: all checks passed`, and the last line `rollback: back on <old> in Ns.` Then run step 5's checks again; the switches should match step 1.
+   Paste back: the whole output. Pass: `database restored: migrations as at the backup (N)`, `smoke: all checks passed`, and the last line `rollback: back on <old> in Ns. Anything written after the backup is lost.` Then put the checkout back on the old tag, so it matches what runs, and run step 5's checks again; the switches should match step 1:
+
+   ```bash
+   git checkout <old tag> && git describe --tags --exact-match
+   ```
 
 **What a rollback loses:** everything written after the backup. That covers ideas, drafts, messages, decisions, notice acceptances and any kill switch changed on the Admin page. That is why upgrades run in a quiet window.
 

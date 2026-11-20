@@ -26,7 +26,7 @@ running() { docker ps -q --filter "label=com.docker.compose.project=$1"; }
 [[ "$PROJECT" != "$DEV_PROJECT" ]] || fail "the rehearsal never uses the dev stack's project"
 [[ "$REHEARSE_APP_ENV" == "uat" || "$REHEARSE_APP_ENV" == "prod" ]] \
   || fail "REHEARSE_APP_ENV must be uat (the default) or prod, not $REHEARSE_APP_ENV"
-[[ -n "${FROM:-}" ]] || fail "say which version to install first: FROM=<tag or sha>, for example FROM=launch-2026-11-20-r2"
+[[ -n "${FROM:-}" ]] || fail "say which version to install first: FROM=<tag or sha>, for example FROM=launch-2026-11-20-r3"
 if [[ -n "$(running "$DEV_PROJECT")" ]]; then
   echo "stop the dev stack first from the main checkout: make down"
   fail "the dev stack (compose project $DEV_PROJECT) is running"
@@ -73,7 +73,7 @@ cleanup() {
     fi
     docker image ls --filter "reference=$PROJECT-*:rollback-*" --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
       | while read -r img; do docker image rm "$img" >/dev/null 2>&1 || true; done || true
-    rm -rf "$WORK/data" "$WORK"/*.env "$WORK"/*.env.new 2>/dev/null \
+    rm -rf "$WORK/data" "$WORK"/*.env "$WORK"/*.env.new "$WORK/hr-synthetic.csv" 2>/dev/null \
       || echo "could not remove all of $WORK/data (files of uid 10001?): remove it with sudo"
     if [[ -d "$WORK/from" ]]; then
       git worktree remove "$WORK/from" || echo "could not remove the worktree $WORK/from: remove it by hand (git worktree remove)"

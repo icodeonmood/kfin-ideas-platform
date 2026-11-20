@@ -53,9 +53,9 @@ case "$a" in
   *"tar -C /data -xf -"*) cat > /dev/null ;;
   *"dbmate up"*) touch "$FAKE_STATE/migrated" ;;
   *"dbmate status"*) printf 'Applied: 3\nPending: 0\n' ;;
-  *"bootstrap.synthetic_hr"*) printf 'employee_id,name,email,department,job_title,location,manager_employee_id\nSYN-00001,Synthetic One,one@kfintech.example,Ops,Analyst,Hyderabad,\n' ;;
+  *"bootstrap.synthetic_hr"*) printf 'cwd %s\n' "$PWD" >> "$FAKE_LOG"; [[ -n "${FAKE_GEN_FAIL:-}" ]] && exit 1; printf 'employee_id,name,email,department,job_title,location,manager_employee_id\nSYN-00001,Synthetic One,one@kfintech.example,Ops,Analyst,Hyderabad,\n' ;;
   *"identity.hr_import"*) cat > /dev/null; [[ -n "${FAKE_HR_FAIL:-}" ]] && { echo "failed: line 2: synthetic"; exit 1; }; echo "hr import: 1 rows, 1 created, 0 updated, 0 deactivated, 0 unmapped departments, 0 unmapped titles, 0 proposals opened" ;;
-  *"identity.grants grant"*) echo granted ;;
+  *"identity.grants grant"*) [[ -n "${FAKE_GRANT_FAIL:-}" ]] && { echo "no active person with that employee ID"; exit 1; }; echo granted ;;
   *"bootstrap.smoke"*) if [[ -n "${FAKE_SMOKE_FAIL:-}" ]]; then echo "smoke: 1 check(s) failed"; exit 1; fi; echo "smoke: all checks passed" ;;
   *) : ;;
 esac
@@ -253,7 +253,7 @@ def test_a234_upgrade_goes_on_with_ai_all_on_when_a_route_is_configured(tmp_path
 
 def test_a234_upgrade_refuses_without_from_when_there_is_no_install_record(tmp_path: Path) -> None:
     run = _upgrade(tmp_path)
-    assert run.returncode == 1 and "FROM=launch-2026-11-20-r2" in run.stderr
+    assert run.returncode == 1 and "FROM=launch-2026-11-20-r3" in run.stderr
     assert not any(c.startswith("docker") for c in _calls(tmp_path))
 
 
@@ -547,6 +547,7 @@ def test_a237_rehearsal_in_prod_imports_synthetic_people_and_grants_before_the_u
         "-p kfin-ideas-uat-rehearsal " in calls[gen]
         and f"-v {work}/from/eval/golden:/app/eval/golden:ro" in calls[gen]
     )
+    assert calls[gen + 1] == f"cwd {work}/from"  # FROM's compose files and env, not this checkout's
     imp = _first(calls, f"docker exec -i {worker} python -m identity.hr_import -")
     admin = _first(
         calls, f"docker exec {worker} python -m identity.grants grant --employee-id SYN-00001 --role admin"
@@ -566,8 +567,16 @@ def test_a237_rehearsal_in_prod_imports_synthetic_people_and_grants_before_the_u
     _only_rehearsal_targets(calls, work)
 
 
-def test_a237_rehearsal_in_prod_stops_before_the_upgrade_when_the_import_fails_and_tears_down(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("fail", "stopped", "never"),
+    [
+        ("FAKE_GEN_FAIL", "STOPPED: the synthetic HR file was not written", "identity.hr_import"),
+        ("FAKE_HR_FAIL", "STOPPED: the HR import", "identity.grants"),
+        ("FAKE_GRANT_FAIL", "STOPPED: the admin grant", "--role core_committee"),
+    ],
+)
+def test_a237_rehearsal_in_prod_stops_before_the_upgrade_when_a_step_fails_and_tears_down(
+    tmp_path: Path, fail: str, stopped: str, never: str
 ) -> None:
     work = tmp_path / "w"
     env = _env(
@@ -575,15 +584,15 @@ def test_a237_rehearsal_in_prod_stops_before_the_upgrade_when_the_import_fails_a
         FROM="launch-2026-11-20-r3",
         REHEARSE_APP_ENV="prod",
         UPGRADE_REHEARSAL_WORK=str(work),
-        FAKE_HR_FAIL="1",
+        **{fail: "1"},
     )
     run = _run(["bash", str(REHEARSE)], env)
     out = run.stdout
     assert run.returncode != 0
-    assert "STOPPED: the HR import" in out
+    assert stopped in out
     assert re.search(r"^people-prod\s+FAIL", out, re.M), out
     calls = _calls(tmp_path)
-    assert not any("dbmate up" in c or "identity.grants" in c for c in calls)
+    assert not any("dbmate up" in c or never in c for c in calls)
     assert any(
         "-p kfin-ideas-uat-rehearsal" in c and "down -v --rmi local --remove-orphans" in c for c in calls
     )
