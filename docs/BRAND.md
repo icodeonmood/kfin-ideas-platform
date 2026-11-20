@@ -63,7 +63,7 @@ The % sign with its slash drawn as a rising spark and an ember: a one between tw
 | Spark | polygon 34,236 146.9,27.2 169.1,40.8 | Spark |
 | Ember | circle cx 171.6, cy 11.8, r 7 | Spark |
 
-**Small sizes (below 32 px tall):** use `spark-mark-small-*.svg`. The zeros are r 32 with stroke 24, the spark is polygon `34,236 141,23.5 175,44.5`, and there is no ember. Smallest use: 14 px tall.
+**Small sizes (below 32 px tall):** in the app, `SparkMark` draws the pack's one mark (F-ICONS.mark) at every size, 22 px in the sidebar included (BLD-D022). Only the favicon (`app/icon*`) and the email marks keep the small cut, `spark-mark-small-*.svg`: the zeros are r 32 with stroke 24, the spark is polygon `34,236 141,23.5 175,44.5`, and there is no ember. Smallest use: 14 px tall.
 
 **Clear space:** the height of one zero (80 units at master size, a third of the mark's height) on every side.
 
@@ -75,7 +75,7 @@ The % sign with its slash drawn as a rising spark and an ember: a one between tw
 
 ## 4a. Spark tiers (DEC-075, DEC-080 to DEC-083)
 
-Only Ones have a tier. The colours are the design pack's (`F-COLOR.tiers`, DEC-102, conditioned to 87% chroma), and the names and order are unchanged. Each tier also has a conic ring (`--tier-N-ring` in `tokens.css`) drawn round the avatar. `services/worker/ones/tiers.py` and `tokens.css` hold the same values and change together.
+Only Ones have a tier. The colours are the design pack's (`F-COLOR.tiers`, DEC-102, conditioned to 87% chroma), with tiers 6 and 7's colours swapped so Blue flame is blue and Star is violet (BLD-D023); the names and order are unchanged. Each tier also has a conic ring (`--tier-N-ring` in `tokens.css`) drawn round the avatar. `services/worker/ones/tiers.py` and `tokens.css` hold the same values and change together.
 
 | Tier | Name | Colour |
 |---|---|---|
@@ -84,10 +84,10 @@ Only Ones have a tier. The colours are the design pack's (`F-COLOR.tiers`, DEC-1
 | 3 | Flame | `#F34770` |
 | 4 | Blaze | `#F23729` |
 | 5 | White heat | `#4DD187` |
-| 6 | Blue flame | `#8841E1` |
-| 7 | Star | `#264DC9` |
+| 6 | Blue flame | `#264DC9` |
+| 7 | Star | `#8841E1` |
 
-A tier colour is light and fill only, never small text: the One's spark, badge, swatch and dashboard accent. A One's number is drawn from a pale core (`heat-core`) to the tier colour, because Tiers 6 and 7 fail as text on Zed (Star is about 2.8:1). In email the number stays white and the tier shows as a filled swatch beside its name. On white screens, a tier colour never sits beside an error, a success mark or a control, so Blaze is not read as an error, White heat as success or Star as something to press. The Spark mark (logo) keeps `#F46835` whatever anyone's tier.
+A tier colour is light and fill only, never small text: the One's spark, badge, swatch and dashboard accent. A One's number is drawn from a pale core (`heat-core`) to the tier colour, because Tiers 6 and 7 fail as text on Zed (Blue flame is about 2.7:1). In email the number stays white and the tier shows as a filled swatch beside its name. On white screens, a tier colour never sits beside an error, a success mark or a control, so Blaze is not read as an error, White heat as success or Blue flame as something to press. The Spark mark (logo) keeps `#F46835` whatever anyone's tier.
 
 A tier change sends the One an email from the 1% Club sender, on behalf of the committee and the CEO. The first time they sign in afterwards, the glow-up plays once (DEC-084): the spark heats from the old colour to the new one, then their story and messages appear. With reduced motion, the end state shows at once.
 

@@ -46,10 +46,10 @@
   --tier-4-ring:conic-gradient(from 210deg,#F23729,#F58267,#F34F41,#C80000,#F23729);
   --tier-5:#4DD187;
   --tier-5-ring:conic-gradient(from 210deg,#4DD187,#A6F2CC,#67DFA0,#12A862,#4DD187);
-  --tier-6:#8841E1;
-  --tier-6-ring:conic-gradient(from 210deg,#8841E1,#C99BFF,#9F65E8,#672BC0,#8841E1);
-  --tier-7:#264DC9;
-  --tier-7-ring:conic-gradient(from 210deg,#264DC9,#8FA6FF,#5070E1,#1232A8,#264DC9);
+  --tier-6:#264DC9;
+  --tier-6-ring:conic-gradient(from 210deg,#264DC9,#8FA6FF,#5070E1,#1232A8,#264DC9);
+  --tier-7:#8841E1;
+  --tier-7-ring:conic-gradient(from 210deg,#8841E1,#C99BFF,#9F65E8,#672BC0,#8841E1);
   --fd:'Inter Tight',Inter,'Inter Fallback',system-ui,sans-serif;
   --ft:Inter,'Inter Fallback',system-ui,sans-serif;
   --r-xs:8px;

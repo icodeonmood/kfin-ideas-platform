@@ -56,6 +56,10 @@ test.describe("C-SIDEBAR and C-PHONE-TABS: the shell by role (AT-B2-06)", () => 
     await openAccountMenu(page);
     await expect(page.getByRole("link", { name: "Admin" })).toHaveAttribute("href", "/admin");
     await expect(page.getByRole("link", { name: "Delivery" })).toBeVisible();
+    // BLD-D021: The Ember's row is for the people who write it (core_committee, admin); everyone else reads it on the Wall.
+    await expect(
+      page.locator(".acct-menu").getByRole("link", { name: "The Ember", exact: true }),
+    ).toHaveAttribute("href", "/ember");
     const shortcut = page.getByRole("switch", { name: "The P shortcut" });
     await expect(shortcut).toHaveAttribute("aria-checked", "true");
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();

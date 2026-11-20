@@ -7,12 +7,18 @@ import { expect, test } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, openAccountMenu, PERSONAS, signIn } from "./helpers";
 
-test("everyone reads The Ember's archive from the account menu; only the chair and admins write it", async ({
+test("everyone reads The Ember's archive; only the chair and admins write it, and only they see it in the account menu (BLD-D021)", async ({
   page,
 }) => {
   await signIn(page, PERSONAS.contributor);
   await openAccountMenu(page);
-  await page.getByRole("link", { name: "The Ember" }).click();
+  // Everyone else reads it from the Wall's Ember section (S-WALL.ember); the archive itself stays open to all.
+  await expect(page.locator(".acct-menu")).toBeVisible();
+  await expect(page.locator(".acct-menu").getByRole("link", { name: "The Ember", exact: true })).toHaveCount(
+    0,
+  );
+  await page.keyboard.press("Escape");
+  await page.goto("/ember");
   await expect(page.getByRole("heading", { level: 1, name: "The Ember" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Work on this month's issue" })).toHaveCount(0);
   await expectNoSeriousAxeIssues(page);

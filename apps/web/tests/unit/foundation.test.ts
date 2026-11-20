@@ -92,9 +92,61 @@ function paint(value: string, under: string, tokens: Map<string, string>): strin
     .join("")}`;
 }
 
+/**
+ * The one recorded delta from the pack's tokens.css (BLD-D023, closing F-COLOR.tiers's OPEN: line): tiers 6 and 7
+ * swap colours, so "Blue flame" is blue and "Star" is violet. Names and copy are unchanged. Pack line → app line.
+ */
+const TIER_SWAP: ReadonlyArray<readonly [string, string]> = [
+  ["  --tier-6:#8841E1;", "  --tier-6:#264DC9;"],
+  [
+    "  --tier-6-ring:conic-gradient(from 210deg,#8841E1,#C99BFF,#9F65E8,#672BC0,#8841E1);",
+    "  --tier-6-ring:conic-gradient(from 210deg,#264DC9,#8FA6FF,#5070E1,#1232A8,#264DC9);",
+  ],
+  ["  --tier-7:#264DC9;", "  --tier-7:#8841E1;"],
+  [
+    "  --tier-7-ring:conic-gradient(from 210deg,#264DC9,#8FA6FF,#5070E1,#1232A8,#264DC9);",
+    "  --tier-7-ring:conic-gradient(from 210deg,#8841E1,#C99BFF,#9F65E8,#672BC0,#8841E1);",
+  ],
+];
+
 describe("F-COLOR tokens", () => {
-  it("F-COLOR: apps/web/src/app/tokens.css is the pack's tokens.css, unchanged", () => {
-    expect(read(`${APP}tokens.css`)).toBe(read(`${PACK}tokens.css`));
+  it("F-COLOR, BLD-D023: apps/web/src/app/tokens.css is the pack's tokens.css with only the recorded tier 6 and 7 swap", () => {
+    const pack = read(`${PACK}tokens.css`).split("\n");
+    const app = read(`${APP}tokens.css`).split("\n");
+    expect(app).toHaveLength(pack.length);
+    // Each pack line the delta names is still in the pack, once; a pack revision there means a new decision.
+    for (const [from] of TIER_SWAP)
+      expect(
+        pack.filter((l) => l === from),
+        from,
+      ).toHaveLength(1);
+    const swap = new Map(TIER_SWAP);
+    expect(app.join("\n")).toBe(pack.map((l) => swap.get(l) ?? l).join("\n"));
+    // Exactly four lines differ, and nothing else.
+    expect(app.filter((l, i) => l !== pack[i])).toEqual(TIER_SWAP.map(([, to]) => to));
+  });
+
+  it("F-COLOR.tiers, BLD-D023: tier 6 (Blue flame) is #264DC9 and tier 7 (Star) is #8841E1 in tokens.css and in tiers.py", () => {
+    const t = packTokens();
+    expect(t.get("--tier-6")).toBe("#264DC9");
+    expect(t.get("--tier-6-ring")).toBe(
+      "conic-gradient(from 210deg,#264DC9,#8FA6FF,#5070E1,#1232A8,#264DC9)",
+    );
+    expect(t.get("--tier-7")).toBe("#8841E1");
+    expect(t.get("--tier-7-ring")).toBe(
+      "conic-gradient(from 210deg,#8841E1,#C99BFF,#9F65E8,#672BC0,#8841E1)",
+    );
+    // The worker's table (emails, the office display, the Wall's and Home's Ones) holds the same seven key colours.
+    const py = read(fileURLToPath(new URL("../../../../services/worker/ones/tiers.py", import.meta.url)));
+    const worker = new Map(
+      [...py.matchAll(/^\s+(\d):\s*\("([^"]+)",\s*"(#[0-9A-F]{6})"\)/gm)].map((m) => [
+        Number(m[1]),
+        [m[2], m[3]],
+      ]),
+    );
+    expect(worker.get(6)).toEqual(["Blue flame", "#264DC9"]);
+    expect(worker.get(7)).toEqual(["Star", "#8841E1"]);
+    for (let n = 1; n <= 7; n++) expect(worker.get(n)?.[1], `tier ${n}`).toBe(t.get(`--tier-${n}`));
   });
 
   it("F-COLOR: no later sheet redefines a pack token at the root (a scoped override, like the dark slab's, is fine)", () => {

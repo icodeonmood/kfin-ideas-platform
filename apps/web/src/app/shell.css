@@ -848,36 +848,7 @@
   text-decoration-color: currentColor;
 }
 
-/* Tell it: three labelled bars, the current one ink */
-.tsteps-bars {
-  gap: 8px;
-}
-
-.tsteps-bars li {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  width: 78px;
-  font: 500 12.5px/1 var(--ft);
-  color: var(--mute);
-}
-
-.tsteps-bars li::after {
-  content: "";
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(17, 17, 17, 0.1);
-}
-
-.tsteps-bars li.now {
-  color: var(--ink);
-}
-
-.tsteps-bars li.now::after {
-  background: var(--ink);
-}
-
-/* Check it: numbered nodes joined by short lines */
+/* Every task screen, Tell it included: numbered nodes joined by short lines (C-TASKBAR.steps, BLD-D024) */
 .tsteps-nodes {
   gap: 10px;
 }
