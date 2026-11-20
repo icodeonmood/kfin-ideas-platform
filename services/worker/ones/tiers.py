@@ -11,8 +11,8 @@ TIERS: dict[int, tuple[str, str]] = {
     3: ("Flame", "#F34770"),
     4: ("Blaze", "#F23729"),
     5: ("White heat", "#4DD187"),
-    6: ("Blue flame", "#8841E1"),
-    7: ("Star", "#264DC9"),
+    6: ("Blue flame", "#264DC9"),  # tiers 6 and 7 swap the pack's colours, so Blue flame is blue (BLD-D023)
+    7: ("Star", "#8841E1"),
 }
 
 
