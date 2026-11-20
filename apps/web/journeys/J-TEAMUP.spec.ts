@@ -9,12 +9,15 @@
  * Ravi (lead) is Rekha.
  * Seed: J-TEAMUP may change Tanvi's crew-deck passes (row 1 passes one card) and answer the team-up request waiting on
  * Rekha: Bhavesh's on R1, sent with no idea brought. Row 2 withdraws it so the sheet can be written again, row 3 sends
- * the new note, Rekha approves it (row 4), and the two talk in R1's conversation (row 6). R1 is shared with
+ * the new note, Rekha approves it (row 4), and the two talk in R1's conversation (row 6). Row 3b (DEC-126) finds that
+ * request on Bhavesh's crew deck as "Requested", withdraws it there and sends the same note again, so row 4 reads the
+ * newest request; its passes on the way are put back with "See them again" (he has no seeded passes). R1 is shared with
  * J-SIMILAR (lib SEED): both only add requests, crew and messages, and nobody decides it, so no row here depends on
  * whether R1 is picked. Row 1 ends with the sheet open from a card, which is where row 2 starts.
  */
 import { expect, type Page } from "@playwright/test";
 
+import { expectNoSeriousAxeIssues } from "../e2e/helpers";
 import { ideaUrl, seeded, signInAs, snap, step } from "./lib";
 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`;
@@ -129,6 +132,67 @@ step(
     await sheet.getByRole("button", { name: "Done" }).click();
     await expect(page.getByText("Waiting for Rekha", { exact: true }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Withdraw", exact: true })).toBeVisible();
+  },
+);
+
+step(
+  "J-TEAMUP/3b",
+  "S-H2",
+  "Find your crew after the request: R1 is last as Requested, still last after a reload; Withdraw brings Team up back in its place, and the note goes again",
+  { needs: ["S-H2", "C-CREW-DECK", "L-CREW", "C-SHEET-TEAMUP", "L-TEAMUP"], changes: ["R1"] }, // withdraws row 3's request and sends it again
+  async ({ page }, info) => {
+    info.setTimeout(120_000); // a pass per card on the way to R1, each with its 620 ms flight
+    const r1 = await seeded("R1");
+    const requested = page.getByRole("button", { name: `Requested: you asked to team up on ${r1.title}` });
+    const withdraw = page.getByRole("button", { name: `Withdraw your request to team up on ${r1.title}` });
+    const teamUp = page.getByRole("button", {
+      name: new RegExp(`^Team up on ${esc(r1.title)}: send Rekha a note$`),
+    });
+    const position = page.getByText(/^Idea \d+ of \d+$/);
+    await signInAs(page, "bhavesh");
+    await page.goto("/crew");
+    await expect(page.getByRole("heading", { level: 1, name: "Find your crew" })).toBeVisible();
+
+    // DEC-126 (2): the idea asked about comes after every other card, and stays last after a reload (L-CREW/3).
+    const total = Number((await position.innerText()).replace(/^Idea \d+ of /, ""));
+    await expect(page.locator(".dcard").last()).toContainText(r1.title);
+    await page.reload();
+    await expect(position).toHaveText(`Idea 1 of ${total}`);
+    await expect(page.locator(".dcard").last()).toContainText(r1.title);
+
+    // Next is a pass (L-CREW/6): Bhavesh passes the cards in front of R1; "See them again" puts them back below.
+    for (let n = 2; n <= total; n++) {
+      await page.getByRole("button", { name: "Next idea" }).click();
+      await expect(position).toHaveText(`Idea ${n} of ${total}`);
+    }
+    // (1) "Requested", greyed and inactive but still read out as its state; (3) "Withdraw" under it.
+    await expect(requested).toBeVisible();
+    await expect(requested).toHaveAttribute("aria-disabled", "true");
+    await expect(withdraw).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+
+    // (4) Withdraw: "Team up" again in the same place, with focus on it, and the card does not move.
+    await withdraw.click();
+    await expect(teamUp).toBeVisible();
+    await expect(teamUp).toBeFocused();
+    await expect(requested).toHaveCount(0);
+    await expect(position).toHaveText(`Idea ${total} of ${total}`);
+    await expectNoSeriousAxeIssues(page);
+
+    // The same note again from the card's sheet (it opens on a drafted note), so row 4 reads NOTE word for word.
+    await teamUp.click();
+    const sheet = page.getByRole("dialog", { name: "Team up with Rekha" });
+    await sheet.getByRole("textbox").fill(NOTE);
+    await sheet.getByRole("button", { name: "Send to Rekha" }).click();
+    await expect(sheet).toContainText("Sent to Rekha");
+    await sheet.getByRole("button", { name: "Keep looking" }).click();
+    // R1 was the last card, so the deck ends; "See them again" puts back every pass made above.
+    await expect(page.getByRole("heading", { level: 2, name: "That's everyone for now" })).toBeVisible();
+    await page.getByRole("button", { name: "See them again" }).click();
+    await expect(position).toHaveText(`Idea 1 of ${total}`);
+    await expect(page.getByText("None passed")).toBeVisible();
+    await expect(page.locator(".dcard").last()).toContainText(r1.title);
+    await expect(page.locator(".dcard").last()).toContainText("Requested");
   },
 );
 
