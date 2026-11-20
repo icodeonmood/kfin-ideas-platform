@@ -337,3 +337,15 @@
     animation: none;
   }
 }
+
+/* DEC-126 (BLD-F094): "Requested" with "Withdraw" under it, where "Team up" was on a crew card (RequestedAction).
+   The looks are lane D's shared `is-inactive` and `link-quiet` (BLD-D019). */
+.tu-req {
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-4);
+}
+
+.tu-req > .btn-full {
+  justify-self: stretch;
+}

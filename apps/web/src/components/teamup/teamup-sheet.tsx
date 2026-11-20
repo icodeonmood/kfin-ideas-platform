@@ -217,17 +217,34 @@ async function call(url: string, init: RequestInit = {}): Promise<Reply> {
   return res.ok ? { ok: true, body } : { ok: false, error: errorFrom(res.status, body) };
 }
 
-/** What the sent step shows and what the opener is told (`onSent`). */
+/**
+ * What the sent step shows and what the opener is told, by `onSent` after a send and by `onWithdrawn` after a withdraw
+ * (from the sheet's "Withdraw request" or a card's "Withdraw", `RequestedAction`).
+ *
+ * DEC-126 (BLD-F094): a host card needs nothing else to draw "Requested" with "Withdraw" in place of "Team up":
+ * `{ id, kind }` is the card's request (`CrewCard.request`), so after `onSent` set
+ * `card.request = { id: sent.id, kind: sent.kind }` and draw `<RequestedAction ideaId={sent.ideaId} request=… />`;
+ * after `onWithdrawn` drop `card.request` and draw "Team up" again, in the same place.
+ */
 export interface TeamUpSent {
   /** "teamup" for a team-up request, "merge" for a draft's merge request (BLD-F010). */
   kind: "teamup" | "merge";
-  /** The request id: `DELETE /api/team-up/:id` withdraws either kind. */
+  /**
+   * The request id: `DELETE /api/team-up/:id` withdraws either kind. Empty only when a send's reply carried none;
+   * then there is nothing to withdraw (BLD-F074).
+   */
   id: string;
+  /** The idea asked about, its reference (IDEA-2026-001412): the card to change. */
   ideaId: string;
+  /** The note as the API keeps it (masked). Empty after a withdraw from a card, which never reads the note. */
   note: string;
-  /** Titles of what was brought along. */
+  /** Titles of what was brought along. Empty after a withdraw from a card. */
   brought: string[];
-  /** What the opener shows now (C-SHEET-TEAMUP.after; L-MERGE.request/4 on Check it). */
+  /**
+   * What the opener shows now (C-SHEET-TEAMUP.after; L-MERGE.request/4 on Check it): after a send `line` is
+   * "Waiting for Ravi" (or "Waiting for the lead"), the words "Your crews" keeps (DEC-126 (5)); after a withdraw it
+   * is the API's state for "Team up" again, or null.
+   */
   after: TeamUpAfter | null;
 }
 
@@ -258,6 +275,18 @@ function isDraftNote(x: unknown): x is TeamUpDraftNote & Required<Pick<TeamUpDra
 
 function isRequest(x: unknown): x is TeamUpSendResponse {
   return !!x && typeof x === "object" && typeof (x as { id?: unknown }).id === "string";
+}
+
+/**
+ * `DELETE /api/team-up/:id` (L-TEAMUP.rules/3, L-MERGE.request/8): withdraws a waiting team-up request or a draft's
+ * merge request. The sheet's "Withdraw request" and a card's "Withdraw" (`RequestedAction`, DEC-126) both call it.
+ */
+export async function withdrawRequest(
+  requestId: string,
+): Promise<{ ok: true; after: TeamUpAfter | null } | { ok: false; error: SheetError }> {
+  const r = await call(teamupUrls.request(requestId), { method: "DELETE" });
+  if (!r.ok) return r;
+  return { ok: true, after: isRequest(r.body) ? (r.body.after ?? null) : null };
 }
 
 /** "Kavya Iyer" → "KI": the person's own disc, when the opener does not pass it. */
@@ -308,7 +337,10 @@ export interface TeamUpSheetProps {
   open: boolean;
   /** Escape, the cross, the backdrop, "Done" or "Keep looking", and after a withdraw. Focus returns to the opener. */
   onClose(): void;
-  /** After a send: the request and what the opener shows now ("Waiting for Ravi" with Withdraw). */
+  /**
+   * After a send: the request (`id`, `kind`) and what the opener shows now. On a crew card that is "Requested" with
+   * "Withdraw" (DEC-126, `RequestedAction`); elsewhere "Waiting for Ravi" with Withdraw.
+   */
   onSent?(sent: TeamUpSent): void;
   /** After "Withdraw request" on the sent step: the opener goes back to "Team up" (C-SHEET-TEAMUP.after). */
   onWithdrawn?(sent: TeamUpSent): void;
@@ -327,12 +359,17 @@ export interface TeamUpSheetProps {
   returnFocus?(): HTMLElement | null | undefined;
 }
 
-/** Spread on whatever stands where "Team up" was ("Waiting for Ravi" with Withdraw), so focus can return to it. */
+/**
+ * Spread on whatever stands where "Team up" is for this idea: the "Team up" button itself, and "Requested" once the
+ * person has asked (DEC-126, `RequestedAction` marks it). Focus returns to it when the sheet closes, and moves to the
+ * "Team up" drawn again after a card's "Withdraw" (WCAG 2.4.3).
+ */
 export function teamUpOpener(ideaId: string): { "data-teamup-opener": string } {
   return { "data-teamup-opener": ideaId };
 }
 
-function markedOpener(ideaId: string): HTMLElement | null {
+/** The element marked `teamUpOpener(ideaId)` on the page now, if any. */
+export function markedOpener(ideaId: string): HTMLElement | null {
   for (const el of Array.from(document.querySelectorAll<HTMLElement>("[data-teamup-opener]"))) {
     if (el.dataset.teamupOpener === ideaId && el.isConnected) return el;
   }
@@ -917,14 +954,13 @@ function SentBody({
     if (busy || !sent.id) return;
     setBusy(true);
     setError(null);
-    const r = await call(teamupUrls.request(sent.id), { method: "DELETE" });
+    const r = await withdrawRequest(sent.id);
     setBusy(false);
     if (!r.ok) {
       setError(r.error);
       return;
     }
-    const body = isRequest(r.body) ? r.body : null;
-    onWithdrawnHere({ ...sent, after: body?.after ?? null });
+    onWithdrawnHere({ ...sent, after: r.after });
   };
 
   const brought = useMemo(() => sent.brought.filter(Boolean), [sent.brought]);

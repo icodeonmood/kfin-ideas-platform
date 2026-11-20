@@ -2,8 +2,8 @@
  * C-SHEET-TEAMUP in a real browser at phone width (lane F, BLD-F074): the sheet on the dev-only page /kit/team-up,
  * opened from an idea and from a draft on Check it. axe on compose, on the Check it choice and on sent (lane D's
  * helper, which settles motion first and checks reflow at 320px); the dropdown and the radios by keyboard; touch
- * targets; focus back to what stands where "Team up" was. The spec answers the sheet's team-up calls itself, so it
- * needs no seeded idea. Synthetic people only: the pack's fictional cast (Kavya asks, Ravi leads).
+ * targets; focus back to what stands where "Team up" was ("Requested", DEC-126) and, after its "Withdraw", to
+ * "Team up" again. The spec answers the sheet's team-up calls itself, so it needs no seeded idea. Synthetic people only: the pack's fictional cast (Kavya asks, Ravi leads).
  */
 import { expect, test, type Page } from "@playwright/test";
 
@@ -188,9 +188,14 @@ test("C-SHEET-TEAMUP Check it at 375px: the draft's choice is one tab stop, arro
   await expect(sheet.getByRole("button", { name: "Send to Ravi" })).toBeFocused();
 });
 
-test("C-SHEET-TEAMUP.sent at 375px: Sent to Ravi with the note back; axe; Done returns focus to Waiting for Ravi", async ({
+test("C-SHEET-TEAMUP.sent at 375px, DEC-126: Sent to Ravi with the note back; axe; Done returns focus to Requested; Withdraw brings Team up back with focus", async ({
   page,
 }) => {
+  await page.route("**/api/team-up/req-e2e", (route) =>
+    route.fulfill({
+      json: { id: "req-e2e", request: "teamup", idea_id: IDEA, state: "withdrawn", after: null },
+    }),
+  );
   await page.getByRole("button", { name: `Team up on ${TITLE}` }).click();
   const sheet = page.getByRole("dialog", { name: "Team up with Ravi" });
   await sheet.getByRole("textbox", { name: "Your note to Ravi" }).fill(NOTE);
@@ -207,8 +212,22 @@ test("C-SHEET-TEAMUP.sent at 375px: Sent to Ravi with the note back; axe; Done r
   await expect(done).toBeFocused();
   await expectNoSeriousAxeIssues(page);
 
-  // The host re-drew "Team up" as "Waiting for Ravi" while the sheet was open; focus lands there (WCAG 2.4.3).
+  // The host re-drew "Team up" as "Requested" (DEC-126, RequestedAction, as Home's crew card will) while the sheet
+  // was open; focus lands there, on a button that is inactive but focusable and read out (WCAG 2.4.3).
   await page.keyboard.press("Enter");
   await expect(sheet).toBeHidden();
-  await expect(page.getByRole("button", { name: "Waiting for Ravi" })).toBeFocused();
+  const requested = page.getByRole("button", { name: `Requested: you asked to team up on ${TITLE}` });
+  await expect(requested).toBeFocused();
+  await expect(requested).toHaveAttribute("aria-disabled", "true");
+  await expectNoSeriousAxeIssues(page);
+  // Withdraw, its own control under it, calls DELETE /api/team-up/:id; Team up comes back with focus.
+  await page.keyboard.press("Tab");
+  const withdraw = page.getByRole("button", { name: `Withdraw your request to team up on ${TITLE}` });
+  await expect(withdraw).toBeFocused();
+  const gone = page.waitForRequest(
+    (r) => r.url().endsWith("/api/team-up/req-e2e") && r.method() === "DELETE",
+  );
+  await page.keyboard.press("Enter");
+  await gone;
+  await expect(page.getByRole("button", { name: `Team up on ${TITLE}` })).toBeFocused();
 });
