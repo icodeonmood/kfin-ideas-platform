@@ -325,6 +325,7 @@ endpoints:
   - POST /api/desk/ideas/{id}/merge                   work_review_queue
   - GET /api/desk/ideas/{id}/suggested-questions      work_review_queue
   - POST /api/desk/ideas/{id}/question-sets           work_review_queue
+  - PUT /api/desk/ideas/{id}/question-sets/queued      work_review_queue   # BLD-B272: the reviewer's queue, saved as it changes
   - POST /api/question-sets/{id}/extend               work_review_queue
   - POST /api/question-sets/{id}/remind               work_review_queue
   - GET /api/ideas/{id}/question-set                  signed_in       # the sharer only, checked by the worker

@@ -99,8 +99,8 @@ def _row_json(row: queue.Row) -> dict[str, Any]:
 
 
 def _read_only(row: queue.Row) -> queue.Row:
-    """A row for a reader who is not on the review desk, the Ones Committee (BLD-B270): "Remind {name}" writes, so it
-    becomes "Open"; "Open" and "Read answers" only go to S-R2."""
+    """A row for a reader who is not on the review desk (BLD-B270): "Remind {name}" writes, so it becomes "Open";
+    "Open" and "Read answers" only go to S-R2."""
     return dataclasses.replace(row, action="Open", action_kind="open") if row.action_kind == "remind" else row
 
 
@@ -451,13 +451,15 @@ def _contributions(conn: Conn, idea: dict[str, Any], at: dt.datetime, viewer_id:
 def _queued(conn: Conn, idea: dict[str, Any], user_id: str) -> dict[str, Any] | None:
     """The question set this reviewer queued and has not sent: the panel's Asking state opens with it (S-R2.panel,
     J-REVIEW/A1). A queued set is its reviewer's alone, so another reviewer's is never returned; the desk's lists
-    leave queued sets out (L-REVIEW.queue)."""
+    leave queued sets out (L-REVIEW.queue). The panel saves its queue as it changes (`asking.save_queue`, BLD-B272):
+    `rev` is the stored save's revision (0 for a set from before), which the panel's next save carries as its `base`.
+    A queue emptied by its reviewer is kept with no questions, so its revision still counts."""
     from desk import questions
     from desk.store import person_by_code, unseal
 
     s = conn.execute(
-        "SELECT id, time_to_answer FROM question_sets WHERE idea_uuid = %s AND state = 'queued' AND by_user_id = %s "
-        "ORDER BY created_at DESC LIMIT 1",
+        "SELECT id, time_to_answer, queue_rev FROM question_sets WHERE idea_uuid = %s AND state = 'queued' "
+        "AND by_user_id = %s ORDER BY created_at DESC LIMIT 1",
         (idea["id"], user_id),
     ).fetchone()
     if s is None:
@@ -474,6 +476,7 @@ def _queued(conn: Conn, idea: dict[str, Any], user_id: str) -> dict[str, Any] | 
     return {
         "set_id": str(s["id"]), "questions": asked, "time_to_answer": s["time_to_answer"],
         "ready_line": questions.ready_line(len(asked)), "send_label": questions.send_label(len(asked), first),
+        "rev": int(s["queue_rev"] or 0),
     }  # fmt: skip
 
 
@@ -610,6 +613,9 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     ]  # fmt: skip
     decide_by = idea["decide_by"]
     c = clock.countdown(decide_by, t) if decide_by else None
+    # Decide, Ask, worth, Merge and the reminder are the review desk's: a committee member reads without them
+    # (BLD-B270; the worker refuses their writes, `REVIEWERS`)
+    can_act = not own and idea["status"] in ON_DESK_STATUSES and has_role(conn, user_id, REVIEWERS)
     return {
         "idea": {
             "id": idea["idea_id"],
@@ -623,9 +629,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         },
         "sharer": sharer.as_json(),
         "own": own,
-        # Decide, Ask, worth, Merge and the reminder are the review desk's: a committee member reads without them
-        # (BLD-B270; the worker refuses their writes, `REVIEWERS`)
-        "can_act": not own and idea["status"] in ON_DESK_STATUSES and has_role(conn, user_id, REVIEWERS),
+        "can_act": can_act,
         "decide_by": {
             "at": decide_by.isoformat() if decide_by else None,
             "label": when.day(decide_by, t) if decide_by else None,
@@ -638,8 +642,12 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
             "tiles": [vars(x) for x in worth.tiles(sharer_worth, reviewer_worth)],
             "revised": reviewer_worth is not None,
             "revision": revision,
+            # The board's lines tell the reviewer to decide or revise, so only the review desk acting on the idea reads
+            # them; anyone who can't act (a committee member, BLD-B270) reads none (S-R2.panel; the BLD-B270 follow-up)
             "line": (
-                f"You’ve revised what it’s worth. {first} sees your figures next to theirs when you decide."
+                None
+                if not can_act
+                else f"You’ve revised what it’s worth. {first} sees your figures next to theirs when you decide."
                 if reviewer_worth is not None
                 else f"Clear enough? Decide now. If it’s worth more than {first} could put into numbers, revise what it’s "
                 f"worth first. {first} sees your figures next to theirs."

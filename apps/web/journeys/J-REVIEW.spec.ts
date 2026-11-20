@@ -15,8 +15,10 @@
  * J-TRACK's and lists Z1 as similar; read only here). The desk merge (M3) joins F2 (Faisal's) and J2 (Jatin's), both
  * opened by Lavanya and listing each other as similar; F2 was shared first, so it leads by default (L-MERGE.desk/2).
  */
+import AxeBuilder from "@axe-core/playwright";
 import { expect, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 
+import { expectNoSeriousAxeIssues } from "../e2e/helpers";
 import { expectDeskCard, ideaUrl, seeded, signInAs, snap, step, type Person, type StepRef } from "./lib";
 
 // --- Patterns for run-time parts of the copy ----------------------------------------------------------------------------
@@ -257,6 +259,12 @@ step(
     await preview.getByRole("button", { name: "Close the preview" }).click();
     await expect(preview).toBeHidden();
     await expect(page.getByRole("button", { name: `Merge with ${z1.title}` })).toBeEnabled();
+    // BLD-B273, F-SPACE.targets (WCAG 2.5.8): every target in Similar ideas is 24 × 24 px or spaced clear of the next.
+    const targets = await new AxeBuilder({ page }).include(".ri-sim").withRules(["target-size"]).analyze();
+    expect(
+      targets.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`),
+      "Similar ideas, target size",
+    ).toEqual([]);
   },
 );
 
@@ -424,6 +432,7 @@ step(
     await page.goto(deskUrl(k1));
     await expect(page.getByRole("heading", { level: 1, name: k1.title })).toBeVisible();
     const askFirst = page.getByRole("button", { name: /^Ask Kiran first/ });
+    const saved = queueSaved(page);
     await askAbout(page, "How often").click();
     await expect(askFirst).toHaveAttribute("aria-expanded", "true");
     await expect(askAbout(page, "How often")).toHaveAttribute("aria-pressed", "true");
@@ -442,6 +451,8 @@ step(
     await expect(askFirst).toContainText(new RegExp(`${n} questions? ready`));
     await expect(page.getByRole("button", { name: "Decide without asking" })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Send \d+ questions? to Kiran$/ })).toBeVisible();
+    // BLD-B272: the queue is saved once the changes pause, so the next visit finds it (A1b).
+    expect((await saved).status(), "the queue is saved").toBe(200);
   },
 );
 
@@ -464,6 +475,58 @@ async function addQuestion(page: Page, text: string): Promise<void> {
   await page.getByRole("button", { name: "Add this question" }).click();
   await expect(page.getByRole("button", { name: `Remove: ${text}` })).toBeVisible();
 }
+
+/** A made-up PAN (synthetic, non-negotiable 11) in a question the reviewer types: the stored copy is masked (L-HIDE). */
+const QUESTION_WITH_PAN = "Is this the investor with PAN AAAPZ7777Q who called the branch twice?";
+
+/** The reviewer's queue, saved once the changes pause (PUT …/question-sets/queued, BLD-B272). */
+function queueSaved(page: Page) {
+  return page.waitForResponse(
+    (res) =>
+      res.request().method() === "PUT" && new URL(res.url()).pathname.endsWith("/question-sets/queued"),
+  );
+}
+
+step(
+  "J-REVIEW/A1b",
+  "S-R2",
+  "Back later: the questions queued are still there, folded and ready to send; one with a customer detail is kept masked",
+  { needs: ["S-R2", "L-QUESTIONS", "L-HIDE"], changes: ["K1"], after: ["J-REVIEW/A1"] },
+  async ({ page }) => {
+    const k1 = await seeded("K1");
+    const howOften = "Remove: How often does this happen: a few times a day, a week or a month?";
+    await signInAs(page, "lavanya");
+    await page.goto(deskUrl(k1));
+    await expect(page.getByRole("heading", { level: 1, name: k1.title })).toBeVisible();
+    // L-QUESTIONS/4 (BLD-B272): A1's queue was kept; a new visit opens with it folded, ready to send.
+    const askFirst = page.getByRole("button", { name: /^Ask Kiran first/ });
+    await expect(askFirst).toHaveAttribute("aria-expanded", "false");
+    await expect(askFirst).toContainText(/\d+ questions? ready/);
+    await expect(page.getByRole("button", { name: /^Send \d+ questions? to Kiran$/ })).toBeVisible();
+    await openAsk(page);
+    await expect(page.getByRole("button", { name: howOften })).toBeVisible();
+    const removes = page.getByRole("button", { name: /^Remove: / });
+    const before = await removes.count();
+
+    // L-HIDE, DEC-103: the question is hidden before it is stored, so the next visit reads only the masked copy.
+    let saved = queueSaved(page);
+    await addQuestion(page, QUESTION_WITH_PAN);
+    expect((await saved).status(), "the queue is saved").toBe(200);
+    await page.reload();
+    await openAsk(page);
+    await expect(removes).toHaveCount(before + 1);
+    const masked = page.getByRole("button", { name: /^Remove: Is this the investor with PAN .*••••/ });
+    await expect(masked).toBeVisible();
+    await expect(page.getByText("AAAPZ7777Q")).toHaveCount(0);
+    await expectNoSeriousAxeIssues(page);
+
+    // Removing it is kept too, so A2 starts from A1's queue.
+    saved = queueSaved(page);
+    await masked.click();
+    expect((await saved).status(), "the queue is saved").toBe(200);
+    await expect(removes).toHaveCount(before);
+  },
+);
 
 step(
   "J-REVIEW/A2",

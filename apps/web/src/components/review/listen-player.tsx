@@ -5,8 +5,8 @@
  *
  * The voice (DEC-108): lane C's hosted audio first, `GET /api/ideas/:id/listen/chapters` then the stream from
  * `GET /api/ideas/:id/listen` in an <audio> element. While the audio is being made (202) the player waits and asks
- * again. When that route answers 404 (a merged idea, or not on main yet) or 503 (switched off), or anything else, the
- * browser reads the masked script with a local voice (BLD-B230), and nothing leaves the device. With neither, the strip
+ * again. When that route answers 404 (not on main yet) or 503 (switched off), or anything else, the browser reads the
+ * masked script with a local voice (BLD-B230), and nothing leaves the device. With neither, the strip
  * stays and, after a short wait for a voice that loads late, says "Couldn’t prepare the audio. Try again." (L-LISTEN/7,
  * J-REVIEW/M3; BLD-B271). Only when Listen is switched off (desk.listen) is the player not shown. Both voices sit behind
  * the same controls (`ListenControls`).

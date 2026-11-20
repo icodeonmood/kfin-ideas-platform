@@ -254,6 +254,8 @@ step(
     await expect(page.getByRole("button", { name: /^Ask \S+ first/ })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^(?:Ask about this|Asking), / })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^(?:Revise|Change) what it’s worth$/ })).toHaveCount(0);
+    // The worth line tells its reader to decide or revise, so it is the review desk's alone (BLD-B270 follow-up)
+    await expect(page.getByText(/sees your figures next to/)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Revise and recategorise", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: /^Merge with / })).toHaveCount(0);
     // C-SIDEBAR unchanged: the Ones Committee, and no Review desk

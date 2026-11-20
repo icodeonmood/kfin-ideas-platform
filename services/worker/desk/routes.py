@@ -129,6 +129,13 @@ def build(require_token: Callable[..., None]) -> APIRouter:
 
         return _call(asking.send_set, ref, user_id, body, status=201, need=(REVIEWERS, user_id))
 
+    @r.put("/desk/ideas/{ref}/question-sets/queued")
+    def desk_queue(ref: str, user_id: str, body: dict[str, Any]) -> JSONResponse:
+        """The reviewer's queue, saved as it changes (BLD-B272): their queued set, masked, for the next visit."""
+        from desk import asking
+
+        return _call(asking.save_queue, ref, user_id, body, need=(REVIEWERS, user_id))
+
     @r.post("/question-sets/{set_id}/extend")
     def set_extend(set_id: str, user_id: str) -> JSONResponse:
         from desk import asking

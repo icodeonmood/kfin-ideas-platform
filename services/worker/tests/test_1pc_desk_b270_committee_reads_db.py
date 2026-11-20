@@ -86,3 +86,22 @@ def test_bld_b270_s_r1_a_row_offers_the_reminder_only_to_the_review_desk(
     assert (late["action"], late["action_kind"]) == (action, kind)
     assert (late["questions"], late["time_left"]) == ("Not seen yet", "Overdue by 5 hours")
     assert all(r["action_kind"] != "remind" for r in rows.values()) or who == "meera"
+
+
+@pytest.mark.parametrize(("who", "shown"), [("meera", True), ("rohan", False), ("sunita", False)])
+def test_bld_b270_s_r2_panel_the_worth_line_that_says_decide_or_revise_is_only_for_the_review_desk(
+    db: Conn, world: dict[str, Any], who: str, shown: bool
+) -> None:
+    """BLD-B270 follow-up, S-R2.panel: "Clear enough? Decide now. If it’s worth more than … revise what it’s worth
+    first." tells the reader to act, so a reader who can't act (a committee member, on an idea still with the desk)
+    is sent no worth line at all; the tiles stay. No new words: the reviewer's line is the board's, as before."""
+    page = reads.reviewer_idea(db, world["fresh"]["idea_id"], world[who]["id"], NOW)
+    assert page["can_act"] is shown
+    assert page["worth"]["tiles"] is not None
+    if shown:
+        assert page["worth"]["line"] == (
+            "Clear enough? Decide now. If it’s worth more than Kavya could put into numbers, revise what it’s worth "
+            "first. Kavya sees your figures next to theirs."
+        )
+    else:
+        assert page["worth"]["line"] is None

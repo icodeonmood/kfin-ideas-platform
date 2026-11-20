@@ -182,11 +182,14 @@ def merge_locked(
         (merge_id, leader["id"], joiner["id"], user_id, team_up,
          seal(masked, "merges", "note_encrypted", merge_id), joiner["status"], t),
     )  # fmt: skip
-    # L-MERGE.effects/1, /5: the joining idea points to the lead; its open sets close, queued ones are dropped
+    # L-MERGE.effects/1, /5: the joining idea points to the lead; its open sets close, queued ones are dropped, every
+    # reviewer's, with what hide kept for their questions (BLD-B272; both ideas' lane C locks are held by the callers)
+    from desk.asking import drop_queued
+
     conn.execute(
         "UPDATE ideas SET status = 'merged', merged_into = %s WHERE id = %s", (leader["id"], joiner["id"])
     )
-    conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (joiner["id"],))
+    drop_queued(conn, joiner["id"])
     closed = conn.execute(
         "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed' "
         "RETURNING id",

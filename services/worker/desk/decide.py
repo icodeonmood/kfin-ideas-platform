@@ -253,8 +253,11 @@ def send(
             "opened_by = coalesce(opened_by, %s), edit_closes_at = least(coalesce(edit_closes_at, %s), %s) WHERE id = %s",
             (STATUS_AFTER[str(choice)], user_id, t, user_id, t, t, idea["id"]),
         )
-        # rules/10: open question sets close; queued ones were never sent and are dropped (L-REVIEW.panel)
-        conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (idea["id"],))
+        # rules/10: open question sets close; queued ones were never sent and are dropped (L-REVIEW.panel), every
+        # reviewer's, with what hide kept for their questions (BLD-B272; lane C's lock is held, above)
+        from desk.asking import drop_queued
+
+        drop_queued(conn, idea["id"])
         closed = conn.execute(
             "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed' "
             "RETURNING id",

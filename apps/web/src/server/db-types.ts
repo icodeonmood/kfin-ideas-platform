@@ -1219,6 +1219,7 @@ export interface QuestionSets {
   extended_times: Generated<number>;
   id: Generated<string>;
   idea_uuid: string;
+  queue_rev: Int8 | null;
   reminded_at: Timestamp | null;
   seen_at: Timestamp | null;
   sent_at: Timestamp | null;
