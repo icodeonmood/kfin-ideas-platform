@@ -374,16 +374,23 @@ describe("S-R2 Asking: the queue is saved as it changes (BLD-B272, amends BLD-B2
     expect(w.calls).toHaveLength(2);
     expect(w.calls[1]!.body.questions).toEqual([q1, q2]);
     expect(w.calls[1]!.body.base).toBe(STORED_REV);
-    // a put that throws is a failed save too
-    const thrown = queueSaver(() => Promise.reject(new Error("offline")), {
-      stored: empty,
-      base: 0,
-      after: null,
-      timers: c.timers,
-    });
+    // a put that throws is a failed save too: nothing stops, and the next change is saved again
+    let thrownCalls = 0;
+    const thrown = queueSaver(
+      () => {
+        thrownCalls += 1;
+        return Promise.reject(new Error("offline"));
+      },
+      { stored: empty, base: 0, after: null, timers: c.timers },
+    );
     thrown.change({ questions: [q1], time_to_answer: "3d" });
     c.run();
     await settle();
+    expect(thrownCalls).toBe(1);
+    thrown.change({ questions: [q1, q2], time_to_answer: "3d" });
+    c.run();
+    await settle();
+    expect(thrownCalls).toBe(2);
   });
 
   it("Send or a decision pauses it, so no save follows them; a failed send resumes and saves what changed", async () => {

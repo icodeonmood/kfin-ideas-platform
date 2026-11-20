@@ -131,7 +131,7 @@ def test_bld_b272_s_r2_panel_a_stored_queue_comes_back_on_the_next_read(
 
 
 def test_bld_b272_l_hide_a_customer_detail_in_a_queued_question_is_stored_masked(
-    db: Conn, cast: dict[str, Any], told: f.FakeNotify, monkeypatch: pytest.MonkeyPatch
+    db: Conn, cast: dict[str, Any], told: f.FakeNotify, monkeypatch: pytest.MonkeyPatch, vault_scope: str
 ) -> None:
     """BLD-B272, L-HIDE.rules/1, /3, DEC-103: a PAN and a mobile number typed into a question go through the same
     `hide` as Send before anything is stored; only the masked copy is kept, and nothing hide found is left for
