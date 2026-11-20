@@ -126,3 +126,38 @@ describe("F-SPACE.targets, F-A11Y.rules/2: the skip link, with focus, covers no 
     expect(signedIn.get("margin-inline-start")).toBe("calc(var(--sbw) + var(--space-4))");
   });
 });
+
+const COARSE = (a: string) => a === "@media (pointer: coarse)";
+const px = (v: string | undefined) => parseFloat(v ?? "NaN");
+
+describe("F-SPACE.targets/2, C-BUTTON.variants (DEC-126): the quiet link is padded to 44px on touch, 24px with a mouse", () => {
+  it("with a mouse the target stays at least 24×24px and draws no extra layer", () => {
+    const quiet = style("offer.css", ".link-quiet");
+    expect(px(quiet.get("min-height"))).toBeGreaterThanOrEqual(24);
+    expect(px(quiet.get("min-width"))).toBeGreaterThanOrEqual(24);
+    for (const sheet of SHEETS)
+      for (const sel of [".link-quiet::after", ".link-quiet::before"])
+        expect(style(sheet, sel).size, `${sheet} ${sel} outside the touch rule`).toBe(0);
+  });
+
+  it("on touch an empty layer reaches 10px past each edge, so the hit area is 24 + 20 = 44px both ways", () => {
+    const quiet = style("offer.css", ".link-quiet");
+    expect(style("offer.css", ".link-quiet", COARSE).get("position")).toBe("relative");
+    const pad = style("offer.css", ".link-quiet::after", COARSE);
+    expect(pad.get("content")).toBe('""');
+    expect(pad.get("position")).toBe("absolute");
+    const inset = px(pad.get("inset"));
+    expect(inset).toBeLessThan(0);
+    expect(px(quiet.get("min-height")) - 2 * inset).toBeGreaterThanOrEqual(44);
+    expect(px(quiet.get("min-width")) - 2 * inset).toBeGreaterThanOrEqual(44);
+  });
+
+  it("the look and the layout do not change on touch: the box keeps its size and the layer draws nothing", () => {
+    expect([...style("offer.css", ".link-quiet", COARSE).keys()]).toEqual(["position"]);
+    expect([...style("offer.css", ".link-quiet::after", COARSE).keys()].sort()).toEqual([
+      "content",
+      "inset",
+      "position",
+    ]);
+  });
+});
