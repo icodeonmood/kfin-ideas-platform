@@ -39,7 +39,18 @@ import type {
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { CUSTOMER_DETAIL, fileHref, openFileName } from "@/lib/desk/files";
 import { hideableName, partSource } from "@/lib/desk/hide";
-import { bottomBar, focusBackTo, initialPanel, panelReducer, readyLine, storedQueue } from "@/lib/desk/panel";
+import {
+  bottomBar,
+  focusBackTo,
+  initialPanel,
+  panelReducer,
+  queuePut,
+  queueSaver,
+  queueSnapshot,
+  readyLine,
+  storedQueue,
+  type QueueSaver,
+} from "@/lib/desk/panel";
 import { call, type ApiError } from "@/lib/desk/reply";
 import { answerDue, clockLabel, dayLabel, deadlineLabel } from "@/lib/desk/when";
 import { sparkBurst } from "@/lib/motion/spark";
@@ -158,11 +169,21 @@ export function ReviewerIdea({
   const serverState: "reviewing" | "sent" | "answered" | "decided" =
     page.panel.state === "merged" ? "reviewing" : page.panel.state;
   // J-REVIEW/A1: the reviewer’s own stored set is the starting queue, ready to send (BLD-B244)
-  const stored =
-    page.can_act && (page.panel.state === "reviewing" || page.panel.state === "answered")
-      ? storedQueue(page.panel.queued)
-      : null;
+  const askable =
+    page.can_act && (page.panel.state === "reviewing" || page.panel.state === "answered") ? page.panel : null;
+  const stored = askable ? storedQueue(askable.queued) : null;
   const [panel, dispatch] = useReducer(panelReducer, initialPanel(serverState, defaultTime, stored));
+  // BLD-B272: the queue is saved as it changes, so it is still there when the reviewer comes back. Only where the
+  // reviewer can ask; `after` is the set the page knew, so a save that lands after a Send keeps nothing.
+  const [saver] = useState<QueueSaver | null>(() =>
+    askable
+      ? queueSaver(queuePut(idea.id), {
+          stored: queueSnapshot(initialPanel(serverState, defaultTime, stored)),
+          rev: askable.queued?.rev ?? 0,
+          after: askable.state === "answered" ? askable.set_id : null,
+        })
+      : null,
+  );
   const [editingWorth, setEditingWorth] = useState(false);
   const [tiles, setTiles] = useState<WorthTile[]>(page.worth.tiles);
   const [revised, setRevised] = useState(page.worth.revised);
@@ -210,6 +231,25 @@ export function ReviewerIdea({
     title.current?.focus();
   }, [panel.state]);
 
+  // BLD-B272: each change to the queue (added, removed, re-timed) is saved once the changes pause; never once sent
+  // or decided, which take the stored queue on the server. Typing a question or a reason changes neither.
+  const { queued: queue, timeToAnswer, state: panelState } = panel;
+  useEffect(() => {
+    if (panelState === "sent" || panelState === "decided") return;
+    saver?.change(queueSnapshot({ queued: queue, timeToAnswer }));
+  }, [saver, queue, timeToAnswer, panelState]);
+
+  // What is still waiting goes as the page goes: leaving it here, or closing the tab
+  useEffect(() => {
+    if (!saver) return;
+    const going = () => saver.flush(true);
+    window.addEventListener("pagehide", going);
+    return () => {
+      window.removeEventListener("pagehide", going);
+      saver.flush(true);
+    };
+  }, [saver]);
+
   const suggestionFor = (part: IdeaPart) => suggested.find((s) => s.part === part)?.text ?? null;
   const queuedFor = (part: IdeaPart) => panel.queued.filter((q) => q.part === part);
   const asking = page.can_act && panel.state === "reviewing";
@@ -220,12 +260,16 @@ export function ReviewerIdea({
 
   async function sendQuestions() {
     setBusy(true);
+    saver?.pause(); // Send takes the stored queue: no save may follow it (BLD-B272)
     const r = await send(`/api/desk/ideas/${encodeURIComponent(idea.id)}/question-sets`, "POST", {
       questions: panel.queued.map((q) => ({ part: q.part, text: q.text, suggested: q.suggested })),
       time_to_answer: panel.timeToAnswer,
     });
     setBusy(false);
-    if (!r.ok) return setErrors({ form: r.error.message });
+    if (!r.ok) {
+      saver?.resume();
+      return setErrors({ form: r.error.message });
+    }
     spark();
     dispatch({ type: "questions_sent" });
     refreshInto(router);
@@ -237,6 +281,7 @@ export function ReviewerIdea({
     setErrors({});
     setWording(null);
     setBusy(true);
+    saver?.pause(); // a decision takes the stored queue too (BLD-B272)
     const r = await send(`/api/desk/ideas/${encodeURIComponent(idea.id)}/decision`, "POST", {
       choice: panel.choice ?? undefined,
       reason: panel.reason,
@@ -246,6 +291,7 @@ export function ReviewerIdea({
     });
     setBusy(false);
     if (!r.ok) {
+      saver?.resume();
       const e = r.error;
       if (e.code === "wording_check") {
         setWording(e);

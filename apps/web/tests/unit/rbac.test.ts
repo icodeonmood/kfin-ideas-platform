@@ -118,6 +118,7 @@ describe("DEC-121, BLD-B270: the committee role reaches the desk's reads and Lis
       ["PUT", `/api/desk/ideas/${idea}/worth`],
       ["GET", `/api/desk/ideas/${idea}/suggested-questions`],
       ["POST", `/api/desk/ideas/${idea}/question-sets`],
+      ["PUT", `/api/desk/ideas/${idea}/question-sets/queued`], // BLD-B272: the reviewer's queue
       ["POST", "/api/review/items/7/action"],
       ["POST", "/api/review/items/7/veto"],
     ] as const)

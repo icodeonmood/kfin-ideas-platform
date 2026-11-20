@@ -232,7 +232,7 @@ def test_S_R2_panel_the_reviewer_reads_their_own_queued_questions_and_no_one_els
     assert panel["state"] == "reviewing"
     assert panel["queued"] == {
         "set_id": sid, "time_to_answer": None, "ready_line": "1 question ready",
-        "send_label": "Send 1 question to Kavya",
+        "send_label": "Send 1 question to Kavya", "rev": 0,  # a set from before BLD-B272's revision
         "questions": [{"id": panel["queued"]["questions"][0]["id"], "part": "who", "part_name": "Who it affects",
                        "text": "Which distributor segments re-send most?", "suggested": True}],
     }  # fmt: skip

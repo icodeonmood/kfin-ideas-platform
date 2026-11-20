@@ -8,6 +8,7 @@
 - `hide`: L-HIDE (lane C, `hide.hide_text`): free text masked before it is stored or shown to anyone else, each value
   kept sealed in the vault under the idea with a `hidden_details` row. `by` is the users.id of whoever typed it.
   `hide_answer`, `answer_words` and `forget_answer`: a sharer's answer (lane C's `hide_message`, `own_words`).
+  `hide_queued`: a question the reviewer queued, masked the same way and nothing else kept (lane C's `forget`).
 - `lock_idea`, `lock_refs`: lane C's per-idea lock (`hide.core.lock`), taken FIRST in every transaction that hides,
   before any idea, set, answer or window row lock, so a reviewer's "Hide this" (which takes it first too) and a desk
   action on the same idea always queue in one order and never deadlock (BLD-B247).
@@ -23,7 +24,7 @@ from typing import Any
 
 from core.db import Conn
 from core.logging import get_logger
-from hide import Hidden, hide_message, hide_text, sealed_key
+from hide import Hidden, forget, hide_message, hide_text, sealed_key
 from hide.core import lock as hide_lock
 from hide.core import own_words
 
@@ -111,6 +112,18 @@ def hide(
     sharer's answer is `source="answer"` with its row id, so its details keep their ids across autosaves and the
     sharer's own words are sealed for them alone (BLD-B246)."""
     return hide_text(conn, idea_uuid, text, by=by, source=source, source_id=source_id)
+
+
+def hide_queued(conn: Conn, idea_uuid: str, text: str, *, by: str, question_id: str) -> str:
+    """The masked copy of a question the reviewer queued and has not sent (BLD-B272). It goes through `hide` exactly
+    as a sent question does (the patterns, then the gatekeeper; L-HIDE.rules/1, /3), keyed by the question's row, and
+    then what hide kept for it (its `hidden_details` rows, and each vault value no other row of the idea holds) is
+    dropped in the same transaction (lane C's `forget`). Nobody but its reviewer reads a queued set, so no other page
+    may count or show a detail from it: the sharer's page lists every `hidden_details` row of the idea. Only the masked
+    copy is stored; at Send the questions go through `hide` again, as they always have."""
+    masked, _ = hide(conn, idea_uuid, text, by=by, source="desk", source_id=question_id)
+    forget(conn, idea_uuid, source="desk", source_id=question_id)
+    return masked
 
 
 def lock_idea(conn: Conn, idea_uuid: str) -> None:

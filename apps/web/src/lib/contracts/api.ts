@@ -1164,13 +1164,23 @@ export interface ReviewerDecisionLines {
   window_line: string | null;
 }
 /** The question set this reviewer queued and has not sent (S-R2.panel Asking; J-REVIEW/A1). Theirs alone: another
- * reviewer's queued set is never on the page. */
+ * reviewer's queued set is never on the page. The panel saves it as it changes (BLD-B272): `rev` is the stored save's
+ * revision, which the next save must pass (0 for a set from before); a queue emptied there has no questions. */
 export interface ReviewerQueuedSet {
   set_id: string;
   questions: { id: string; part: string; part_name: string; text: string | null; suggested: boolean }[];
   time_to_answer: string | null; // null until chosen; the panel defaults to 3 days
   ready_line: string; // "3 questions ready"
   send_label: string; // "Send 3 questions to Kavya"
+  rev: number;
+}
+/** PUT /desk/ideas/:id/question-sets/queued (BLD-B272): the reviewer's whole queue, saved as it changes. `after` is
+ * the latest set the panel knew (`panel.set_id` once answered, else null); a later Send makes the save stale. */
+export interface QueueSaveRequest {
+  questions: { part: IdeaPart; text: string; suggested: boolean }[];
+  time_to_answer: TimeToAnswer;
+  rev: number;
+  after: string | null;
 }
 export type ReviewerPanel =
   | { state: "reviewing"; decision: CommitteeRow | null; queued: ReviewerQueuedSet | null }

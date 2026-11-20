@@ -580,3 +580,50 @@ test("DEC-121, S-R2: a committee-only member opens the reviewer's idea and its L
     await ctx.close();
   }
 });
+
+test("BLD-B272, S-R2.panel, J-REVIEW/A1: a queued question is still there after a reload, and removing it is kept too", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `Nominee page goes missing from branch slips (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(sharer.code, title);
+  const r = reviewer.page;
+  const queueSaved = () =>
+    r.waitForResponse(
+      (res) =>
+        res.request().method() === "PUT" &&
+        new URL(res.url()).pathname === `/api/desk/ideas/${ideaId}/question-sets/queued`,
+    );
+  await r.goto(`/desk/ideas/${ideaId}`);
+  await expect(r.getByRole("heading", { name: "Review this idea" })).toBeVisible();
+
+  // Ask about this queues the part's suggestion; the page saves the queue once the changes pause
+  const howOften = r.getByRole("region", { name: "How often" });
+  const saved = queueSaved();
+  await howOften.getByRole("button", { name: "Ask about this, How often" }).click();
+  await expect(r.getByRole("button", { name: /^Ask .* first/ })).toContainText("1 question ready");
+  expect((await saved).status(), "the queue is saved").toBe(200);
+
+  // Back on the page later, the question is still queued, ready to send (the Ask section folded, S-R2.panel/2)
+  await r.reload();
+  await expect(r.getByRole("heading", { name: "Review this idea" })).toBeVisible();
+  await expect(r.getByRole("button", { name: /^Ask .* first/ })).toContainText("1 question ready");
+  await expect(r.getByRole("button", { name: /^Ask .* first/ })).toHaveAttribute("aria-expanded", "false");
+  await expect(r.getByRole("button", { name: /Send 1 question to / })).toBeVisible();
+  await expect(howOften.getByRole("button", { name: "Asking, How often" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expectNoSeriousAxeIssues(r);
+
+  // Removing it is saved the same way: the next visit opens with nothing queued
+  await r.getByRole("button", { name: /^Ask .* first/ }).click();
+  const removed = queueSaved();
+  await r.getByRole("button", { name: /^Remove: / }).click();
+  expect((await removed).status(), "the emptied queue is saved").toBe(200);
+  await r.reload();
+  await expect(r.getByRole("button", { name: "Decide on this idea" })).toBeVisible();
+  await expect(r.getByRole("button", { name: /^Ask .* first/ })).not.toContainText("ready");
+});

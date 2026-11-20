@@ -271,7 +271,8 @@ export const UNGUARDED_WRITES: readonly RegExp[] = [
   /^\/api\/files\/[^/]+\/hide\/?$/,
   // The review desk (S-R2, lane B): opening, revising worth, deciding, merging and asking keep working while
   // submissions are paused, as the desk always has (line above for /api/review/items); §7.6 has no review switch.
-  /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets)\/?$/,
+  // Saving the reviewer's queue as it changes (BLD-B272) is part of asking.
+  /^\/api\/desk\/ideas\/[^/]+\/(?:open|worth|decision|merge|question-sets(?:\/queued)?)\/?$/,
   // "Give 2 more days" and "Send a reminder" only move a deadline or nudge the sharer; they change no idea.
   /^\/api\/question-sets\/[^/]+\/(?:extend|remind)\/?$/,
   // DEC-110: My ideas' and the review desk's searches are reads sent as POST, so their words travel in the body and in

@@ -193,3 +193,34 @@ def test_A_API_conventions_2_numbers_and_lists_in_a_body_answer_422_never_500(
     ):
         res = client.put(f"/internal/desk/ideas/{ref}/worth", params={"user_id": meera}, json=body)
         assert (res.status_code, res.json()["error"]["code"]) == (422, code)
+
+
+def test_bld_b272_the_queue_route_saves_for_the_review_desk_only(
+    db: Conn, client: TestClient, cast: dict[str, Any]
+) -> None:
+    """BLD-B272, A-API.questions: `PUT /desk/ideas/:id/question-sets/queued` keeps the reviewer's queue for their next
+    read of S-R2; the committee, the sharer and an admin get 403, a bad body 422, a late save 409, never a 500."""
+    ref, meera = cast["idea"]["idea_id"], cast["meera"]["id"]
+    url = f"/internal/desk/ideas/{ref}/question-sets/queued"
+    rev = 1_763_272_200_000
+    body: dict[str, Any] = {"questions": [{"part": "often", "text": "Is it 40 calls a day at one branch?"}],
+                            "time_to_answer": "1w", "rev": rev, "after": None}  # fmt: skip
+    admin = f.person(db, "Priya Iyer", roles=("admin",))
+    for who in (cast["rohan"]["id"], cast["kavya"]["id"], admin["id"]):
+        res = client.put(url, params={"user_id": who}, json=body)
+        assert res.status_code == 403 and res.json()["error"]["code"] == "forbidden"
+    saved = client.put(url, params={"user_id": meera}, json=body)
+    assert saved.status_code == 200 and saved.json()["count"] == 1
+    page = client.get(f"/internal/desk/ideas/{ref}", params={"user_id": meera}).json()
+    assert [q["text"] for q in page["panel"]["queued"]["questions"]] == [
+        "Is it 40 calls a day at one branch?"
+    ]
+    assert page["panel"]["queued"]["rev"] == rev
+    for bad, status, code in (
+        ({**body, "rev": "soon"}, 422, "rev_invalid"),
+        ({**body, "questions": 5}, 422, "questions_required"),
+        ({**body, "questions": [7], "rev": rev + 1}, 422, "question_empty"),
+        (body, 409, "queue_stale"),  # the same revision again
+    ):
+        res = client.put(url, params={"user_id": meera}, json=bad)
+        assert (res.status_code, res.json()["error"]["code"]) == (status, code)

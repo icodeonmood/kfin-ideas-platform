@@ -1,14 +1,19 @@
 import { describe, expect, it } from "vitest";
 
+import type { QueueSaveRequest } from "@/lib/contracts";
 import {
   bottomBar,
   focusBackTo,
   initialPanel,
   panelReducer,
+  queuePut,
+  queueSaver,
+  queueSnapshot,
   readyLine,
   storedQueue,
   type Panel,
   type PanelEvent,
+  type QueuePut,
 } from "@/lib/desk/panel";
 
 const run = (events: PanelEvent[], start: Panel = initialPanel()) => events.reduce(panelReducer, start);
@@ -122,6 +127,7 @@ describe("S-R2 panel (L-REVIEW.panel)", () => {
 
 describe("S-R2 Asking: the reviewer's stored queue (J-REVIEW/A1–A3, BLD-B244)", () => {
   const set = {
+    rev: 0,
     set_id: "QS-1",
     questions: [
       {
@@ -202,5 +208,180 @@ describe("C-SHEET-MERGE focus on close (V-ACC.visual/11, J-REVIEW/M2–M3)", () 
     const opener = el("opener");
     expect(focusBackTo(null, null, opener)).toBe(opener);
     expect(focusBackTo(el("a", false), null, el("b", false))).toBeNull();
+  });
+});
+
+describe("S-R2 Asking: the queue is saved as it changes (BLD-B272, amends BLD-B244)", () => {
+  const STORED_REV = 1_763_272_200_000;
+  const NOW = STORED_REV + 5_000;
+  const q1 = { part: "often" as const, text: "Is it 40 calls a day at one branch?", suggested: true };
+  const q2 = { part: "who" as const, text: "Who calls most?", suggested: false };
+  const empty = { questions: [], time_to_answer: "3d" as const };
+
+  /** The saver's timers, run by hand. */
+  function clock() {
+    let due: { fn: () => void }[] = [];
+    return {
+      timers: {
+        set: (fn: () => void) => {
+          const t = { fn };
+          due.push(t);
+          return t;
+        },
+        clear: (t: unknown) => {
+          due = due.filter((x) => x !== t);
+        },
+      },
+      run: () => {
+        const now = due;
+        due = [];
+        now.forEach((t) => t.fn());
+      },
+      waiting: () => due.length,
+    };
+  }
+
+  /** A put that answers when the test says so. */
+  function worker() {
+    const calls: { body: QueueSaveRequest; keepalive: boolean; answer: (kept: boolean) => void }[] = [];
+    const put: QueuePut = (body, keepalive) =>
+      new Promise((answer) => calls.push({ body, keepalive, answer }));
+    return { put, calls };
+  }
+
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  function setup(after: string | null = null) {
+    const c = clock();
+    const w = worker();
+    const saver = queueSaver(w.put, {
+      stored: empty,
+      rev: STORED_REV,
+      after,
+      now: () => NOW,
+      timers: c.timers,
+    });
+    return { c, w, saver };
+  }
+
+  it("saves nothing while the queue is what the worker holds (the page as it opens)", () => {
+    const { c, w, saver } = setup();
+    saver.change(empty);
+    expect(c.waiting()).toBe(0);
+    saver.flush(true);
+    expect(w.calls).toHaveLength(0);
+  });
+
+  it("saves the whole queue once the changes pause, with a higher revision and the set the page knew", async () => {
+    const { c, w, saver } = setup("QS-ANSWERED");
+    saver.change({ questions: [q1], time_to_answer: "3d" });
+    saver.change({ questions: [q1, q2], time_to_answer: "3d" });
+    saver.change({ questions: [q1, q2], time_to_answer: "1w" }); // re-timed
+    expect(w.calls).toHaveLength(0); // never while the reviewer is still changing it
+    c.run();
+    expect(w.calls).toHaveLength(1);
+    expect(w.calls[0]!.body).toEqual({
+      questions: [q1, q2],
+      time_to_answer: "1w",
+      rev: NOW,
+      after: "QS-ANSWERED",
+    });
+    expect(w.calls[0]!.keepalive).toBe(false);
+    w.calls[0]!.answer(true);
+    await settle();
+    saver.change({ questions: [q1, q2], time_to_answer: "1w" }); // the same again: nothing to save
+    expect(c.waiting()).toBe(0);
+  });
+
+  it("one save at a time: a change made meanwhile goes next, with a revision that only grows", async () => {
+    const { c, w, saver } = setup();
+    saver.change({ questions: [q1], time_to_answer: "3d" });
+    c.run();
+    saver.change({ questions: [], time_to_answer: "3d" }); // removed while the first is on its way
+    c.run();
+    expect(w.calls).toHaveLength(1);
+    w.calls[0]!.answer(true);
+    await settle();
+    expect(w.calls).toHaveLength(2);
+    expect(w.calls[1]!.body.questions).toEqual([]);
+    expect(w.calls[1]!.body.rev).toBe(NOW + 1);
+  });
+
+  it("a failed save keeps nothing and is tried again on the next change, never on its own", async () => {
+    const { c, w, saver } = setup();
+    saver.change({ questions: [q1], time_to_answer: "3d" });
+    c.run();
+    w.calls[0]!.answer(false);
+    await settle();
+    expect(c.waiting()).toBe(0);
+    expect(w.calls).toHaveLength(1);
+    saver.change({ questions: [q1, q2], time_to_answer: "3d" });
+    c.run();
+    expect(w.calls).toHaveLength(2);
+    expect(w.calls[1]!.body.questions).toEqual([q1, q2]);
+    // a put that throws is a failed save too
+    const thrown = queueSaver(() => Promise.reject(new Error("offline")), {
+      stored: empty,
+      rev: 0,
+      after: null,
+      timers: c.timers,
+    });
+    thrown.change({ questions: [q1], time_to_answer: "3d" });
+    c.run();
+    await settle();
+  });
+
+  it("Send or a decision pauses it, so no save follows them; a failed send resumes and saves what changed", async () => {
+    const { c, w, saver } = setup();
+    saver.change({ questions: [q1], time_to_answer: "3d" });
+    saver.pause();
+    expect(c.waiting()).toBe(0);
+    saver.change({ questions: [q1, q2], time_to_answer: "3d" });
+    saver.flush(true);
+    expect(w.calls).toHaveLength(0);
+    saver.resume();
+    c.run();
+    expect(w.calls.map((x) => x.body.questions)).toEqual([[q1, q2]]);
+    w.calls[0]!.answer(true);
+    await settle();
+  });
+
+  it("what is still waiting goes at once as the page goes, kept alive, even beside a save on its way", () => {
+    const { c, w, saver } = setup();
+    saver.change({ questions: [q1], time_to_answer: "3d" });
+    c.run();
+    saver.change({ questions: [q1, q2], time_to_answer: "3d" });
+    saver.flush(true);
+    expect(w.calls).toHaveLength(2);
+    expect(w.calls[1]!.keepalive).toBe(true);
+    expect(w.calls[1]!.body.rev).toBeGreaterThan(w.calls[0]!.body.rev);
+    expect(c.waiting()).toBe(0);
+  });
+
+  it("the snapshot is the panel's queue and time; queuePut sends it to the desk's route", async () => {
+    const p = run([
+      { type: "add_suggestion", part: "often", text: q1.text },
+      { type: "set_time", time: "1d" },
+    ]);
+    expect(queueSnapshot(p)).toEqual({ questions: [q1], time_to_answer: "1d" });
+    const sent: { url: string; init: RequestInit }[] = [];
+    const ok = queuePut("IDEA-2026-000123", (async (url: string, init: RequestInit) => {
+      sent.push({ url, init });
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch);
+    const body: QueueSaveRequest = { questions: [q1], time_to_answer: "1d", rev: 5, after: null };
+    expect(await ok(body, true)).toBe(true);
+    expect(sent[0]!.url).toBe("/api/desk/ideas/IDEA-2026-000123/question-sets/queued");
+    expect(sent[0]!.init).toMatchObject({ method: "PUT", keepalive: true, body: JSON.stringify(body) });
+    const stale = queuePut(
+      "IDEA-2026-000123",
+      (async () =>
+        new Response('{"error":{"code":"queue_stale","message":""}}', { status: 409 })) as typeof fetch,
+    );
+    expect(await stale(body, false)).toBe(false);
+    const offline = queuePut("IDEA-2026-000123", (async () => {
+      throw new TypeError("Failed to fetch");
+    }) as typeof fetch);
+    expect(await offline(body, false)).toBe(false);
   });
 });

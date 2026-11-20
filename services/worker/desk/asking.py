@@ -281,11 +281,13 @@ def _filled(conn: Conn, idea: dict[str, Any]) -> dict[str, bool]:
     }
 
 
-def _asked(conn: Conn, idea_uuid: Any) -> list[str]:
+def _asked(conn: Conn, idea_uuid: Any, user_id: str) -> list[str]:
+    """What was asked on the idea, and what this reviewer has queued. Another reviewer's queued set is theirs alone
+    (BLD-B272), so it is never read here."""
     rows = conn.execute(
         "SELECT q.id, q.text_encrypted FROM questions q JOIN question_sets s ON s.id = q.set_id "
-        "WHERE s.idea_uuid = %s",
-        (idea_uuid,),
+        "WHERE s.idea_uuid = %s AND (s.state <> 'queued' OR s.by_user_id = %s)",
+        (idea_uuid, user_id),
     ).fetchall()
     return [_question_text(dict(r)) for r in rows]
 
@@ -295,8 +297,111 @@ def suggested(conn: Conn, ref: str, user_id: str) -> list[dict[str, str]]:
     with audited(conn), conn.transaction():
         idea = load_idea(conn, ref, lock=True)
         refuse_own(conn, user_id, idea, "ask")
-        found = questions.suggestions(_filled(conn, idea), _asked(conn, idea["id"]))
+        found = questions.suggestions(_filled(conn, idea), _asked(conn, idea["id"], user_id))
         return [{"part": s.part, "text": s.text} for s in found]
+
+
+# The panel's revision is the browser's clock in milliseconds or one more than the last (BLD-B272); anything that is
+# not a whole number in this range is refused, so a stored revision always fits the column and a JSON number.
+REV_MAX = 2**53 - 1
+
+
+def _latest_set(conn: Conn, idea_uuid: Any) -> dict[str, Any] | None:
+    """The set the panel works from (`desk.reads._panel`): the latest one sent and not closed."""
+    row = conn.execute(
+        "SELECT id, state FROM question_sets WHERE idea_uuid = %s AND state NOT IN ('queued', 'closed') "
+        "ORDER BY created_at DESC LIMIT 1",
+        (idea_uuid,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def save_queue(
+    conn: Conn, ref: str, user_id: str, body: dict[str, Any], at: dt.datetime | None = None
+) -> dict[str, Any]:
+    """`PUT /desk/ideas/:id/question-sets/queued` (BLD-B272, amends BLD-B244): the reviewer's whole queue for the idea,
+    stored as their queued set so it is still there when they come back (S-R2.panel Asking, L-QUESTIONS.states). It
+    replaces the queued set the idea had (one queued set per idea, as Send already takes whichever is there).
+    `body`: `{questions: [{part, text, suggested?}], time_to_answer, rev, after}`.
+
+    - Each question is hidden before it is stored (`adapters.hide_queued`, the same `hide` as Send; L-HIDE): only the
+      masked copy is kept, sealed as Send seals it. A question stored by this reviewer and sent back unchanged (the
+      page shows the masked copy) is already masked and is kept as it is, with no second model call.
+    - A save that comes too late keeps nothing (409 `queue_stale`): the idea has left the desk (decided or merged:
+      `review.ensure_on_desk`, 409 `already_decided`); a set was sent since the panel's read (`after`, the latest set
+      the panel knew, `desk.reads._panel`'s `set_id`; null when none), or one is still waiting on answers; or the
+      stored queue is this reviewer's with a revision no lower than `rev` (an older save overtaken, or another tab).
+    - Audited with IDs, counts and parts only, never the words; nothing is logged (non-negotiable 3)."""
+    t = at or now()
+    p = promises.get()
+    raw = body.get("questions")
+    if not isinstance(raw, list):
+        raise Refused(422, "questions_required", "Add a question first.", "questions")
+    asked: list[dict[str, Any]] = [q if isinstance(q, dict) else {} for q in raw]
+    chosen = body.get("time_to_answer")
+    rev = body.get("rev")
+    if isinstance(rev, bool) or not isinstance(rev, int) or not 0 < rev <= REV_MAX:
+        raise Refused(422, "rev_invalid", None, "rev")
+    after_raw = body.get("after")
+    after = after_raw if isinstance(after_raw, str) and after_raw else None  # compared as the worker wrote it
+    with audited(conn), conn.transaction():
+        # lane C's lock before any row lock: the questions are hidden below (BLD-B247), as in `send_set`
+        adapters.lock_refs(conn, ref)
+        idea = load_idea(conn, ref, lock=True)
+        refuse_own(conn, user_id, idea, "ask")
+        review.ensure_on_desk(idea)
+        errors = [e for e in questions.check_set(asked, chosen, p) if e.code != "no_questions"]
+        if errors:
+            raise _refused(errors[0])
+        latest = _latest_set(conn, idea["id"])
+        if (str(latest["id"]) if latest else None) != after or (
+            latest is not None and latest["state"] in OPEN
+        ):
+            raise Refused(409, "queue_stale")
+        current = conn.execute(
+            "SELECT id, by_user_id, queue_rev FROM question_sets WHERE idea_uuid = %s AND state = 'queued' FOR UPDATE",
+            (idea["id"],),
+        ).fetchone()
+        mine = current is not None and str(current["by_user_id"]) == user_id
+        if mine and current is not None and rev <= int(current["queue_rev"] or 0):
+            raise Refused(409, "queue_stale")
+        # masked copies this reviewer already stored: one sent back unchanged needs no second pass
+        kept = (
+            {
+                _question_text(dict(r))
+                for r in conn.execute(
+                    "SELECT id, text_encrypted FROM questions WHERE set_id = %s", (current["id"],)
+                ).fetchall()
+            }
+            if mine and current is not None
+            else set()
+        )
+        if current is not None:  # one queued set per idea: this save replaces it (its questions go with it)
+            conn.execute("DELETE FROM question_sets WHERE id = %s", (current["id"],))
+        set_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO question_sets (id, idea_uuid, by_user_id, state, time_to_answer, queue_rev, created_at) "
+            "VALUES (%s, %s, %s, 'queued', %s, %s, %s)",
+            (set_id, idea["id"], user_id, chosen, rev, t),
+        )
+        for seq, q in enumerate(asked, start=1):
+            qid = str(uuid.uuid4())
+            text = str(q["text"]).strip()
+            masked = (
+                text
+                if text in kept
+                else adapters.hide_queued(conn, str(idea["id"]), text, by=user_id, question_id=qid)
+            )
+            conn.execute(
+                "INSERT INTO questions (id, set_id, seq, part, text_encrypted, suggested, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (qid, set_id, seq, q["part"], seal(masked, "questions", "text_encrypted", qid),
+                 bool(q.get("suggested")), t),
+            )  # fmt: skip
+        audit(conn, actor(user_id), "desk.queue_questions", f"idea:{idea['idea_id']}",
+              after={"set_id": set_id, "count": len(asked), "parts": [str(q["part"]) for q in asked],
+                     "time_to_answer": chosen, "rev": rev, "replaced": str(current["id"]) if current else None})  # fmt: skip
+        return {"set_id": set_id, "rev": rev, "count": len(asked)}
 
 
 def send_set(
