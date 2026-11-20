@@ -1,6 +1,6 @@
 # WCAG 2.2 AA: the post-launch list
 
-At launch the accessibility gate is WCAG 2.1 AA (non-negotiable 10; DEC-112, product lead, 19 Nov 2026). This list holds what axe's WCAG 2.2 rules found on `main` before launch. Nothing on it blocks the 14:00 gates, the go/no-go or launch. Lane A keeps the list; each item names the lane that owns the screen.
+At launch the accessibility gate is WCAG 2.1 AA (non-negotiable 10; DEC-112, product lead, 19 Nov 2026). This list holds what axe's WCAG 2.2 rules found on `main` before launch. Nothing on it blocks the 14:00 gates, the go/no-go or launch. Lane A keeps the list; each item names the lane that owns the screen or the shared component.
 
 ## How it was found
 
@@ -14,8 +14,10 @@ Every finding is the same rule: target size, WCAG 2.5.8, rated serious. In each 
 |---|---|---|---|---|
 | 1 | S-02 Sign-in (lane A) | `/sign-in` | The 1% Club mark that links to Landing, `.si-brand` (`app/sign-in/page.tsx`) | 96.8 × 8 px |
 | 2 | S-05 Check it (lane C) | `/share/:id/check` | The "Change title" button (`app/share/[id]/check/parts.tsx`) | 56 × 10.2 px |
-| 3 | S-R2 The idea at the desk (lane B) | `/desk/ideas/IDEA-2026-000050` and `…000051` | The link to IDEA-2026-000049 on the panel | 232 × 13.4 px |
+| 3 | C-SIDEBAR, the review desk's "Waiting on sharers" list (lane D) | `/desk/ideas/IDEA-2026-000050` and `…000051`, where the open sidebar shows it | The list's row that links to IDEA-2026-000049, `a[href="/desk/ideas/IDEA-2026-000049"]` (`components/shell/sidebar.tsx`), sliding under the account row | 232 × 13.4 px |
 | 4 | S-H2 Find your crew (lane F) | `/kit/crew`, the kit page that renders the crew screen | The filter button, `.crew-fbtn` (`app/crew/crew-screen.tsx`) | 103 × 6.4 px |
+
+Item 3 was first put down as a link on S-R2's panel (lane B). It is not: S-R2's similar-idea title is a button, and the obscured link is a sidebar row, 232 px wide in the 256 px bar (lane B, 21 Nov). Lane D's `d/targets-1` (BLD-D018, not yet on `main`) fixes it in `app/shell.css`: the open sidebar's sections keep their full height and the bar scrolls. Lane B's P2 (BLD-B273) only adds an axe target-size check on S-R2's Similar ideas.
 
 ## What axe does not check
 
