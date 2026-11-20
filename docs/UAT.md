@@ -184,6 +184,8 @@ Before step 5/8 (Migrations) a failure changes nothing: the old version keeps se
    git checkout <old tag> && git describe --tags --exact-match
    ```
 
+   Pass: the tag from step 1. If step 1 showed a commit with no tag, check out that commit instead and check `git rev-parse HEAD` prints it.
+
 **What a rollback loses:** everything written after the backup. That covers ideas, drafts, messages, decisions, notice acceptances and any kill switch changed on the Admin page. That is why upgrades run in a quiet window.
 
 **Kill switches:** the upgrade never changes a kill switch, and neither does the rollback. The upgrade only reads `ai.all`, and stops if it is on while there is no model route (`LLM_MODE=fake`). A rollback puts the switches back as they were at the backup, because they live in the database.
