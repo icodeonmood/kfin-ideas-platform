@@ -9,7 +9,7 @@ For: KFin IT and the product team, installing 1% Club with `make uat-deploy`, on
 | Item | Owner | Where it goes |
 |---|---|---|
 | A Linux host with Docker Engine and Compose v2.24 or later, and a checkout of this repo at the launch tag `launch-2026-11-20-r3`, the commit lane E tags on 20 Nov, not `main`. Check it before step 1: `git describe --tags --exact-match` prints `launch-2026-11-20-r3`, and `git rev-parse HEAD` prints the commit lane A sends IT. `launch-2026-11-20-r2` (543fa250) is the fallback only, if lane E says r3 is not ready: it has no production mode (it loads 200 synthetic people) and its HR import reads no stdin, so it needs the r2 steps lane A gives IT, not 1a to 2b below. `launch-2026-11-20` (29c1ef9c) is the earlier build with notice 0.2-draft: do not install it | IT | — |
-| The privacy notice version: `PRIVACY_NOTICE_VERSION=0.2`, exactly the version in `apps/web/src/content/privacy-notice.ts` at the launch tag. If the two differ, nobody gets past the notice at first sign-in; the deploy's preflight stops on a mismatch (BLD-A232, BLD-A233). If a later build changes the notice's version, the env file changes with it; on that update no script checks it, so check it by hand before restarting the web app | IT | app env file |
+| The privacy notice version: `PRIVACY_NOTICE_VERSION=0.2`, exactly the version in `apps/web/src/content/privacy-notice.ts` at the launch tag. If the two differ, nobody gets past the notice at first sign-in; the deploy's preflight stops on a mismatch (BLD-A232, BLD-A233). If a later build changes the notice's version, the env file changes with it; `make uat-upgrade` checks it and stops on a mismatch (BLD-A234) | IT | app env file |
 | Entra app registration for UAT: issuer URL, client ID, client secret, redirect `https://<uat host>/auth/callback` (§9.1 O2) | IT | app env file |
 | Four random secrets of at least 32 characters each: `INTERNAL_API_TOKEN`, `SESSION_SECRET`, `CONTRIBUTOR_HMAC_SECRET`, `VAULT_ENCRYPTION_KEY` | InfoSec (vault) | app env file |
 | Three database passwords of at least 20 random letters and digits (no symbols: they go into connection URLs): `POSTGRES_PASSWORD`, `DB_WEB_PASSWORD`, `DB_WORKER_PASSWORD` | InfoSec (vault) | database env file |
@@ -77,7 +77,7 @@ Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answe
    The person must have signed in once, or be in the HR import.
 
    **1d. The first admin signs in again** (the launch server only), in a new private browser window, and opens the Admin page. If the sign-in is refused, or the Admin page is, stop before step 2 and tell the product team. Check first that 1c printed `granted` (or `already granted`); otherwise the usual cause is that the employee ID or the email checked in 1b does not match.
-2. Ones Committee members, at launch (the product lead's decision, 19 Nov): give each member **Ones Committee** on the Admin page, and IT also gives each of them `core_committee` with the command in 1c (`--role core_committee --reason "Ones Committee at launch, <ticket>"`). Give both. Ones Committee is the 1% Club role and stays. This build already carries lane B's committee role check (BLD-B270): a member with only Ones Committee can use the Ones Committee page, open ideas, play an idea read aloud (Listen) and read the review desk's pages. `core_committee` stays for now so that members can open the files on an idea's conversation and attach one: in this build only the person who shared the idea, the review desk, `core_committee`, the chair and admins can (`FILE_ROLES`). The Admin page cannot give `core_committee` (it lists it as a retired role), and the command cannot give Ones Committee. `core_committee` also shows some older pages (Delivery, The Ember note) and, while no chair is named, its holders receive the overdue emails of the older timers that escalate to the chair (the 1% Club's own review clock sends none). Do not remove it, even though the Admin page calls it retired, until both of these hold: an update that lets Ones Committee open conversation files (`FILE_ROLES`, on `main` from 1710f7ab) is installed on the launch server, and the product lead says so. Then remove it on the Admin page (the row reads "Core committee member (retired role)"). On the launch server the members already exist from the HR import, so they need not sign in first.
+2. Ones Committee members (the product lead's decisions, DEC-121; BLD-B270): give each member **Ones Committee** on the Admin page. It is the 1% Club role and stays. Builds from `main` 7b648174 on, the first update after r3 included, carry lane B's committee role check (BLD-B270), and the conversation's file rule follows it (`FILE_ROLES`): a member with only Ones Committee can use the Ones Committee page, open ideas, play an idea read aloud (Listen), read the review desk's pages, and open and attach the files on an idea's conversation. r3, the launch install, has the role check but not the file rule, so at launch IT also gave each member `core_committee` with the command in 1c (`--role core_committee --reason "Ones Committee at launch, <ticket>"`). `core_committee` also shows some older pages (Delivery, The Ember note) and, while no chair is named, its holders receive the overdue emails of the older timers that escalate to the chair (the 1% Club's own review clock sends none). On any install, give both until the product lead says otherwise. The Admin page cannot give `core_committee` (it lists it as a retired role), and the command cannot give Ones Committee. **Do not remove `core_committee`** from a member, even though the Admin page calls it retired, until lane A tells IT. That happens only when all three hold (BLD-B270): the first update with this role fix is installed on the launch server (Updating the live server, below), the product lead says so, and DEC-121's open question is settled with lane E. Then remove it on the Admin page (the row reads "Core committee member (retired role)"), except from anyone the product lead names as core committee. On the launch server the members already exist from the HR import, so they need not sign in first.
 
    **2b. On the launch server, the smoke checks without `--fresh`**, once the HR import and these grants are in:
 
@@ -89,6 +89,110 @@ Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answe
 3. Voice is on at launch (`capture.voice` and `speech.hosted`, DEC-108, migration `20261122300530`). Check the smoke line "capture.voice on; speech.hosted on; SPEECH_MODE sarvam; Sarvam key set" (no call is made to Sarvam) and the go/no-go voice rows say "met". If the watch has switched them off with "Sarvam key missing (automatic)", put `SARVAM_API_KEY` in the database env file, restart the worker and switch both on from the Admin page with a reason. Then record one synthetic voice note on a draft and check that the words appear as you speak, the English copy is labelled "Typed up in English", and nothing is written to the quarantine bucket. Before the gates, the product lead runs `make sarvam-live` from a checkout with the local stack up, with `SARVAM_API_KEY` loaded in their own terminal (never in an env file of this repo), and every line reads PASS (BLD-C177).
 4. When the model route is approved: set `LLM_MODE` and the key in the app env file, restart the worker, run `make eval` against the route, then switch `ai.all` on from the Admin page with a reason.
 5. Point KFin's reverse proxy (TLS) at the web app's port (`UAT_WEB_PORT`, default 3100). Only the web app is published.
+
+## Updating the live server (upgrade and rollback)
+
+Every fix after the install reaches the server this way, never by hand (BLD-A234). Before each upgrade, lane A rehearses it on a developer machine, from the version on the server to the new tag, in production mode as the launch server runs (see **Rehearse first** below). Lane A then sends IT the new tag, its commit and the line `rehearsal: upgrade, rollback and upgrade again all passed`. No upgrade runs on the server without that (the product lead's rule, 20 Nov 2026).
+
+Run it in a quiet window, and tell the review desk first: a rollback loses anything written after the backup. Use the same checkout, data folder and env files as the install. The commands below use the paths from Deploy and the worker container `kfin-ideas-uat-worker-1`. Never run two upgrades or rollbacks at once: a lock (`ops/.lock`) stops the second. Run each one inside `tmux` or `screen`, so a dropped SSH session does not stop it halfway.
+
+**Once, before the first upgrade,** if the deploy account is not root: `sudo install -d -m 700 -o <deploy account> /srv/kfin-ideas-uat/ops /srv/kfin-ideas-uat/backups`. The upgrade writes its records and backups there. The worker runs as uid 10001 and cannot read them. Without this step the upgrade stops at step 1 and prints the same command.
+
+**What to paste back:** after each step below, paste to lane A the lines its **Paste back** names, and any `STOPPED:` line. Lane A checks them against the step's pass line before you go on. Never paste an env file, a secret, HR's file or any line of it. Nothing below prints one: the commands print commits, tags, counts, file paths, switch names and the env lines named in step 3, which hold no secret.
+
+1. Before you start, record what runs now, from the checkout:
+
+   ```bash
+   cat /srv/kfin-ideas-uat/ops/installed.json 2>/dev/null
+   git describe --tags --exact-match
+   git rev-parse HEAD
+   docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list
+   ```
+
+   Paste back: all of it (the record holds only a commit, a tag and a time). Pass: the tag and commit installed (the first time, no record yet, then `launch-2026-11-20-r3` and `ecd9266411c02de0d14ce9c18ed0412218d13398`), and every switch as the product lead set it. When the record is there, it is what runs: after a rollback the checkout can still be on the newer tag (step 6 says how to put it back). Keep the switch list for step 5.
+
+2. Check out the new tag:
+
+   ```bash
+   git fetch --tags && git checkout <new tag>
+   git describe --tags --exact-match
+   git rev-parse HEAD
+   git status --short | wc -l
+   ```
+
+   Paste back: the last three lines. Pass: the new tag, the commit lane A sent with it, and `0`.
+
+3. Check the env files still match the new build:
+
+   ```bash
+   grep -E '^(APP_ENV|PRIVACY_NOTICE_VERSION|LLM_MODE)=' /secure/.env.uat
+   grep -o 'version: "[^"]*"' apps/web/src/content/privacy-notice.ts
+   ```
+
+   Paste back: the four lines. Pass: `APP_ENV=prod` on the launch server; the two notice versions are the same; `LLM_MODE=fake` unless the product lead has switched AI on. If the versions differ, set `PRIVACY_NOTICE_VERSION` in the app env file to the build's version: the upgrade stops on a mismatch. Lane A says in advance when a new tag changes the notice.
+
+4. Upgrade:
+
+   ```bash
+   UAT_DATA_DIR=/srv/kfin-ideas-uat make uat-upgrade APP_ENV_FILE=/secure/.env.uat DB_ENV_FILE=/secure/.env.uat.db FROM=launch-2026-11-20-r3
+   ```
+
+   **`FROM=launch-2026-11-20-r3` is needed the first time only:** the r3 install wrote no record of what it installed. Every upgrade writes `/srv/kfin-ideas-uat/ops/installed.json` (an install from a later tag does too, when the deploy account can write `ops/`, as after the **Once** step above; otherwise it prints "Could not write" and the next upgrade needs `FROM` again). Once the record is there, leave `FROM` out. If you give it, it must match the record.
+
+   Paste back: the whole output, each `==` step line and what follows it. Pass:
+   - at the top, `FROM ecd9266411c02de0d14ce9c18ed0412218d13398 launch-2026-11-20-r3` (the first time) and `TO   <the commit from step 2> <new tag>`;
+   - `ai.all off; model route not configured (LLM_MODE=fake: Mode B)` (unless the product lead has switched AI on);
+   - `backup: … (N tables with data)`;
+   - `Pending: 0` and `migrations applied now: N`;
+   - `people loaded (production)` and `smoke: all checks passed`;
+   - the last line `upgrade: <old> -> <new> done in Ns. Backup kept at /srv/kfin-ideas-uat/backups/upgrade-<time>-<old>.dump`.
+
+| Step | What happens | Stops when |
+|---|---|---|
+| 1 Checks | The checkout is clean; prints the old and new sha; Postgres runs and has migrations; the env file checks of deploy step 1, the notice version included; reads `ai.all`; free disk for the backup | anything fails; `ai.all` is on while `LLM_MODE=fake` |
+| 2 Keep | Tags the running images `:rollback-<old sha>` and saves the old version's compose files beside the backup | — |
+| 3 Build | Builds the new images while the old ones keep serving; runs preflight on the new worker image | the build or preflight fails (nothing changed) |
+| 4 Backup | `pg_dump` of the database to `backups/` (mode 600), checked with `pg_restore --list`; an archive of the company repo | the backup fails or is empty (nothing changed) |
+| 5 Migrations | `dbmate up`, then `dbmate status`; prints the migrations applied | anything pending |
+| 6 Restart | Web and worker (and speech, if used) on the new images. Postgres is not restarted | a service does not become healthy in 4 minutes |
+| 7 Smoke | The thirteen checks, without `--fresh`: real people and their roles are expected now | any check fails |
+| 8 Record | `ops/installed.json` and `ops/upgrade-<time>.json` (from, to, backup, migrations, seconds) | — |
+
+Before step 5/8 (Migrations) a failure changes nothing: the old version keeps serving. From step 5/8 on, a failure prints the rollback command and stops. It never rolls back by itself: decide with the product lead, then run it. **A failed upgrade is rolled back, not run again:** once a run has migrated the database, the upgrade refuses to start again and names the backup to roll back with.
+
+5. After the upgrade, check the switches and the Admin page:
+
+   ```bash
+   docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list
+   ```
+
+   Then the first admin signs in, in a new private browser window, and opens the Admin page.
+
+   Paste back: the switch list, and "Admin page opens" or what they saw instead. Pass: every switch exactly as in step 1 (the upgrade never changes one), and the Admin page opens. If either fails, tell lane A and the product lead before anything else; the way back is the rollback in step 6.
+
+6. Rollback, only when the product lead decides it, from the same new checkout, with the backup the upgrade printed:
+
+   ```bash
+   UAT_DATA_DIR=/srv/kfin-ideas-uat make uat-rollback BACKUP=/srv/kfin-ideas-uat/backups/upgrade-<time>-<old>.dump APP_ENV_FILE=/secure/.env.uat DB_ENV_FILE=/secure/.env.uat.db
+   ```
+
+   It stops web and worker, puts the kept images back, drops and recreates the database and restores the backup, always restores the company repo from its archive, starts web and worker with the old version's compose files, runs the smoke checks and records the old version as installed. If you changed `PRIVACY_NOTICE_VERSION` for the upgrade, set it back first: the rollback stops and names the old version. It prints the kill switches before and after: they go back to their state at backup time, so check them on the Admin page.
+
+   Paste back: the whole output. Pass: `database restored: migrations as at the backup (N)`, `smoke: all checks passed`, and the last line `rollback: back on <old> in Ns. Anything written after the backup is lost.` Then put the checkout back on the old tag, so it matches what runs, and run step 5's checks again; the switches should match step 1:
+
+   ```bash
+   git checkout <old tag> && git describe --tags --exact-match
+   ```
+
+   Pass: the tag from step 1. If step 1 showed a commit with no tag, check out that commit instead and check `git rev-parse HEAD` prints it.
+
+**What a rollback loses:** everything written after the backup. That covers ideas, drafts, messages, decisions, notice acceptances and any kill switch changed on the Admin page. That is why upgrades run in a quiet window.
+
+**Kill switches:** the upgrade never changes a kill switch, and neither does the rollback. The upgrade only reads `ai.all`, and stops if it is on while there is no model route (`LLM_MODE=fake`). A rollback puts the switches back as they were at the backup, because they live in the database.
+
+**The backup holds personal data:** the whole database, the sharers' own words and the encrypted vault included. It stays on this server under the database's controls (file mode 600, folder 700, owned by the deploy account). It is never copied off the server. Keep at least the latest backup; remove older ones only when the product lead says so.
+
+**Rehearse first:** before each upgrade of the server, lane A runs `make uat-rehearsal-upgrade FROM=<the installed tag> REHEARSE_APP_ENV=prod` on a developer machine, at the new tag. It installs FROM with FROM's own deploy in production mode (no people), then does what IT did after the install, on synthetic people only (`@kfintech.example`): a synthetic HR file of 20 through stdin, `admin` for one of them, `core_committee` for another, and the smoke checks without `--fresh`. Then it upgrades to the checkout, rolls back, upgrades again, prints a summary (`== Summary (upgrade rehearsal, APP_ENV=prod)`, one PASS line per phase) and tears it all down (`KEEP=1` keeps it). Ones Committee, which only the Admin page gives, is not rehearsed: nobody can sign in there. Without `REHEARSE_APP_ENV=prod` it rehearses a UAT host (`APP_ENV=uat`, with synthetic people loaded at install). It refuses while the dev stack runs and never starts or stops it: run `make down` from the main checkout first and `make up` there after.
 
 ## Rehearsal
 
