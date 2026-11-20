@@ -679,7 +679,10 @@ step(
   "J-REVIEW/M3",
   "S-R2",
   "Merge and tell both: one idea survives, the banner says so, and the merged sharer's page points to it",
-  { needs: ["S-R2", "C-SHEET-MERGE", "L-MERGE", "L-COMMITTEE", "S-06"], changes: ["F2", "J2"] },
+  {
+    needs: ["S-R2", "C-SHEET-MERGE", "L-MERGE", "L-COMMITTEE", "S-06", "C-LISTEN"],
+    changes: ["F2", "J2"],
+  },
   async ({ page, browser }, info) => {
     // From J2's page; the lead is F2 by default (shared first), and Team them up is on: Jatin joins Faisal's crew.
     const f2 = await seeded("F2");
@@ -707,14 +710,22 @@ step(
         .first(),
     ).toBeVisible();
     // The lead's row under Similar ideas reads Merged, and still does after a reload, though J2 joined F2 rather
-    // than F2 joining J2 (C-SHEET-MERGE.after, L-MERGE.desk; BLD-B266). The strip "Listen to the whole idea" is not
-    // checked here: lane B restores it on a merged idea after launch.
+    // than F2 joining J2 (C-SHEET-MERGE.after, L-MERGE.desk; BLD-B266).
     const leadRow = page
       .locator(".ri-sim-row")
       .filter({ has: page.getByRole("button", { name: f2.title, exact: true }) });
     await expect(leadRow.getByText("Merged", { exact: true })).toBeVisible();
     await page.reload();
     await expect(leadRow.getByText("Merged", { exact: true })).toBeVisible();
+    // C-LISTEN on the merged idea's own S-R2 (DeskIdea.md state=Merged keeps the strip; BLD-B271): its heading and
+    // Play, "Play the whole idea" until ready, then "…, {length}". With no device voice (CI's headless browser) the
+    // strip may show "Couldn’t prepare the audio. Try again." after 3 seconds; a runner with a voice won't, so
+    // neither that line nor Play's disabled state is pinned.
+    const listen = page.getByRole("region", { name: "Listen to the whole idea", exact: true });
+    await expect(
+      listen.getByRole("heading", { name: "Listen to the whole idea", exact: true }),
+    ).toBeVisible();
+    await expect(listen.getByRole("button", { name: /^Play the whole idea/ })).toBeVisible();
     await asOther(browser, info, "jatin", { ref: "J-REVIEW/M3", screen: "S-06" }, async (sharer) => {
       await sharer.goto(ideaUrl(j2));
       await expect(

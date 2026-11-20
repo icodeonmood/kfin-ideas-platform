@@ -25,7 +25,7 @@ def test_bld_f062_file_roles_are_the_policys_view_review_queue_with_its_aliases(
     roles = set(policy["capabilities"]["view_review_queue"])
     aliases = {alias for alias, target in (policy.get("role_aliases") or {}).items() if target in roles}
     assert set(FILE_ROLES) == roles | aliases
-    assert "committee" not in FILE_ROLES  # a plain committee holder neither opens nor adds files
+    assert "committee" in FILE_ROLES  # BLD-B270: a committee-only member opens and adds files (DEC-107)
 
 
 def test_bld_f076_l_convo_10_forget_is_lane_cs_hide_forget_for_the_conversation_entry(

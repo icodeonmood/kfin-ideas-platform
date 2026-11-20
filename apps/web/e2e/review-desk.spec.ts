@@ -6,7 +6,14 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { Client } from "pg";
 
-import { expectNoSeriousAxeIssues, expectNoSidewaysScroll, PERSONAS, signIn } from "./helpers";
+import {
+  expectNoSeriousAxeIssues,
+  expectNoSidewaysScroll,
+  navLabels,
+  PERSONAS,
+  PHONE_TABS,
+  signIn,
+} from "./helpers";
 import { carrying, storageCarries, storageNames, watchRequestUrls } from "./search-words";
 
 const DATABASE_URL =
@@ -477,4 +484,99 @@ test("DEC-110, S-R1.rules/4 (J-BROWSE/4, /6): the desk's search stays in the tab
   await expectDecideBy(other.page);
   await expect(other.page.getByRole("searchbox", { name: "Search the desk" })).toHaveValue("");
   await other.page.context().close();
+});
+
+test("DEC-121, S-R2: a committee-only member opens the reviewer's idea and its Listen", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `Branch slips ask for the same form twice (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(sharer.code, title);
+  // A decided idea, as the Ones Committee meets it (J-COMMITTEE/1–2): the reviewer opens it and picks it
+  await reviewer.page.goto(`/desk/ideas/${ideaId}`);
+  const decided = await reviewer.page.request.post(`/api/desk/ideas/${ideaId}/decision`, {
+    data: { choice: "pick", reason: REASON },
+  });
+  expect(decided.status(), `decision: ${await decided.text()}`).toBe(201);
+  // An idea still with the desk, with a similar idea beside it: the reviewer is offered Decide, Ask, worth and Merge
+  // on it (S-R2.panel, S-R2.similar), so the committee member's zero below is the role at work, not an empty page
+  const onDesk = `Branch slips ask for the PAN twice (${testInfo.project.name} ${Date.now()})`;
+  const onDeskId = await sharedIdea(sharer.code, onDesk);
+  const similar = `Branch slips repeat the address box (${testInfo.project.name} ${Date.now()})`;
+  const similarId = await sharedIdea(sharer.code, similar);
+  await db((c) =>
+    c.query(
+      "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) SELECT a.id, b.id, 'close', " +
+        "'Same branch slip' FROM ideas a, ideas b WHERE a.idea_id = $1 AND b.idea_id = $2",
+      [onDeskId, similarId],
+    ),
+  );
+  await reviewer.page.goto(`/desk/ideas/${onDeskId}`);
+  await expect(reviewer.page.getByRole("button", { name: "Decide on this idea" })).toBeVisible();
+  await expect(reviewer.page.getByRole("button", { name: `Merge with ${similar}` })).toBeVisible();
+
+  // A synthetic member who holds `committee` and nothing else (BLD-B270): made on this first sign-in, so no other
+  // spec signs in as them. The role is given for this test and taken back after it (grants are read on every
+  // request); only the grant this test inserted is deleted.
+  const id = `SYN-C${Date.now().toString(36).toUpperCase()}${testInfo.project.name === "desktop" ? "D" : "P"}`;
+  const ctx = await browser.newContext();
+  const m = await ctx.newPage();
+  await signIn(m, id, {
+    employeeId: id,
+    email: `${id.toLowerCase()}@kfintech.example`,
+    name: "Synthetic Committee Member",
+  });
+  const me = (await (await m.request.get("/api/me")).json()) as { email: string };
+  const grant = await db(
+    async (c) =>
+      (
+        await c.query<{ id: string }>(
+          "INSERT INTO role_grants (user_id, role) SELECT id, 'committee' FROM users WHERE email = $1 " +
+            "RETURNING id::text AS id",
+          [me.email],
+        )
+      ).rows[0]!.id,
+  );
+  try {
+    const held = await db((c) =>
+      c.query<{ role: string }>(
+        "SELECT g.role FROM role_grants g JOIN users u ON u.id = g.user_id WHERE u.email = $1 " +
+          "AND (g.valid_to IS NULL OR g.valid_to > now())",
+        [me.email],
+      ),
+    );
+    expect(held.rows.map((r) => r.role)).toEqual(["committee"]);
+
+    // S-R2 opens for them, with the strip "Listen to the whole idea", and no desk action
+    await m.goto(`/desk/ideas/${ideaId}`);
+    await expect(m).toHaveURL(new RegExp(`/desk/ideas/${ideaId}$`));
+    await expect(m.getByRole("heading", { level: 1, name: title })).toBeVisible();
+    await expect(m.getByRole("heading", { name: "Listen to the whole idea" })).toBeVisible();
+    await expect(m.getByRole("button", { name: "Decide on this idea" })).toHaveCount(0);
+    // C-LISTEN, L-LISTEN: the desk's script answers them
+    const listen = await m.request.get(`/api/desk/ideas/${ideaId}/listen`);
+    expect(listen.status(), `listen: ${await listen.text()}`).toBe(200);
+    // BLD-B270, S-R2: on the idea still with the desk they read it, and are offered none of the desk's actions
+    // (`can_act` holds only for the review desk)
+    await m.goto(`/desk/ideas/${onDeskId}`);
+    await expect(m.getByRole("heading", { level: 1, name: onDesk })).toBeVisible();
+    await expect(m.getByRole("heading", { name: "Review this idea" })).toBeVisible();
+    await expect(m.getByRole("button", { name: "Decide on this idea" })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /^Ask about this/ })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /^Ask .* first/ })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /what it’s worth$/ })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /^Merge with / })).toHaveCount(0);
+    // C-SIDEBAR: their sidebar is as before (Ones Committee, no Review desk); a phone's tabs are everyone's
+    await m.goto("/home");
+    expect(await navLabels(m)).toEqual(
+      testInfo.project.name === "phone-360"
+        ? PHONE_TABS
+        : ["Share a problem", "Home", "Find your crew", "Wall", "Inbox", "Ones Committee"],
+    );
+  } finally {
+    await db((c) => c.query("DELETE FROM role_grants WHERE id = $1::bigint", [grant]));
+    await ctx.close();
+  }
 });

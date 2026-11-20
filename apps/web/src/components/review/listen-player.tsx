@@ -5,9 +5,11 @@
  *
  * The voice (DEC-108): lane C's hosted audio first, `GET /api/ideas/:id/listen/chapters` then the stream from
  * `GET /api/ideas/:id/listen` in an <audio> element. While the audio is being made (202) the player waits and asks
- * again. When that route answers 404 (not on main yet) or 503 (switched off), or anything else, the browser reads the
- * masked script with a local voice (BLD-B230), and nothing leaves the device. With neither, the player is not shown;
- * nor when Listen is switched off (desk.listen). Both voices sit behind the same controls (`ListenControls`).
+ * again. When that route answers 404 (a merged idea, or not on main yet) or 503 (switched off), or anything else, the
+ * browser reads the masked script with a local voice (BLD-B230), and nothing leaves the device. With neither, the strip
+ * stays and, after a short wait for a voice that loads late, says "Couldn’t prepare the audio. Try again." (L-LISTEN/7,
+ * J-REVIEW/M3; BLD-B271). Only when Listen is switched off (desk.listen) is the player not shown. Both voices sit behind
+ * the same controls (`ListenControls`).
  *
  * C-LISTEN.anatomy (BLD-B267): the strip is drawn at its full size from the first render, the server's included, so
  * the page does not move when the audio answers. Until then the title stands, the time keeps its line unseen, the
@@ -46,6 +48,9 @@ import "./listen.css";
 /** While lane C's audio is being made (202), ask again this often, this many times, then use the browser's voice. */
 const PENDING_MS = 3000;
 const PENDING_TRIES = 8;
+/** With only the desk's script to read and no local English voice yet, the strip waits this long for one (Chrome
+ * loads its voices late), then shows L-LISTEN/7's line (BLD-B271). */
+export const VOICE_WAIT_MS = 3000;
 const AUDIO_CACHE = "listen-audio";
 const DAY_MS = 86_400_000;
 
@@ -200,6 +205,7 @@ export function ListenPlayer({ ideaId, decided }: { ideaId: string; decided: boo
   const [source, setSource] = useState<Source | null>(null);
   const [failed, setFailed] = useState(false);
   const [paused, setPaused] = useState(false); // switched off: the player is not shown
+  const [voiceless, setVoiceless] = useState(false); // the script waited VOICE_WAIT_MS and no voice came
   const [player, setPlayer] = useState<{ engine: ListenControls; state: ListenState } | null>(null);
   const [saved, setSaved] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -284,6 +290,14 @@ export function ListenPlayer({ ideaId, decided }: { ideaId: string; decided: boo
     };
   }, [source, voice]);
 
+  // J-REVIEW/M3 (BLD-B271): the desk's script is the source (a merged idea's always is) and the device has no voice yet
+  const needsVoice = source?.kind === "local" && voice === null;
+  useEffect(() => {
+    if (!needsVoice) return;
+    const t = setTimeout(() => setVoiceless(true), VOICE_WAIT_MS);
+    return () => clearTimeout(t);
+  }, [needsVoice]);
+
   // The parts menu takes focus on its first item, and closes on a click anywhere outside it
   useEffect(() => {
     if (!menu) return;
@@ -304,8 +318,8 @@ export function ListenPlayer({ ideaId, decided }: { ideaId: string; decided: boo
   );
 
   if (paused) return null;
-  // The browser's voice is needed only once its script is the source; until a source answers, the strip stands
-  if (source?.kind === "local" && voice === null) return null;
+  // With the script as the source and no voice, the strip stands, inert, and then says it couldn't prepare the audio
+  const noVoice = needsVoice && voiceless;
   const total = state?.total ?? timeline?.total ?? 0;
   const position = state?.position ?? 0;
   const playing = state?.playing ?? false;
@@ -361,7 +375,7 @@ export function ListenPlayer({ ideaId, decided }: { ideaId: string; decided: boo
             <span className="listen-now"> {nowLabel(titles[state.currentPart] ?? "")}</span>
           ) : null}
         </p>
-        {failed || state?.error ? (
+        {failed || noVoice || state?.error ? (
           <p className="fmsg" role="alert">
             {LISTEN_ERROR}{" "}
             <button
@@ -369,6 +383,7 @@ export function ListenPlayer({ ideaId, decided }: { ideaId: string; decided: boo
               className="tb"
               onClick={() => {
                 setFailed(false);
+                setVoiceless(false);
                 setPlayer(null);
                 setSource(null);
                 setAttempt((n) => n + 1);
@@ -435,7 +450,7 @@ export function ListenPlayer({ ideaId, decided }: { ideaId: string; decided: boo
           className="round-btn quiet"
           aria-label={saved ? "Saved for offline" : "Save for offline"}
           aria-pressed={saved}
-          disabled={!source}
+          disabled={!source || needsVoice} // nothing to keep for a device with no voice to read it (BLD-B271)
           onClick={() => void saveForOffline()}
         >
           <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">

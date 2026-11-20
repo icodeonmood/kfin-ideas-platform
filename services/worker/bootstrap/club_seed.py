@@ -1354,16 +1354,34 @@ def _builds_and_impact(
                              "sentence": "Returned transfer requests down by a quarter"}, False)  # fmt: skip
 
 
+# The programme's founding day as the board draws it: "Tier 4, Blaze. Founding One since 1 Nov 2026." and the number
+# window "until 1 Dec 2026" (reference/copy/OneDashboard.md:36 and :40; S-ONE.layout/2 and /3). Every founding One in
+# the seed is inducted on it, not a year before the programme existed (BLD-E073; lane G's walk of the release
+# candidate, row 2). Demo and dev seed only: a production One gets its real induction time.
+FOUNDING_DAY = dt.datetime(2026, 11, 1, 10, 0, tzinfo=IST)
+
 ONES: list[tuple[str, int, int, str, str | None, str, int]] = [
-    # (person, number wanted, tier, way in, idea key, impact brief, days since induction)
-    ("aparna", 2, 6, "founding", None, "Made share transfer checks one step for every service centre.", 400),
-    ("rekha", 4, 4, "founding", None, "Cut the calls investors make after a failed SIP debit.", 380),
-    ("dinesh", 8, 5, "founding", "D1", "Brokerage statements distributors can read without calling us.", 360),
+    # (person, number wanted, tier, way in, idea key, impact brief, days since induction; for a founding One, minutes
+    # after FOUNDING_DAY instead, which keeps the order they became Ones on the Wall: Gopal, Aparna, Rekha, Dinesh)
+    ("aparna", 2, 6, "founding", None, "Made share transfer checks one step for every service centre.", 1),
+    ("rekha", 4, 4, "founding", None, "Cut the calls investors make after a failed SIP debit.", 2),
+    ("dinesh", 8, 5, "founding", "D1", "Brokerage statements distributors can read without calling us.", 3),
     ("varun", 11, 3, "accepted_idea", "V1", "Stopped wrong bank details before a payout goes out.", 8),
-    ("gopal", 15, 7, "founding", None, "Builds the fixes that save branches the most hours.", 420),
+    ("gopal", 15, 7, "founding", None, "Builds the fixes that save branches the most hours.", 0),
     ("siddharth", 21, 1, "accepted_idea", "S1", "Online forms that fill the city from the pin code.", 10),
     ("indira", 30, 2, "accepted_idea", "I1", "One checklist that stops share transfer returns.", 12),
 ]  # fmt: skip
+
+
+def _inducted(way_in: str, when: int, now: dt.datetime) -> dt.datetime:
+    """When a seeded One became a One (`when` as ONES gives it). Never after the load: a load before FOUNDING_DAY,
+    or less than an hour after it, inducts the founding Ones just before the load instead (an hour back, then their
+    minutes), in the same order. The Wall lists Ones by induction time, so its order holds for any load from
+    14 Nov 2026 on, when the accepted-idea Ones (8 to 12 days back) all fall after the founding Ones."""
+    if way_in != "founding":
+        return _ago(when, now)
+    return min(FOUNDING_DAY, now - dt.timedelta(hours=1)) + dt.timedelta(minutes=when)
+
 
 # J-ONE step 6, S-ONE `showGlowUp` (L-ONES.rules/3): D1's 90-day figures warmed Dinesh from Tier 4, Blaze to Tier 5,
 # White heat (his tier in ONES), and he has not opened his dashboard since, so the moment waits to play once. Not
@@ -1382,11 +1400,11 @@ def _free_number(conn: Conn, wanted: int) -> int:
 
 def _ones(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: dt.datetime) -> None:
     one_ids: dict[str, int] = {}
-    for who, wanted, tier, way_in, idea_key, brief, days in ONES:
+    for who, wanted, tier, way_in, idea_key, brief, when in ONES:
         n = conn.execute("SELECT next_number('ONE', '') AS n").fetchone()
         assert n is not None
         number = _free_number(conn, wanted)
-        inducted = _ago(days, now)
+        inducted = _inducted(way_in, when, now)  # the number window stays 30 days from it (L-ONES.rules/2)
         row = conn.execute(
             "INSERT INTO ones (induction_no, user_id, number, way_in, idea_id, tier, measures, inducted_at, swap_until, "
             "brief_approved_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",

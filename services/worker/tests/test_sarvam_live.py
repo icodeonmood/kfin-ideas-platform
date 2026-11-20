@@ -697,7 +697,7 @@ def test_BLD_C177_L_DRAFT_voice_translate_that_discards_the_masking_output_fails
     from speech import drafts
 
     def discarding(
-        conn: Any, stream_id: str, masked: str, lang: str | None, user_id: str | None
+        conn: Any, stream_id: str, masked: str, lang: str | None, user_id: str | None, **_k: Any
     ) -> tuple[
         str | None, bool | None, str | None
     ]:  # masks both ways, then uses its own input and Sarvam's reply
@@ -738,3 +738,53 @@ def test_BLD_C177_the_code_prefixes_are_the_gateways_own() -> None:
     assert len(found) >= 20, sorted(found)
     assert [c for c in sorted(found) if not sarvam_live.CODE.match(c)] == []
     assert set(sarvam_live.CODE_PREFIXES) == {c.split("_", 1)[0] + "_" for c in found}
+
+
+# ---- BLD-C200 (DEC-120 fixed; L-DRAFT.voice): the English copy's text is tagged like a model call on the way out --
+
+
+def test_BLD_C200_L_DRAFT_voice_the_tagging_step_tags_a_colleague_and_a_vector_and_leaves_nothing_behind(
+    test_database: str,
+) -> None:
+    with connect(helpers.db_url(test_database), autocommit=True) as conn:
+        before = conn.execute(
+            "SELECT (SELECT count(*) FROM users) AS users, (SELECT count(*) FROM pseudonym_vault) AS vault"
+        ).fetchone()
+        assert sarvam_live.tagger_tags(conn) is True
+        after = conn.execute(
+            "SELECT (SELECT count(*) FROM users) AS users, (SELECT count(*) FROM pseudonym_vault) AS vault"
+        ).fetchone()
+        assert after == before  # the synthetic colleague and the vault rows were rolled back
+        assert conn.execute("SELECT 1 FROM users WHERE name = %s", (sarvam_live.TAG_NAME,)).fetchone() is None
+
+
+def test_BLD_C200_L_DRAFT_voice_translate_that_sends_the_untagged_text_fails(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    from speech import drafts
+
+    def untagged(
+        conn: Any, stream_id: str, masked: str, lang: str | None, user_id: str | None, *, idea_uuid: str
+    ) -> tuple[str | None, bool | None, str | None]:  # tags, then sends the copy from before the tags
+        out = drafts.mask_for_service(masked)
+        sarvam.tag_for_service(out, conn=conn, scope_id=f"DRAFT-{idea_uuid}")
+        got = sarvam.translate(out, conn=conn, ref_id=f"stream:{stream_id}", source=lang or "auto")
+        return drafts.hide_text(got.text).text, got.translated, None
+
+    monkeypatch.setattr(drafts, "_english", untagged)
+    code, lines, _fake, _rest = all_four(monkeypatch, test_database)
+    assert code == 1 and lines[3].startswith("translate ") and lines[3].endswith("FAIL not_masked")
+
+
+def test_BLD_C200_L_DRAFT_voice_a_tagging_step_that_tags_nothing_fails_and_the_name_never_leaves(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    monkeypatch.setattr(sarvam, "tag_for_service", lambda text, **k: sarvam.Outgoing(text=text, tags={}))
+    code, lines, fake, rest = all_four(monkeypatch, test_database)
+    assert code == 1 and lines[0].endswith("PASS") and lines[1].endswith("PASS")
+    assert lines[2].startswith("stt_stream ") and lines[2].endswith("FAIL masking_no_op")
+    assert lines[3].startswith("translate ") and lines[3].endswith("FAIL masking_no_op")
+    sent = json.dumps(fake.received, ensure_ascii=False) + "".join(
+        r.content.decode("utf-8", "replace") for r in rest
+    )
+    assert sarvam_live.TAG_NAME not in sent and sarvam_live.TAG_NAME not in "\n".join(lines)

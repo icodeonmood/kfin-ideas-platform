@@ -477,14 +477,14 @@ def _participants(
 ) -> list[dict[str, Any]]:  # fmt: skip
     """'In this conversation' (L-CONVO/8): each person with what they are doing; the reader last, as "You". Outside
     the review desk and the committee, the desk's people are one row, "The review desk" (DEC-111), and the Ones
-    Committee's one row, "The Ones Committee", "From the Ones Committee", however many of its members took part
-    (DEC-113)."""
+    Committee's one row, "The Ones Committee", however many of its members took part (DEC-113): "Mentioned" while its
+    members were only mentioned, "From the Ones Committee" once any member wrote (BLD-F092)."""
     seen: dict[str, tuple[Person, str]] = {}
 
     def add(p: Person, doing: str) -> None:
         key = "desk" if p.desk else "committee" if p.committee else p.id
         if key and key not in seen:
-            seen[key] = (p, FROM_COMMITTEE if p.committee else doing)
+            seen[key] = (p, doing)
 
     if team:
         if team["lead_user_id"]:
@@ -511,6 +511,8 @@ def _participants(
     for x in rows:
         if x["type"] == "message":
             who = _sender(ctx, x, staff_as)
+            if who.committee and "committee" in seen:  # a member wrote: no longer only mentioned (BLD-F092)
+                seen["committee"] = (seen["committee"][0], FROM_COMMITTEE)
             add(who, "From the review desk" if who.desk or who.role_label == DESK else
                 FROM_COMMITTEE if who.committee or who.role_label == COMMITTEE else "In the conversation")  # fmt: skip
     me = seen.pop(ctx.reader.user_id, None)
