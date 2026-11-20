@@ -12,6 +12,7 @@ only; the customer details are generated at run time (eval/golden/generators.py)
 
 from __future__ import annotations
 
+import re
 import secrets
 import string
 import uuid
@@ -335,6 +336,10 @@ def _vault(db: Conn, idea_uuid: Any) -> dict[str, str]:
     return values
 
 
+def _digits(value: str) -> str:
+    return re.sub(r"\D", "", value)[-10:]
+
+
 def _details(db: Conn, idea_uuid: Any, source: str | None = None) -> list[dict[str, Any]]:
     return [
         dict(r)
@@ -372,6 +377,76 @@ def _sharer_message(db: Conn, cast: dict[str, Any], text: str) -> str:
             (mid, idea_uuid, seal_text("idea_messages", "text_encrypted", mid, out.masked), len(text)),
         )
     return mid
+
+
+def test_l_hide_s_r2_panel_bld_b272_a_queued_pan_and_mobile_leave_no_vault_value_and_no_detail(
+    db: Conn, cast: dict[str, Any], vault_scope: str
+) -> None:
+    """L-HIDE, S-R2.panel, BLD-B272: after a reviewer queues a question holding a PAN and a mobile number, the idea's
+    vault scope (`DRAFT-<idea uuid>`) holds neither value and `hidden_details` has no row for the question: hide's
+    work for a queued question is undone by lane C's `forget` in the same transaction."""
+    rng = generators.default_rng(2721)
+    pan, mobile = generators.pan(rng), generators.mobile(rng)
+    idea_uuid = cast["idea"]["id"]
+    asked = f"Is the investor with PAN {pan} the one who called from {mobile}?"
+    _save(db, cast, [{"part": "who", "text": asked}])
+    [qid] = _queued_ids(db, idea_uuid)
+    values = _vault(db, idea_uuid).values()
+    assert pan not in values and all(_digits(mobile) not in _digits(v) for v in values)
+    assert _details(db, idea_uuid) == []
+    assert db.execute(
+        "SELECT count(*) AS n FROM hidden_details WHERE source = 'desk' AND source_id = %s", (qid,)
+    ).fetchone() == {"n": 0}
+    assert vault_scope == f"DRAFT-{idea_uuid}"
+
+
+def test_l_hide_s_r2_panel_bld_b272_the_sharers_own_pan_stays_after_a_queued_question_holding_it_goes(
+    db: Conn, cast: dict[str, Any], vault_scope: str
+) -> None:
+    """L-HIDE, S-R2.panel, BLD-B272: Kavya typed a PAN in her idea; a reviewer queues a question holding the same
+    value, saves again (the set is replaced) and then empties the queue. Kavya's vault value and her `hidden_details`
+    row are still there, as they were: `forget` keeps every value another row of the idea holds."""
+    rng = generators.default_rng(2722)
+    pan = generators.pan(rng)
+    idea_uuid = cast["idea"]["id"]
+    mid = _sharer_message(db, cast, f"The investor with PAN {pan} called the branch four times this week.")
+    [hers] = _details(db, idea_uuid)
+    assert (hers["source"], hers["source_id"]) == ("message", mid)
+    assert _vault(db, idea_uuid) == {hers["vault_tag"]: pan}
+    question = {"part": "who", "text": f"Is {pan} the only investor who called?"}
+    _save(db, cast, [question])
+    # the browser holds the words as typed: hidden again, and the set replaced
+    _save(db, cast, [question, Q1], base=1)
+    _save(db, cast, [], base=2)  # emptied
+    assert _details(db, idea_uuid) == [hers]
+    assert _vault(db, idea_uuid) == {hers["vault_tag"]: pan}
+
+
+def test_l_hide_s_r2_panel_bld_b272_a_sent_question_keeps_its_rows_when_a_queued_one_with_its_value_goes(
+    db: Conn, cast: dict[str, Any], told: f.FakeNotify, vault_scope: str
+) -> None:
+    """L-HIDE, S-R2.panel, BLD-B272: a question Meera sent holds a mobile number. Once Kavya has answered, Meera
+    queues a follow-up holding the same number and then drops it. The sent question's `hidden_details` rows and the
+    vault value they hold are still there."""
+    rng = generators.default_rng(2723)
+    mobile = generators.mobile(rng)
+    idea_uuid, meera, kavya = cast["idea"]["id"], cast["meera"]["id"], cast["kavya"]["id"]
+    sent = asking.send_set(
+        db, cast["idea"]["idea_id"], meera,
+        {"questions": [{"part": "who", "text": f"Did the investor on {mobile} call more than once?"}],
+         "time_to_answer": "3d"}, f.at(16, 11, 30),
+    )  # fmt: skip
+    asking.save_answer(db, sent["questions"][0]["id"], kavya, "Yes, three times last week.", at=f.at(16, 12))
+    asking.send_answers(db, sent["id"], kavya, f.at(16, 12, 5))
+    rows = _details(db, idea_uuid, "desk")
+    assert rows and {r["vault_tag"] for r in rows}
+    held = _vault(db, idea_uuid)
+    assert any(_digits(mobile) == _digits(v) for v in held.values())
+    follow_up = {"part": "often", "text": f"How often does {mobile} call in a normal week?"}
+    _save(db, cast, [follow_up], after=str(sent["id"]))
+    _save(db, cast, [], base=1, after=str(sent["id"]))
+    assert _details(db, idea_uuid, "desk") == rows
+    assert _vault(db, idea_uuid) == held
 
 
 @pytest.mark.parametrize("ending", ["save", "send", "decide", "merge"])
