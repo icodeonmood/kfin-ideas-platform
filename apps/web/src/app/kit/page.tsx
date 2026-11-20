@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { isProductionLike } from "@/server/config";
 
 import { KitDemo } from "./kit-demo";
+// The prompt box's own look (lane C's sheet, scoped to .cz), so "+" shows in its real tool row (DEC-124)
+import "../share/compose.css";
 
 export const metadata: Metadata = { title: "Components" };
 export const dynamic = "force-dynamic";
