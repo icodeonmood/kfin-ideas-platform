@@ -3,6 +3,7 @@
  * sharer's Answer screen. Ideas are written straight into this run's database for the seeded sharer, because the
  * share journey is another lane's; everything after that goes through the screens. Synthetic data only.
  */
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { Client } from "pg";
 
@@ -589,6 +590,15 @@ test("BLD-B272, S-R2.panel, J-REVIEW/A1: a queued question is still there after 
   const reviewer = await person(browser, PERSONAS.reviewer);
   const title = `Nominee page goes missing from branch slips (${testInfo.project.name} ${Date.now()})`;
   const ideaId = await sharedIdea(sharer.code, title);
+  const similar = `Branch slips drop the nominee page (${testInfo.project.name} ${Date.now()})`;
+  const similarId = await sharedIdea(sharer.code, similar);
+  await db((c) =>
+    c.query(
+      "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) SELECT a.id, b.id, 'close', " +
+        "'Same branch slip' FROM ideas a, ideas b WHERE a.idea_id = $1 AND b.idea_id = $2",
+      [ideaId, similarId],
+    ),
+  );
   const r = reviewer.page;
   const queueSaved = () =>
     r.waitForResponse(
@@ -598,6 +608,14 @@ test("BLD-B272, S-R2.panel, J-REVIEW/A1: a queued question is still there after 
     );
   await r.goto(`/desk/ideas/${ideaId}`);
   await expect(r.getByRole("heading", { name: "Review this idea" })).toBeVisible();
+
+  // BLD-B273, F-SPACE.targets (WCAG 2.5.8): S-R2's Similar ideas keep every target 24 × 24 px or spaced clear
+  await expect(r.getByRole("button", { name: `Merge with ${similar}` })).toBeAttached();
+  const targets = await new AxeBuilder({ page: r }).include(".ri-sim").withRules(["target-size"]).analyze();
+  expect(
+    targets.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`),
+    "S-R2 Similar ideas, target size",
+  ).toEqual([]);
 
   // Ask about this queues the part's suggestion; the page saves the queue once the changes pause
   const howOften = r.getByRole("region", { name: "How often" });
