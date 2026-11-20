@@ -140,16 +140,19 @@ describe("F-SPACE.targets/2, C-BUTTON.variants (DEC-126): the quiet link is padd
         expect(style(sheet, sel).size, `${sheet} ${sel} outside the touch rule`).toBe(0);
   });
 
-  it("on touch an empty layer reaches 10px past each edge, so the hit area is 24 + 20 = 44px both ways", () => {
+  it("on touch an empty layer reaches 10px past each side and 20px below, never above, so the hit area is 44px both ways and stays off Requested (DEC-126)", () => {
     const quiet = style("offer.css", ".link-quiet");
     expect(style("offer.css", ".link-quiet", COARSE).get("position")).toBe("relative");
     const pad = style("offer.css", ".link-quiet::after", COARSE);
     expect(pad.get("content")).toBe('""');
     expect(pad.get("position")).toBe("absolute");
-    const inset = px(pad.get("inset"));
-    expect(inset).toBeLessThan(0);
-    expect(px(quiet.get("min-height")) - 2 * inset).toBeGreaterThanOrEqual(44);
-    expect(px(quiet.get("min-width")) - 2 * inset).toBeGreaterThanOrEqual(44);
+    // The inset shorthand, expanded as CSS does: 1 to 4 values for top, right, bottom, left.
+    const v = (pad.get("inset") ?? "").trim().split(/\s+/).map(px);
+    const [top, right, bottom, left] = [v[0], v[1] ?? v[0], v[2] ?? v[0], v[3] ?? v[1] ?? v[0]];
+    // "Withdraw" sits 4px under "Requested" (.tu-req gap --sp-4): the layer may not reach up into it.
+    expect(top).toBeGreaterThanOrEqual(-2);
+    expect(px(quiet.get("min-height")) - top - bottom).toBeGreaterThanOrEqual(44);
+    expect(px(quiet.get("min-width")) - left - right).toBeGreaterThanOrEqual(44);
   });
 
   it("the look and the layout do not change on touch: the box keeps its size and the layer draws nothing", () => {
