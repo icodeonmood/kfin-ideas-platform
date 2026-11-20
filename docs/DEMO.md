@@ -31,7 +31,7 @@ If the privacy notice shows first, read it and choose **I have read this — con
 | `SYN-10004` | Manoj Agarwal, Ones Committee | Ones Committee: decisions inside the window (one extended), expired ones and a reversal |
 | `SYN-10005` | Shalini Bose, Ones Committee | Ones Committee, the second member |
 | `SYN-10006` | Kunal Malhotra, admin | Admin (kill switches and roles); the launch screen at `/display/launch`: Full screen, then Start (it plays a sound) |
-| `SYN-10007` | Hyderabad Office Screen | The office screen at `/display/office` (choose Full screen on the screen). It can also open `/display/launch` |
+| `SYN-10007` | Hyderabad Office Screen | The office screen at `/display/office` (choose the Full screen icon button on the screen). It can also open `/display/launch` |
 | `SYN-10008` | Gopal Iyengar, One No. 15 | A build team lead; Your One dashboard |
 | `SYN-10009` | Rekha Saxena, a Founding One (No. 4) | A lead with a team-up request waiting in her Inbox |
 | `SYN-10010` | Varun Chopra, One No. 11 | A shipped fix; Your One dashboard |
