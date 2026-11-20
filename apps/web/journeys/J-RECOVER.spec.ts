@@ -448,6 +448,9 @@ step(
   async ({ page }) => {
     await checkPart(page, "Sorting");
     await page.getByRole("button", { name: "Confirm sorting" }).click();
+    // L-SORT.rules/2: Confirm sorting saves, then moves on by itself. Wait for that move before going to Send it:
+    // a late reply would move the page after the click and replace the Submit button (CI run 44648378064).
+    await expect(page.getByRole("heading", { level: 1, name: "Is it sorted right?" })).toHaveCount(0);
     await page.getByRole("button", { name: /^(?:\d )?Send it\b/ }).click();
     await page.route(SUBMIT, (route) =>
       route.request().method() === "POST"
