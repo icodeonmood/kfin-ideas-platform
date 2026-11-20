@@ -438,6 +438,22 @@ h3 {
   cursor: progress;
 }
 
+/* On touch the quiet link's hit area is padded to 44px (F-SPACE.targets/2, BLD-D018): an empty layer 10px past each
+   side and 20px below its 24px box, never above it. "Withdraw" sits 4px under "Requested" (DEC-126), so a layer that
+   reached up would take taps on the button's bottom edge and withdraw by accident. It takes no room and draws
+   nothing, so the look and the layout stay as they are; with a mouse the target stays the 24px above. */
+@media (pointer: coarse) {
+  .link-quiet {
+    position: relative;
+  }
+
+  .link-quiet::after {
+    content: "";
+    position: absolute;
+    inset: 0 -10px -20px;
+  }
+}
+
 .btn:is(:disabled, [aria-disabled="true"]):not(.btn-quiet),
 :is(.btn-primary, .btn-secondary, .btn-soft):is(:disabled, [aria-disabled="true"]) {
   background: var(--rule2);
