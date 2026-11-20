@@ -17,8 +17,16 @@ import {
  * and a click calls `onDisabledClick` (C-BUTTON.states/4: move focus to the field that blocks it and show its message).
  * Busy swaps the label for the action in progress ("Sending…") with a spinner and ignores further clicks; with a
  * busyLabel both labels share one cell, so the width never changes (C-BUTTON.states/5).
+ *
+ * Inactive is a settled state, not a blocked form (DEC-126, BLD-D019): "Requested" where "Team up" was. Any variant
+ * takes it. It is greyed (`is-inactive`, the disabled look), `aria-disabled` so a screen reader reads it out as its
+ * state, stays focusable so focus can come back to it, and a click does nothing: no `onClick`, no `onDisabledClick`.
+ *
+ * Quiet is the quiet link (DEC-126, BLD-D019): grey meta text, underlined, 4.5:1, a visible focus, a 24px target.
+ * "Withdraw" under "Requested" uses it. `.link-quiet` works on any `<a>` or `<button>`; as a `Button`, busy works
+ * as it does for the others.
  */
-export type ButtonVariant = "primary" | "line" | "soft" | "text" | "text-blue";
+export type ButtonVariant = "primary" | "line" | "soft" | "text" | "text-blue" | "quiet";
 export type ButtonSize = "regular" | "sm" | "full";
 
 export function buttonClass(
@@ -31,9 +39,11 @@ export function buttonClass(
       ? "tb"
       : variant === "text-blue"
         ? "tb blue"
-        : `btn ${variant === "primary" ? "btn-primary" : variant === "line" ? "btn-secondary" : "btn-soft"}`;
+        : variant === "quiet"
+          ? "link-quiet"
+          : `btn ${variant === "primary" ? "btn-primary" : variant === "line" ? "btn-secondary" : "btn-soft"}`;
   const sized =
-    variant === "text" || variant === "text-blue"
+    variant === "text" || variant === "text-blue" || variant === "quiet"
       ? ""
       : size === "sm"
         ? "btn-sm"
@@ -55,6 +65,8 @@ export type ButtonProps = Common &
     /** Shown as aria-disabled; the button stays focusable. */
     disabled?: boolean;
     onDisabledClick?: (e: MouseEvent<HTMLButtonElement>) => void;
+    /** A settled state ("Requested"): greyed, aria-disabled, still focusable; a click does nothing (DEC-126). */
+    inactive?: boolean;
     busy?: boolean;
     /** The action in progress, "Sending…". Defaults to the label. */
     busyLabel?: ReactNode;
@@ -67,6 +79,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     icon,
     disabled,
     onDisabledClick,
+    inactive,
     busy,
     busyLabel,
     className,
@@ -78,18 +91,22 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   },
   ref,
 ) {
-  const blocked = Boolean(disabled || busy);
+  const blocked = Boolean(disabled || busy || inactive);
   return (
     <button
       {...rest}
       ref={ref}
       type={type}
       style={style}
-      className={buttonClass(variant, size, className)}
-      aria-disabled={disabled ? true : undefined}
+      className={buttonClass(
+        variant,
+        size,
+        inactive ? (className ? `is-inactive ${className}` : "is-inactive") : className,
+      )}
+      aria-disabled={disabled || inactive ? true : undefined}
       aria-busy={busy ? true : undefined}
       onClick={(e) => {
-        if (busy) {
+        if (busy || inactive) {
           e.preventDefault();
           return;
         }

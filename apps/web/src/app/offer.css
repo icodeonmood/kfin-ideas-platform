@@ -396,6 +396,48 @@ h3 {
   text-decoration-color: currentColor;
 }
 
+/* The quiet link (DEC-126, BLD-D019): a lesser action under a button, such as "Withdraw" under "Requested". The grey
+   meta words (F-TYPE.scale meta, --mute: 4.5:1 on --paper and on white), underlined in their own colour, a target of
+   at least 24px (WCAG 2.5.8) and the 2px blue focus ring (F-A11Y.rules/2). The same on an <a> and on a <button>;
+   as a Button (variant "quiet") busy works as it does for the others. */
+.link-quiet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--mute);
+  font: 400 13.5px/1.45 var(--ft);
+  letter-spacing: 0.004em;
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.link-quiet:hover {
+  color: var(--ink2);
+  text-decoration-color: currentColor;
+}
+
+.link-quiet:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.link-quiet[aria-busy="true"] {
+  cursor: progress;
+}
+
 .btn:is(:disabled, [aria-disabled="true"]):not(.btn-quiet),
 :is(.btn-primary, .btn-secondary, .btn-soft):is(:disabled, [aria-disabled="true"]) {
   background: var(--rule2);
@@ -404,10 +446,30 @@ h3 {
   cursor: not-allowed;
 }
 
-:is(.btn-quiet, .tb):is(:disabled, [aria-disabled="true"]) {
+:is(.btn-quiet, .tb, .link-quiet):is(:disabled, [aria-disabled="true"]) {
   color: var(--placeholder);
   text-decoration-color: var(--rule2);
   cursor: not-allowed;
+}
+
+/* Inactive (DEC-126, BLD-D019): a settled state, such as "Requested" where "Team up" was, on any variant. The
+   disabled grey (#6B6B70 on --rule2, about 4.2:1, where F-COLOR.contrast/3 asks that it stay legible and DEC-126 asks
+   3:1), with no hover, no press and the plain cursor, since there is nothing left to do here. Button's `inactive`
+   adds the class with aria-disabled, so it is read out as its state and stays focusable. */
+.btn.is-inactive,
+.btn.is-inactive:is(:hover, :active, [aria-disabled="true"]) {
+  background: var(--rule2);
+  color: var(--placeholder);
+  box-shadow: none;
+  cursor: default;
+  transform: none;
+}
+
+:is(.tb, .btn-quiet, .link-quiet).is-inactive,
+:is(.tb, .btn-quiet, .link-quiet).is-inactive:is(:hover, [aria-disabled="true"]) {
+  color: var(--placeholder);
+  text-decoration-color: var(--rule2);
+  cursor: default;
 }
 
 /* Busy (C-BUTTON.states/5, NOT DRAWN default): the action in progress with a 12px spinner; further clicks are ignored */
