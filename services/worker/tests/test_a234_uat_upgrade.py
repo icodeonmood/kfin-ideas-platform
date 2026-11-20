@@ -53,6 +53,9 @@ case "$a" in
   *"tar -C /data -xf -"*) cat > /dev/null ;;
   *"dbmate up"*) touch "$FAKE_STATE/migrated" ;;
   *"dbmate status"*) printf 'Applied: 3\nPending: 0\n' ;;
+  *"bootstrap.synthetic_hr"*) printf 'employee_id,name,email,department,job_title,location,manager_employee_id\nSYN-00001,Synthetic One,one@kfintech.example,Ops,Analyst,Hyderabad,\n' ;;
+  *"identity.hr_import"*) cat > /dev/null; [[ -n "${FAKE_HR_FAIL:-}" ]] && { echo "failed: line 2: synthetic"; exit 1; }; echo "hr import: 1 rows, 1 created, 0 updated, 0 deactivated, 0 unmapped departments, 0 unmapped titles, 0 proposals opened" ;;
+  *"identity.grants grant"*) echo granted ;;
   *"bootstrap.smoke"*) if [[ -n "${FAKE_SMOKE_FAIL:-}" ]]; then echo "smoke: 1 check(s) failed"; exit 1; fi; echo "smoke: all checks passed" ;;
   *) : ;;
 esac
@@ -505,6 +508,89 @@ def test_a234_rehearsal_never_runs_make_and_never_starts_the_dev_stack() -> None
         assert not re.search(r"\bmake\b", code), line
 
 
+def test_a237_rehearsal_refuses_an_app_env_other_than_uat_or_prod(tmp_path: Path) -> None:
+    work = tmp_path / "w"
+    env = _env(
+        tmp_path, FROM="launch-2026-11-20-r3", REHEARSE_APP_ENV="dev", UPGRADE_REHEARSAL_WORK=str(work)
+    )
+    run = _run(["bash", str(REHEARSE)], env)
+    assert run.returncode == 1
+    assert "REHEARSE_APP_ENV must be uat (the default) or prod, not dev" in run.stderr
+    assert not work.exists() and not any(" compose " in c or "worktree" in c for c in _calls(tmp_path))
+
+
+def test_a237_rehearsal_in_prod_imports_synthetic_people_and_grants_before_the_upgrade(
+    tmp_path: Path,
+) -> None:
+    """BLD-A237: FROM installs in production mode; the synthetic HR file goes in through stdin, then the first admin
+    and core_committee, then the smoke checks without --fresh, all before the upgrade's first migration."""
+    work = tmp_path / "w"
+    env = _env(
+        tmp_path,
+        FROM="launch-2026-11-20-r3",
+        REHEARSE_APP_ENV="prod",
+        UPGRADE_REHEARSAL_WORK=str(work),
+        KEEP="1",
+    )
+    shutil.rmtree(tmp_path / "data")
+    run = _run(["bash", str(REHEARSE)], env)
+    out = run.stdout
+    assert run.returncode == 0, out + run.stderr
+    assert "== Summary (upgrade rehearsal, APP_ENV=prod)" in out
+    for phase in ("install-from", "people-prod", "upgrade", "rollback", "upgrade-again"):
+        assert re.search(rf"^{phase}\s+PASS\s+smoke: all checks passed", out, re.M), out
+    assert "APP_ENV=prod\n" in (work / "app.env").read_text()
+    calls = _calls(tmp_path)
+    worker = "kfin-ideas-uat-rehearsal-worker-1"
+    gen = _first(calls, "bootstrap.synthetic_hr --count 20")
+    assert (
+        "-p kfin-ideas-uat-rehearsal " in calls[gen]
+        and f"-v {work}/from/eval/golden:/app/eval/golden:ro" in calls[gen]
+    )
+    imp = _first(calls, f"docker exec -i {worker} python -m identity.hr_import -")
+    admin = _first(
+        calls, f"docker exec {worker} python -m identity.grants grant --employee-id SYN-00001 --role admin"
+    )
+    core = _first(
+        calls,
+        f"docker exec {worker} python -m identity.grants grant --employee-id SYN-00002 --role core_committee",
+    )
+    smoke = next(
+        i
+        for i, c in enumerate(calls)
+        if c == f"docker exec {worker} python -m bootstrap.smoke --web-url http://web:3000"
+    )
+    assert gen < imp < admin < core < smoke < _first(calls, "dbmate up")
+    assert oct((work / "hr-synthetic.csv").stat().st_mode & 0o777) == "0o600"
+    assert not (tmp_path / "calls.log.make").exists()
+    _only_rehearsal_targets(calls, work)
+
+
+def test_a237_rehearsal_in_prod_stops_before_the_upgrade_when_the_import_fails_and_tears_down(
+    tmp_path: Path,
+) -> None:
+    work = tmp_path / "w"
+    env = _env(
+        tmp_path,
+        FROM="launch-2026-11-20-r3",
+        REHEARSE_APP_ENV="prod",
+        UPGRADE_REHEARSAL_WORK=str(work),
+        FAKE_HR_FAIL="1",
+    )
+    run = _run(["bash", str(REHEARSE)], env)
+    out = run.stdout
+    assert run.returncode != 0
+    assert "STOPPED: the HR import" in out
+    assert re.search(r"^people-prod\s+FAIL", out, re.M), out
+    calls = _calls(tmp_path)
+    assert not any("dbmate up" in c or "identity.grants" in c for c in calls)
+    assert any(
+        "-p kfin-ideas-uat-rehearsal" in c and "down -v --rmi local --remove-orphans" in c for c in calls
+    )
+    assert f"git worktree remove {work}/from" in calls and not work.exists()
+    _only_rehearsal_targets(calls, work)
+
+
 # ---- the scripts themselves ----------------------------------------------------------------------------------------
 
 
@@ -545,11 +631,11 @@ def test_a234_makefile_targets_and_the_runbook_section() -> None:
     make = (helpers.ROOT / "Makefile").read_text("utf-8")
     assert 'FROM="$(FROM)" scripts/uat/upgrade.sh "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"' in make
     assert 'scripts/uat/rollback.sh "$(BACKUP)" "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"' in make
-    assert 'FROM="$(FROM)" scripts/uat/rehearse-upgrade.sh' in make
+    assert 'FROM="$(FROM)" REHEARSE_APP_ENV="$(REHEARSE_APP_ENV)" scripts/uat/rehearse-upgrade.sh' in make
     doc = (helpers.ROOT / "docs" / "UAT.md").read_text("utf-8")
     section = doc.split("## Updating the live server (upgrade and rollback)", 1)[1]
     for words in (
-        "FROM=launch-2026-11-20-r2",
+        "FROM=launch-2026-11-20-r3",
         "make uat-upgrade",
         "make uat-rollback",
         "never changes a kill switch",

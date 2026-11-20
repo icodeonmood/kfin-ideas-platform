@@ -4,6 +4,11 @@
 # project (kfin-ideas-uat-rehearsal), everything torn down at the end, even on failure (KEEP=1 skips the teardown).
 #
 #   FROM=<tag or sha> scripts/uat/rehearse-upgrade.sh        # or: make uat-rehearsal-upgrade FROM=<ref>
+#   REHEARSE_APP_ENV=prod FROM=launch-2026-11-20-r3 scripts/uat/rehearse-upgrade.sh
+#
+# REHEARSE_APP_ENV=prod (BLD-A237) rehearses the launch server: FROM is installed in production mode (no people), then
+# the steps after the install in docs/UAT.md run on a SYNTHETIC HR file of 20 (import through stdin, the first admin,
+# core_committee for one member, the smoke checks without --fresh) before the upgrade. The default stays uat.
 #
 # It never starts or stops the dev stack: stop it first from the main checkout (`make down`), and start it again
 # from there afterwards (`make up`). It refuses while the dev stack runs.
@@ -14,10 +19,13 @@ cd "$ROOT"
 WORK="${UPGRADE_REHEARSAL_WORK:-$ROOT/.data-uat-upgrade-rehearsal}"   # the tests point it at a temporary folder
 PROJECT=kfin-ideas-uat-rehearsal
 DEV_PROJECT=kfin-ideas
+REHEARSE_APP_ENV="${REHEARSE_APP_ENV:-uat}"
 fail() { printf 'STOPPED: %s\n' "$*" >&2; exit 1; }
 running() { docker ps -q --filter "label=com.docker.compose.project=$1"; }
 
 [[ "$PROJECT" != "$DEV_PROJECT" ]] || fail "the rehearsal never uses the dev stack's project"
+[[ "$REHEARSE_APP_ENV" == "uat" || "$REHEARSE_APP_ENV" == "prod" ]] \
+  || fail "REHEARSE_APP_ENV must be uat (the default) or prod, not $REHEARSE_APP_ENV"
 [[ -n "${FROM:-}" ]] || fail "say which version to install first: FROM=<tag or sha>, for example FROM=launch-2026-11-20-r2"
 if [[ -n "$(running "$DEV_PROJECT")" ]]; then
   echo "stop the dev stack first from the main checkout: make down"
@@ -46,7 +54,7 @@ run_phase() {  # <name> <command…>: its output to the screen and $WORK/<name>.
 cleanup() {
   local status=$?
   set +e   # the teardown always runs to its end, whatever fails in it
-  printf '\n== Summary (upgrade rehearsal)\nFROM %s (%s)\nTO   %s\n' "$FROM_SHA" "$FROM" "$TO_SHA"
+  printf '\n== Summary (upgrade rehearsal, APP_ENV=%s)\nFROM %s (%s)\nTO   %s\n' "$REHEARSE_APP_ENV" "$FROM_SHA" "$FROM" "$TO_SHA"
   local rec
   rec="$(ls "$WORK"/data/ops/upgrade-*.json 2>/dev/null | head -1 || true)"
   if [[ -n "$rec" ]]; then
@@ -84,7 +92,7 @@ FROM_NOTICE="$(notice_of "$FROM_SHA")"
 TO_NOTICE="$(notice_of "$TO_SHA")"
 # As rehearse.sh: synthetic and random, LLM_MODE=fake, a throwaway Sarvam key in the database env file only.
 cat > "$WORK/app.env" <<ENV
-APP_ENV=uat
+APP_ENV=$REHEARSE_APP_ENV
 APP_BASE_URL=http://localhost:${UAT_WEB_PORT:-3100}
 INTERNAL_API_TOKEN=$(rand)
 SESSION_SECRET=$(rand)
@@ -123,10 +131,33 @@ set_notice() {
   chmod 600 "$WORK/app.env"
 }
 
+# Production mode (BLD-A237): what IT does on the launch server after the install and before its first upgrade
+# (docs/UAT.md After the deploy, 1b, 1c, 2 and 2b), in FROM's running worker, on synthetic people only
+# (@kfintech.example). Nobody can sign in here, so 1a and 1d are left out (the import creates the rows), and Ones
+# Committee, which only the Admin page gives, is not rehearsed. Each step stops the phase if it fails.
+people_prod() {
+  local worker="$PROJECT-worker-1"
+  (cd "$WORK/from" && umask 077 && UAT_APP_ENV_FILE="$WORK/app.env" UAT_DATA_DIR="$WORK/data" docker compose \
+    -p "$PROJECT" -f infra/docker-compose.yml -f infra/uat/compose.uat.yml --project-directory . \
+    --env-file "$WORK/app.env" --env-file "$WORK/db.env" \
+    run --rm -T -v "$WORK/from/eval/golden:/app/eval/golden:ro" worker python -m bootstrap.synthetic_hr --count 20 \
+    > "$WORK/hr-synthetic.csv") || { echo "STOPPED: the synthetic HR file was not written"; return 1; }
+  [[ -s "$WORK/hr-synthetic.csv" ]] || { echo "STOPPED: the synthetic HR file is empty"; return 1; }
+  docker exec -i "$worker" python -m identity.hr_import - < "$WORK/hr-synthetic.csv" \
+    || { echo "STOPPED: the HR import"; return 1; }
+  docker exec "$worker" python -m identity.grants grant --employee-id SYN-00001 --role admin \
+    --reason "Rehearsal: first admin from the synthetic HR file" --actor ops:rehearsal \
+    || { echo "STOPPED: the admin grant"; return 1; }
+  docker exec "$worker" python -m identity.grants grant --employee-id SYN-00002 --role core_committee \
+    --reason "Rehearsal: a Ones Committee member at launch (DEC-121)" --actor ops:rehearsal \
+    || { echo "STOPPED: the core_committee grant"; return 1; }
+  docker exec "$worker" python -m bootstrap.smoke --web-url http://web:3000
+}
 
 git worktree add --detach "$WORK/from" "$FROM_SHA"
 export UAT_PROJECT="$PROJECT" UAT_DATA_DIR="$WORK/data"
 run_phase install-from bash -c 'cd "$1" && bash scripts/uat/deploy.sh "$2" "$3"' _ "$WORK/from" "$WORK/app.env" "$WORK/db.env"
+[[ "$REHEARSE_APP_ENV" != "prod" ]] || run_phase people-prod people_prod
 set_notice "$TO_NOTICE"
 run_phase upgrade env FROM="$FROM_SHA" "$ROOT/scripts/uat/upgrade.sh" "$WORK/app.env" "$WORK/db.env"
 BACKUP="$(ls -t "$WORK"/data/backups/*.dump | head -1)"

@@ -135,5 +135,5 @@ uat-upgrade: ## Update a running install to this checkout: make uat-upgrade APP_
 uat-rollback: ## Put an install back to an upgrade's backup: make uat-rollback BACKUP=<dump> APP_ENV_FILE=… DB_ENV_FILE=…
 	scripts/uat/rollback.sh "$(BACKUP)" "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"
 
-uat-rehearsal-upgrade: ## Rehearse install FROM, upgrade, rollback, upgrade; stop the dev stack first: make uat-rehearsal-upgrade FROM=<ref>
-	FROM="$(FROM)" scripts/uat/rehearse-upgrade.sh
+uat-rehearsal-upgrade: ## Rehearse install FROM, upgrade, rollback, upgrade; stop the dev stack first: make uat-rehearsal-upgrade FROM=<ref> [REHEARSE_APP_ENV=prod]
+	FROM="$(FROM)" REHEARSE_APP_ENV="$(REHEARSE_APP_ENV)" scripts/uat/rehearse-upgrade.sh
