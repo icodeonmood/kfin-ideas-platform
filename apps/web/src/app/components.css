@@ -2011,7 +2011,8 @@ textarea:is(.fld, .textarea) {
 }
 
 /* The media block: the tier ring blurred low on the right, the key colour blurred high on the left. The top padding
-   keeps the tags clear of the figure when the block is at its smallest */
+   keeps the tags clear of the figure when the block is at its smallest. The ring's glow is at 55% (the board: 62%),
+   so the 44px figure holds 3:1 over any tier's brightest stop with no help from the scrim below */
 .opost-m {
   position: relative;
   isolation: isolate;
@@ -2043,7 +2044,7 @@ textarea:is(.fld, .textarea) {
   height: 240px;
   background: var(--opost-ring, var(--heat));
   filter: blur(34px);
-  opacity: 0.62;
+  opacity: 0.55;
 }
 
 .opost-m::after {
@@ -2079,24 +2080,34 @@ textarea:is(.fld, .textarea) {
   color: #8df3c1;
 }
 
-/* The figure and its unit line sit over the tier ring's glow: a dark halo keeps them readable over the lightest
-   tiers (F-COLOR.contrast/1, measured against the glow's brightest) */
+/* The figure and its unit line sit on a scrim, above the glows and under the text: a 35% black floor from the
+   block's foot to the top of the unit line (86px is the scrim's 40px top, the phone's 40px figure and the 6px gap),
+   then fading out over the figure, so the glows stay as drawn in the block's upper half. Measured for every tier
+   against its ring's brightest stop at full glow (c-ones-fan.test.ts): the unit line at the board's 82% white
+   holds 4.5:1 and the figure 3:1 (F-COLOR.contrast/1, WCAG 1.4.3) */
+.opost-fig {
+  margin: -40px -18px -18px;
+  padding: 40px 18px 18px;
+  background: linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.35),
+    rgba(0, 0, 0, 0.35) calc(100% - 86px),
+    rgba(0, 0, 0, 0)
+  );
+}
+
 .opost-big {
   margin: 0;
   color: #ffffff;
   font: 600 44px/1 var(--fd);
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
-  text-shadow: 0 0 18px rgba(0, 0, 0, 0.35);
 }
 
 .opost-unit {
   margin: 6px 0 0;
-  color: #ffffff;
+  color: rgba(255, 255, 255, 0.82);
   font: 500 14px/1.35 var(--ft);
-  text-shadow:
-    0 0 2px rgba(0, 0, 0, 0.6),
-    0 0 10px rgba(0, 0, 0, 0.5);
 }
 
 /* The two pills keep their size; on a narrow card or with larger text, Read the thread drops under Cheer */

@@ -66,19 +66,27 @@ export function OnesFan({
   const [at, setAt] = useState(0);
   const [spread, setSpread] = useState(false);
   const view = useRef<HTMLDivElement>(null);
+  const side = useRef<HTMLDivElement>(null);
   const next = useRef<HTMLButtonElement>(null);
   const focusNext = useRef(false);
   const lastWheel = useRef(0);
   const swipe = useRef<{ x: number; y: number } | null>(null);
   const cur = Math.min(at, Math.max(count - 1, 0));
 
+  // Spreading takes the side panel away. Whatever spreads it (See details, an arrow key, the wheel or a swipe), if
+  // focus was in the panel it moves on to Next rather than dropping to the page (WCAG 2.4.3).
+  const spreadOut = useCallback(() => {
+    if (side.current && side.current.contains(document.activeElement)) focusNext.current = true;
+    setSpread(true);
+  }, []);
+
   const go = useCallback(
     (to: number) => {
       if (count < 2) return;
-      setSpread(true);
+      spreadOut();
       setAt(Math.min(Math.max(to, 0), count - 1));
     },
-    [count],
+    [count, spreadOut],
   );
 
   // The wheel steps one card per gesture while there is a card to go to; otherwise the page scrolls on.
@@ -92,7 +100,7 @@ export function OnesFan({
       if (!spread) {
         if (!forward) return;
         e.preventDefault();
-        setSpread(true);
+        spreadOut();
         lastWheel.current = Date.now();
         return;
       }
@@ -105,9 +113,9 @@ export function OnesFan({
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [cur, count, spread]);
+  }, [cur, count, spread, spreadOut]);
 
-  // See details spreads the fan and its side panel goes, so focus moves on to Next rather than to the page.
+  // Once spread, focus that was in the side panel (or on See details) moves on to Next.
   useEffect(() => {
     if (spread && focusNext.current) {
       focusNext.current = false;
@@ -156,8 +164,8 @@ export function OnesFan({
         <div
           ref={view}
           className="fan-view"
-          onFocusCapture={several ? () => setSpread(true) : undefined}
-          onClick={several ? () => setSpread(true) : undefined}
+          onFocusCapture={several ? spreadOut : undefined}
+          onClick={several ? spreadOut : undefined}
           onPointerDown={(e) => {
             swipe.current = { x: e.clientX, y: e.clientY };
           }}
@@ -194,7 +202,7 @@ export function OnesFan({
           </div>
         </div>
         {several && !spread ? (
-          <div className="fan-side">
+          <div ref={side} className="fan-side">
             <p className="fan-side-t">{ONES_FAN_COPY.side(count, people ?? count)}</p>
             <p className="fan-side-p">{ONES_FAN_COPY.sideBody}</p>
             <button type="button" className="opost-pill fan-side-b" onClick={open}>
@@ -342,8 +350,10 @@ export function OnesPost({
           <span className="opost-tag ok">{ONES_FAN_COPY.shipped}</span>
           {adopted ? <span className="opost-tag">{adopted}</span> : null}
         </span>
-        <p className="opost-big num">{figure}</p>
-        <p className="opost-unit">{unit}</p>
+        <div className="opost-fig">
+          <p className="opost-big num">{figure}</p>
+          <p className="opost-unit">{unit}</p>
+        </div>
       </div>
       <footer className="opost-f">
         {onCheer ? (

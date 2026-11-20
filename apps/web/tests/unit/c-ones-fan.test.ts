@@ -239,6 +239,48 @@ describe("C-ONES-FAN.states: none, one with the companion card, several stacked 
       "fan-card far",
     ]);
   });
+
+  it("C-ONES-FAN.behaviour/3, WCAG 2.4.3: with focus on See details, → spreads the fan and focus moves on to Next, not to the page", () => {
+    const region = fan(4)!;
+    const see = region.querySelector<HTMLButtonElement>(".fan-side button")!;
+    act(() => see.focus());
+    expect(document.activeElement).toBe(see);
+    act(() => {
+      see.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+    });
+    expect(region.className).toBe("fan several spread");
+    expect(region.querySelector(".fan-side")).toBeNull();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Next post");
+    expect(position()).toBe("Post 2 of 4");
+  });
+
+  it("C-ONES-FAN.behaviour/4, WCAG 2.4.3: with focus on See details, a wheel step over the cards spreads the fan and focus moves on to Next", () => {
+    const region = fan(4)!;
+    const see = region.querySelector<HTMLButtonElement>(".fan-side button")!;
+    act(() => see.focus());
+    const step = new WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true });
+    act(() => {
+      region.querySelector("article")!.dispatchEvent(step);
+    });
+    expect(step.defaultPrevented).toBe(true); // the first step spreads the fan and keeps the page still
+    expect(region.className).toBe("fan several spread");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Next post");
+    expect(position()).toBe("Post 1 of 4");
+  });
+
+  it("C-ONES-FAN.behaviour/3: a spread that starts outside the side panel leaves focus where it is", () => {
+    const region = fan(4)!;
+    const prev = region.querySelector<HTMLButtonElement>('button[aria-label="Previous post"]')!;
+    act(() => prev.focus());
+    act(() => {
+      prev.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+      );
+    });
+    expect(region.className).toBe("fan several spread");
+    expect(document.activeElement).toBe(prev);
+    expect(position()).toBe("Post 2 of 4");
+  });
 });
 
 // =================================================================================================================
@@ -336,6 +378,48 @@ describe("F-COLOR.contrast/1: the board's greys and the cheer's colours, measure
     expect(contrast("#ff9a6e", over(spark, 0.2, SLAB))).toBeGreaterThanOrEqual(4.5);
     expect(contrast("#8df3c1", over("#4dd187", 0.18, SLAB))).toBeGreaterThanOrEqual(4.5);
   });
+
+  it("F-COLOR.contrast/1, WCAG 1.4.3: over every tier's ring glow at its brightest stop, the unit line holds 4.5:1 on the scrim and the 44px figure 3:1 without it", () => {
+    // Everything read from the sheet and the tokens: the glow's opacity, the block's brighter white stop over the
+    // slab, the scrim's floor and how far up it reaches, the unit line's white and the figure's
+    const glow = Number(decl(components, ".opost-m::before", "opacity"));
+    const lift = Math.max(
+      ...[...decl(components, ".opost-m", "background")!.matchAll(/rgba\(255, 255, 255, ([\d.]+)\)/g)].map(
+        (m) => Number(m[1]),
+      ),
+    );
+    const base = over("#ffffff", lift, SLAB);
+    const scrim = decl(components, ".opost-fig", "background")!;
+    const floor = Number(/rgba\(0, 0, 0, ([\d.]+)\)/.exec(scrim)![1]);
+    const unitWhite = Number(
+      /rgba\(255, 255, 255, ([\d.]+)\)/.exec(decl(components, ".opost-unit", "color")!)![1],
+    );
+    expect(decl(components, ".opost-big", "color")).toBe("#ffffff");
+    expect([glow, lift, floor, unitWhite].every((v) => v > 0 && v < 1)).toBe(true);
+    // The floor runs from the block's foot to the top of the unit line, at the laptop's figure and the phone's
+    const fade = Number(/calc\(100% - (\d+)px\)/.exec(scrim)![1]);
+    const top = parseFloat(decl(components, ".opost-fig", "padding")!);
+    const gap = parseFloat(decl(components, ".opost-unit", "margin")!);
+    const [, laptop, lineHeight] = /(\d+)px\/([\d.]+)/.exec(decl(components, ".opost-big", "font")!)!;
+    const phone = parseFloat(decl(components, ".opost-big", "font-size", "@media (max-width: 640px)")!);
+    expect(fade).toBeLessThanOrEqual(top + Math.min(Number(laptop), phone) * Number(lineHeight) + gap);
+    for (let n = 1; n <= 7; n++) {
+      const stops = [
+        ...new RegExp(`--tier-${n}-ring:([^;]+);`).exec(tokens)![1]!.matchAll(/#[0-9A-Fa-f]{6}/g),
+      ].map((m) => m[0]);
+      const brightest = stops.reduce((a, b) => (luminance(b) > luminance(a) ? b : a));
+      const lit = over(brightest, glow, base);
+      expect(contrast("#ffffff", lit), `tier ${n}: the figure`).toBeGreaterThanOrEqual(3);
+      const under = over("#000000", floor, lit);
+      expect(
+        contrast(over("#ffffff", unitWhite, under), under),
+        `tier ${n}: the unit line`,
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+    // No text-shadow stands in for contrast
+    expect(decl(components, ".opost-unit", "text-shadow")).toBeUndefined();
+    expect(decl(components, ".opost-big", "text-shadow")).toBeUndefined();
+  });
 });
 
 // =================================================================================================================
@@ -354,12 +438,39 @@ describe("F-A11Y: every target is 44px or more and is named by its visible words
     expect(host.querySelector(".fan-side button")!.classList.contains("opost-pill")).toBe(true);
   });
 
-  it("F-A11Y: names start with the visible words; only the icon buttons carry a label", () => {
+  it("F-A11Y, WCAG 2.5.3: every control's name starts with its visible words; Cheer, whose visible text is its count, is named as Home.md has it", () => {
+    const visible = (el: Element) => {
+      const shown = el.cloneNode(true) as Element;
+      shown.querySelectorAll(".vh, svg").forEach((n) => n.remove());
+      return words(shown);
+    };
+    const names: string[] = [];
+    for (const count of [1, 3]) {
+      fan(count);
+      for (const el of host.querySelectorAll("a, button")) {
+        const seen = visible(el);
+        const name = el.getAttribute("aria-label") ?? words(el);
+        names.push(name);
+        if (el.classList.contains("opost-cheer"))
+          expect(name).toMatch(new RegExp(`^Cheer .+\u2019s fix, ${seen} cheers?$`)); // "Cheer Rohit Menon’s fix, 214 cheers"
+        else if (seen === "")
+          expect(el.getAttribute("aria-label"), el.outerHTML).toBeTruthy(); // an icon alone
+        else expect(name.startsWith(seen), `"${name}" starts with "${seen}"`).toBe(true);
+      }
+    }
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "See details",
+        "Previous post",
+        "Next post",
+        "Share a problem",
+        "Read the thread 18",
+      ]),
+    );
+    // Only the two icon buttons carry a label
     fan(3);
-    const named = [...host.querySelectorAll("a, button")].filter((el) => el.hasAttribute("aria-label"));
-    expect(named.map((el) => el.getAttribute("aria-label"))).toEqual(["Previous post", "Next post"]);
-    expect(words(host.querySelector(".fan-side button"))).toBe("See details");
-    expect(words(host.querySelector(".opost-t"))).toMatch(/^Read the thread \d+$/);
+    const labelled = [...host.querySelectorAll("a, button")].filter((el) => el.hasAttribute("aria-label"));
+    expect(labelled.map((el) => el.getAttribute("aria-label"))).toEqual(["Previous post", "Next post"]);
   });
 
   it("F-A11Y.rules/4: pressed is more than colour, the heart fills in; on the slab focus is the light blue", () => {
