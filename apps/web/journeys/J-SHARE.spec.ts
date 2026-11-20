@@ -710,7 +710,9 @@ step(
     await expect(boxRow(page, name).getByText(FOUND_LINE)).toBeVisible();
 
     // Remove takes it out of the box and off the draft.
-    await boxRow(page, name).getByRole("button", { name: `Remove ${name}` }).click();
+    await boxRow(page, name)
+      .getByRole("button", { name: `Remove ${name}` })
+      .click();
     await expect(boxRow(page, name)).toHaveCount(0);
     await page.reload();
     await expect(page.getByText(words).first()).toBeVisible();
