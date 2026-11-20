@@ -1,8 +1,10 @@
 /**
- * The 1% Club mark, "Spark" (docs/BRAND.md section 4, DEC-029 and DEC-052): the % sign with its slash drawn as a
- * rising spark. The zeros take the surrounding text colour (currentColor), so the same mark works on Zed and on
- * white; the slash and dot are always spark (#F46835, F-ICONS.mark: rings stroke 14, dot r9). Below 32 px tall the small
- * cut is used: heavier zeros, no ember (kept until the product lead confirms dropping it).
+ * The 1% Club mark, "Spark" (F-ICONS.mark; docs/BRAND.md section 4, DEC-029 and DEC-052): the % sign with its slash
+ * drawn as a rising spark. The pack draws one mark and this draws it at every size, 22px tall in the sidebar
+ * as on Landing: rings r34 at stroke 14, the slash polygon 34,236 146.9,27.2 169.1,40.8 and the ember dot r9 at
+ * 171.6,11.8 (F-ICONS.mark/6: "Do not redraw…"; BLD-D022 dropped the small cut). The rings take the surrounding
+ * text colour (currentColor), so the same mark works on ink and on white (F-ICONS.mark/3); the slash and dot are
+ * always spark (#F46835). The favicon (`app/icon*`) and the email marks keep their own drawing.
  *
  * The parts carry classes (mark-zero, mark-spark, mark-ember) so a brand page can animate the spark rising; the
  * geometry and colours never change (BRAND.md section 4).
@@ -22,7 +24,6 @@ export function SparkMark({
   className?: string;
 }) {
   const width = Math.round((height * 200) / 240);
-  const small = height < 32;
   const a11y = label ? { role: "img", "aria-label": label } : { "aria-hidden": true as const };
   return (
     <svg
@@ -33,36 +34,26 @@ export function SparkMark({
       focusable="false"
       {...a11y}
     >
-      {small ? (
-        <>
-          <circle cx="52" cy="58" r="32" fill="none" stroke="currentColor" strokeWidth="24" />
-          <circle cx="148" cy="184" r="32" fill="none" stroke="currentColor" strokeWidth="24" />
-          <polygon points="34,236 141,23.5 175,44.5" fill={SPARK} />
-        </>
-      ) : (
-        <>
-          <circle
-            className="mark-zero"
-            cx="52"
-            cy="58"
-            r="34"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="14"
-          />
-          <circle
-            className="mark-zero"
-            cx="148"
-            cy="184"
-            r="34"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="14"
-          />
-          <polygon className="mark-spark" points="34,236 146.9,27.2 169.1,40.8" fill={SPARK} />
-          <circle className="mark-ember" cx="171.6" cy="11.8" r="9" fill={SPARK} />
-        </>
-      )}
+      <circle
+        className="mark-zero"
+        cx="52"
+        cy="58"
+        r="34"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="14"
+      />
+      <circle
+        className="mark-zero"
+        cx="148"
+        cy="184"
+        r="34"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="14"
+      />
+      <polygon className="mark-spark" points="34,236 146.9,27.2 169.1,40.8" fill={SPARK} />
+      <circle className="mark-ember" cx="171.6" cy="11.8" r="9" fill={SPARK} />
     </svg>
   );
 }
