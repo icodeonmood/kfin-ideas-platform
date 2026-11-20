@@ -751,7 +751,8 @@ def _own_receipts(conn: Conn, idea_uuid: str, messages: list[dict[str, Any]]) ->
 def _files(conn: Conn, idea_uuid: str, owner: Owner) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT id, kind, name, mime, bytes, pages, item_count, file_state, state, hidden_note, link_scope, "
-        "message_id, created_at FROM attachments WHERE idea_uuid = %s AND parent_id IS NULL ORDER BY created_at",
+        "message_id, created_at FROM attachments WHERE idea_uuid = %s AND parent_id IS NULL "
+        "AND purpose = 'idea' AND conversation_entry_id IS NULL ORDER BY created_at",  # never a conversation file
         (idea_uuid,),
     ).fetchall()
     out = []

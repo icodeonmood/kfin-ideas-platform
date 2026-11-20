@@ -29,8 +29,14 @@ Who sees and opens what (DEC-107, P-PRODUCT.privacy; the coordinator's rule of 1
 - the person who added it: the row in every state; opens it once checked or found;
 - checked, hidden_checked and ok: the idea's sharers, its crew, the review desk and the Ones Committee;
 - personal_data_found: the review desk and the Ones Committee as well, never the crew or a co-sharer;
+- a conversation file (`purpose = 'conversation'`, the "+" in S-08's box, DEC-124) with a customer detail found also
+  opens for the idea's own sharer, so it opens for the sharer, the desk and the committee (DEC-107; BLD-C216);
 - a draft's files, and a draft answer's: only the person who added them;
 - everyone else: not found.
+
+A file's `purpose` is `idea` (Proof, the edit page, an answer) or `conversation` (BLD-C216). Every reader of an idea's
+own files reads `purpose = 'idea' AND conversation_entry_id IS NULL` (`IDEA_OWN`), so a conversation file never
+shows among them. A conversation file still not on an entry a day after it was added is removed by the sweep.
 Logs, errors and audit carry IDs, states and kinds only (non-negotiable 3).
 """
 
@@ -66,6 +72,11 @@ OCR_TIMEOUT_S = 240.0
 CHECKING = "checking"
 VIEWABLE: tuple[str, ...] = ("checked", "hidden_checked", CUSTOMER_DETAIL)  # a stored copy that can be opened
 FINAL_FAILED = ("infected", "locked", "too_big", "upload_failed")
+IDEA, CONVERSATION = "idea", "conversation"  # attachments.purpose (BLD-C216)
+# The idea's own files: never one added for the conversation, sent or not (both conditions, so a row that is half
+# one and half the other is never shown as the idea's). Callers prefix the columns when they join.
+IDEA_OWN = "purpose = 'idea' AND conversation_entry_id IS NULL"
+UNSENT_CONVERSATION_HOURS = 24  # a conversation file not on an entry after this long is removed (BLD-C216)
 
 MIME = {
     "pdf": "application/pdf",
@@ -167,15 +178,19 @@ class Viewer:
     sharer: bool = False  # a credited sharer of the idea (`own_codes`)
     crew: bool = False  # on the idea's crew
     desk: bool = False  # the review desk or the Ones Committee (`desk.store.READERS`)
+    lead: bool = False  # the idea's own sharer (its contributor), not a co-sharer from a merge
 
 
-def rights(state: str, kind: str, *, draft: bool, answer_unsent: bool, viewer: Viewer) -> tuple[bool, bool]:
-    """(sees the row, opens the file). Pure, so every row of the rule has its own unit test."""
+def rights(
+    state: str, kind: str, *, draft: bool, answer_unsent: bool, viewer: Viewer, conversation: bool = False
+) -> tuple[bool, bool]:
+    """(sees the row, opens the file). Pure, so every row of the rule has its own unit test. A conversation file
+    with a customer detail found opens for the idea's own sharer as it does for the desk (DEC-107, BLD-C216)."""
     if viewer.uploader:
         see = True
     elif draft or answer_unsent:
         see = False  # a draft's files, and a draft answer's, stay with the person who added them
-    elif viewer.desk:
+    elif viewer.desk or (conversation and viewer.lead):
         see = state in DESK_SEES
     elif viewer.sharer or viewer.crew:
         see = state in FILES_CHECKED
@@ -236,7 +251,10 @@ def _viewer(conn: Conn, row: dict[str, Any], user_id: str) -> Viewer:
         ).fetchone()
         is not None
     )
-    return Viewer(uploader=uploader, sharer=sharer, crew=crew, desk=has_role(conn, user_id, READERS))
+    lead = code is not None and code == row["idea_code"]
+    return Viewer(
+        uploader=uploader, sharer=sharer, crew=crew, desk=has_role(conn, user_id, READERS), lead=lead
+    )
 
 
 def _rights(conn: Conn, row: dict[str, Any], user_id: str) -> tuple[Viewer, bool, bool]:
@@ -244,6 +262,7 @@ def _rights(conn: Conn, row: dict[str, Any], user_id: str) -> tuple[Viewer, bool
     see, opens = rights(
         effective_state(row), str(row.get("kind") or "file"), draft=row["idea_status"] == "draft",
         answer_unsent=row.get("answer_id") is not None and row.get("answer_sent_at") is None, viewer=v,
+        conversation=row.get("purpose") == CONVERSATION,
     )  # fmt: skip
     return v, see, opens
 
@@ -336,7 +355,11 @@ def items_for(
 ) -> list[dict[str, Any]]:
     """The files and links on an idea (or one answer) that this person may see, oldest first: for the draft and
     the edit page (S-05, S-06B), which list them in `Draft.files` and `Idea.files`."""
-    sql = _ROW.replace("WHERE a.id = %s", "WHERE a.idea_uuid = %s AND a.kind IN ('file', 'link')")
+    sql = _ROW.replace(
+        "WHERE a.id = %s",
+        "WHERE a.idea_uuid = %s AND a.kind IN ('file', 'link') "
+        "AND a.purpose = 'idea' AND a.conversation_entry_id IS NULL",  # never a conversation file (BLD-C216)
+    )
     args: list[Any] = [idea_uuid]
     if answer_id is not None:
         sql += " AND a.answer_id = %s"
@@ -369,21 +392,73 @@ def _is_uuid(value: object) -> bool:
     return True
 
 
+def purpose_of(given: str | None, *, idea_id: str | None) -> str:
+    """`for` on `POST /files` (DEC-124, BLD-C216): absent, the file is the idea's own; "conversation" is the "+" in
+    the conversation's box and needs `idea_id`. Any other value, or "conversation" without an idea: 422."""
+    if given is None:
+        return IDEA
+    if given != CONVERSATION:
+        raise FileRefused(422, "for_invalid", "", field="for")
+    if not idea_id:
+        raise FileRefused(422, "target_required", "", field="idea_id")
+    return CONVERSATION
+
+
+def _conversation_owner(conn: Conn, user_id: str, code: str, idea_id: str) -> Owner:
+    """A file for the conversation of a shared idea: only a reader lane F lets attach (`convo.access.reader`'s
+    `may_attach`: the sharer, the review desk and the Ones Committee). Anyone who may not read the conversation, or
+    may read it without attaching, finds nothing there (404, never 403), so the answer never says the idea exists;
+    a withdrawn or merged idea, to someone who may attach, is closed (409)."""
+    from convo import access
+    from convo.store import Refused
+
+    column = "idea_id" if str(idea_id).startswith("IDEA-") else "id"
+    if column == "id" and not _is_uuid(idea_id):
+        raise _not_found()
+    row = conn.execute(
+        f"SELECT id, idea_id, contributor_code, status FROM ideas WHERE {column} = %s FOR UPDATE",  # noqa: S608 (fixed)
+        (idea_id,),
+    ).fetchone()
+    if row is None or row["status"] == "draft":
+        raise _not_found()  # a draft has no conversation
+    idea = dict(row)
+    try:
+        reader = access.reader(conn, idea, user_id)
+    except Refused:
+        raise _not_found() from None
+    if not reader.may_attach:
+        raise _not_found()
+    if idea["status"] in ("withdrawn", "merged"):
+        raise FileRefused(409, "idea_closed", "")
+    return Owner(str(idea["id"]), code, user_id)
+
+
 def _owner(
-    conn: Conn, user_id: str, *, draft_id: str | None, idea_id: str | None, answer_id: str | None
+    conn: Conn,
+    user_id: str,
+    *,
+    draft_id: str | None,
+    idea_id: str | None,
+    answer_id: str | None,
+    purpose: str = IDEA,
 ) -> Owner:
     """Where the file goes, and that this person may add it there (A-API.files: exactly one of the three).
     - a draft: its owner only;
     - a shared idea: a credited sharer (`own_codes`), while it is not withdrawn or merged;
+    - a shared idea's conversation (`purpose` "conversation"): `_conversation_owner`;
     - an answer: the sharer whose draft answer it is, while the set is open and the answer not yet sent, as lane
       B's answer rules allow (`desk.asking.save_answer`); never wider. The idea is the answer's idea.
     Anyone else finds nothing there."""
     given = [x for x in (draft_id, idea_id, answer_id) if x]
     if len(given) != 1:
         raise FileRefused(422, "target_required", "", field="draft_id")
+    if purpose == CONVERSATION and not idea_id:
+        raise FileRefused(422, "target_required", "", field="idea_id")
     code = code_of(conn, user_id) if _is_uuid(user_id) else None
     if code is None:
         raise _not_found()
+    if purpose == CONVERSATION:
+        return _conversation_owner(conn, user_id, code, str(idea_id))
     if draft_id:
         if not _is_uuid(draft_id):
             raise _not_found()
@@ -502,16 +577,22 @@ def accept(
     draft_id: str | None = None,
     idea_id: str | None = None,
     answer_id: str | None = None,
+    purpose: str = IDEA,
 ) -> dict[str, Any]:
     """`POST /files`: store the bytes in quarantine and queue the checks. Returns the FileItem, `checking`. If the
-    row cannot be written after the bytes are stored, the stored copy is deleted again (no orphan in the store)."""
+    row cannot be written after the bytes are stored, the stored copy is deleted again (no orphan in the store).
+    `purpose` "conversation" is a file for the idea's conversation (BLD-C216); its checks are the same (DEC-107)."""
+    if purpose not in (IDEA, CONVERSATION):
+        raise FileRefused(422, "for_invalid", "", field="for")
     cfg = uploads()
     kind = screen(data, name, cfg)
     s = get_settings()
     stored: str | None = None
     try:
         with conn.transaction():
-            owner = _owner(conn, user_id, draft_id=draft_id, idea_id=idea_id, answer_id=answer_id)
+            owner = _owner(
+                conn, user_id, draft_id=draft_id, idea_id=idea_id, answer_id=answer_id, purpose=purpose
+            )
             att_id = _next_id(conn)
             key = _key(att_id)
             clean_name = _clean_name(name)
@@ -524,24 +605,24 @@ def accept(
             stored = key
             conn.execute(
                 "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, uploaded_by_user, name, mime, bytes, "
-                "sha256, store_key, state, kind, file_state, answer_id, checks) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'quarantine', 'file', %s, %s, %s)",
+                "sha256, store_key, state, kind, file_state, answer_id, checks, purpose) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'quarantine', 'file', %s, %s, %s, %s)",
                 (att_id, owner.idea_uuid, owner.code, user_id, shown[:200], _shown_mime(kind, clean_name),
                  len(data), hashlib.sha256(data).hexdigest(), key, CHECKING, owner.answer_id,
-                 Jsonb({"type": kind})),
+                 Jsonb({"type": kind}), purpose),
             )  # fmt: skip
             conn.execute(
                 "INSERT INTO jobs (type, payload, dedupe_key) VALUES (%s, %s, %s)",
                 (JOB, Jsonb({"attachment_id": att_id}), f"{JOB}:{att_id}"),
             )
             _audit(conn, user_id, "file.added", owner.idea_uuid,
-                   {"file_id": att_id, "type": kind, "answer_id": owner.answer_id})  # fmt: skip
+                   {"file_id": att_id, "type": kind, "answer_id": owner.answer_id, "purpose": purpose})  # fmt: skip
             row = _load(conn, att_id)
     except BaseException:
         if stored is not None:
             _delete_quietly(s.s3_bucket_quarantine, stored)
         raise
-    log.info("files.added", attachment_id=att_id, file_type=kind, byte_count=len(data))
+    log.info("files.added", attachment_id=att_id, file_type=kind, byte_count=len(data), purpose_code=purpose)
     return item_json(conn, row, uploader=True, opens=False)
 
 
@@ -856,8 +937,44 @@ def drop(conn: Conn, row: dict[str, Any]) -> None:
 
 
 def sweep_failed_copies(conn: Conn) -> int:
-    """The quarantine copy of a file that stayed `upload_failed` past the retention period (`rules/thresholds.md`
-    `attachments.rejected_retention_hours`) is deleted; Try again then asks for the file again. Returns how many."""
+    """The attachments sweep (run with the draft purge, `jobs.handlers.purge_drafts`). The quarantine copy of a file
+    that stayed `upload_failed` past the retention period (`rules/thresholds.md`
+    `attachments.rejected_retention_hours`) is deleted; Try again then asks for the file again. And a file added for
+    the conversation that never went on an entry is removed, every stored copy and its row, a day after it was added
+    (`sweep_unsent_conversation`, BLD-C216). Returns how many of both."""
+    return _sweep_failed(conn) + sweep_unsent_conversation(conn)
+
+
+def sweep_unsent_conversation(conn: Conn, hours: int = UNSENT_CONVERSATION_HOURS) -> int:
+    """Conversation files (`purpose` "conversation") still not on an entry `hours` after they were added: each is
+    locked, checked again and dropped (`drop`: every stored copy, its hidden details, its queued checks, its row).
+    Logs and the audit carry IDs only. Returns how many."""
+    due = conn.execute(
+        "SELECT id FROM attachments WHERE purpose = 'conversation' AND conversation_entry_id IS NULL "
+        "AND created_at < now() - make_interval(hours => %s) ORDER BY created_at",
+        (hours,),
+    ).fetchall()
+    removed = 0
+    for d in due:
+        with conn.transaction():
+            row = conn.execute(
+                "SELECT * FROM attachments WHERE id = %s AND purpose = 'conversation' "
+                "AND conversation_entry_id IS NULL AND created_at < now() - make_interval(hours => %s) "
+                "FOR UPDATE SKIP LOCKED",
+                (d["id"], hours),
+            ).fetchone()
+            if row is None:
+                continue  # sent on an entry meanwhile, or another sweep has it
+            drop(conn, dict(row))
+            _audit(conn, "system:files", "file.swept", str(row["idea_uuid"]),
+                   {"file_id": str(row["id"]), "purpose": CONVERSATION})  # fmt: skip
+            removed += 1
+        log.info("files.swept_unsent", attachment_id=str(d["id"]))
+    return removed
+
+
+def _sweep_failed(conn: Conn) -> int:
+    """The failed uploads' quarantine copies past their retention period (see `sweep_failed_copies`)."""
     from rules import load_rule
 
     try:

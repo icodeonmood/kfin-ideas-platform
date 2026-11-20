@@ -47,11 +47,18 @@ def add_file(
     draft_id: str | None = Form(None),
     idea_id: str | None = Form(None),
     answer_id: str | None = Form(None),
+    for_: str | None = Form(None, alias="for"),
 ) -> Response:
-    """`POST /files` (multipart). A plain def: FastAPI runs it in a thread, so the store and database never block."""
+    """`POST /files` (multipart). A plain def: FastAPI runs it in a thread, so the store and database never block.
+    `for: "conversation"` beside `idea_id` is the conversation's "+" (DEC-124, BLD-C216); without it the file is the
+    idea's own."""
+    try:
+        purpose = files.purpose_of(for_, idea_id=idea_id)
+    except files.FileRefused as exc:
+        return JSONResponse(exc.body(), status_code=exc.status, headers=NO_STORE)
     data = file.file.read(files.uploads().limit_bytes + 1)
     return _call(
-        201, files.accept, user_id=user_id, name=file.filename or "file", data=data,
+        201, files.accept, user_id=user_id, name=file.filename or "file", data=data, purpose=purpose,
         **_target({"draft_id": draft_id, "idea_id": idea_id, "answer_id": answer_id}),
     )  # fmt: skip
 

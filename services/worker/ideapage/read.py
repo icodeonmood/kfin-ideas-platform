@@ -350,7 +350,7 @@ def files(conn: Conn, idea_uuid: str) -> list[dict[str, Any]]:
         for r in conn.execute(
             "SELECT id, kind, name, mime, bytes, pages, item_count, file_state, state, link_scope, hidden_note, "
             "uploaded_by_code, created_at FROM attachments WHERE idea_uuid = %s AND parent_id IS NULL "
-            "AND answer_id IS NULL AND conversation_entry_id IS NULL ORDER BY created_at",
+            "AND answer_id IS NULL AND purpose = 'idea' AND conversation_entry_id IS NULL ORDER BY created_at",
             (idea_uuid,),
         ).fetchall()
     ]

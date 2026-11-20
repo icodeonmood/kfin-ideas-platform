@@ -11,12 +11,22 @@
  * first message; their draft and idea carry from row 4 to row 12. Each variation has its own person too.
  * Sign-in is single sign-on only (BLD-E002): the email route is row 2b alone, waiting on `L-AUTH.email-code`.
  * Voice is on at launch (DEC-108); the "By voice" variation is still left out, as are the S1 and S2 experiments and
- * the phone layouts (V-ACC).
+ * the phone layouts (V-ACC), apart from v6's one look at the phone's dock.
+ * Walk items of 20 Nov: v4 and v5 are the "+" in the prompt box (DEC-124, WF-01) on Home, Share a problem and the
+ * draft page; v6 is the Capture first draft page (DEC-125, WF-04), which switches `ai.all` off on the admin page and
+ * always back on. Each has its own new person, so the main path's draft is not touched.
  */
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, signIn } from "../e2e/helpers";
-import { carriedFor, expectWithDesk, runSeconds, step } from "./lib";
+import {
+  expectNoSeriousAxeIssues,
+  restoreSwitches,
+  setSwitch,
+  signIn,
+  type SwitchState,
+} from "../e2e/helpers";
+import { withSwitchLock } from "../e2e/switch-lock";
+import { carriedFor, expectWithDesk, pdfWith, runSeconds, step } from "./lib";
 
 // --- Run-time patterns ----------------------------------------------------------------------------------------------
 
@@ -50,6 +60,9 @@ const SENDER = fresh(200, "Sender");
 const FROM_HOME = fresh(700, "Homeprompt");
 const SIGNED_IN = fresh(1400, "Signedin");
 const AREA_WAITS = fresh(500, "Areawait");
+const HOME_FILES = fresh(600, "Homefiles");
+const BOX_FILES = fresh(800, "Boxfiles");
+const CAPTURE = fresh(1600, "Capturefirst");
 
 async function signInAsFresh(page: Page, who: Fresh): Promise<void> {
   await signIn(page, who.emp, { email: who.email, name: who.name });
@@ -552,5 +565,243 @@ step(
     await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
     await expectWithDesk(page);
     await expect(partValue(page, "Area")).toContainText("Operations");
+  },
+);
+
+// --- Walk items WF-01 and WF-04: the "+" in every prompt box (DEC-124) and the Capture first draft page (DEC-125) ---
+
+/** The "+" (DEC-124): its name and tooltip are the board's words (Home.md, `attachments`). */
+const PLUS = "Add files, a folder or a link";
+const LINK_LINE =
+  "SharePoint, Teams and 1% Club links are marked internal. Anything else is marked external.";
+/** DEC-107's second sentence, as J-RECOVER/8 reads it on Check it. */
+const FOUND_LINE =
+  /^Found a phone number(?: on page \d+)?\. Only you, the review desk and the Ones Committee can open it\.$/;
+
+/** The box's tool row (C-PROMPT.anatomy/2) and its controls from the left. */
+function toolRow(page: Page): Locator {
+  return page.locator(".cfoot", { has: page.getByRole("button", { name: PLUS }) });
+}
+function tools(page: Page): Locator {
+  return toolRow(page).locator("button, a");
+}
+
+/** The picker the "+" opens and controls (aria-controls). */
+async function openPicker(page: Page): Promise<Locator> {
+  const plus = page.getByRole("button", { name: PLUS });
+  await expect(plus).toHaveAttribute("aria-expanded", "false");
+  await plus.click();
+  await expect(plus).toHaveAttribute("aria-expanded", "true");
+  const id = await plus.getAttribute("aria-controls");
+  expect(id, 'the "+" names the picker it opens').toBeTruthy();
+  return page.locator(`[id="${id ?? ""}"]`);
+}
+
+/** "+", then "browse", then the person's file in the system's file chooser. */
+async function addFile(page: Page, name: string, text: string): Promise<void> {
+  const picker = await openPicker(page);
+  const chooser = page.waitForEvent("filechooser");
+  await picker.getByRole("button", { name: "browse", exact: true }).click();
+  await (await chooser).setFiles({ name, mimeType: "application/pdf", buffer: pdfWith(text) });
+}
+
+/** A file's row in the box (C-FILE.row): the list "Your files and links", one item per file. */
+function boxRow(page: Page, name: string): Locator {
+  return page
+    .getByRole("list", { name: "Your files and links" })
+    .getByRole("listitem")
+    .filter({ hasText: name });
+}
+
+/** S-04 for a new person: the empty box ("Start a new one" if an earlier run left this ID a draft, as row 4). */
+async function emptyShare(page: Page): Promise<void> {
+  await page.goto("/share");
+  const startNew = page.getByRole("button", { name: "Start a new one" });
+  await expect(startNew.or(composeBox(page)).first()).toBeVisible();
+  if (await startNew.isVisible()) await startNew.click();
+  await expect(composeBox(page)).toHaveValue("");
+}
+
+step(
+  "J-SHARE/v4",
+  "S-03",
+  'Home\'s "+": the picker, a file that makes the draft, then the same file on the draft page and under Proof',
+  { needs: ["S-03", "C-PROMPT.attach", "C-FILE", "S-04B", "S-05"] },
+  async ({ page }, info) => {
+    info.setTimeout(120_000); // the file's checks can take up to 30 s of it
+    const words =
+      "Walk-in investors fill the same change form twice because the branch copy and the scanned copy never match.";
+    const name = "branch-change-form.pdf";
+    await signInAsFresh(page, HOME_FILES);
+    await page.goto("/home");
+    await expect(
+      page.getByRole("heading", { level: 1, name: `What keeps getting in your way, ${HOME_FILES.first}?` }),
+    ).toBeVisible();
+    // DEC-124: the "+" comes first in the box's tool row.
+    await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+    await expect(page.getByRole("button", { name: PLUS })).toHaveAttribute("title", PLUS);
+
+    // The picker the Home board draws (`attachments=Picker open`).
+    const picker = await openPicker(page);
+    await expect(picker.getByText(/^Drop files or a folder here, or/)).toBeVisible();
+    for (const label of ["browse", "Choose a folder", "Add link"]) {
+      await expect(picker.getByRole("button", { name: label, exact: true })).toBeVisible();
+    }
+    const link = picker.getByRole("textbox", { name: "Or paste a link to a page, file or idea" });
+    await expect(link).toBeVisible();
+    await expect(picker.getByText(LINK_LINE)).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+    // Escape closes it and focus goes back to the "+".
+    await link.focus();
+    await page.keyboard.press("Escape");
+    await expect(picker).toHaveCount(0);
+    await expect(page.getByRole("button", { name: PLUS })).toBeFocused();
+
+    // The first file makes the draft; its row is in the box and the checks pass (DEC-107: scan, then the check).
+    await addFile(page, name, "Change form, branch copy and scanned copy, week 47.");
+    await expect(boxRow(page, name)).toBeVisible();
+    await expect(boxRow(page, name).getByText("Checked", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(boxRow(page, name).getByRole("button", { name: `Remove ${name}` })).toBeVisible();
+
+    // Continue: the words go into THAT draft as its first message, and the file travels with it.
+    await page.getByRole("textbox", { name: "Say it in your own words" }).fill(words);
+    await page.getByRole("link", { name: "Continue to Share a problem" }).click();
+    await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
+    const draft = new URL(page.url()).pathname;
+    await expect(page.getByText(words).first()).toBeVisible();
+    await expect(boxRow(page, name).getByText("Checked", { exact: true })).toBeVisible();
+    await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+
+    // Check it, part 4: Proof lists the same file.
+    await page.goto(`${draft}/check`);
+    await page.getByRole("button", { name: /^(?:\d )?Proof\b/ }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Anything that shows it?" })).toBeVisible();
+    await expect(page.getByText(name).first()).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+  },
+);
+
+step(
+  "J-SHARE/v5",
+  "S-04B",
+  'Share a problem\'s "+": a file with a customer detail opens only for you, the review desk and the Ones Committee, and stays with the draft until Remove',
+  { needs: ["S-04", "S-04B", "C-PROMPT.attach", "C-FILE", "L-HIDE"] },
+  async ({ page }, info) => {
+    info.setTimeout(120_000); // the file's checks can take up to 30 s of it
+    const words =
+      "Couriers call the branch to confirm investor addresses because the dispatch list has no landmark field.";
+    const name = "courier-callback-notes.pdf";
+    await signInAsFresh(page, BOX_FILES);
+    await emptyShare(page);
+    // DEC-124: the "+" comes first in the tool row on the empty box too, before the mic and the round button.
+    await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+
+    // A file before any words makes the draft (C-PROMPT.attach). Synthetic number, as J-RECOVER/8.
+    await addFile(page, name, "Investor called back on 9800000012 about the courier.");
+    await expect(boxRow(page, name).getByText(FOUND_LINE)).toBeVisible({ timeout: 30_000 });
+    await expectNoSeriousAxeIssues(page);
+
+    // The first message: the same draft, and the row is still in the box on the draft page.
+    await composeBox(page).fill(words);
+    await page.getByRole("button", { name: "Start my draft" }).click();
+    await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
+    await expect(page.getByText(words).first()).toBeVisible();
+    await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+    await expect(boxRow(page, name).getByText(FOUND_LINE)).toBeVisible();
+
+    // Remove takes it out of the box and off the draft.
+    await boxRow(page, name)
+      .getByRole("button", { name: `Remove ${name}` })
+      .click();
+    await expect(boxRow(page, name)).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByText(words).first()).toBeVisible();
+    await expect(page.getByText(name)).toHaveCount(0);
+  },
+);
+
+step(
+  "J-SHARE/v6",
+  "S-04B",
+  'Capture first (the assistant off): no draft panel, the conversation at full width, "+" then Move to Review with its line; the phone keeps its dock, and Full mode brings the panel back',
+  { needs: ["S-04", "S-04B", "C-PROMPT.attach", "C-DRAFT-PANEL", "L-DRAFT"] },
+  async ({ page, browser }, info) => {
+    // Two admin visits, three waits of up to 30 s and the 11 s below: the default 60 s is too short, and a step that
+    // times out must still reach its `finally` and put the switch back.
+    info.setTimeout(150_000);
+    const words =
+      "Every month-end the branch prints the same SIP report three times because the export drops the last page.";
+    let draft = "";
+    const root = page.locator(".cz");
+    const moveButton = page.getByRole("button", { name: "Move to Review" });
+    const moveLink = page.getByRole("link", { name: "Move to Review" });
+
+    // DEC-125 (1): Capture first is `ai.all` off. Switched on the admin page, as an admin would, and always put back.
+    await withSwitchLock("ai.all", async () => {
+      // DEC-088: every switch starts on, so "on" is the state to put back if setSwitch fails half-way.
+      let before: SwitchState = "on";
+      try {
+        before = await setSwitch(browser, "ai.all", "off");
+        await signInAsFresh(page, CAPTURE);
+        // The web reads switches through a 10-second cache, which a change clears (server/killswitch.ts).
+        await expect(async () => {
+          await emptyShare(page);
+          await expect(root).toHaveClass(/\bcapture\b/, { timeout: 2_000 });
+        }).toPass({ timeout: 30_000 });
+
+        // DEC-125 (3) on the empty box: "+", then Move to Review, off until there is a draft to check.
+        await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+        await expect(tools(page).nth(1)).toHaveAccessibleName("Move to Review");
+        await expect(moveButton).toHaveAttribute("aria-disabled", "true");
+        await expect(page.getByRole("heading", { level: 2, name: "Your draft" })).toHaveCount(0);
+        await expectNoSeriousAxeIssues(page);
+
+        await composeBox(page).fill(words);
+        await page.getByRole("button", { name: "Start my draft" }).click();
+        await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
+        draft = new URL(page.url()).pathname;
+        await expect(page.getByText(words).first()).toBeVisible();
+        await expect(root).toHaveClass(/\bcapture\b/);
+
+        // (2): no draft panel and nothing that forms.
+        await expect(page.getByRole("heading", { level: 2, name: "Your draft" })).toHaveCount(0);
+        await expect(page.getByText("Forms as you write")).toHaveCount(0);
+        await expect(page.getByText(/^Couldn.t work this out\. Add it yourself\.$/)).toHaveCount(0);
+        // (3): "+", then Move to Review; DEC-118: on once the words are saved and nothing is building, with its
+        // readiness line tied to it for screen readers. Exactly one on the page.
+        await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+        await expect(tools(page).nth(1)).toHaveAccessibleName("Move to Review");
+        await expect(moveLink).toHaveAttribute("href", new RegExp(`${esc(draft)}/check$`), {
+          timeout: 30_000,
+        });
+        await expect(moveLink).toHaveAccessibleDescription("Looks right? Check the sorting and send it.");
+        await expect(moveLink.or(moveButton)).toHaveCount(1);
+        // (4): the rule-based hint chips stay.
+        await expect(page.locator(".nexts .chip").first()).toBeVisible({ timeout: 30_000 });
+        await expectNoSeriousAxeIssues(page);
+
+        await moveLink.click();
+        await page.waitForURL(new RegExp(`${esc(draft)}/check$`));
+        await expect(page.getByText(/^Check it, part \d+ of \d+$/)).toBeVisible();
+
+        // (5): the phone is unchanged: no Capture first layout, and Move to Review stays in its dock.
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto(draft);
+        await expect(page.getByText(words).first()).toBeVisible();
+        await expect(root).not.toHaveClass(/\bcapture\b/);
+        await expect(moveLink.or(moveButton).filter({ visible: true }).first()).toBeVisible();
+        await page.setViewportSize({ width: 1440, height: 900 });
+      } finally {
+        await restoreSwitches(browser, [["ai.all", before]]);
+        // The worker reads switches through its own 10-second cache (core/killswitch.py): wait it out, pass or
+        // fail, so the steps after this one meet the assistant on.
+        await new Promise((resolve) => setTimeout(resolve, 11_000));
+      }
+    });
+
+    // (6): Full mode brings today's design back.
+    await page.goto(draft);
+    await expect(root).not.toHaveClass(/\bcapture\b/);
+    await expect(page.getByRole("heading", { level: 2, name: "Your draft" })).toBeVisible();
   },
 );

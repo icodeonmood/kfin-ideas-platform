@@ -130,3 +130,32 @@ export const IconScreens = ({ size = 18, className }: Props) => (
     <rect x="9" y="3" width="12" height="14" rx="2" />
   </svg>
 );
+
+/** C-PROMPT.attach: the subtle "+" (DEC-124), in place of the board's paperclip. */
+export const IconPlus = ({ size = 20, className }: Props) => (
+  <svg className={className} width={size} height={size} viewBox="0 0 24 24" strokeWidth={1.9} {...base}>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+
+/** A file row's remove (Home.md, `attachments`: "Remove {name}"). */
+export const IconClose = ({ size = 14, className }: Props) => (
+  <svg className={className} width={size} height={size} viewBox="0 0 24 24" strokeWidth={2.2} {...base}>
+    <path d="M6 6l12 12M18 6 6 18" />
+  </svg>
+);
+
+/** C-FILE.uploader/2: "Choose a folder". */
+export const IconFolder = ({ size = 20, className }: Props) => (
+  <svg className={className} width={size} height={size} viewBox="0 0 24 24" strokeWidth={1.8} {...base}>
+    <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4.6l2 2h8.4A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z" />
+  </svg>
+);
+
+/** The link field in the picker (Home.md, `attachments=Picker open`). */
+export const IconLink = ({ size = 16, className }: Props) => (
+  <svg className={className} width={size} height={size} viewBox="0 0 24 24" strokeWidth={1.9} {...base}>
+    <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" />
+    <path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
+  </svg>
+);

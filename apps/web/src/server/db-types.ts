@@ -125,6 +125,7 @@ export interface Attachments {
   name: string;
   pages: number | null;
   parent_id: string | null;
+  purpose: Generated<string>;
   rejection: Json | null;
   sha256: string | null;
   state: Generated<string>;

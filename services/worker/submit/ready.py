@@ -51,8 +51,8 @@ def often(conn: Conn, idea: dict[str, Any]) -> str | None:
 def waiting_files(conn: Conn, idea_uuid: str) -> list[str]:
     rows = conn.execute(
         "SELECT id FROM attachments WHERE idea_uuid = %s AND kind = 'file' AND answer_id IS NULL "
-        "AND conversation_entry_id IS NULL AND (file_state = ANY(%s) OR (file_state IS NULL AND state = ANY(%s))) "
-        "ORDER BY created_at",
+        "AND purpose = 'idea' AND conversation_entry_id IS NULL "
+        "AND (file_state = ANY(%s) OR (file_state IS NULL AND state = ANY(%s))) ORDER BY created_at",
         (idea_uuid, list(WAITING_FILE), list(OLD_WAITING_FILE)),
     ).fetchall()
     return [str(r["id"]) for r in rows]
@@ -62,7 +62,8 @@ def _proof(conn: Conn, idea_uuid: str) -> tuple[int, int]:
     row = conn.execute(
         "SELECT count(*) FILTER (WHERE kind IN ('file', 'folder')) AS files, count(*) FILTER (WHERE kind = 'link') "
         "AS links FROM attachments WHERE idea_uuid = %s AND parent_id IS NULL AND answer_id IS NULL "
-        "AND conversation_entry_id IS NULL AND coalesce(file_state, '') NOT IN ('upload_failed', 'too_big', "
+        "AND purpose = 'idea' AND conversation_entry_id IS NULL "
+        "AND coalesce(file_state, '') NOT IN ('upload_failed', 'too_big', "
         "'infected') AND state <> 'rejected'",
         (idea_uuid,),
     ).fetchone()

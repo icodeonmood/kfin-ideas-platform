@@ -118,8 +118,8 @@ def _fix(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
 def _files(conn: Conn, idea_uuid: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT id, kind, name, file_state, state, hidden_note, link_scope FROM attachments WHERE idea_uuid = %s "
-        "AND parent_id IS NULL AND answer_id IS NULL AND conversation_entry_id IS NULL AND state <> 'rejected' "
-        "ORDER BY created_at",
+        "AND parent_id IS NULL AND answer_id IS NULL AND purpose = 'idea' AND conversation_entry_id IS NULL "
+        "AND state <> 'rejected' ORDER BY created_at",
         (idea_uuid,),
     ).fetchall()
     return [
@@ -362,7 +362,7 @@ def _save_files(s: _Save, body: dict[str, Any]) -> None:
     if asked_added:
         rows = s.conn.execute(
             "SELECT id FROM attachments WHERE idea_uuid = %s AND id = ANY(%s) AND parent_id IS NULL "
-            "AND answer_id IS NULL AND conversation_entry_id IS NULL AND state <> 'rejected'",
+            "AND answer_id IS NULL AND purpose = 'idea' AND conversation_entry_id IS NULL AND state <> 'rejected'",
             (s.uid, asked_added),
         ).fetchall()
         here = {str(r["id"]) for r in rows}
