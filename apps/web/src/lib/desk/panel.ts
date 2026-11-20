@@ -10,6 +10,7 @@ import type {
   DecisionChoice,
   IdeaPart,
   QueueSaveRequest,
+  QueueSaveResponse,
   ReturnIn,
   ReviewerQueuedSet,
   TimeToAnswer,
@@ -178,7 +179,7 @@ export function panelReducer(p: Panel, e: PanelEvent): Panel {
   }
 }
 
-/** What one save of the queue sends, less its revision and `after` (BLD-B272): the whole queue and its time. */
+/** What one save of the queue sends, less its `base` and `after` (BLD-B272): the whole queue and its time. */
 export type QueueSnapshot = Pick<QueueSaveRequest, "questions" | "time_to_answer">;
 
 export function queueSnapshot(p: Pick<Panel, "queued" | "timeToAnswer">): QueueSnapshot {
@@ -191,8 +192,12 @@ export function queueSnapshot(p: Pick<Panel, "queued" | "timeToAnswer">): QueueS
 /** The wait after the last change before the queue is saved: typing never waits on it (BLD-B272). */
 export const QUEUE_SAVE_WAIT_MS = 700;
 
-/** Sends one save; true when the worker kept it. `keepalive` lets a save started as the page goes finish. */
-export type QueuePut = (body: QueueSaveRequest, keepalive: boolean) => Promise<boolean>;
+/** How one save went: kept, with the revision the worker now holds; or not kept, `stale` when the worker refused it
+ * as `queue_stale` (409: another tab, or a save this page never heard back from, stored a newer queue). */
+export type QueuePutResult = { kept: true; rev: number } | { kept: false; stale: boolean };
+
+/** Sends one save. `keepalive` lets a save started as the page goes finish. */
+export type QueuePut = (body: QueueSaveRequest, keepalive: boolean) => Promise<QueuePutResult>;
 
 export interface QueueSaver {
   /** The panel's queue after a change (add, remove, re-time): saved once the changes pause. */
@@ -207,35 +212,40 @@ export interface QueueSaver {
 /**
  * Saves the reviewer's queue as it changes (BLD-B272; S-R2.panel Asking, L-QUESTIONS.states "queued"). One save at a
  * time, of the whole queue, after `wait` ms without a change; nothing is saved while the queue is what the worker
- * already holds. Each save carries a revision that only grows (the clock in ms, or one more than the last), so a
- * late save never overwrites a newer one, and `after`, the latest set the page knew, so one that arrives after Send
- * keeps nothing. A failed save leaves the panel's queue as it is and is tried again on the next change. The page is
- * never held up: it renders from its own queue whatever the saves do.
+ * already holds. Each save carries `base`, the revision the page last knew was stored: the page's read (0 when the
+ * reviewer has none stored), then the revision each kept save returns, and nothing else (no clock). The worker keeps
+ * a save only when its stored revision is `base` (compare-and-swap), so a stale tab never overwrites a newer queue.
+ * A save refused as stale stops the saving for this page view: no retry and no words; the panel keeps its queue and
+ * Send still sends it, and a reload shows what is stored. `after`, the latest set the page knew, makes a save that
+ * arrives after Send keep nothing. Any other failed save leaves the panel's queue as it is and is tried again on the
+ * next change. The close-time save goes even while one is on its way, with `base + 1`, the revision that one stores
+ * once kept (if it fails, the close-time save is refused too). The page is never held up: it renders from its own
+ * queue whatever the saves do.
  */
 export function queueSaver(
   put: QueuePut,
   opts: {
     stored: QueueSnapshot;
-    rev: number;
+    base: number;
     after: string | null;
     wait?: number;
-    now?: () => number;
     timers?: { set: (fn: () => void, ms: number) => unknown; clear: (t: unknown) => void };
   },
 ): QueueSaver {
   const wait = opts.wait ?? QUEUE_SAVE_WAIT_MS;
-  const now = opts.now ?? (() => Date.now());
   const timers = opts.timers ?? {
     set: (fn: () => void, ms: number) => setTimeout(fn, ms),
     clear: (t: unknown) => clearTimeout(t as ReturnType<typeof setTimeout>),
   };
-  let rev = opts.rev;
-  let held = JSON.stringify(opts.stored); // what the worker holds
-  let sending: string | null = null; // what it will hold once the save on its way is kept
+  let base = opts.base; // the revision the worker holds, as far as this page knows
+  let held = JSON.stringify(opts.stored); // what the worker holds at `base`
+  let sending: string | null = null; // what it will hold once the last save on its way is kept
+  let busy = 0; // saves on their way: one, and the close-time save beside it
   let latest: QueueSnapshot | null = null;
   let timer: unknown = null;
   let again = false;
   let paused = false;
+  let stopped = false; // refused as stale: nothing more is saved from this page view
 
   const stopTimer = () => {
     if (timer !== null) timers.clear(timer);
@@ -244,25 +254,35 @@ export function queueSaver(
   const later = () => {
     timer = timers.set(() => save(false), wait);
   };
+  const waiting = () => latest !== null && JSON.stringify(latest) !== (sending ?? held);
 
   function save(keepalive: boolean) {
     stopTimer();
-    if (paused || latest === null) return;
+    if (paused || stopped || latest === null) return;
     const json = JSON.stringify(latest);
     if (json === (sending ?? held)) return;
-    if (sending !== null && !keepalive) {
+    if (busy > 0 && !keepalive) {
       again = true; // one at a time: the latest queue goes as soon as this one is answered
       return;
     }
-    rev = Math.max(rev + 1, Math.floor(now()));
-    const body: QueueSaveRequest = { ...latest, rev, after: opts.after };
+    // beside a save on its way (the page is going), the revision that save stores once it is kept
+    const body: QueueSaveRequest = { ...latest, base: busy > 0 ? base + 1 : base, after: opts.after };
     sending = json;
+    busy += 1;
     void put(body, keepalive)
-      .catch(() => false)
-      .then((kept) => {
-        if (kept) held = json;
+      .catch((): QueuePutResult => ({ kept: false, stale: false }))
+      .then((r) => {
+        busy -= 1;
         if (sending === json) sending = null;
-        if (again) {
+        if (r.kept && r.rev > base) {
+          base = r.rev; // only ever from a revision the worker returned
+          held = json;
+        } else if (!r.kept && r.stale) {
+          stopped = true;
+          again = false;
+          stopTimer();
+        }
+        if (again && busy === 0) {
           again = false;
           save(false);
         }
@@ -273,7 +293,7 @@ export function queueSaver(
     change(snapshot) {
       latest = snapshot;
       stopTimer();
-      if (!paused && JSON.stringify(snapshot) !== (sending ?? held)) later();
+      if (!paused && !stopped && waiting()) later();
     },
     flush(keepalive = false) {
       save(keepalive);
@@ -284,7 +304,7 @@ export function queueSaver(
     },
     resume() {
       paused = false;
-      if (latest !== null && JSON.stringify(latest) !== (sending ?? held)) later();
+      if (!stopped && waiting()) later();
     },
   };
 }
@@ -300,9 +320,17 @@ export function queuePut(ideaId: string, fetcher: typeof fetch = fetch): QueuePu
         body: JSON.stringify(body),
         keepalive,
       });
-      return res.ok;
+      const out = (await res.json().catch(() => null)) as
+        (Partial<QueueSaveResponse> & { error?: { code?: unknown } }) | null;
+      if (res.ok) {
+        const rev = out?.rev;
+        return typeof rev === "number" && Number.isSafeInteger(rev)
+          ? { kept: true, rev }
+          : { kept: false, stale: false };
+      }
+      return { kept: false, stale: res.status === 409 && out?.error?.code === "queue_stale" };
     } catch {
-      return false;
+      return { kept: false, stale: false };
     }
   };
 }

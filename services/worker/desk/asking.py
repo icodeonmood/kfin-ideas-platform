@@ -301,8 +301,9 @@ def suggested(conn: Conn, ref: str, user_id: str) -> list[dict[str, str]]:
         return [{"part": s.part, "text": s.text} for s in found]
 
 
-# The panel's revision is the browser's clock in milliseconds or one more than the last (BLD-B272); anything that is
-# not a whole number in this range is refused, so a stored revision always fits the column and a JSON number.
+# A save's `base` is the revision its page last knew was stored (BLD-B272): 0 when the reviewer has none, else one
+# the worker returned. Anything that is not a whole number with 0 <= base < REV_MAX is refused, so the revision a save
+# stores (base + 1) always fits the column and a JSON number.
 REV_MAX = 2**53 - 1
 
 
@@ -320,17 +321,24 @@ def save_queue(
     conn: Conn, ref: str, user_id: str, body: dict[str, Any], at: dt.datetime | None = None
 ) -> dict[str, Any]:
     """`PUT /desk/ideas/:id/question-sets/queued` (BLD-B272, amends BLD-B244): the reviewer's whole queue for the idea,
-    stored as their queued set so it is still there when they come back (S-R2.panel Asking, L-QUESTIONS.states). It
-    replaces the queued set the idea had (one queued set per idea, as Send already takes whichever is there).
-    `body`: `{questions: [{part, text, suggested?}], time_to_answer, rev, after}`.
+    stored as their queued set so it is still there when they come back (S-R2.panel Asking, L-QUESTIONS.states).
+    `body`: `{questions: [{part, text, suggested?}], time_to_answer, base, after}`.
 
+    - One queued set per reviewer per idea (`question_sets_one_queued`): a save replaces only this reviewer's set;
+      another reviewer's queue is theirs and is never touched. Send, a decision and a merge drop every queued set on
+      the idea.
+    - Compare-and-swap on the reviewer's own revision: `base` is the revision the page last knew was stored (the
+      read's `queued.rev`, 0 when the reviewer has none, then the `rev` each kept save returns). The save is kept only
+      when this reviewer's stored set has that revision (0 when none); it is then replaced and stored as `base + 1`,
+      which is returned. Otherwise it is refused (409 `queue_stale`) and nothing is stored: a stale tab, or a save
+      that overtook one its page never heard back from. The panel stops saving for that page view.
     - Each question is hidden before it is stored (`adapters.hide_queued`, the same `hide` as Send; L-HIDE): only the
       masked copy is kept, sealed as Send seals it. A question stored by this reviewer and sent back unchanged (the
       page shows the masked copy) is already masked and is kept as it is, with no second model call.
-    - A save that comes too late keeps nothing (409 `queue_stale`): the idea has left the desk (decided or merged:
-      `review.ensure_on_desk`, 409 `already_decided`); a set was sent since the panel's read (`after`, the latest set
-      the panel knew, `desk.reads._panel`'s `set_id`; null when none), or one is still waiting on answers; or the
-      stored queue is this reviewer's with a revision no lower than `rev` (an older save overtaken, or another tab).
+    - A save that comes too late keeps nothing: the idea has left the desk (decided or merged:
+      `review.ensure_on_desk`, 409 `already_decided`); or a set was sent since the panel's read (`after`, the latest
+      set the panel knew, `desk.reads._panel`'s `set_id`; null when none), or one is still waiting on answers (409
+      `queue_stale`).
     - Audited with IDs, counts and parts only, never the words; nothing is logged (non-negotiable 3)."""
     t = at or now()
     p = promises.get()
@@ -339,9 +347,9 @@ def save_queue(
         raise Refused(422, "questions_required", "Add a question first.", "questions")
     asked: list[dict[str, Any]] = [q if isinstance(q, dict) else {} for q in raw]
     chosen = body.get("time_to_answer")
-    rev = body.get("rev")
-    if isinstance(rev, bool) or not isinstance(rev, int) or not 0 < rev <= REV_MAX:
-        raise Refused(422, "rev_invalid", None, "rev")
+    base = body.get("base")
+    if isinstance(base, bool) or not isinstance(base, int) or not 0 <= base < REV_MAX:
+        raise Refused(422, "base_invalid", None, "base")
     after_raw = body.get("after")
     after = after_raw if isinstance(after_raw, str) and after_raw else None  # compared as the worker wrote it
     with audited(conn), conn.transaction():
@@ -359,12 +367,13 @@ def save_queue(
         ):
             raise Refused(409, "queue_stale")
         current = conn.execute(
-            "SELECT id, by_user_id, queue_rev FROM question_sets WHERE idea_uuid = %s AND state = 'queued' FOR UPDATE",
-            (idea["id"],),
+            "SELECT id, queue_rev FROM question_sets WHERE idea_uuid = %s AND state = 'queued' AND by_user_id = %s "
+            "FOR UPDATE",
+            (idea["id"], user_id),
         ).fetchone()
-        mine = current is not None and str(current["by_user_id"]) == user_id
-        if mine and current is not None and rev <= int(current["queue_rev"] or 0):
+        if (int(current["queue_rev"] or 0) if current is not None else 0) != base:
             raise Refused(409, "queue_stale")
+        rev = base + 1
         # masked copies this reviewer already stored: one sent back unchanged needs no second pass
         kept = (
             {
@@ -373,10 +382,10 @@ def save_queue(
                     "SELECT id, text_encrypted FROM questions WHERE set_id = %s", (current["id"],)
                 ).fetchall()
             }
-            if mine and current is not None
+            if current is not None
             else set()
         )
-        if current is not None:  # one queued set per idea: this save replaces it (its questions go with it)
+        if current is not None:  # this reviewer's set: this save replaces it (its questions go with it)
             conn.execute("DELETE FROM question_sets WHERE id = %s", (current["id"],))
         set_id = str(uuid.uuid4())
         conn.execute(
@@ -441,7 +450,7 @@ def send_set(
         time_to_answer = str(chosen or p.answer_default)
         due = clock.answer_due(t, time_to_answer, p, cal)
         set_id = str(uuid.uuid4())
-        # The body carries the queue; a queued set kept for this idea is now sent, so it goes (one queued per idea).
+        # The body carries the queue: every queued set on the idea goes, each reviewer's (BLD-B272)
         conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (idea["id"],))
         conn.execute(
             "INSERT INTO question_sets (id, idea_uuid, by_user_id, state, time_to_answer, sent_at, due_at, created_at) "

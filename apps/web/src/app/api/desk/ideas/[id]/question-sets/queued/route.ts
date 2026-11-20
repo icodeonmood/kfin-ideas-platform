@@ -6,5 +6,5 @@ export const PUT = writeRoute(
   "work_review_queue",
   "PUT",
   (id) => `/internal/desk/ideas/${id}/question-sets/queued`,
-  ["questions", "time_to_answer", "rev", "after"],
+  ["questions", "time_to_answer", "base", "after"],
 );

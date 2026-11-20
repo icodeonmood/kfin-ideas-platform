@@ -452,8 +452,8 @@ def _queued(conn: Conn, idea: dict[str, Any], user_id: str) -> dict[str, Any] | 
     """The question set this reviewer queued and has not sent: the panel's Asking state opens with it (S-R2.panel,
     J-REVIEW/A1). A queued set is its reviewer's alone, so another reviewer's is never returned; the desk's lists
     leave queued sets out (L-REVIEW.queue). The panel saves its queue as it changes (`asking.save_queue`, BLD-B272):
-    `rev` is the stored save's revision (0 for a set from before), which the panel's next save must pass. A queue
-    emptied by its reviewer is kept with no questions, so its revision still counts."""
+    `rev` is the stored save's revision (0 for a set from before), which the panel's next save carries as its `base`.
+    A queue emptied by its reviewer is kept with no questions, so its revision still counts."""
     from desk import questions
     from desk.store import person_by_code, unseal
 

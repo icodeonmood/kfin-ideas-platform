@@ -2,9 +2,10 @@
 L-QUESTIONS.ask/4, L-QUESTIONS.states "queued (reviewer only)").
 
 `asking.save_queue` stores the panel's whole queue as the reviewer's queued set, masked as Send masks it (L-HIDE), and
-the next read of S-R2 opens with it. A save that comes too late (after Send, a decision or a merge, or older than the
-stored one) keeps nothing, and nobody but the reviewer who queued the questions reads them. Synthetic people only;
-the customer details are generated at run time (eval/golden/generators.py).
+the next read of S-R2 opens with it. One queued set per reviewer per idea; a save is kept only from the revision stored
+for its reviewer (`base`, compare-and-swap), so a stale tab keeps nothing. A save that comes too late (after Send, a
+decision or a merge) keeps nothing either, and nobody but the reviewer who queued the questions reads them. Synthetic
+people only; the customer details are generated at run time (eval/golden/generators.py).
 """
 
 from __future__ import annotations
@@ -23,7 +24,6 @@ from tests import desk_fixtures as f
 from tests.desk_fixtures import clean_up_desk_rows  # noqa: F401 (autouse: removes what the helpers made)
 
 T = f.at(16, 11, 20)  # Monday 16 November 2026, 11:20 am IST
-REV = 1_763_272_200_000  # the browser's clock in milliseconds, as the panel sends it
 REASON = "A clear problem, a real number and a simple fix that the branch can try."
 Q1 = {"part": "often", "text": "Is it 40 calls a day at one branch, or across Hyderabad?"}
 # the suggestion for an idea with nothing attached (desk.questions._GAP), added from the panel's list
@@ -63,11 +63,11 @@ def told(monkeypatch: pytest.MonkeyPatch) -> f.FakeNotify:
     return f.install_fake_notify(monkeypatch)
 
 
-def _save(db: Conn, cast: dict[str, Any], questions: list[dict[str, Any]], *, rev: int = REV, who: str = "meera",
+def _save(db: Conn, cast: dict[str, Any], questions: list[dict[str, Any]], *, base: int = 0, who: str = "meera",
           after: str | None = None, time: str = "1w", idea: str = "idea") -> dict[str, Any]:  # fmt: skip
     return asking.save_queue(
         db, cast[idea]["idea_id"], cast[who]["id"],
-        {"questions": questions, "time_to_answer": time, "rev": rev, "after": after}, T,
+        {"questions": questions, "time_to_answer": time, "base": base, "after": after}, T,
     )  # fmt: skip
 
 
@@ -95,25 +95,26 @@ def test_bld_b272_s_r2_panel_a_stored_queue_comes_back_on_the_next_read(
     db: Conn, cast: dict[str, Any]
 ) -> None:
     """BLD-B272, S-R2.panel, J-REVIEW/A1: the queue saved as it changed is the panel's queue on the next visit, with
-    its time to answer and the revision the next save must pass. Each save replaces the last: one queued set."""
+    its time to answer and the revision the next save carries as `base`. Each save replaces the reviewer's last: one
+    queued set, stored one revision on from the `base` it carried."""
     saved = _save(db, cast, [Q1])
-    assert (saved["rev"], saved["count"]) == (REV, 1)
-    again = _save(db, cast, [Q1, Q2], rev=REV + 1)
-    assert again["set_id"] != saved["set_id"]
+    assert (saved["rev"], saved["count"]) == (1, 1)
+    again = _save(db, cast, [Q1, Q2], base=1)
+    assert again["set_id"] != saved["set_id"] and again["rev"] == 2
     queued = _queued(db, cast)
     assert queued is not None
     assert [(q["part"], q["text"], q["suggested"]) for q in queued["questions"]] == [
         ("often", Q1["text"], False), ("evidence", Q2["text"], True),
     ]  # fmt: skip
-    assert (queued["set_id"], queued["time_to_answer"], queued["rev"]) == (again["set_id"], "1w", REV + 1)
+    assert (queued["set_id"], queued["time_to_answer"], queued["rev"]) == (again["set_id"], "1w", 2)
     assert (queued["ready_line"], queued["send_label"]) == ("2 questions ready", "Send 2 questions to Kavya")
     assert len(_stored(db, cast["idea"]["id"])) == 1
     # a question removed in the browser stays removed; an emptied queue keeps its revision, with nothing ready
-    _save(db, cast, [Q2], rev=REV + 2)
+    _save(db, cast, [Q2], base=2)
     assert [q["text"] for q in (_queued(db, cast) or {})["questions"]] == [Q2["text"]]
-    _save(db, cast, [], rev=REV + 3)
+    _save(db, cast, [], base=3)
     emptied = _queued(db, cast)
-    assert emptied is not None and (emptied["questions"], emptied["rev"]) == ([], REV + 3)
+    assert emptied is not None and (emptied["questions"], emptied["rev"]) == ([], 4)
     # audited with IDs, counts and parts only, never the words
     rows = db.execute(
         "SELECT after FROM audit_log WHERE action = 'desk.queue_questions' AND entity = %s ORDER BY id",
@@ -162,7 +163,7 @@ def test_bld_b272_l_hide_a_customer_detail_in_a_queued_question_is_stored_masked
         return real(*args, **kwargs)
 
     monkeypatch.setattr(adapters, "hide_queued", counted)
-    _save(db, cast, [{"part": "who", "text": text}, Q1], rev=REV + 1)
+    _save(db, cast, [{"part": "who", "text": text}, Q1], base=1)
     assert len(calls) == 1  # Q1 only
     assert _stored(db, idea_uuid)[0]["texts"] == [text, Q1["text"]]
 
@@ -190,7 +191,7 @@ def test_bld_b272_l_questions_a_save_after_send_decide_or_merge_is_refused_and_b
         }
     assert _stored(db, cast["idea"]["id"]) == []
     with pytest.raises(Refused) as late:
-        _save(db, cast, [Q1, Q2], rev=REV + 1)
+        _save(db, cast, [Q1, Q2], base=1)
     assert (late.value.status, late.value.code) == (409, code)
     assert _stored(db, cast["idea"]["id"]) == []
     if ending == "send":
@@ -200,37 +201,59 @@ def test_bld_b272_l_questions_a_save_after_send_decide_or_merge_is_refused_and_b
         ).fetchone()
         assert sent is not None
         with pytest.raises(Refused) as waiting:
-            _save(db, cast, [Q2], rev=REV + 2, after=str(sent["id"]))
+            _save(db, cast, [Q2], after=str(sent["id"]))
         assert (waiting.value.status, waiting.value.code) == (409, "queue_stale")
         assert _stored(db, cast["idea"]["id"]) == []
 
 
-def test_bld_b272_a_stale_save_loses_to_a_newer_one(db: Conn, cast: dict[str, Any]) -> None:
-    """BLD-B272: a save carries the panel's revision. One that arrives after a newer save of the same reviewer (an
-    earlier one overtaken on the way, or another tab's older queue) is refused, and the newer queue stays."""
-    _save(db, cast, [Q1, Q2], rev=REV + 10)
-    for older in (REV + 9, REV + 10):
-        with pytest.raises(Refused) as stale:
-            _save(db, cast, [Q1], rev=older, time="1d")
-        assert (stale.value.status, stale.value.code) == (409, "queue_stale")
+def test_bld_b272_s_r2_panel_two_tabs_from_one_base_the_second_is_refused_and_the_first_is_kept(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """BLD-B272 (fix round), S-R2.panel: a save is kept only from the revision stored for its reviewer. Two tabs read
+    the same stored queue (revision 1); the first tab's save is kept as revision 2, and the second tab's, from the same
+    `base`, is refused (409 `queue_stale`) and stores nothing: the first tab's queue is what's stored. A save from one
+    below the stored revision (an older save overtaken) is refused the same way; the clock plays no part."""
+    _save(db, cast, [Q1])  # revision 1, read by both tabs
+    first = _save(db, cast, [Q1, Q2], base=1)  # tab A
+    assert first["rev"] == 2
+    with pytest.raises(Refused) as second:  # tab B, from the same read
+        _save(db, cast, [Q2], base=1, time="1d")
+    assert (second.value.status, second.value.code) == (409, "queue_stale")
     [kept] = _stored(db, cast["idea"]["id"])
-    assert (kept["rev"], kept["time"], kept["texts"]) == (REV + 10, "1w", [Q1["text"], Q2["text"]])
-    # a set sent and answered since the panel's read: the panel's `after` no longer names the latest set
+    assert (kept["rev"], kept["time"], kept["texts"]) == (2, "1w", [Q1["text"], Q2["text"]])
+    # one below the stored revision, and one above it (a revision the worker never returned): both refused
+    for wrong in (1, 3):
+        with pytest.raises(Refused) as stale:
+            _save(db, cast, [Q1], base=wrong)
+        assert (stale.value.status, stale.value.code) == (409, "queue_stale")
+    assert _stored(db, cast["idea"]["id"])[0]["rev"] == 2
+    # with nothing stored for a reviewer, only `base` 0 is kept
+    with pytest.raises(Refused) as none_stored:
+        _save(db, cast, [Q1], who="harish", base=2)
+    assert none_stored.value.code == "queue_stale"
+    assert _save(db, cast, [Q1], who="harish", base=0)["rev"] == 1
+
+
+def test_bld_b272_l_questions_a_late_or_malformed_save_keeps_nothing(db: Conn, cast: dict[str, Any]) -> None:
+    """BLD-B272: a set sent and answered since the panel's read (its `after` no longer names the latest set) is
+    refused; a `base` that is not a whole number with 0 <= base < 2**53 - 1, or a bad question, is refused before
+    anything is stored."""
+    _save(db, cast, [Q1, Q2])
     with pytest.raises(Refused) as moved:
-        _save(db, cast, [Q1], rev=REV + 11, after="00000000-0000-4000-8000-000000000000")
+        _save(db, cast, [Q1], base=1, after="00000000-0000-4000-8000-000000000000")
     assert moved.value.code == "queue_stale"
-    # what is refused before anything is stored: a revision that is not a positive whole number, a bad question
-    for bad in (0, -1, True, "5", 2**53):
+    for bad in (-1, True, "5", 1.0, None, asking.REV_MAX, 2**53):
         with pytest.raises(Refused) as invalid:
-            _save(db, cast, [Q1], rev=bad)  # type: ignore[arg-type]
-        assert (invalid.value.status, invalid.value.code, invalid.value.field) == (422, "rev_invalid", "rev")
+            _save(db, cast, [Q1], base=bad)  # type: ignore[arg-type]
+        refused = (invalid.value.status, invalid.value.code, invalid.value.field)
+        assert refused == (422, "base_invalid", "base")
     with pytest.raises(Refused) as empty:
-        _save(db, cast, [{"part": "often", "text": "  "}], rev=REV + 12)
+        _save(db, cast, [{"part": "often", "text": "  "}], base=1)
     assert (empty.value.code, empty.value.field) == ("question_empty", "questions.0.text")
     with pytest.raises(Refused) as no_list:
-        asking.save_queue(db, cast["idea"]["idea_id"], cast["meera"]["id"], {"rev": REV + 13}, T)
+        asking.save_queue(db, cast["idea"]["idea_id"], cast["meera"]["id"], {"base": 1}, T)
     assert (no_list.value.status, no_list.value.code) == (422, "questions_required")
-    assert _stored(db, cast["idea"]["id"])[0]["rev"] == REV + 10
+    assert _stored(db, cast["idea"]["id"])[0]["rev"] == 1
 
 
 def test_bld_b272_p_product_privacy_only_the_reviewer_who_queued_reads_it_back(
@@ -257,9 +280,26 @@ def test_bld_b272_p_product_privacy_only_the_reviewer_who_queued_reads_it_back(
     # a reviewer never queues on their own idea (the route lets only the review desk in: test_1pc_desk_routes.py)
     mine = f.idea(db, cast["meera"], title="Meera's own idea about cheque returns")
     with pytest.raises(Refused) as refused:
-        asking.save_queue(db, mine["idea_id"], cast["meera"]["id"], {"questions": [Q1], "rev": REV}, T)
+        asking.save_queue(db, mine["idea_id"], cast["meera"]["id"], {"questions": [Q1], "base": 0}, T)
     assert (refused.value.status, refused.value.code) == (403, "own_idea")
-    # another reviewer's save takes the idea's one queued set (as Send takes whichever is there); Meera reads none
-    _save(db, cast, [Q2], who="harish", rev=5)
-    assert _queued(db, cast, "meera") is None
+
+
+def test_bld_b272_s_r2_panel_each_reviewer_keeps_their_own_queue_and_send_drops_both(
+    db: Conn, cast: dict[str, Any], told: f.FakeNotify
+) -> None:
+    """BLD-B272 (fix round), S-R2.panel, L-QUESTIONS.states "queued (reviewer only)": one queued set per reviewer per
+    idea. A second reviewer's save keeps the first reviewer's queue, and each reads back only their own; their
+    revisions are their own. Send, by either, drops every queued set on the idea."""
+    _save(db, cast, [Q1])  # Meera, revision 1
+    harish = _save(db, cast, [Q2], who="harish")  # from base 0: his own, untouched by Meera's
+    assert harish["rev"] == 1
+    _save(db, cast, [Q1, Q2], base=1)  # Meera again: Harish's queue stays
+    assert [q["text"] for q in (_queued(db, cast) or {})["questions"]] == [Q1["text"], Q2["text"]]
     assert [q["text"] for q in (_queued(db, cast, "harish") or {})["questions"]] == [Q2["text"]]
+    assert (_queued(db, cast) or {})["rev"] == 2 and (_queued(db, cast, "harish") or {})["rev"] == 1
+    by = {s["by"]: s["texts"] for s in _stored(db, cast["idea"]["id"])}
+    assert by == {cast["meera"]["id"]: [Q1["text"], Q2["text"]], cast["harish"]["id"]: [Q2["text"]]}
+    asking.send_set(db, cast["idea"]["idea_id"], cast["harish"]["id"], {"questions": [Q2], "time_to_answer": "3d"},
+                    f.at(16, 11, 30))  # fmt: skip
+    assert _stored(db, cast["idea"]["id"]) == []
+    assert _queued(db, cast) is None and _queued(db, cast, "harish") is None

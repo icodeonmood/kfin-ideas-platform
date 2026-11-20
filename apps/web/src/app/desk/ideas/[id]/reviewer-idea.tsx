@@ -174,12 +174,13 @@ export function ReviewerIdea({
   const stored = askable ? storedQueue(askable.queued) : null;
   const [panel, dispatch] = useReducer(panelReducer, initialPanel(serverState, defaultTime, stored));
   // BLD-B272: the queue is saved as it changes, so it is still there when the reviewer comes back. Only where the
-  // reviewer can ask; `after` is the set the page knew, so a save that lands after a Send keeps nothing.
+  // reviewer can ask; `base` is the revision the page read (0 when none stored), so another tab's newer save stops
+  // this one; `after` is the set the page knew, so a save that lands after a Send keeps nothing.
   const [saver] = useState<QueueSaver | null>(() =>
     askable
       ? queueSaver(queuePut(idea.id), {
           stored: queueSnapshot(initialPanel(serverState, defaultTime, stored)),
-          rev: askable.queued?.rev ?? 0,
+          base: askable.queued?.rev ?? 0,
           after: askable.state === "answered" ? askable.set_id : null,
         })
       : null,

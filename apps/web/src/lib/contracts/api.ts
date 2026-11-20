@@ -1164,8 +1164,9 @@ export interface ReviewerDecisionLines {
   window_line: string | null;
 }
 /** The question set this reviewer queued and has not sent (S-R2.panel Asking; J-REVIEW/A1). Theirs alone: another
- * reviewer's queued set is never on the page. The panel saves it as it changes (BLD-B272): `rev` is the stored save's
- * revision, which the next save must pass (0 for a set from before); a queue emptied there has no questions. */
+ * reviewer's queued set is never on the page (one per reviewer per idea). The panel saves it as it changes
+ * (BLD-B272): `rev` is the stored save's revision (0 for a set from before), the `base` of the page's first save; a
+ * queue emptied there has no questions. */
 export interface ReviewerQueuedSet {
   set_id: string;
   questions: { id: string; part: string; part_name: string; text: string | null; suggested: boolean }[];
@@ -1174,13 +1175,21 @@ export interface ReviewerQueuedSet {
   send_label: string; // "Send 3 questions to Kavya"
   rev: number;
 }
-/** PUT /desk/ideas/:id/question-sets/queued (BLD-B272): the reviewer's whole queue, saved as it changes. `after` is
- * the latest set the panel knew (`panel.set_id` once answered, else null); a later Send makes the save stale. */
+/** PUT /desk/ideas/:id/question-sets/queued (BLD-B272): the reviewer's whole queue, saved as it changes. `base` is
+ * the revision the page last knew was stored (the read's `queued.rev`, 0 when none, then each kept save's `rev`): the
+ * worker keeps the save only when its stored revision is `base`, else 409 `queue_stale`. `after` is the latest set
+ * the panel knew (`panel.set_id` once answered, else null); a later Send makes the save stale too. */
 export interface QueueSaveRequest {
   questions: { part: IdeaPart; text: string; suggested: boolean }[];
   time_to_answer: TimeToAnswer;
-  rev: number;
+  base: number;
   after: string | null;
+}
+/** What a kept save answers: the revision now stored (`base + 1`), the `base` of the page's next save. */
+export interface QueueSaveResponse {
+  set_id: string;
+  rev: number;
+  count: number;
 }
 export type ReviewerPanel =
   | { state: "reviewing"; decision: CommitteeRow | null; queued: ReviewerQueuedSet | null }
