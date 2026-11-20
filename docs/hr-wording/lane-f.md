@@ -249,6 +249,18 @@ The page's own words are the pack's (`reference/copy/Crew.md`, every view, and `
 | `S-H2`, when the deck does not load | In place of the deck, with "Try again" | These ideas did not load / Check your connection, then try again. (lane C's line on the preview, BLD-C100) |
 | `S-H2`, when a pass, an undo or "See them again" does not go through | Under the deck | That did not go through. Check your connection, then try again. |
 
+### "Requested" and "Withdraw" on a card asked about (DEC-126, added 20 Nov)
+
+After a team-up request the card stays in the deck as "Requested", with "Withdraw" under it (BLD-F094). "Requested" and "Withdraw" are the product lead's words (DEC-126); they replace the pack's "Waiting for Ravi" and "Withdraw request" on the card. "Your crews" keeps "Waiting for Ravi". The code is `apps/web/src/components/teamup/requested-action.tsx` (`REQUESTED_COPY`), which Home's crew card (S-03) uses too. Every line here is To confirm later (DEC-123), HR: nobody asks for sign-offs until the end of Sunday 22 Nov.
+
+| Module | Where it shows | Our line |
+|---|---|---|
+| `C-CREW-DECK.states`, asked (DEC-126 (1)) | The card's button, greyed and inactive. To confirm later (DEC-123), HR | Requested |
+| `C-CREW-DECK.states`, asked (DEC-126 (3)) | Under the button, grey and underlined. To confirm later (DEC-123), HR | Withdraw |
+| `C-CREW-DECK.states`, asked | "Requested", read by a screen reader. To confirm later (DEC-123), HR | Requested: you asked to team up on Rejection SMS codes confuse investors |
+| `C-CREW-DECK.states`, asked | "Withdraw", read by a screen reader. To confirm later (DEC-123), HR | Withdraw your request to team up on Rejection SMS codes confuse investors |
+| `C-CREW-DECK.states`, a withdraw in progress | On "Withdraw" while it goes (the sheet's existing line, section 4) | Withdrawing… |
+
 ## Search on your own list (L-SEARCH, added 18 Nov)
 
 The first sentence over a result set is lane E's My ideas line, used as it stands ("Found 3 ideas about “SMS”: 2 of yours and 1 you teamed up on. Closest: “…”." and "Nothing found for “SMS”."). The code is `services/worker/search/rules.py`. These are the lines the pack does not draw.
