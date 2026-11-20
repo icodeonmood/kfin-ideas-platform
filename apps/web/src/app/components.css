@@ -900,6 +900,21 @@ textarea:is(.fld, .textarea) {
   grid-column: 1 / -1;
 }
 
+/* The kit draws a focused state at rest with the same ring (F-A11Y.rules/2), so it can be seen beside the others */
+.kit .kit-focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* A crew card's foot in the kit: the button, and the quiet link under it (DEC-126) */
+.kit-stack {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  max-width: 360px;
+}
+
 /* ---------- C-SEARCH: the bar ---------- */
 .qwrap {
   position: relative;
@@ -1263,6 +1278,57 @@ textarea:is(.fld, .textarea) {
   color: var(--mute);
   font-size: 13.5px;
   line-height: 1.45;
+}
+
+/* ---------- C-PROMPT.anatomy/2: the "+" attach button (DEC-124, BLD-D019) ----------
+ * First in a prompt box's tool row, then the mic, then send. The tool row's icon-button look (Compose .mic2, Home
+ * .pt): a 44px round target (F-SPACE.targets), transparent in --ink2 at rest, the row's hover fill, pressed to 0.94,
+ * ink with white while its picker is open (Home .pt[aria-expanded]), and the row's 2px blue focus ring. The "+" takes
+ * the text's colour. React side: components/ui/attach-button.tsx. */
+.attach-btn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-round);
+  background: transparent;
+  color: var(--ink2);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.12s var(--mo-snap);
+}
+
+.attach-btn:hover {
+  background: var(--hover-fill-strong);
+  color: var(--ink);
+}
+
+.attach-btn:active {
+  transform: scale(0.94);
+}
+
+.attach-btn[aria-expanded="true"] {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.attach-btn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.attach-btn[aria-disabled="true"] {
+  background: transparent;
+  color: var(--placeholder);
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* ---------- C-FILE: rows and the drop area ---------- */

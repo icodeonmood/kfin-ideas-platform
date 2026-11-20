@@ -138,6 +138,16 @@ fi
 step "8/8 Smoke tests"
 compose exec -T worker python -m bootstrap.smoke --web-url http://web:3000 --fresh
 
+# Record what is installed (BLD-A234): `make uat-upgrade` reads it as the version it upgrades from. A folder the
+# deploy account cannot write only costs the record; the first upgrade then needs FROM=<this tag>.
+installed_sha="$(git rev-parse HEAD 2>/dev/null || true)"
+if [[ -n "$installed_sha" ]] && mkdir -p "$UAT_DATA_DIR/ops" 2>/dev/null && printf '{"sha": "%s", "tag": "%s", "at": "%s"}\n' \
+  "$installed_sha" "$(git describe --tags --exact-match HEAD 2>/dev/null || true)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  2>/dev/null > "$UAT_DATA_DIR/ops/installed.json"; then
+  echo "Recorded $UAT_DATA_DIR/ops/installed.json ($installed_sha)."
+else
+  echo "Could not write $UAT_DATA_DIR/ops/installed.json: the first make uat-upgrade needs FROM=<this tag>."
+fi
 printf '\nUAT stack is up: web on port %s (project %s).\n' "${UAT_WEB_PORT:-3100}" "$PROJECT"
 # Production mode (BLD-A235): APP_ENV read as preflight reads it (stripped). The install loaded nobody.
 if [[ "$(value APP_ENV "$APP_ENV_FILE" | tr -d '[:space:]')" == "prod" ]]; then

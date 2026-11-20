@@ -1,6 +1,7 @@
 /**
  * The core components on the kit page (lane D; C-BUTTON, C-PILL, C-FIELD, C-FIELD-MSG, C-CHIP, C-TABS, C-SORTS,
- * C-TRACK, C-SKELETON, C-EMPTY, C-CARD). axe at both widths, then each component's keyboard and state rules.
+ * C-TRACK, C-SKELETON, C-EMPTY, C-CARD; the walk's shared styles, BLD-D019: "Requested", the quiet link and the "+"
+ * attach button, DEC-124 and DEC-126). axe at both widths, then each component's keyboard and state rules.
  * The kit exists in dev and test only.
  */
 import { expect, test } from "@playwright/test";
@@ -77,6 +78,70 @@ test("C-BUTTON.states/4–5: disabled stays focusable; busy says so and keeps it
   const busy = page.getByRole("button", { name: "Sending…" });
   await expect(busy).toHaveAttribute("aria-busy", "true");
   expect(Math.abs((await busy.evaluate(layoutWidth)) - before)).toBeLessThanOrEqual(1);
+});
+
+test("C-BUTTON.states, DEC-126: Requested is aria-disabled, stays focusable and a click does nothing; Withdraw is a quiet link with a visible focus", async ({
+  page,
+}) => {
+  const foot = page.getByRole("group", { name: "A crew card’s foot" });
+  await foot.getByRole("button", { name: "Team up" }).click();
+  // The same button turns to Requested where Team up was, so focus stays on it (J-TEAMUP/3)
+  const requested = foot.getByRole("button", { name: "Requested" });
+  await expect(requested).toHaveAttribute("aria-disabled", "true");
+  await expect(requested).not.toHaveAttribute("disabled");
+  await expect(requested).toBeFocused();
+  // Playwright waits for an aria-disabled button to be enabled, so the click is forced: it must change nothing
+  await requested.click({ force: true });
+  await expect(requested).toHaveText("Requested");
+  await expect(requested).toHaveCSS("background-color", "rgb(228, 228, 224)");
+
+  const withdraw = foot.getByRole("button", { name: "Withdraw" });
+  await page.keyboard.press("Tab");
+  await expect(withdraw).toBeFocused();
+  await expect(withdraw).toHaveCSS("outline-style", "solid");
+  await expect(withdraw).toHaveCSS("outline-width", "2px");
+  await expect(withdraw).toHaveCSS("outline-color", "rgb(57, 93, 237)");
+  await expect(withdraw).toHaveCSS("text-decoration-line", "underline");
+  await expect(withdraw).toHaveCSS("color", "rgb(95, 95, 100)");
+  const box = await withdraw.evaluate((el) => [el.clientWidth, el.clientHeight]);
+  expect(box[0]).toBeGreaterThanOrEqual(24);
+  expect(box[1]).toBeGreaterThanOrEqual(24);
+  await expectNoSeriousAxeIssues(page);
+
+  // Withdraw: back to Team up, focus on it, and Withdraw gone
+  await page.keyboard.press("Enter");
+  await expect(foot.getByRole("button", { name: "Team up" })).toBeFocused();
+  await expect(withdraw).toHaveCount(0);
+});
+
+test("C-PROMPT.anatomy/2, DEC-124: the “+” attach button is first in the tool row, 44px, named exactly, and opens its picker", async ({
+  page,
+}) => {
+  const name = "Add files, a folder or a link";
+  const prompt = page.locator(".cz .prompt");
+  const row = await prompt
+    .locator(".cfoot button")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
+  expect(row).toEqual([name, "Speak instead", "Start my draft"]);
+
+  const plus = prompt.getByRole("button", { name, exact: true });
+  await expect(plus).toHaveAttribute("title", name);
+  await expect(plus).toHaveAttribute("aria-expanded", "false");
+  await expect(plus).toHaveAttribute("aria-controls", "k-picker");
+  const mic = prompt.getByRole("button", { name: "Speak instead" });
+  const size = (el: Element) => [getComputedStyle(el).width, getComputedStyle(el).height];
+  expect(await plus.evaluate(size)).toEqual(["44px", "44px"]);
+  expect(await plus.evaluate(size)).toEqual(await mic.evaluate(size));
+  await expect(plus).toHaveCSS("color", "rgb(42, 42, 46)");
+
+  await plus.click();
+  await expect(plus).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("group", { name })).toBeVisible();
+  await expect(plus).toHaveCSS("background-color", "rgb(17, 17, 17)");
+  await expectNoSeriousAxeIssues(page);
+  await plus.click();
+  await expect(plus).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("group", { name })).toBeHidden();
 });
 
 test("C-FIELD.rules/2–4 and C-FIELD-MSG: the message shows under the field on blur and goes when fixed", async ({
