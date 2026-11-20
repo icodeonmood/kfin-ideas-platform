@@ -388,6 +388,6 @@ navigation:
   - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }   # committee_window
   - { key: profile,   label: Your profile and settings, href: /profile, place: account }
   - { key: one,       label: Your One dashboard, href: /one,    place: account, member: ones }
-  - { key: ember,     label: The Ember,       href: /ember,     place: account }
+  - { key: ember,     label: The Ember,       href: /ember,     place: account, roles: [core_committee, admin] }   # they write it at /ember/compose; everyone reads it from the Wall (S-WALL.ember, BLD-D021)
   - { key: delivery,  label: Delivery,        href: /delivery,  place: account, roles: [working_group, sponsor, core_committee, admin, ceo] }
   - { key: admin,     label: Admin,           href: /admin,     place: account, roles: [admin, infosec, hr] }

@@ -539,7 +539,11 @@
       "key": "ember",
       "label": "The Ember",
       "href": "/ember",
-      "place": "account"
+      "place": "account",
+      "roles": [
+        "core_committee",
+        "admin"
+      ]
     },
     {
       "key": "delivery",

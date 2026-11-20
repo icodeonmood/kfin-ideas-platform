@@ -180,8 +180,8 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
       .filter((n) => !place || n.place === place)
       .map((n) => n.label);
   const base = ["Share a problem", "Home", "Find your crew", "My ideas", "Wall", "Inbox"];
-  it("everyone gets Share a problem, Home, Find your crew, My ideas, Wall and Inbox, and Profile and The Ember in the account menu (S-H6)", () =>
-    expect(labels("contributor")).toEqual([...base, "Your profile and settings", "The Ember"]));
+  it("everyone gets Share a problem, Home, Find your crew, My ideas, Wall and Inbox, and Profile in the account menu (S-H6)", () =>
+    expect(labels("contributor")).toEqual([...base, "Your profile and settings"]));
   it("S-R1: the review desk adds Review desk to the sidebar, at /desk", () => {
     expect(labels("reviewer", "main")).toEqual(["Home", "Find your crew", "Wall", "Inbox", "Review desk"]);
     expect(navFor(rolesOf("reviewer")).find((n) => n.key === "desk")?.href).toBe("/desk");
@@ -199,7 +199,59 @@ describe("navigation and pages (AT-B2-06; C-SIDEBAR, C-PHONE-TABS)", () => {
       "The Ember",
       "Delivery",
     ]);
-    expect(labels("contributor", "account")).toEqual(["Your profile and settings", "The Ember"]);
+    expect(labels("contributor", "account")).toEqual(["Your profile and settings"]);
+  });
+  it("C-SIDEBAR, S-H6.rules/3, BLD-D021: the account menu shows The Ember to core_committee and admin only", () => {
+    for (const role of ["core_committee", "core_chair", "admin"])
+      expect(
+        navFor(rolesOf(role)).find((n) => n.key === "ember"),
+        role,
+      ).toEqual({
+        key: "ember",
+        label: "The Ember",
+        href: "/ember",
+        place: "account",
+      });
+    for (const role of [
+      "contributor",
+      "reviewer",
+      "committee",
+      "lob_committee",
+      "working_group",
+      "sponsor",
+      "ceo",
+      "infosec",
+      "hr",
+    ])
+      expect(labels(role), role).not.toContain("The Ember");
+    // An active One's account menu gains its dashboard, never The Ember.
+    expect(navFor(rolesOf("contributor"), new Set(), new Set(["ones"])).map((n) => n.key)).not.toContain(
+      "ember",
+    );
+  });
+  it("C-SIDEBAR, S-WALL.ember, BLD-D021: only the menu row moved; who reads and who writes The Ember is unchanged", () => {
+    // Everyone signed in still reads every issue (the Wall's "Read this issue" lands on /ember/:id).
+    for (const role of ["contributor", "reviewer", "core_committee", "admin"]) {
+      expect(canSeePage(rolesOf(role), "/ember"), role).toBe(true);
+      expect(canSeePage(rolesOf(role), "/ember/12"), role).toBe(true);
+      expect(decide(rolesOf(role), "GET", "/api/ember").kind, role).toBe("allow");
+      expect(decide(rolesOf(role), "GET", "/api/ember/12").kind, role).toBe("allow");
+    }
+    // /ember/compose keeps its rule: write_ember_note, the core committee and admins (send_ember is admin only).
+    expect(
+      (policyJson.pages as string[]).find((l) => l.trim().startsWith("/ember/compose "))?.split(/\s+/)[1],
+    ).toBe("write_ember_note");
+    const caps = policyJson.capabilities as Record<string, Record<string, string>>;
+    expect(caps.write_ember_note).toEqual({ core_committee: "yes", admin: "yes" });
+    expect(caps.send_ember).toEqual({ admin: "yes" });
+    for (const role of ["core_committee", "admin"])
+      expect(canSeePage(rolesOf(role), "/ember/compose"), role).toBe(true);
+    for (const role of ["contributor", "reviewer", "committee"])
+      expect(canSeePage(rolesOf(role), "/ember/compose"), role).toBe(false);
+    expect(decide(rolesOf("core_committee"), "PUT", "/api/ember/12/note").kind).toBe("allow");
+    expect(decide(rolesOf("core_committee"), "POST", "/api/ember/12/send").kind).toBe("deny");
+    expect(decide(rolesOf("admin"), "POST", "/api/ember/12/send").kind).toBe("allow");
+    expect(decide(rolesOf("contributor"), "PUT", "/api/ember/12/note").kind).toBe("deny");
   });
   it("S-R4: the pack's committee role (E-ENUMS.roles) sees Ones Committee, as the old core committee does until Monday", () =>
     expect(labels("committee", "main")).toEqual([
