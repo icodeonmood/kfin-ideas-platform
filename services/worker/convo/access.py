@@ -21,8 +21,9 @@ from core.db import Conn
 DESK_ROLES = ("reviewer",)
 COMMITTEE_ROLES = ("committee", "core_committee", "core_chair")
 # `view_review_queue` in policy/rbac.yaml (core_chair is an alias of core_committee): who opens a file besides the
-# sharer. Keep in step with `accessible()` in apps/web/src/server/attachments.ts (BLD-F062).
-FILE_ROLES = ("reviewer", "core_committee", "core_chair", "admin")
+# sharer. Keep in step with `accessible()` in apps/web/src/server/attachments.ts (BLD-F062). `committee` is in
+# `view_review_queue` since BLD-B270, so a committee-only member opens and adds files too (DEC-107).
+FILE_ROLES = ("reviewer", "committee", "core_committee", "core_chair", "admin")
 
 
 @dataclass(frozen=True)
@@ -44,8 +45,8 @@ class Reader:
 
     @property
     def may_attach(self) -> bool:
-        """Adds files to a message: the sharer, the review desk and the core committee, the readers who can open
-        them (BLD-F063). The crew, the build team and a mentioned person write without files."""
+        """Adds files to a message: the sharer, the review desk and the Ones Committee, the readers who can open
+        them (BLD-F063, BLD-B270). The crew, the build team and a mentioned person write without files."""
         return self.files and self.full
 
     @property

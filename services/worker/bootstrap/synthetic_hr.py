@@ -8,6 +8,7 @@ people can sign in as a reviewer, a committee member or an admin in dev.
 
 from __future__ import annotations
 
+import argparse
 import csv
 import importlib
 import os
@@ -16,7 +17,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from core.config import REPO_ROOT
+from core.config import REPO_ROOT, get_settings
 from identity.hr_import import HEADER
 from okf.frontmatter import parse
 
@@ -180,3 +181,31 @@ def write_csv(people: list[dict[str, str]], path: Path) -> Path:
         writer.writeheader()
         writer.writerows(people)
     return path
+
+
+def main(argv: list[str] | None = None) -> int:
+    """The first N synthetic people as an HR CSV on stdout, for the production-mode rehearsal's stdin import
+    (BLD-A235). The output is the file itself: redirect it, never print it to a terminal.
+
+    python -m bootstrap.synthetic_hr --count 20 > hr-synthetic.csv
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--count", type=int, default=200)
+    parser.add_argument("--repo", type=Path, default=None, help="company repo (default: COMPANY_REPO_PATH)")
+    args = parser.parse_args(argv)
+    if args.count < 1:
+        print("--count: at least 1", file=sys.stderr)
+        return 2
+    if sys.stdout.isatty():
+        print("redirect the output to a file: it is the CSV itself", file=sys.stderr)
+        return 2
+    people = generate(args.repo or Path(get_settings().company_repo_path))[: args.count]
+    writer = csv.DictWriter(sys.stdout, fieldnames=HEADER, extrasaction="ignore", lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(people)
+    print(f"synthetic hr: {len(people)} people written", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -55,7 +55,8 @@ const DRAFT_BODY = {
       type: "application/pdf",
       size: 143360,
       state: "personal_data_found",
-      problem: "Found a phone number on page 2. Nobody can open it until it’s hidden.",
+      problem:
+        "Found a phone number on page 2. Only you, the review desk and the Ones Committee can open it.",
       added_by: ME,
       added_at: "2026-11-17T08:01:00Z",
     },

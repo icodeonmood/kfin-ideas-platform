@@ -36,6 +36,7 @@
     },
     "view_review_queue": {
       "reviewer": "yes",
+      "committee": "yes",
       "core_committee": "yes",
       "admin": "yes"
     },

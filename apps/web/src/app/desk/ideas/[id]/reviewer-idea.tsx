@@ -671,8 +671,17 @@ export function ReviewerIdea({
                 now={now}
                 reminded={reminded}
                 extendDays={numbers.extendDays}
-                onMore={() => void giveMoreTime(page.panel.state === "sent" ? page.panel.set_id : "")}
-                onRemind={() => void remind(page.panel.state === "sent" ? page.panel.set_id : "")}
+                // More time and the reminder are the review desk's: a committee member reads without them (BLD-B270)
+                onMore={
+                  page.can_act
+                    ? () => void giveMoreTime(page.panel.state === "sent" ? page.panel.set_id : "")
+                    : undefined
+                }
+                onRemind={
+                  page.can_act
+                    ? () => void remind(page.panel.state === "sent" ? page.panel.set_id : "")
+                    : undefined
+                }
               />
             ) : panel.state === "answered" && page.panel.state === "answered" ? (
               <SentOrAnswered p={page.panel} titleRef={title} questions={allQuestions} now={now} />

@@ -79,3 +79,15 @@ def test_L_HIDE_files_1_with_both_switches_on_every_piece_is_read_and_placed(
     assert [(TEXT[f.start : f.end], f.kind, f.found_by) for f in gate.finds] == [
         (ADDRESS, "name", "gatekeeper")
     ]
+
+
+def test_BLD_C199_C_FILE_row_the_found_line_says_who_can_open_the_file() -> None:
+    """DEC-107 as the product lead approved its wording on 20 Nov 2026: the board's first sentence ("Found
+    {what}{where}."), then who can open the file, for the person who added it."""
+    line = hide_files.found_line(hide_files.FileFinds.from_codes([{"kind": "pan", "page": 2}]))
+    assert line == "Found a PAN on page 2. Only you, the review desk and the Ones Committee can open it."
+    two_pages = hide_files.FileFinds.from_codes([{"kind": "phone", "page": 1}, {"kind": "phone", "page": 3}])
+    assert hide_files.found_line(two_pages) == (
+        "Found a phone number. Only you, the review desk and the Ones Committee can open it."
+    )
+    assert hide_files.found_line(hide_files.FileFinds()) is None

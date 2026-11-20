@@ -5,11 +5,18 @@
  * Seed: V1 (Varun, One No. 11, Tier 3) shipped 40 days ago, measured at 30 days, money confirmed by Finance; S1
  * (Siddharth, One No. 21, inducted 10 days ago) measured at 30 and 90 days; D1 measured at 90 days; I1 measured
  * at 30 days with money Finance has not confirmed. Seven Ones in all. Posts by Varun, Dinesh, Siddharth, Indira.
- * Dinesh (One No. 8) has a tier rise from 4 to 5 waiting to be shown (lane E, e716585).
+ * Dinesh (One No. 8) has a tier rise from 4 to 5 waiting to be shown (lane E, e716585). The founding Ones (Gopal,
+ * Aparna, Rekha, Dinesh) are inducted on the founding day, 1 Nov 2026 10:00 IST, 0 to 3 minutes after it (BLD-E073).
  */
 import { expect } from "@playwright/test";
 
-import { ideaUrl, seeded, signInAs, step } from "./lib";
+import { dayLabelIST, ideaUrl, seeded, signInAs, step } from "./lib";
+
+/** club_seed.FOUNDING_DAY (OneDashboard.md:36): 1 Nov 2026, 10:00 India time. */
+const FOUNDING_DAY = Date.parse("2026-11-01T10:00:00+05:30");
+/** Dinesh's number window ends 30 days after his induction, 3 minutes after the founding day (L-ONES.rules/2;
+ * wall/ones.py _closed: open while now <= swap_until). 1 Dec 2026, 10:03 IST. */
+const DINESH_WINDOW_ENDS = new Date(FOUNDING_DAY + 3 * 60_000 + 30 * 86_400_000);
 
 step(
   "J-ONE/1",
@@ -225,5 +232,44 @@ step(
     await page.reload();
     await expect(page.getByRole("heading", { level: 1, name: "You're No. 8" })).toBeVisible();
     await expect(page.getByRole("dialog", { name: /your spark is hotter/ })).toHaveCount(0);
+  },
+);
+
+step(
+  "J-ONE/6c",
+  "S-ONE",
+  "A Founding One's dashboard dates from the founding day, and so does the number window (S-ONE.layout/2, S-ONE.layout/3)",
+  { needs: ["S-ONE.layout", "L-ONES"] },
+  async ({ page }) => {
+    // Seed (lane E, BLD-E073): Dinesh was inducted 3 minutes after club_seed.FOUNDING_DAY, not a year before the
+    // programme (the walk read "Founding One since 24 Nov 2025"). J-ONE/6b has played his moment, so the dashboard
+    // opens on its own. Copy: OneDashboard.md:36 and :40; closed window: V-FIELDS.one/3 (a GAPS default, not drawn).
+    await signInAs(page, "dinesh");
+    const before = Date.now();
+    await page.goto("/one");
+    await expect(page.getByRole("heading", { level: 1, name: "You're No. 8" })).toBeVisible();
+    const after = Date.now();
+    await expect(
+      page.getByText("Tier 5, White heat. Founding One since 1 Nov 2026.", { exact: true }),
+    ).toBeVisible();
+    // The worker reads its clock as it renders the page, between `before` and `after`: open while that is on or
+    // before the end, which the line gives as the India day it falls on (wall/common.py day_label).
+    const card = page.getByRole("region", { name: "Your number" });
+    const keep = card.getByText(
+      `Keep No. 8, or choose any free number from 1 to 999 until ${dayLabelIST(DINESH_WINDOW_ENDS)}. First come, first served. After that, it's yours.`,
+      { exact: true },
+    );
+    const yours = card.getByText("No. 8 is yours for good.", { exact: true });
+    const ends = DINESH_WINDOW_ENDS.getTime();
+    if (after <= ends) {
+      await expect(keep).toBeVisible();
+      await expect(card.getByRole("textbox", { name: "Number you'd like" })).toBeVisible();
+    } else if (before > ends) {
+      await expect(yours).toBeVisible();
+      await expect(card.getByText(/^Keep No\. 8, or choose/)).toHaveCount(0);
+      await expect(card.getByRole("textbox", { name: "Number you'd like" })).toHaveCount(0);
+    } else {
+      await expect(keep.or(yours)).toBeVisible(); // rendered in the seconds the window closed: either is right
+    }
   },
 );

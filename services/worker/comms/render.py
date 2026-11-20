@@ -69,8 +69,8 @@ def _decrypt_text(blob: Any, context: str) -> str | None:
 
 
 # Who may open the review desk: `view_review_queue` in policy/rbac.yaml, with its role aliases (a test keeps the
-# two in step).
-DESK_VIEWERS = frozenset({"reviewer", "core_committee", "core_chair", "admin"})
+# two in step). The Ones Committee's `committee` since DEC-121 (BLD-B270).
+DESK_VIEWERS = frozenset({"reviewer", "committee", "core_committee", "core_chair", "admin"})
 # Time limits the review desk works to; the rest are the committee's (rules/sla.md).
 DESK_STAGES = ("review", "cluster_proposal", "qualify")
 BREACH_WORDS = {

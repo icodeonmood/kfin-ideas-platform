@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
+import { Prompt, PROMPT_COPY, type PromptVoice } from "@/components/compose/prompt";
+import { AttachButton } from "@/components/ui/attach-button";
 import { Avatar, CrewFaces } from "@/components/ui/avatar";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { ChoiceChips, MultiChips } from "@/components/ui/chips";
@@ -28,6 +30,14 @@ const AREAS = [
   { value: "tech", label: "Technology", count: 0 },
 ];
 
+/** The kit's microphone: drawn, never recording (the prompt box is lane C's; here it only stands beside "+"). */
+const KIT_VOICE: PromptVoice = {
+  state: { status: "idle", notice: null },
+  start() {},
+  stop() {},
+  noticeShown() {},
+};
+
 export function KitDemo() {
   const [area, setArea] = useState<string | null>("investor");
   const [worth, setWorth] = useState<string[]>(["time"]);
@@ -46,6 +56,10 @@ export function KitDemo() {
   const [codeWrong, setCodeWrong] = useState(false);
   const [pin, setPin] = useState("problem");
   const [asked, setAsked] = useState<string[]>([]);
+  const [requested, setRequested] = useState(false);
+  const teamUpRef = useRef<HTMLButtonElement>(null);
+  const [words, setWords] = useState("");
+  const [picking, setPicking] = useState(false);
 
   return (
     <div className="arrive kit">
@@ -78,6 +92,87 @@ export function KitDemo() {
           <ButtonLink href="/kit#k-fields" variant="line" size="sm">
             Jump to fields
           </ButtonLink>
+        </div>
+      </section>
+
+      <section className="card" aria-labelledby="k-quiet-h" id="k-quiet">
+        <h2 id="k-quiet-h" className="h2">
+          Requested and Withdraw
+        </h2>
+        <p className="meta">Requested, beside a normal Team up, in two variants.</p>
+        <div className="btn-row">
+          <Button>Team up</Button>
+          <Button inactive>Requested</Button>
+          <Button variant="line" size="sm" inactive>
+            Requested
+          </Button>
+        </div>
+        <p className="meta">The quiet link, as a link and as a button, at rest and focused.</p>
+        <div className="btn-row">
+          <a href="/kit#k-quiet" className="link-quiet">
+            How teaming up works
+          </a>
+          <Button variant="quiet">Withdraw</Button>
+          <a href="/kit#k-quiet" className="link-quiet kit-focus">
+            How teaming up works
+          </a>
+          <Button variant="quiet" className="kit-focus">
+            Withdraw
+          </Button>
+        </div>
+        <p className="meta">A crew card&rsquo;s foot: Team up, then Requested with Withdraw under it.</p>
+        <div className="kit-stack" role="group" aria-label="A crew card’s foot">
+          <Button ref={teamUpRef} size="full" inactive={requested} onClick={() => setRequested(true)}>
+            {requested ? "Requested" : "Team up"}
+          </Button>
+          {requested ? (
+            <Button
+              variant="quiet"
+              onClick={() => {
+                setRequested(false);
+                teamUpRef.current?.focus();
+              }}
+            >
+              Withdraw
+            </Button>
+          ) : null}
+        </div>
+      </section>
+
+      <section className="card" aria-labelledby="k-attach">
+        <h2 id="k-attach" className="h2">
+          Attach
+        </h2>
+        <p className="meta">
+          The &ldquo;+&rdquo; button at rest, pressed (its picker open) and switched off.
+        </p>
+        <div className="btn-row">
+          <AttachButton aria-expanded={false} />
+          <AttachButton aria-expanded />
+          <AttachButton disabled />
+        </div>
+        <p className="meta">In a prompt box&rsquo;s tool row: &ldquo;+&rdquo;, then the mic, then send.</p>
+        <div className="cz">
+          <Prompt
+            value={words}
+            onChange={setWords}
+            onSend={() => setWords("")}
+            sendLabel="Start my draft"
+            label={PROMPT_COPY.firstLabel}
+            placeholder="Describe what’s getting in your way"
+            device="desktop"
+            voice={KIT_VOICE}
+            attach={
+              <AttachButton
+                aria-expanded={picking}
+                aria-controls="k-picker"
+                onClick={() => setPicking((open) => !open)}
+              />
+            }
+          />
+          <div id="k-picker" role="group" aria-label="Add files, a folder or a link" hidden={!picking}>
+            <p className="meta">The screen&rsquo;s picker opens here (C-FILE.uploader).</p>
+          </div>
         </div>
       </section>
 
@@ -323,7 +418,7 @@ export function KitDemo() {
             statusText="Waiting for you"
             message={{
               kind: "warn",
-              text: "Found a phone number on page 2. Nobody can open it until it’s hidden.",
+              text: "Found a phone number on page 2. Only you, the review desk and the Ones Committee can open it.",
             }}
           >
             <button type="button" className="tb">
