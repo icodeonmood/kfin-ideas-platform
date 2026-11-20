@@ -9,19 +9,19 @@ make up migrate seed
 make demo DEMO_SET=1pc
 ```
 
-Open **http://localhost:3000**. `DEMO_SET=1pc` loads the 1% Club seed (`services/worker/bootstrap/club_seed.py`); every `make demo…` command on this stack needs it. Without it, `make demo` loads the old demo instead, whose people (`DEMO-00001`…) are not the ones the walks use (see "The old demo" below).
+Open **http://localhost:3000/sign-in**. `DEMO_SET=1pc` loads the 1% Club seed (`services/worker/bootstrap/club_seed.py`); every `make demo…` command on this stack needs it. Without it, `make demo` loads the old demo instead, whose people (`DEMO-00001`…) are not the ones the walks use (see "The old demo" below).
 
-A second `make demo DEMO_SET=1pc` changes nothing; it prints "already loaded". **`make demo-reset DEMO_SET=1pc`** takes out the seed's people and everything that is theirs, then loads it again, in one go: if the load fails, the seed stays as it was. Run it to see a first visit or a tier-up moment again; each plays once. It refuses while the switch `matching.show` is off: switch it on in Admin first. `make demo` runs only on the local dev stack (`APP_ENV=dev`, and only against the local `ideas` database).
+A second `make demo DEMO_SET=1pc` changes nothing; it prints "already loaded". **`make demo-reset DEMO_SET=1pc`** takes out the seed's people and everything that is theirs, then loads it again, in one go: if the load fails, the seed stays as it was. Run it to see a first visit or a tier-up moment again; each plays once. If the switch `matching.show` is off, loading or resetting stops and changes nothing: switch it on in Admin as Kunal (or as `SYN-00001` before the first load), or with the `make killswitch` line the message prints, then run it again. `make demo` runs only on the local dev stack (`APP_ENV=dev`, and only against the local `ideas` database).
 
 ## Sign in
 
-1. On the sign-in page, choose **Use single sign-on**.
+1. At **http://localhost:3000/sign-in**, choose **Use single sign-on**. (The page at http://localhost:3000 is the Landing page; it has no sign-in link.)
 2. On the mock sign-in page, type the employee ID from the table below as the username, exactly as written (`SYN-1` then four digits), and submit.
 3. Use a private window for each person, or sign out between people.
 
-If the privacy notice shows first, read it and choose **I have read this**. The seed accepts the notice that was current when it loaded, so after a notice change each person sees the new one once.
+If the privacy notice shows first, read it and choose **I have read this — continue**. The seed accepts the notice that was current when it loaded, so after a notice change each person sees the new one once.
 
-`make seed` also loads a synthetic directory, `SYN-00001` onwards, and some of those people have roles. They have no ideas, crews or Inbox items. For the walks, use the `SYN-100xx` people below; the seed prints this list when it loads.
+`make seed` also loads a synthetic directory, `SYN-00001` onwards, and some of those people have roles. They have no ideas, crews or Inbox items. For the walks, use the `SYN-100xx` people below; `make demo DEMO_SET=1pc` prints this list when it loads.
 
 | Username | Who | Use it for |
 |---|---|---|
@@ -30,15 +30,15 @@ If the privacy notice shows first, read it and choose **I have read this**. The 
 | `SYN-10003` | Lavanya Krishnan, review desk | Review desk, the second reviewer |
 | `SYN-10004` | Manoj Agarwal, Ones Committee | Ones Committee: decisions inside the window (one extended), expired ones and a reversal |
 | `SYN-10005` | Shalini Bose, Ones Committee | Ones Committee, the second member |
-| `SYN-10006` | Kunal Malhotra, admin | Admin (kill switches and roles); the launch screen at `/launch` (Start, with sound) |
-| `SYN-10007` | Hyderabad Office Screen | The office screen at `/constellation`, full screen |
+| `SYN-10006` | Kunal Malhotra, admin | Admin (kill switches and roles); the launch screen at `/display/launch`: Full screen, then Start (it plays a sound) |
+| `SYN-10007` | Hyderabad Office Screen | The office screen at `/display/office` (choose Full screen on the screen). It can also open `/display/launch` |
 | `SYN-10008` | Gopal Iyengar, One No. 15 | A build team lead; Your One dashboard |
-| `SYN-10009` | Rekha Saxena, an employee | A lead with a team-up request waiting in her Inbox |
+| `SYN-10009` | Rekha Saxena, a Founding One (No. 4) | A lead with a team-up request waiting in her Inbox |
 | `SYN-10010` | Varun Chopra, One No. 11 | A shipped fix; Your One dashboard |
 | `SYN-10012` | Siddharth Menezes, a new One | A One whose number is still open |
 | `SYN-10013` | Aparna Hegde, a Founding One | A Founding One whose idea is being built |
 | `SYN-10017` | Charulata Sen, an employee | Hides her name on the Wall |
-| `SYN-10018` | Dinesh Kamath, One No. 8 | His tier has just risen: the moment plays on his next visit |
+| `SYN-10018` | Dinesh Kamath, One No. 8 | His tier has just risen. The moment plays once when he opens Your One dashboard |
 | `SYN-10025` | Kiran Bhatia, an employee | A sharer the review desk asks first |
 | `SYN-10026` | Sana Qureshi, an employee | Her first visit to Home |
 
@@ -53,7 +53,7 @@ The tests expect a fresh seed, and a reset loses whatever a walk changed, so the
 3. `make demo-reset DEMO_SET=1pc`
 4. `docker image prune -f --filter label=org.kfin.project=kfin-ideas` (each build adds about 1 GB of images)
 
-Lane A asks the product lead before any of this on the walk stack, as a walk may be in progress.
+Lane A asks you before running this on the walk stack, as a walk may be in progress.
 
 ## Good to know
 
