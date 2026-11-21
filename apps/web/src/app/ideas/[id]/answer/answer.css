@@ -106,6 +106,13 @@
   .ans-sent {
     padding: 20px;
   }
+  /* The sheet holds the dock (S-R3.rules/5). A backdrop filter makes the sheet the box a fixed child is placed in, so
+     the dock sat on the sheet's own foot, over the "+" and the rows, whatever the scroll. On a phone the sheet drops
+     the panel's blur, as the sign-in and Wall pages do, and the dock is fixed to the screen again (BLD-B275) */
+  .panel.ans-sheet {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
   /* The dock is fixed at the foot and holds two buttons here (about 160px with the safe area): the page keeps room for
      it, so the "+" and the rows under the box scroll clear of it, as the edit page does (BLD-B275) */
   .ans {
