@@ -18,6 +18,7 @@ from desk.store import (
     CUSTOMER_DETAIL,
     DESK_SEES,
     FILES_CHECKED,
+    IDEA_OWN,
     REVIEWERS,
     SHOWN_FILE,
     code_of,
@@ -292,14 +293,17 @@ def _checked_files(
 ) -> list[dict[str, Any]]:
     """Files in `states` (the checked ones; the desk's view adds those holding a customer detail, DEC-107, each with
     its `customer_detail` marker). Never one still checking, infected or locked; a draft answer's files stay the
-    sharer's until the answer is sent."""
+    sharer's until the answer is sent. Only the idea's own files (`IDEA_OWN`, BLD-B274): a file added for the
+    conversation (DEC-124), sent or not, is never among them. This one read feeds the Attachments card
+    (S-R2.left/2), the Attached part (`_evidence_text`, S-R2.left/3), every merged contribution (L-MERGE.effects/3),
+    the Listen script (L-LISTEN/2, which lane C's hosted voice reads too) and the committee's read of the page."""
     return [
         {**f, "customer_detail": f["file_state"] == CUSTOMER_DETAIL}
         for f in conn.execute(
-            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at, file_state, "  # noqa: S608 (SHOWN_FILE is fixed text)
+            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at, file_state, "  # noqa: S608 (SHOWN_FILE, IDEA_OWN are fixed text)
             "(SELECT a.sent_at FROM answers a WHERE a.id = attachments.answer_id) AS answer_sent_at, "
             "(SELECT a.by_code FROM answers a WHERE a.id = attachments.answer_id) AS answer_by "
-            f"FROM attachments WHERE idea_uuid = %s AND kind = 'file' AND {SHOWN_FILE} "
+            f"FROM attachments WHERE idea_uuid = %s AND kind = 'file' AND {SHOWN_FILE} AND {IDEA_OWN} "
             "AND (answer_id IS NULL OR EXISTS (SELECT 1 FROM answers a WHERE a.id = attachments.answer_id "
             "AND a.sent_at IS NOT NULL)) ORDER BY created_at, id",
             (idea_uuid, list(states)),
@@ -312,7 +316,8 @@ def _questions(
 ) -> dict[str, list[dict[str, Any]]]:
     """Every question sent on this idea, pinned to its part, with its answer once sent (S-R2.left/3). "You asked"
     for the viewer's own questions, "{first name} asked" for another reviewer's (reference/copy/DeskIdea.md). An
-    answer's files are those the desk may open (DEC-107), each with its `customer_detail` marker."""
+    answer's files are those the desk may open (DEC-107), each with its `customer_detail` marker, and only the idea's
+    own (`IDEA_OWN`, BLD-B274)."""
     from desk.store import person_by_code, person_by_user, unseal
 
     out: dict[str, list[dict[str, Any]]] = {}
@@ -335,7 +340,7 @@ def _questions(
             by = person_by_code(conn, r["by_code"])
             files = conn.execute(
                 "SELECT id, name, hidden_note, file_state FROM attachments WHERE answer_id = %s AND "  # noqa: S608 (fixed text)
-                f"{SHOWN_FILE} ORDER BY created_at, id",
+                f"{SHOWN_FILE} AND {IDEA_OWN} ORDER BY created_at, id",  # never a conversation file (BLD-B274)
                 (r["answer_id"], list(DESK_SEES)),
             ).fetchall()
             item["answer"] = {

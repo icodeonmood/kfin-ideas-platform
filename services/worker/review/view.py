@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from core.config import get_settings
 from core.db import Conn
+from desk.store import IDEA_OWN
 from pii import vault
 from pii.restore import restore
 from scan.inputs import _taxonomy
@@ -58,9 +59,10 @@ def item_view(conn: Conn, item_id: int, mode: Literal["real", "neutral"]) -> dic
          "digest": show(a["digest"]) if a["state"] == "clean" else None,
          "claims": show((a["digest_meta"] or {}).get("claims") or []) if a["state"] == "clean" else [],
          "patterns_only": bool((a["checks"] or {}).get("gatekeeper_skipped"))}
+        # only the idea's own files: never one added for the conversation (DEC-124; BLD-B274)
         for a in conn.execute(
-            "SELECT id, name, state, digest, digest_meta, checks FROM attachments WHERE idea_uuid = %s "
-            "ORDER BY created_at",
+            "SELECT id, name, state, digest, digest_meta, checks FROM attachments WHERE idea_uuid = %s "  # noqa: S608 (fixed)
+            f"AND {IDEA_OWN} ORDER BY created_at",
             (idea["id"],),
         ).fetchall()
     ]  # fmt: skip

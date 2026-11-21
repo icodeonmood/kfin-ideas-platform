@@ -21,6 +21,7 @@ from comms.route import emit
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
+from desk.store import IDEA_OWN_A
 from pii.patterns import scan
 from pii.tagger import tag_payload
 from review.service import ActionRefused, audited, staff_code
@@ -79,9 +80,9 @@ def _contributors(conn: Conn, cluster_id: str) -> set[str]:
 def _evidence(conn: Conn, cluster_id: str, members: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
     people = len(_contributors(conn, cluster_id))
     own_data = [m["idea_id"] for m in members if m["basis"] in ("own_data", "document")]
-    files = conn.execute(
-        "SELECT count(*) AS n FROM attachments a JOIN ideas i ON i.id = a.idea_uuid "
-        "WHERE i.cluster_id = %s AND a.state = 'clean'",
+    files = conn.execute(  # the members' own files: never one added for the conversation (DEC-124; BLD-B274)
+        "SELECT count(*) AS n FROM attachments a JOIN ideas i ON i.id = a.idea_uuid "  # noqa: S608 (fixed text)
+        f"WHERE i.cluster_id = %s AND a.state = 'clean' AND {IDEA_OWN_A}",
         (cluster_id,),
     ).fetchone()
     refs = sum(

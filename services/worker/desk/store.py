@@ -145,6 +145,14 @@ FILES_CHECKED: tuple[str, ...] = ("checked", "hidden_checked", "ok")
 CUSTOMER_DETAIL = "personal_data_found"
 DESK_SEES: tuple[str, ...] = (*FILES_CHECKED, CUSTOMER_DETAIL)
 SHOWN_FILE = "(file_state = ANY(%s) OR (file_state IS NULL AND state = 'clean'))"
+# The idea's own files (DEC-124, BLD-C216): never one added for the conversation (the "+" in S-08's box), sent or
+# not. Every desk read that lists or counts an idea's or an answer's files carries it (BLD-B274), and so do the two
+# pre-pack readers (`review.view.item_view`, `committee.qualify._evidence`, the `a.` form). The text is lane C's
+# `attachments.files.IDEA_OWN`, copied rather than imported: `attachments.files` imports this module and loads the
+# object store's client, so importing it back would make a cycle. A test pins both copies equal.
+IDEA_OWN = "purpose = 'idea' AND conversation_entry_id IS NULL"
+# The same, for a query that names the table `a`.
+IDEA_OWN_A = "a.purpose = 'idea' AND a.conversation_entry_id IS NULL"
 
 
 def has_role(conn: Conn, user_id: str, roles: Iterable[str]) -> bool:

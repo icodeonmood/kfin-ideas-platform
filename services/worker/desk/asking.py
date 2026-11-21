@@ -31,6 +31,7 @@ from desk.store import (
     CUSTOMER_DETAIL,
     DESK_SEES,
     FILES_CHECKED,
+    IDEA_OWN,
     Person,
     Refused,
     actor,
@@ -176,13 +177,14 @@ def _answer_text(r: dict[str, Any]) -> str:
 def _files(conn: Conn, answer_ids: Sequence[str]) -> dict[str, list[dict[str, Any]]]:
     """E-ENTITIES FileItem, short form, for the files attached to each answer, in every state: the sharer sees all
     of their own. A link's `type` is "link" (it has no MIME type); a file's is its MIME type. `customer_detail` marks
-    a file in which the scan found a customer detail (DEC-107)."""
+    a file in which the scan found a customer detail (DEC-107). Only the idea's own files (`IDEA_OWN`, BLD-B274):
+    never one added for the conversation."""
     out: dict[str, list[dict[str, Any]]] = {}
     if not answer_ids:
         return out
     for r in conn.execute(
-        "SELECT id, answer_id, kind, name, mime, bytes, pages, file_state, hidden_note FROM attachments "
-        "WHERE answer_id = ANY(%s::uuid[]) ORDER BY created_at, id",
+        "SELECT id, answer_id, kind, name, mime, bytes, pages, file_state, hidden_note FROM attachments "  # noqa: S608 (IDEA_OWN is fixed text)
+        f"WHERE answer_id = ANY(%s::uuid[]) AND {IDEA_OWN} ORDER BY created_at, id",
         (list(answer_ids),),
     ).fetchall():
         out.setdefault(str(r["answer_id"]), []).append(
@@ -266,7 +268,8 @@ def _set_json(
 
 
 def _filled(conn: Conn, idea: dict[str, Any]) -> dict[str, bool]:
-    """Which parts of the idea have something in them, for the suggestions (L-QUESTIONS.ask/3)."""
+    """Which parts of the idea have something in them, for the suggestions (L-QUESTIONS.ask/3). A file added for the
+    conversation is not the idea's (`IDEA_OWN`, BLD-B274), so on its own it leaves Attached empty."""
 
     def exists(sql: str) -> bool:
         return conn.execute(sql, (idea["id"],)).fetchone() is not None
@@ -276,7 +279,7 @@ def _filled(conn: Conn, idea: dict[str, Any]) -> dict[str, bool]:
         "often": bool(str(idea.get("often") or "").strip()),
         "who": bool(idea.get("affects")),
         "cost": exists("SELECT 1 FROM idea_worth WHERE idea_uuid = %s LIMIT 1"),
-        "evidence": exists("SELECT 1 FROM attachments WHERE idea_uuid = %s LIMIT 1"),
+        "evidence": exists(f"SELECT 1 FROM attachments WHERE idea_uuid = %s AND {IDEA_OWN} LIMIT 1"),  # noqa: S608 (fixed)
         "fix": exists("SELECT 1 FROM idea_fix WHERE idea_uuid = %s"),
     }
 
@@ -678,20 +681,29 @@ def open_set_for_sharer(
 def _link_files(conn: Conn, idea: dict[str, Any], answer_id: str, file_ids: Sequence[str]) -> None:
     """Attach `file_ids` to the answer. Only the idea's own files, not on another answer. A file holding a customer
     detail can be attached and sent (DEC-107): it is marked, and only the sharer, the desk and the committee open it.
-    Nothing is detached here: removing a file is the file row's own action."""
+    A file added for the conversation (DEC-124), on an entry or not, is not the idea's own (`IDEA_OWN`), so it is
+    refused like any other file that isn't the idea's (BLD-B274): the desk and the committee add those too, and
+    none of them goes on an answer. Nothing is detached here: removing a file is the file row's own action."""
     ids = sorted({str(i) for i in file_ids})
     if not ids:
         return
     rows = {
         str(r["id"]): dict(r)
         for r in conn.execute(
-            "SELECT id, idea_uuid, file_state, answer_id FROM attachments WHERE id = ANY(%s) FOR UPDATE",
+            "SELECT id, idea_uuid, file_state, answer_id, purpose, conversation_entry_id FROM attachments "
+            "WHERE id = ANY(%s) FOR UPDATE",
             (ids,),
         ).fetchall()
     }
     for fid in ids:
         r = rows.get(fid)
-        if r is None or r["idea_uuid"] != idea["id"] or (r["answer_id"] and str(r["answer_id"]) != answer_id):
+        if (
+            r is None
+            or r["idea_uuid"] != idea["id"]
+            or r["purpose"] != "idea"
+            or r["conversation_entry_id"] is not None
+            or (r["answer_id"] and str(r["answer_id"]) != answer_id)
+        ):
             raise Refused(422, "file_not_found", FILE_CANT_BE_ADDED, "file_ids")
     conn.execute("UPDATE attachments SET answer_id = %s WHERE id = ANY(%s)", (answer_id, ids))
 
