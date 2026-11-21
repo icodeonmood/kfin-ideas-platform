@@ -271,6 +271,63 @@ test("WCAG 1.4.10, S-08.layout/3, BLD-F095 at 320 x 256 (400% zoom): with the pi
   expect(at.overflow).toBe("auto");
 });
 
+test("WCAG 1.4.10, WCAG 2.4.7, L-CONVO/6, S-08.layout/3, BLD-F095 at 375px: with a file in the box the @mention list opens in full above it, never cut off by the box", async ({
+  page,
+}) => {
+  await answer(page);
+  // A hello first: the read after it brings a crew member to mention (the kit's sharer view has none)
+  const ADITI = {
+    id: "6c1f6a0e-1b8e-4d0a-9a51-0d6f3e2a1b02",
+    name: "Aditi Sharma",
+    first_name: "Aditi",
+    initials: "AS",
+  };
+  const hello = { ...sent(), id: "6c1f6a0e-0000-4000-8000-000000000020", text: "Hello, crew.", files: [] };
+  await page.route(`**/api/ideas/${IDEA}/conversation/messages`, (route) =>
+    route.fulfill({ status: 201, json: { entry: hello, hidden: 0 } }),
+  );
+  await page.route(`**/api/ideas/${IDEA}/conversation`, (route) =>
+    route.fulfill({
+      json: {
+        ...sharerView([hello]),
+        participants: [
+          { person: DESK, label: "The review desk", doing: "Reviewing it", you: false },
+          { person: ADITI, label: "Aditi Sharma", doing: "On the crew", you: false },
+          { person: KAVYA, label: "You", doing: "Shared the idea", you: true },
+        ],
+      },
+    }),
+  );
+  await openAsSharer(page);
+  const box = page.getByRole("textbox", { name: "Message the review desk" });
+  await box.fill("Hello, crew.");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("Hello, crew.", { exact: true })).toBeVisible();
+
+  // One file row in the box
+  await openPicker(page);
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "browse", exact: true }).click();
+  await (
+    await chooser
+  ).setFiles({ name: NAME, mimeType: "text/markdown", buffer: Buffer.from("Calls about R07: 40 a day.") });
+  const file = page.getByRole("list", { name: "Your files" }).getByRole("listitem").filter({ hasText: NAME });
+  await expect(file.getByText("Checked", { exact: true })).toBeVisible({ timeout: 15_000 });
+
+  // "@" opens the list above the pill, as the mention tests open it; the box lifts its cap while it is open
+  await box.click();
+  await page.keyboard.type("@");
+  const list = page.getByRole("listbox", { name: "People to mention" });
+  await expect(list).toBeVisible();
+  await expect(list.getByRole("option").first()).toContainText("Aditi Sharma");
+  await expect(list.getByRole("option").first()).toBeInViewport();
+  await expect(page.locator("form.cv-box")).toHaveCSS("overflow-y", "visible");
+  // Closed again, the cap is back (lane D's QA: the picker and files scroll inside the box on a short screen)
+  await page.keyboard.press("Escape");
+  await expect(list).toHaveCount(0);
+  await expect(page.locator("form.cv-box")).toHaveCSS("overflow-y", "auto");
+});
+
 test.describe('S-08\'s "+" at 1440px (Messages.jpg)', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
