@@ -6,7 +6,7 @@
  */
 import { expect, test, type Locator } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, signIn } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
   await signIn(page, PERSONAS.contributor);
@@ -297,6 +297,31 @@ test("C-ONES-FAN.states (BLD-D020): none, one with its companion and Cheer press
   await atLeast44(fan.getByRole("button", { name: "Previous post" }));
   await atLeast44(fan.getByRole("button", { name: "Next post" }));
   await expectNoSeriousAxeIssues(page); // spread
+});
+
+test("C-ONES-FAN.behaviour/2, F-MOTION (BLD-D026): See details flies the stack out into the row; once the fly-out settles, axe passes on WCAG 2.1 AA", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name === "phone-360", "PhoneHome draws no stack, so nothing flies out on a phone");
+  const fan = page.getByRole("region", { name: "Posts from the Ones" });
+  // Count the arcs as they start: a card that is finished early still reports its start, so this holds on a slow run
+  await fan.evaluate((el) => {
+    const w = window as unknown as { onesArcs: number };
+    w.onesArcs = 0;
+    el.addEventListener("animationstart", (e) => {
+      if ((e as AnimationEvent).animationName === "oFly") w.onesArcs++;
+    });
+  });
+  await fan.getByRole("button", { name: "See details" }).click();
+  await expect(fan.getByRole("button", { name: "Next post" })).toBeFocused();
+  // Wait for the fly-out the way the arrival animations are waited for, then for the region to drop data-fly
+  await settleMotion(page);
+  await expect(fan).not.toHaveAttribute("data-fly");
+  expect(await page.evaluate(() => (window as unknown as { onesArcs: number }).onesArcs)).toBe(3);
+  await expect(fan.getByRole("button", { name: "See details" })).toHaveCount(0);
+  await expect(fan.locator(".fan-side")).toHaveCount(0);
+  await expect(fan.getByText("Post 1 of 3")).toBeVisible();
+  await expectNoSeriousAxeIssues(page); // settles again, then axe on wcag2a, wcag2aa, wcag21a and wcag21aa
 });
 
 test("C-FIELD.kinds: paste fills the six code boxes; a wrong code is said under them", async ({ page }) => {
