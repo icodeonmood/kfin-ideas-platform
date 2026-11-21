@@ -26,7 +26,7 @@ import {
   type SwitchState,
 } from "../e2e/helpers";
 import { withSwitchLock } from "../e2e/switch-lock";
-import { carriedFor, expectWithDesk, pdfWith, runSeconds, step } from "./lib";
+import { addFile, carriedFor, expectWithDesk, openPicker, PLUS, runSeconds, step } from "./lib";
 
 // --- Run-time patterns ----------------------------------------------------------------------------------------------
 
@@ -570,8 +570,6 @@ step(
 
 // --- Walk items WF-01 and WF-04: the "+" in every prompt box (DEC-124) and the Capture first draft page (DEC-125) ---
 
-/** The "+" (DEC-124): its name and tooltip are the board's words (Home.md, `attachments`). */
-const PLUS = "Add files, a folder or a link";
 const LINK_LINE =
   "SharePoint, Teams and 1% Club links are marked internal. Anything else is marked external.";
 /** DEC-107's second sentence, as J-RECOVER/8 reads it on Check it. */
@@ -584,25 +582,6 @@ function toolRow(page: Page): Locator {
 }
 function tools(page: Page): Locator {
   return toolRow(page).locator("button, a");
-}
-
-/** The picker the "+" opens and controls (aria-controls). */
-async function openPicker(page: Page): Promise<Locator> {
-  const plus = page.getByRole("button", { name: PLUS });
-  await expect(plus).toHaveAttribute("aria-expanded", "false");
-  await plus.click();
-  await expect(plus).toHaveAttribute("aria-expanded", "true");
-  const id = await plus.getAttribute("aria-controls");
-  expect(id, 'the "+" names the picker it opens').toBeTruthy();
-  return page.locator(`[id="${id ?? ""}"]`);
-}
-
-/** "+", then "browse", then the person's file in the system's file chooser. */
-async function addFile(page: Page, name: string, text: string): Promise<void> {
-  const picker = await openPicker(page);
-  const chooser = page.waitForEvent("filechooser");
-  await picker.getByRole("button", { name: "browse", exact: true }).click();
-  await (await chooser).setFiles({ name, mimeType: "application/pdf", buffer: pdfWith(text) });
 }
 
 /** A file's row in the box (C-FILE.row): the list "Your files and links", one item per file. */
