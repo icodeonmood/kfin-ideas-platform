@@ -240,7 +240,8 @@ def _hidden(conn: Conn, idea_uuid: Any) -> Hidden:
         (str(r["kind"]), str(r["masked"]) if r["masked"] else None)
         for r in conn.execute(
             "SELECT kind, masked FROM (SELECT DISTINCT ON (coalesce(vault_tag, id::text)) kind, masked, created_at "
-            "FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' AND source <> 'desk' AND NOT (source = "
+            "FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' AND source <> 'desk' "
+            "AND source <> 'teamup' AND NOT (source = "
             "'answer' AND NOT EXISTS (SELECT 1 FROM answers a WHERE a.id::text = source_id AND a.sent_at IS NOT NULL)) "
             "ORDER BY coalesce(vault_tag, id::text), created_at) d ORDER BY created_at",
             (idea_uuid,),
@@ -264,6 +265,7 @@ def _shown(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT kind, reason, shown_by, shown_at FROM (SELECT DISTINCT ON (coalesce(vault_tag, id::text)) kind, "
         "reason, shown_by, shown_at FROM hidden_details WHERE idea_uuid = %s AND state = 'shown' AND source <> 'desk' "
+        "AND source <> 'teamup' "
         "AND NOT (source = 'answer' AND NOT EXISTS (SELECT 1 FROM answers a WHERE a.id::text = source_id "
         "AND a.sent_at IS NOT NULL)) "
         "ORDER BY coalesce(vault_tag, id::text), shown_at DESC) d ORDER BY shown_at, kind",

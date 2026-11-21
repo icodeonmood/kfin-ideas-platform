@@ -123,7 +123,7 @@ def handover(conn: Conn, idea: dict[str, Any], now: dt.datetime) -> dict[str, An
     elif status in ("with_review_desk", "needs_you"):
         hid = conn.execute(  # the kind names the detail when there is exactly one (min of one is that one)
             "SELECT count(*) AS n, min(kind) AS kind FROM hidden_details "
-            "WHERE idea_uuid = %s AND state = 'hidden'",
+            "WHERE idea_uuid = %s AND state = 'hidden' AND source <> 'teamup'",
             (idea["id"],),
         ).fetchone()
         sim = conn.execute(

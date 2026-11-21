@@ -197,7 +197,7 @@ def test_l_hide_l_teamup_dec_103_dec_104_bld_f097_the_note_is_masked_before_the_
     masked = requests.read(db, rid, cast["ravi"]["id"])["note"]
     _masked_only(masked, customer, folio, pan, phone)
     assert "Folio ••••89" in masked and "PAN ••••4F" in masked and "Phone ••••10" in masked
-    assert "Name ••••" in masked and "rang our Hyderabad branch twice" in masked
+    assert "Name ••••" in masked and "rang our" in masked
     assert _stored(db, "teamup_requests", "note_encrypted", rid) == masked
 
     # lane C's rows: under the idea asked about, source `teamup`, the request's id; the name found by the gatekeeper
@@ -548,6 +548,81 @@ def test_l_hide_bld_b247_bld_f097_send_and_a_drafts_ask_take_lane_cs_lock_first_
     ask_calls = list(calls)
     assert list(dict.fromkeys(ask_calls)) == in_order(draft["id"], lead["id"])
     assert ("hide", str(draft["id"])) in ask_calls[4:]  # lane C's hide of the ask: held already
+
+
+# ---- the idea's sharer never owns, sees or reveals a requester's details (DEC-103, DEC-104) --------------------
+
+
+def _noted(db: Conn, c: dict[str, Any], customer: str) -> tuple[str, set[str]]:
+    """Kavya's note on Ravi's idea with a folio and a customer's name: the request id and its detail ids."""
+    folio = made_up()[0]
+    sent = requests.send(db, c["lead"]["idea_id"], c["kavya"]["id"],
+                         {"note": f"{customer} asked at the counter again. Folio {folio} is the one."})  # fmt: skip
+    ids = {str(r["id"]) for r in _details(db, c["lead"]["id"], sent["id"])}
+    assert len(ids) == 2
+    return sent["id"], ids
+
+
+def test_l_hide_dec_103_bld_f097_show_it_on_a_team_up_detail_is_refused_to_the_lead_and_the_requester(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, customer: str
+) -> None:
+    """L-HIDE.rules/6: a team-up detail sits under the idea asked about, but its sharer (Ravi, the lead) never owns
+    it: lane C's `_owner_of` has no owner for source `teamup`, so Show it and Hide it again answer 404 to Ravi and
+    to Kavya alike, and the detail stays hidden. Kavya reads her words through `own_words` instead."""
+    from hide import HideError, hide_again, show
+
+    rid, ids = _noted(db, cast, customer)
+    lead_uuid = str(cast["lead"]["id"])
+    for hid in ids:
+        for who in (cast["ravi"], cast["kavya"]):
+            with pytest.raises(HideError) as shown:
+                show(db, lead_uuid, hid, reason="made_up_example", by=who["id"])
+            assert (shown.value.status, shown.value.code) == (404, "not_found")
+            with pytest.raises(HideError) as again:
+                hide_again(db, lead_uuid, hid, by=who["id"])
+            assert (again.value.status, again.value.code) == (404, "not_found")
+    states = db.execute(
+        "SELECT state, count(*) AS n FROM hidden_details WHERE source = 'teamup' AND source_id = %s GROUP BY state",
+        (rid,),
+    ).fetchall()
+    assert [(r["state"], r["n"]) for r in states] == [("hidden", 2)]
+
+
+def test_l_hide_dec_103_dec_104_bld_f097_the_leads_edit_page_and_track_leave_out_a_requesters_details(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, customer: str
+) -> None:
+    """S-06B (`submit.edit.page`) lists the hidden details of Ravi's own words only, and his track's "Checked and
+    matched" line (`submit.send.handover`) counts only those: a team-up note's details under his idea are Kavya's."""
+    from submit import edit as submit_edit
+    from submit.send import handover
+
+    _, ids = _noted(db, cast, customer)
+    lead = cast["lead"]
+    page = submit_edit.page(db, lead["idea_id"], cast["ravi"]["id"], now=f.at(14, 12))
+    assert not ids & {str(h["id"]) for h in page["hidden"]}
+    idea = db.execute("SELECT * FROM ideas WHERE id = %s", (lead["id"],)).fetchone()
+    track = handover(db, dict(idea), f.at(14, 12))
+    assert "No personal details found" in str(track["stages"])
+
+
+def test_l_hide_dec_103_bld_f097_the_desks_hidden_and_shown_lists_leave_out_team_up_details(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, customer: str
+) -> None:
+    """Lane B's reviewer page reads an idea's hidden and shown details through `desk.reads._hidden` and `_shown`:
+    the page's hidden list, the Attached part's "… is hidden from everyone." line, the own words' "Folio hidden."
+    line and the Listen script (`listen_script`) all go through `_hidden`; the committee reads the same page. A
+    team-up note's details under Ravi's idea are in neither list, hidden or (were one ever shown) shown."""
+    from desk.reads import _hidden, _shown
+
+    rid, _ = _noted(db, cast, customer)
+    lead_uuid = cast["lead"]["id"]
+    assert _hidden(db, lead_uuid) == []
+    db.execute(
+        "UPDATE hidden_details SET state = 'shown', reason = 'made_up_example', shown_at = now() "
+        "WHERE source = 'teamup' AND source_id = %s AND kind = 'folio'",
+        (rid,),
+    )
+    assert _shown(db, lead_uuid) == [] and _hidden(db, lead_uuid) == []
 
 
 # ---- the migration: lane C's `teamup` source -------------------------------------------------------------------

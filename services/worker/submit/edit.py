@@ -174,7 +174,7 @@ def page(conn: Conn, key: str, user_id: str, *, now: dt.datetime) -> dict[str, A
     until = day(closes, now) if closes else None
     hidden = conn.execute(
         "SELECT id, kind, masked, state, reason, shown_at FROM hidden_details WHERE idea_uuid = %s "
-        "AND source <> 'file' ORDER BY created_at",
+        "AND source NOT IN ('file', 'teamup') ORDER BY created_at",
         (uid,),
     ).fetchall()
     return {
