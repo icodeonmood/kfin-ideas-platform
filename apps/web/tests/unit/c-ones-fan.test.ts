@@ -541,21 +541,57 @@ const functions = (pose: string) =>
   [...pose.matchAll(/([a-zA-Z]+)\(/g)].map((m) => m[1]).filter((f) => f !== "calc" && f !== "var");
 
 /** jsdom has no matchMedia: answer true for the queries given and false for any other. */
+let held: string[] = [];
+const heard = new Map<string, Set<() => void>>();
 function mediaHolds(...queries: string[]) {
+  held = queries;
   Object.defineProperty(window, "matchMedia", {
     configurable: true,
     writable: true,
     value: (media: string) => ({
-      matches: queries.includes(media),
+      get matches() {
+        return held.includes(media);
+      },
       media,
       onchange: null,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
+      addEventListener: (_: string, cb: () => void) => {
+        if (!heard.has(media)) heard.set(media, new Set());
+        heard.get(media)!.add(cb);
+      },
+      removeEventListener: (_: string, cb: () => void) => heard.get(media)?.delete(cb),
       addListener: () => undefined,
       removeListener: () => undefined,
       dispatchEvent: () => false,
     }),
   });
+}
+/** The window crosses a breakpoint: now the queries given hold, and each list whose answer changed says so. */
+function mediaChange(...queries: string[]) {
+  const before = held;
+  held = queries;
+  act(() => {
+    for (const [media, cbs] of heard)
+      if (before.includes(media) !== held.includes(media)) for (const cb of cbs) cb();
+  });
+}
+/** requestAnimationFrame held until the test runs the frame. */
+function framesHeld() {
+  const frames = new Map<number, FrameRequestCallback>();
+  let id = 0;
+  vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+    frames.set(++id, cb);
+    return id;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (n: number) => frames.delete(n));
+  return {
+    pending: () => frames.size,
+    run: () =>
+      act(() => {
+        const due = [...frames.values()];
+        frames.clear();
+        for (const f of due) f(0);
+      }),
+  };
 }
 
 const box = (left: number) =>
@@ -579,12 +615,15 @@ function Cheerable({ start }: { start: boolean }) {
 
 const button = (name: string) => host.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
 
-/** Lay the phone row out as if it rests with card `k` at its snap point, cards 312px apart (jsdom has no layout). */
+/** Lay the phone row out (jsdom has no layout): cards 312px apart by offsetLeft, the row scrolled to rest with card
+ * `k` at its snap point. The boxes on screen are skewed on purpose, as by a track still gliding back from the
+ * desktop's translateX, so only a measurement from layout positions finds the right card. */
 function rowAt(view: HTMLElement, k: number) {
-  view.getBoundingClientRect = () => box(0);
   cards().forEach((c, i) => {
-    c.getBoundingClientRect = () => box((i - k) * 312);
+    Object.defineProperty(c, "offsetLeft", { configurable: true, get: () => 40 + i * 312 });
+    c.getBoundingClientRect = () => box((i - 2) * 312 - 131);
   });
+  view.scrollLeft = k * 312;
 }
 /** The phone row stops scrolling (the browser's scrollend). */
 const settles = (view: HTMLElement) =>
@@ -601,10 +640,17 @@ function phoneRow(n: number, ...more: string[]) {
   rowAt(view, 0);
   return { region, view, scrollTo };
 }
+/** A scrollTo that lands at once, as an instant one does. */
+const lands = (view: HTMLElement) =>
+  vi.fn((o: ScrollToOptions) => {
+    view.scrollLeft = o.left ?? 0;
+  });
 const seeDetails = () => host.querySelector<HTMLButtonElement>(".fan-side button")!;
 
 afterEach(() => {
   delete (window as { matchMedia?: unknown }).matchMedia;
+  held = [];
+  heard.clear();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -878,6 +924,9 @@ describe("C-ONES-FAN.behaviour/7, BLD-D026: on a phone several posts scroll by s
     act(() => button("Next post").click());
     expect(applied(components, track, "transform", 1280)).toContain("var(--at)");
     expect(applied(components, track, "transform", 390)).toBeUndefined();
+    // and the track never glides there, so narrowing to a phone drops the desktop's translateX at once
+    expect(applied(components, track, "transition", 390)).toBe("none");
+    expect(applied(components, track, "transition", 1280)).toBe("transform var(--mo-move) var(--mo-out)");
     // Under reduced motion it still snaps, and moves without a glide
     expect(applied(components, view, "scroll-snap-type", 390, true)).toBe("x mandatory");
     expect(applied(components, view, "scroll-behavior", 390, true)).toBe("auto");
@@ -895,7 +944,7 @@ describe("C-ONES-FAN.behaviour/7, BLD-D026: on a phone several posts scroll by s
     expect(region.className).toBe("fan several spread");
     // Next scrolls the row so the fourth card sits at its snap point, with a glide; the line waits for the settle
     act(() => button("Next post").click());
-    expect(scrollTo).toHaveBeenLastCalledWith({ left: 312, behavior: "smooth" });
+    expect(scrollTo).toHaveBeenLastCalledWith({ left: 936, behavior: "smooth" });
     expect(position()).toBe("Post 3 of 4");
     rowAt(view, 3);
     settles(view);
@@ -932,7 +981,7 @@ describe("C-ONES-FAN.behaviour/7, BLD-D026: on a phone several posts scroll by s
     act(() => button("Next post").click());
     said.push(position());
     expect(scrollTo).toHaveBeenNthCalledWith(1, { left: 312, behavior: "smooth" });
-    expect(scrollTo).toHaveBeenNthCalledWith(2, { left: 468, behavior: "smooth" }); // card 2, from halfway
+    expect(scrollTo).toHaveBeenNthCalledWith(2, { left: 624, behavior: "smooth" }); // card 2, from halfway
     rowAt(view, 2);
     settles(view);
     said.push(position());
@@ -1004,5 +1053,96 @@ describe("C-ONES-FAN.behaviour/3, WCAG 2.4.3, BLD-D026: focus never stays in a c
     settles(view);
     expect(position()).toBe("Post 2 of 3");
     expect(document.activeElement).toBe(button("Next post"));
+    // A later settle, with focus outside the card it leaves, leaves focus alone (even at the last card)
+    rowAt(view, 2);
+    settles(view);
+    expect(position()).toBe("Post 3 of 3");
+    expect(document.activeElement).toBe(button("Next post"));
+  });
+});
+
+describe("C-ONES-FAN.behaviour/7, BLD-D026: crossing the phone breakpoint keeps the row and the line together", () => {
+  it("C-ONES-FAN.behaviour/7: on Post 3 on a desktop, narrowed to a phone while the track is still translated, the row jumps to card 3 a frame later and card 3 is the live one", () => {
+    const frames = framesHeld();
+    mediaHolds(FAN_MOVES);
+    const region = fan(3)!;
+    act(() => button("Next post").click());
+    act(() => button("Next post").click());
+    expect(position()).toBe("Post 3 of 3");
+    const view = region.querySelector<HTMLElement>(".fan-view")!;
+    const scrollTo = lands(view);
+    view.scrollTo = scrollTo as unknown as typeof view.scrollTo;
+    rowAt(view, 0); // the boxes skewed by the gliding track, the row's own scroll still at 0
+    mediaChange(FAN_PHONE, FAN_MOVES);
+    expect(scrollTo).not.toHaveBeenCalled(); // not measured until the phone's rules are laid out
+    expect(frames.pending()).toBe(1);
+    frames.run();
+    expect(scrollTo).toHaveBeenCalledWith({ left: 624, behavior: "auto" });
+    expect(view.scrollLeft).toBe(624);
+    expect(position()).toBe("Post 3 of 3");
+    expect(cards().map((c) => c.hasAttribute("inert"))).toEqual([true, true, false]);
+  });
+
+  it("C-ONES-FAN.behaviour/7: if nothing scrolls when the screen narrows, the line follows the card the row rests on, so the card on screen is never inert", () => {
+    const frames = framesHeld();
+    mediaHolds(FAN_MOVES);
+    const region = fan(3)!;
+    act(() => button("Next post").click());
+    act(() => button("Next post").click());
+    const view = region.querySelector<HTMLElement>(".fan-view")!;
+    view.scrollTo = vi.fn() as unknown as typeof view.scrollTo; // the row does not move
+    rowAt(view, 0);
+    mediaChange(FAN_PHONE, FAN_MOVES);
+    frames.run();
+    expect(position()).toBe("Post 1 of 3");
+    expect(cards().map((c) => c.hasAttribute("inert"))).toEqual([false, true, true]);
+  });
+
+  it("C-ONES-FAN.behaviour/3: a Next gliding on a phone when the screen turns wide is dropped, so Next and Previous step from the line's card", () => {
+    framesHeld();
+    const { scrollTo } = phoneRow(3, FAN_MOVES);
+    act(() => button("Next post").click());
+    expect(scrollTo).toHaveBeenCalledWith({ left: 312, behavior: "smooth" });
+    expect(position()).toBe("Post 1 of 3"); // still gliding
+    mediaChange(FAN_MOVES); // turned to landscape before it settled
+    act(() => button("Next post").click());
+    expect(position()).toBe("Post 2 of 3");
+    act(() => button("Previous post").click());
+    expect(position()).toBe("Post 1 of 3");
+  });
+
+  it("C-ONES-FAN.behaviour/7: where a browser has no scrollend, the row settles once it has been still for 120ms; a scroll restarts the wait", () => {
+    // jsdom defines onscrollend on the window, as most browsers do; WebKit's path after a person's own swipe has none
+    let owner: object | null = window;
+    while (owner && !Object.prototype.hasOwnProperty.call(owner, "onscrollend"))
+      owner = Object.getPrototypeOf(owner);
+    const descriptor = owner ? Object.getOwnPropertyDescriptor(owner, "onscrollend") : undefined;
+    try {
+      if (owner) Reflect.deleteProperty(owner, "onscrollend");
+      expect("onscrollend" in window).toBe(false);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const { view } = phoneRow(3, FAN_MOVES);
+      const scrolls = () =>
+        act(() => {
+          view.dispatchEvent(new Event("scroll"));
+        });
+      rowAt(view, 1);
+      scrolls();
+      act(() => vi.advanceTimersByTime(119));
+      expect(position()).toBe("Post 1 of 3");
+      act(() => vi.advanceTimersByTime(1));
+      expect(position()).toBe("Post 2 of 3");
+      rowAt(view, 2);
+      scrolls();
+      act(() => vi.advanceTimersByTime(100));
+      scrolls(); // still moving: the wait starts again
+      act(() => vi.advanceTimersByTime(119));
+      expect(position()).toBe("Post 2 of 3");
+      act(() => vi.advanceTimersByTime(1));
+      expect(position()).toBe("Post 3 of 3");
+    } finally {
+      if (owner && descriptor) Object.defineProperty(owner, "onscrollend", descriptor);
+    }
+    expect("onscrollend" in window).toBe(true);
   });
 });

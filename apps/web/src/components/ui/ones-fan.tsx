@@ -47,19 +47,25 @@ const cardsIn = (view: HTMLElement) => [
   ...view.querySelectorAll<HTMLElement>(":scope > .fan-track > .fan-card"),
 ];
 
-/** How far a card sits from the phone row's snap point (the view's left edge plus its scroll padding). */
-function fromSnap(view: HTMLElement, card: HTMLElement): number {
-  const pad = parseFloat(getComputedStyle(view).scrollPaddingLeft) || 0;
-  return card.getBoundingClientRect().left - view.getBoundingClientRect().left - pad;
+/** The phone row's scroll position that puts each card at its snap point, from layout positions only: offsetLeft
+ * ignores transforms, so a track still gliding back from its desktop translateX, or a card's own pose, never skews
+ * it. The first card sits at the start of the track, which sits at the view's padding edge. */
+function snapPoints(view: HTMLElement): number[] {
+  const items = cardsIn(view);
+  const first = items[0];
+  if (!first) return [];
+  const css = getComputedStyle(view);
+  const inset = (parseFloat(css.paddingLeft) || 0) - (parseFloat(css.scrollPaddingLeft) || 0);
+  return items.map((card) => Math.max(0, card.offsetLeft - first.offsetLeft + inset));
 }
 
-/** The card the phone row rests on: the one nearest its snap point (the last card when the row is scrolled to its end,
- * as the last card cannot reach the snap point). */
+/** The card the phone row rests on: the one whose snap point is nearest the scroll position (the last card when the
+ * row is scrolled to its end, as the last card cannot reach its snap point). */
 function restingCard(view: HTMLElement): number {
   let best = 0;
   let gap = Infinity;
-  cardsIn(view).forEach((card, i) => {
-    const d = Math.abs(fromSnap(view, card));
+  snapPoints(view).forEach((left, i) => {
+    const d = Math.abs(left - view.scrollLeft);
     if (d < gap) {
       gap = d;
       best = i;
@@ -160,11 +166,10 @@ export function OnesFan({
   // On a phone the row is the view's own scroll: bring card n to its snap point. False when nothing will scroll
   const snapTo = useCallback((n: number, instant: boolean) => {
     const el = view.current;
-    const card = el ? cardsIn(el)[n] : undefined;
-    if (!el || !card || typeof el.scrollTo !== "function") return false;
-    const by = fromSnap(el, card);
-    if (Math.abs(by) < 1) return false;
-    el.scrollTo({ left: el.scrollLeft + by, behavior: instant ? "auto" : "smooth" });
+    const left = el ? snapPoints(el)[n] : undefined;
+    if (!el || left === undefined || typeof el.scrollTo !== "function") return false;
+    if (Math.abs(left - el.scrollLeft) < 1) return false;
+    el.scrollTo({ left, behavior: instant ? "auto" : "smooth" });
     return true;
   }, []);
 
@@ -174,6 +179,7 @@ export function OnesFan({
       const n = Math.min(Math.max(to, 0), count - 1);
       spreadOut();
       if (!holds(FAN_PHONE)) {
+        pending.current = null;
         moveTo(n);
         return;
       }
@@ -190,9 +196,11 @@ export function OnesFan({
     [count, moveTo, snapTo, spreadOut],
   );
 
-  // One card on from where the row is heading, so a quick second Next goes two cards on, never back
+  // One card on from where the phone row is heading, so a quick second Next goes two cards on, never back. Wider
+  // than a phone there is no scroll to head anywhere: one card on from the line's
   const step = useCallback(
-    (d: 1 | -1) => go((pending.current ?? Math.min(atNow.current, count - 1)) + d),
+    (d: 1 | -1) =>
+      go(((holds(FAN_PHONE) ? pending.current : null) ?? Math.min(atNow.current, count - 1)) + d),
     [count, go],
   );
 
@@ -241,16 +249,33 @@ export function OnesFan({
     };
   }, [count, moveTo, spreadOut]);
 
-  // Turned to a phone's width (a window narrowed, a phone rotated), the row goes to the card the line names
+  // Turned to a phone's width (a window narrowed, a phone rotated), the row jumps to the card the line names, one
+  // frame later, once layout has the phone's rules. The jump is instant, so the row has landed by the next line; if
+  // nothing scrolled, the line follows where the row rests instead, so the card on screen is never the inert one.
+  // Turned wider, a scroll heading somewhere is dropped.
   useEffect(() => {
     if (count < 2 || typeof window.matchMedia !== "function") return;
     const m = window.matchMedia(FAN_PHONE);
+    let frame = 0;
     const onChange = () => {
-      if (m.matches) snapTo(Math.min(atNow.current, count - 1), true);
+      pending.current = null;
+      cancelAnimationFrame(frame);
+      if (!m.matches) return;
+      frame = requestAnimationFrame(() => {
+        const el = view.current;
+        if (!el || !m.matches) return;
+        snapTo(Math.min(atNow.current, count - 1), true);
+        const i = restingCard(el);
+        if (i > 0) spreadOut();
+        moveTo(i);
+      });
     };
     m.addEventListener("change", onChange);
-    return () => m.removeEventListener("change", onChange);
-  }, [count, snapTo]);
+    return () => {
+      cancelAnimationFrame(frame);
+      m.removeEventListener("change", onChange);
+    };
+  }, [count, moveTo, snapTo, spreadOut]);
 
   // The wheel steps one card per gesture while there is a card to go to; otherwise the page scrolls on.
   useEffect(() => {
@@ -271,7 +296,7 @@ export function OnesFan({
         lastWheel.current = Date.now();
         return;
       }
-      const from = pending.current ?? cur;
+      const from = (holds(FAN_PHONE) ? pending.current : null) ?? cur;
       const can = forward ? from < count - 1 : from > 0;
       if (!can) return;
       e.preventDefault();

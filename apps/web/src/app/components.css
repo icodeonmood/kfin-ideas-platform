@@ -1788,6 +1788,12 @@ textarea:is(.fld, .textarea) {
   .fan.several .fan-card {
     scroll-snap-align: start;
   }
+
+  /* No glide of the track here: narrowed to a phone's width, the desktop's translateX goes at once, so the row is
+     measured where it is (BLD-D026) */
+  .fan-track {
+    transition: none;
+  }
 }
 
 /* Stacked (several posts at rest, wider than a phone): the first card faces you and up to three sit behind it,
