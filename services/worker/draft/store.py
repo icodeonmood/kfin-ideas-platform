@@ -749,13 +749,20 @@ def _own_receipts(conn: Conn, idea_uuid: str, messages: list[dict[str, Any]]) ->
 
 
 def _files(conn: Conn, idea_uuid: str, owner: Owner) -> list[dict[str, Any]]:
+    """The draft's files with the same lines `POST /files` gives (E-ENTITIES FileItem, BLD-E076): a draft's files
+    are only ever added by its owner (`attachments.files._owner`), and only the owner reads the draft, so each line
+    is the uploader's, the found line included (C-FILE.row, DEC-107)."""
+    from attachments.files import effective_state, problem_line
+
     rows = conn.execute(
         "SELECT id, kind, name, mime, bytes, pages, item_count, file_state, state, hidden_note, link_scope, "
-        "message_id, created_at FROM attachments WHERE idea_uuid = %s AND parent_id IS NULL ORDER BY created_at",
+        "message_id, created_at, checks FROM attachments WHERE idea_uuid = %s AND parent_id IS NULL "
+        "ORDER BY created_at",
         (idea_uuid,),
     ).fetchall()
     out = []
     for r in rows:
+        row = dict(r)
         item: dict[str, Any] = {
             "id": r["id"], "kind": r["kind"], "name": r["name"], "type": r["mime"] or "", "size": int(r["bytes"]),
             "state": r["file_state"] or r["state"], "added_by": {"id": owner.user_id},
@@ -765,6 +772,9 @@ def _files(conn: Conn, idea_uuid: str, owner: Owner) -> list[dict[str, Any]]:
                          ("link_scope", "link_scope"), ("message_id", "message_id")):  # fmt: skip
             if r[col] is not None:
                 item[key] = str(r[col]) if key == "message_id" else r[col]
+        problem = problem_line(row, effective_state(row), uploader=True)
+        if problem is not None:
+            item["problem"] = problem
         out.append(item)
     return out
 
