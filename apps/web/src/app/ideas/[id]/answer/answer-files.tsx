@@ -8,8 +8,11 @@
  * - Each file goes to `POST /api/files` with the answer's id (`answerUploadForm`), never `for: "conversation"`: an
  *   answer's file is one of the idea's own (BLD-B274), so DEC-107's checks run unchanged (the virus scan, then the
  *   personal-details check).
- * - An upload needs the answer's row: `answerId` makes it once per question (an empty save creates it) and every pick
- *   waits for that one save.
+ * - An upload needs the answer's row: `answerId` makes it once per question (an empty save creates it), after any save
+ *   already on its way, and every pick waits for that one save. A save the worker refuses (the set closed, the answer
+ *   sent or held by a co-sharer) uploads nothing: the row says the worker's words, with no "Try again".
+ * - Asking again stops when the screen goes, and a reply never overwrites a newer change to its row (a hide that has
+ *   just landed).
  * - A row with a customer detail found (DEC-107) says who can open it and may still be sent: nothing here blocks Send.
  *   "Hide it for me" shows only while `files.blackout` is on, as on Check it.
  *
@@ -20,16 +23,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, call, urls, type Call } from "@/app/share/[id]/check/client";
 import { CHECK_COPY } from "@/app/share/[id]/check/copy";
 import { POLL, pollDelay, rowView, settling, type ProofItem } from "@/app/share/[id]/check/model";
-import { S08_COPY } from "@/components/convo/compose";
 import { Button } from "@/components/ui/button";
 import { FileList, FileRow } from "@/components/ui/file";
 import type { FileItem, UploadConfig } from "@/lib/contracts";
-import { answerUploadForm } from "@/lib/desk/answer-files";
+import { ANSWER_FILES_COPY, answerUploadForm } from "@/lib/desk/answer-files";
 
 /** The limit before `GET /api/config/uploads` answers: the web edge's own ceiling; the worker checks the real one. */
 const LIMIT_BEFORE_CONFIG_MB = 25;
-/** The worker's refusals that trying again would not change: its words go under the row. */
+/** The worker's refusals that trying again would not change, and a paused feature: its words go under the row. */
 const REFUSED = [
+  "not_available",
   "type_not_allowed",
   "locked",
   "forbidden",
@@ -40,6 +43,10 @@ const REFUSED = [
 ];
 
 export type AnswerRows = Record<string, ProofItem[]>;
+
+/** Where a question's files go: the answer's id; the worker's words when it refused the save that makes the row (no
+ * "Try again"); or null when that save failed and may be tried again. */
+export type AnswerTarget = { id: string } | { refused: string } | null;
 
 /** `POST /api/files` for an answer (A-API.files): the answer's id and the file. */
 export function uploadForAnswer(answerId: string, file: File): Promise<Call<FileItem>> {
@@ -66,7 +73,7 @@ export interface AnswerFiles {
  */
 export function useAnswerFiles(
   initial: AnswerRows,
-  answerId: (qid: string) => Promise<string | null>,
+  answerId: (qid: string) => Promise<AnswerTarget>,
 ): AnswerFiles {
   const [rows, setRows] = useState<AnswerRows>(initial);
   const live = useRef<AnswerRows>(initial);
@@ -78,9 +85,13 @@ export function useAnswerFiles(
     live.current = { ...live.current, [qid]: fn(live.current[qid] ?? []) };
     setRows(live.current);
   }, []);
+  // How many times each row has changed: a poll's reply for an older one is dropped
+  const changed = useRef(new Map<string, number>());
   const replace = useCallback(
-    (qid: string, key: string, next: Partial<ProofItem>) =>
-      commit(qid, (list) => list.map((p) => (p.key === key ? { ...p, ...next } : p))),
+    (qid: string, key: string, next: Partial<ProofItem>) => {
+      changed.current.set(key, (changed.current.get(key) ?? 0) + 1);
+      commit(qid, (list) => list.map((p) => (p.key === key ? { ...p, ...next } : p)));
+    },
     [commit],
   );
   const find = (qid: string, key: string) => (live.current[qid] ?? []).find((p) => p.key === key);
@@ -104,8 +115,8 @@ export function useAnswerFiles(
   const upload = async (qid: string, key: string, file: File) => {
     replace(qid, key, { localState: "uploading", refusal: undefined, note: undefined });
     const posted = (async () => {
-      const aid = await ensure.current(qid);
-      return aid ? uploadForAnswer(aid, file) : null;
+      const target = await ensure.current(qid);
+      return target && "id" in target ? uploadForAnswer(target.id, file) : target;
     })();
     pending.current.set(key, posted);
     const r = await posted;
@@ -113,11 +124,16 @@ export function useAnswerFiles(
     if (removedEarly.current.has(key)) {
       // Removed while it uploaded: what reached the server goes too.
       removedEarly.current.delete(key);
-      if (r?.ok && r.body?.id) void api.removeFile(r.body.id);
+      if (r && "ok" in r && r.ok && r.body?.id) void api.removeFile(r.body.id);
       return;
     }
     if (r === null) {
       replace(qid, key, { localState: "upload_failed" });
+      return;
+    }
+    if ("refused" in r) {
+      // The worker refused the answer's save: nothing was uploaded, and trying again would not change it
+      replace(qid, key, { localState: "refused", refusal: r.refused });
       return;
     }
     if (r.ok) {
@@ -202,39 +218,53 @@ export function useAnswerFiles(
   }, []);
 
   // Files settle on the server (scan, then the personal-details check): ask again until they do, as Check it and
-  // S-08 do (C-FILE.row, BLD-C139): every 2 s, longer after a failed ask, and "Try again" after five in a row.
+  // S-08 do (C-FILE.row, BLD-C139): every 2 s, longer after a failed ask, and "Try again" after five in a row. Every
+  // moving row is asked at once and the replies are applied together; none after the screen goes or the effect runs
+  // again, and none over a newer change to the same row.
   useEffect(() => {
     const moving = Object.entries(rows).flatMap(([qid, list]) =>
       list.filter(settling).map((p) => ({ qid, p })),
     );
     if (!moving.length) return;
+    let cancelled = false;
     const worst = Math.max(0, ...moving.map(({ p }) => pollFails.current.get(p.key) ?? 0));
     const t = setTimeout(async () => {
+      const replies = await Promise.all(
+        moving
+          .filter(({ p }) => p.item?.id)
+          .map(({ qid, p }) => {
+            const seen = changed.current.get(p.key) ?? 0;
+            return api.file(p.item!.id).then((r) => ({ qid, key: p.key, seen, r }));
+          }),
+      );
+      if (cancelled) return;
       let again = false;
-      for (const { qid, p } of moving) {
-        if (!p.item?.id) continue;
-        const r = await api.file(p.item.id);
-        if (!(live.current[qid] ?? []).some((x) => x.key === p.key)) continue; // removed meanwhile
+      for (const { qid, key, seen, r } of replies) {
+        if (!(live.current[qid] ?? []).some((x) => x.key === key)) continue; // removed meanwhile
+        if ((changed.current.get(key) ?? 0) !== seen) continue; // a newer change to the row landed meanwhile
         if (r.ok && r.body) {
-          pollFails.current.delete(p.key);
-          replace(qid, p.key, { item: r.body });
+          pollFails.current.delete(key);
+          replace(qid, key, { item: r.body });
           continue;
         }
-        const fails = (pollFails.current.get(p.key) ?? 0) + 1;
-        pollFails.current.set(p.key, fails);
-        if (fails >= POLL.tries) replace(qid, p.key, { stalled: true });
+        const fails = (pollFails.current.get(key) ?? 0) + 1;
+        pollFails.current.set(key, fails);
+        if (fails >= POLL.tries) replace(qid, key, { stalled: true });
         else again = true;
       }
       if (again) setPollTick((n) => n + 1);
     }, pollDelay(worst));
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [rows, pollTick, replace]);
 
   return { rows, limitMb, loadConfig, addFiles, remove, retry, hide, settle };
 }
 
 /**
- * One answer's rows under its box (C-FILE.row), in the list "Your files" (lane F's words). Check it's actions: "Try
+ * One answer's rows under its box (C-FILE.row), in the list "Your files" (lane F's words for S-08's box). Check it's actions: "Try
  * again", "Hide it for me" while `files.blackout` is on, and "Remove", named "Remove {name}".
  */
 export function AnswerFileRows({
@@ -256,7 +286,7 @@ export function AnswerFileRows({
   const C = CHECK_COPY.proof;
   return (
     <div className="ans-files">
-      <FileList label={S08_COPY.files}>
+      <FileList label={ANSWER_FILES_COPY.files}>
         {rows.map((p) => {
           const v = rowView(p, limitMb);
           const name = p.item?.name ?? p.name;

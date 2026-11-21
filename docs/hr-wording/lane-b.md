@@ -164,7 +164,7 @@ DEC-113 extends DEC-111 to the Ones Committee: a sharer, and the crew, never see
 
 ## 12. Files on an answer (21 Nov, BLD-B275)
 
-S-R3's "+" adds files to an answer (DEC-124). The "+" keeps its one name everywhere, "Add files, a folder or a link" (the Home board's words), in place of the Answer board's "Attach files to this answer". The rows use Check it's words and lane F's list name "Your files". The one new line is the count of an answer's files in "Check your answers" and in the sent list, built on the Answer board's own "Two screenshots attached, folio hidden.". Recommended text under DEC-123; HR would normally sign it off.
+S-R3's "+" adds files to an answer (DEC-124). S-R3's "+" uses the Answer board's own name, "Attach files to this answer", and its tooltip "Attach files", through lane D's button's `label` and `tooltip`: it opens the file chooser only, so the name says what it does (WCAG 2.4.6). Lane D approved it on 21 Nov as an exception to the one name every other prompt box keeps, "Add files, a folder or a link". The rows use Check it's words and lane F's list name "Your files". The one new line is the count of an answer's files in "Check your answers" and in the sent list, built on the Answer board's own "Two screenshots attached, folio hidden.". Recommended text under DEC-123; HR would normally sign it off.
 
 | Where | Board copy | On screen |
 |---|---|---|
