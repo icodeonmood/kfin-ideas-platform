@@ -21,7 +21,7 @@ import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { Client } from "pg";
 
-import { signIn } from "../e2e/helpers";
+import { expectNoSeriousAxeIssues as axeAndReflow, signIn } from "../e2e/helpers";
 
 export type JourneyId =
   | "J-SHARE"
@@ -404,6 +404,25 @@ export function onMain(id: string): boolean {
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const exact = new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`);
   return base === id ? exact.test(corpus) : exact.test(corpus) || onMain(base);
+}
+
+// --- Accessibility -----------------------------------------------------------------------------------------------------
+
+/**
+ * The suites' axe check (e2e/helpers), then the page as the step left it. The check ends with the reflow check (WCAG
+ * 1.4.10, BLD-A163), which narrows the page to 320 px and back. A screen that draws its phone layout from a media
+ * query moves parts of itself on each crossing (S-08's "+" and its open picker, `usePhone` in conversation.tsx; the
+ * share box, `useIsPhone` in compose.tsx), and React puts them back in the frame after the resize. Focus or words given to the old copy are lost, so an Escape
+ * that follows reaches nothing (train 8, J-TEAMUP/6b). The media query's change runs before the next frame's
+ * callbacks, so two frames later the page is the one the step had. Every journey takes it from here.
+ */
+export async function expectNoSeriousAxeIssues(page: Page): Promise<void> {
+  await axeAndReflow(page);
+  await page.evaluate(async () => {
+    const frame = () => new Promise((done) => requestAnimationFrame(done));
+    await frame();
+    await frame();
+  });
 }
 
 // --- Files -------------------------------------------------------------------------------------------------------------

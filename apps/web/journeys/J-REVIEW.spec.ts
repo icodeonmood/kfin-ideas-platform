@@ -18,8 +18,17 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues } from "../e2e/helpers";
-import { expectDeskCard, ideaUrl, seeded, signInAs, snap, step, type Person, type StepRef } from "./lib";
+import {
+  expectDeskCard,
+  expectNoSeriousAxeIssues,
+  ideaUrl,
+  seeded,
+  signInAs,
+  snap,
+  step,
+  type Person,
+  type StepRef,
+} from "./lib";
 
 // --- Patterns for run-time parts of the copy ----------------------------------------------------------------------------
 

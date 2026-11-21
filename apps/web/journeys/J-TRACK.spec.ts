@@ -276,13 +276,19 @@ step(
     await openInbox(page, "tanvi");
     // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN), from the review desk as a whole (DEC-111); its countdown
     // follows the one rule (BLD-A225): days, or HH:MM under a day.
-    const item = inboxItem(
+    const reminders = inboxItem(
       page,
       "The review desk",
       String.raw`${LEFT} to answer the review desk’s questions`,
       t6.title,
     );
+    // L-QUESTIONS.clock/2 reminds 1 day and 2 hours before the deadline, once each. The seed records the day-before
+    // one at the load (club_seed `_day_before`); a walk that crosses 4 pm or 6 pm office time also meets the sweep's
+    // next one: "2 hours before" at 4 pm for a load just before it, or "1 day before" at 6 pm for a load between 4 and
+    // 6 pm, whose deadline is 6 pm the next day. So Tanvi's Inbox holds one or two, and both lead to the questions.
+    const item = reminders.first();
     await expect(item).toBeVisible();
+    expect(await reminders.count(), "one reminder per threshold").toBeLessThanOrEqual(2);
     await item.click();
     await expect(page.getByRole("link", { name: "Answer the questions" })).toHaveAttribute(
       "href",

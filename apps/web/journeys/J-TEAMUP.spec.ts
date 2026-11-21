@@ -19,10 +19,10 @@
  */
 import { expect, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues } from "../e2e/helpers";
 import {
   addFile,
   carriedFor,
+  expectNoSeriousAxeIssues,
   ideaUrl,
   openPicker,
   PLUS,
@@ -351,6 +351,7 @@ step(
     await expectNoSeriousAxeIssues(page);
     const link = picker.getByRole("textbox", { name: "Or paste a link to a page, file or idea" });
     await link.focus();
+    await expect(link).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(picker).toHaveCount(0);
     await expect(page.getByRole("button", { name: PLUS })).toBeFocused();

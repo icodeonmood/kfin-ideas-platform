@@ -18,15 +18,18 @@
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import {
-  expectNoSeriousAxeIssues,
-  restoreSwitches,
-  setSwitch,
-  signIn,
-  type SwitchState,
-} from "../e2e/helpers";
+import { restoreSwitches, setSwitch, signIn, type SwitchState } from "../e2e/helpers";
 import { withSwitchLock } from "../e2e/switch-lock";
-import { addFile, carriedFor, expectWithDesk, openPicker, PLUS, runSeconds, step } from "./lib";
+import {
+  addFile,
+  carriedFor,
+  expectNoSeriousAxeIssues,
+  expectWithDesk,
+  openPicker,
+  PLUS,
+  runSeconds,
+  step,
+} from "./lib";
 
 // --- Run-time patterns ----------------------------------------------------------------------------------------------
 
@@ -632,6 +635,7 @@ step(
     await expectNoSeriousAxeIssues(page);
     // Escape closes it and focus goes back to the "+".
     await link.focus();
+    await expect(link).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(picker).toHaveCount(0);
     await expect(page.getByRole("button", { name: PLUS })).toBeFocused();
