@@ -11,7 +11,8 @@
  * Rekha: Bhavesh's on R1, sent with no idea brought. Row 2 withdraws it so the sheet can be written again, row 3 sends
  * the new note, Rekha approves it (row 4), and the two talk in R1's conversation (row 6). Row 3b (DEC-126) finds that
  * request on Bhavesh's crew deck as "Requested", withdraws it there and sends the same note again, so row 4 reads the
- * newest request; its passes on the way are put back with "See them again" (he has no seeded passes). R1 is shared with
+ * newest request; its passes on the way are put back with "See them again" (he has no seeded passes). Row 3c does the
+ * same on Bhavesh's Home crew card (DEC-126 (6), BLD-C219), where Next passes nothing. R1 is shared with
  * J-SIMILAR (lib SEED): both only add requests, crew and messages, and nobody decides it, so no row here depends on
  * whether R1 is picked. Row 1 ends with the sheet open from a card, which is where row 2 starts. Rows 6b and 6c
  * (DEC-124, walk item WF-01): Rekha sends a file and a link with the "+" in R1's conversation, the crew reads it, and
@@ -210,6 +211,72 @@ step(
 );
 
 step(
+  "J-TEAMUP/3c",
+  "S-03",
+  "Home's crew card after the request: R1 is last as Requested, still last after a reload; Withdraw brings Team up back in its place, and the note again hands focus back to Requested",
+  {
+    needs: ["S-03", "C-CREW-DECK", "L-CREW", "C-SHEET-TEAMUP", "L-TEAMUP", "BLD-C219"],
+    changes: ["R1"], // withdraws row 3b's request and sends it again
+    after: ["J-TEAMUP/3b"],
+  },
+  async ({ page }) => {
+    const r1 = await seeded("R1");
+    // Home's "Find your crew" (S-03.sections/3): its deck's cards are `.dcard`; only the front one is read out.
+    const crew = page.locator("#hm-crew");
+    const position = crew.getByText(/^Idea \d+ of \d+$/);
+    const requested = crew.getByRole("button", { name: `Requested: you asked to team up on ${r1.title}` });
+    const withdraw = crew.getByRole("button", { name: `Withdraw your request to team up on ${r1.title}` });
+    const teamUp = crew.getByRole("button", {
+      name: new RegExp(`^Team up on ${esc(r1.title)}, with Rekha\\b`),
+    });
+    await signInAs(page, "bhavesh");
+    await page.goto("/home");
+
+    // DEC-126 (2), (6), BLD-F094 (4): Home's short read ends with the idea asked about, after a reload too.
+    await expect(position).toHaveText(/^Idea 1 of \d+$/);
+    const total = Number((await position.innerText()).replace(/^Idea 1 of /, ""));
+    await expect(crew.locator(".dcard").last()).toContainText(r1.title);
+    await page.reload();
+    await expect(position).toHaveText(`Idea 1 of ${total}`);
+    await expect(crew.locator(".dcard").last()).toContainText(r1.title);
+
+    // Next on Home only moves the deck; nothing is passed (BLD-C219's tests: no call).
+    for (let n = 2; n <= total; n++) {
+      await crew.getByRole("button", { name: "Next idea" }).click();
+      await expect(position).toHaveText(`Idea ${n} of ${total}`);
+    }
+    // (1), (3): "Requested" in Team up's place, greyed and inactive but still read out, with "Withdraw" under it.
+    await expect(requested).toBeVisible();
+    await expect(requested).toHaveAttribute("aria-disabled", "true");
+    await expect(withdraw).toBeVisible();
+    await expect(teamUp).toHaveCount(0);
+    await expectNoSeriousAxeIssues(page);
+
+    // (4) Withdraw: Team up again where the card stands, with focus on it; the card does not move.
+    await withdraw.click();
+    await expect(teamUp).toBeVisible();
+    await expect(teamUp).toBeFocused();
+    await expect(requested).toHaveCount(0);
+    await expect(position).toHaveText(`Idea ${total} of ${total}`);
+    await expectNoSeriousAxeIssues(page);
+
+    // The same note again from Home's sheet, so row 4 reads NOTE. Done hands focus back to "Requested" (WCAG 2.4.3),
+    // on the card in front, which is still the last.
+    await teamUp.click();
+    const sheet = page.getByRole("dialog", { name: "Team up with Rekha" });
+    await sheet.getByRole("textbox").fill(NOTE);
+    await sheet.getByRole("button", { name: "Send to Rekha" }).click();
+    await expect(sheet).toContainText("Sent to Rekha");
+    await sheet.getByRole("button", { name: "Done" }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(requested).toBeFocused();
+    await expect(position).toHaveText(`Idea ${total} of ${total}`);
+    await expect(crew.locator(".dcard").last()).toContainText(r1.title);
+    await expectNoSeriousAxeIssues(page);
+  },
+);
+
+step(
   "J-TEAMUP/4",
   "S-H2B",
   "Rekha reads Bhavesh's note word for word in her Inbox and approves",
@@ -218,7 +285,8 @@ step(
     const r1 = await seeded("R1");
     await signInAs(page, "rekha");
     await page.goto("/inbox");
-    // The request withdrawn in row 2 may still be listed; newest first (L-INBOX.rules/4), so row 3's is the first.
+    // The requests withdrawn in rows 2, 3b and 3c may still be listed; newest first (L-INBOX.rules/4), so the one row
+    // 3c sent is the first.
     await page
       .getByRole("button", {
         name: new RegExp(`^Bhavesh Patel asks to team up(?: [^,]+)?, ${esc(r1.title)}, `),
