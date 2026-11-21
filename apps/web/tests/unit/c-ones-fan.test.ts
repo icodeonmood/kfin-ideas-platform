@@ -719,8 +719,7 @@ describe("C-ONES-FAN.behaviour/2, BLD-D026: the stack flies out into the row, 0.
 describe("F-MOTION.reduced, BLD-D026: under reduced motion the fan has no transition and no animation at all", () => {
   it("F-MOTION.reduced/1: every fan rule that moves sits under no-preference, or a reduced-motion rule sets it to none", () => {
     const moving = sheets.filter(
-      (r) =>
-        !r.at.startsWith("@keyframes") && !r.at.includes("reduce") && r.selectors.some(onFan) && moves(r),
+      (r) => !r.at.startsWith("@keyframes") && !r.at.includes(REDUCE) && r.selectors.some(onFan) && moves(r),
     );
     expect(moving.length).toBeGreaterThanOrEqual(6);
     const reduce = sheets.filter((r) => r.at.includes(REDUCE));
