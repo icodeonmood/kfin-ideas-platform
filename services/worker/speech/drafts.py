@@ -255,6 +255,9 @@ class _Live:
     bytes: int = 0
     lock: threading.Lock = field(default_factory=threading.Lock)
     ending: bool = False  # set once, under the registry lock, by the one call that ends it
+    # False for an answer to the review desk (lane B's BLD-B276): no English copy is made, so no text goes to
+    # translation and no vault tags are made
+    english: bool = True
     ended: threading.Event = field(default_factory=threading.Event)
 
 
@@ -276,10 +279,22 @@ def _hosted_check(conn: Conn) -> None:
 def start(conn: Conn, *, idea_uuid: str, by_code: str, user_id: str | None = None) -> dict[str, Any]:
     if not killswitch.is_on("capture.voice", conn):
         raise VoiceRefused(503, "voice_paused")
-    store = _store(conn)
-    owned = store.owned_draft(idea_uuid, by_code)
+    owned = _store(conn).owned_draft(idea_uuid, by_code)
     if owned != "draft":
         raise VoiceRefused(404 if owned == "not_found" else 409, owned)
+    return _open(conn, idea_uuid=idea_uuid, by_code=by_code, user_id=user_id)
+
+
+def _open(
+    conn: Conn, *, idea_uuid: str, by_code: str, user_id: str | None, english: bool = True
+) -> dict[str, Any]:
+    """Everything `start` does after its owner check: the person's other live stream ends ("replaced"), the hourly
+    limit, Sarvam's stream, the registry and the reaper. Lane B's `desk.answer_voice` opens an answer's stream here
+    after its own check, with `english=False` (BLD-B276). `capture.voice` is checked here too, so no caller can
+    forget it."""
+    if not killswitch.is_on("capture.voice", conn):
+        raise VoiceRefused(503, "voice_paused")
+    store = _store(conn)
     for other in store.live_of(by_code):  # the same person on another tab or device: that one ends first
         try:
             end(conn, other, idea_uuid=None, by_code=by_code, ended_by="replaced")
@@ -301,7 +316,7 @@ def start(conn: Conn, *, idea_uuid: str, by_code: str, user_id: str | None = Non
         ) from None
     now = _clock()
     with _registry:
-        _live[stream_id] = _Live(stream_id, idea_uuid, by_code, user_id, stream, now, now)
+        _live[stream_id] = _Live(stream_id, idea_uuid, by_code, user_id, stream, now, now, english=english)
     _ensure_reaper()
     log.info("voice_stream.started", stream_id=stream_id)
     return {"id": stream_id, "state": "live", **chunk_contract()}
@@ -439,9 +454,12 @@ def _finish(conn: Conn, live: _Live, ended_by: EndedBy) -> dict[str, Any]:
         return {"id": stream_id, "state": "failed", "failure": code, "ended_by": ended_by}
     hidden = hide_text(own)
     lang = heard.language if heard.language in LANGUAGES else None
-    text_en, translated, translation_failure = _english(
-        conn, stream_id, hidden.text, lang, live.user_id, idea_uuid=live.idea_uuid
-    )
+    if live.english:
+        text_en, translated, translation_failure = _english(
+            conn, stream_id, hidden.text, lang, live.user_id, idea_uuid=live.idea_uuid
+        )
+    else:  # an answer (BLD-B276): no English copy, and nothing reads as a failed one
+        text_en, translated, translation_failure = None, False, None
     store.done(
         stream_id,
         {
