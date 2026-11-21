@@ -158,7 +158,7 @@ The conversation board draws no "he" or "she". The one line lane F wrote about a
 | `L-CONVO/7`, the check for customers’ details could not run (BLD-F054) | Not drawn | We couldn’t check this message for customers’ details just now. Try again in a minute. |
 | `L-CONVO/7`, a file that is not this person's, not on this idea, or already sent | Not drawn | This file can’t be added here. Add it again from this conversation. |
 | `L-CONVO/7`, a file still being checked | Not drawn | This file is still being checked. Send it once it shows as checked. |
-| `L-CONVO/7`, a file with a customer detail found (DEC-107) | Not drawn | This file has a customer detail in it. Hide the detail or remove the file first. |
+| `L-CONVO/7`, a file with a customer detail found (DEC-107; changed 21 Nov by BLD-F095, see section 9) | Not drawn | This file has a customer detail in it, so it can’t be sent in the conversation. Remove it first. |
 | `L-CONVO/10`, removing someone else's message | Not drawn | You can remove only your own messages. |
 | `L-CONVO/10`, removing after 5 minutes | Not drawn | A message can be removed only in the first 5 minutes after sending. |
 | `A-API.conventions/3`, the same request sent again with other words | Not drawn | This request was already sent with different words. Refresh and try again. |
@@ -229,6 +229,16 @@ For HR's sign-off under DEC-113, which extends DEC-111 to the Ones Committee. Th
 | `L-CONVO/8`, "In this conversation", a member only mentioned and no member has written yet (BLD-F092, added 20 Nov) | The Ones Committee, From the Ones Committee | The Ones Committee, Mentioned |
 
 On 20 Nov (BLD-F092) the screen was brought in line with the last two rows: until then a screen reader read "Files in The Ones Committee’s message" with a capital T, and a committee member who was only mentioned showed as "From the Ones Committee". "Mentioned" is the word every other mentioned person already reads (section 3).
+
+### 9. S-08's "+" (DEC-124, BLD-F095, added 21 Nov)
+
+The "+" in the conversation's box, for the sharer, the review desk and the Ones Committee. The "+" and the picker use the Home board's words as they stand (`reference/copy/Home.md`, `attachments`: "Add files, a folder or a link", "Drop files or a folder here, or", "browse", "Choose a folder", "Or paste a link to a page, file or idea", "Add link", "Remove {name}"), and a row's states are Check it's ("Checking for personal details", "Checked"). On S-08 a link goes into the message's words, so the picker has no line about internal and external links. The code is `apps/web/src/components/convo/compose.ts` (`S08_COPY`) and `services/worker/convo/messages.py`. Every line here is To confirm later (DEC-123), HR: nobody asks for sign-offs until the end of Sunday 22 Nov.
+
+| Module | Pack line | Our line |
+|---|---|---|
+| `S-08.layout/3`, the files in the box, as read out | Not drawn. To confirm later (DEC-123), HR | Your files |
+| `S-08.layout/3`, `C-FILE.row`, a file in the box with a customer detail found (DEC-107) | Check it's line, "Only you, the review desk and the Ones Committee can open it.", which is about opening the file, not used here. To confirm later (DEC-123), HR | This file has a customer detail in it, so it can’t be sent in the conversation. Remove it to send your message. |
+| `L-CONVO/7`, Send with that file in the box (the line under the box) | Not drawn; was "This file has a customer detail in it. Hide the detail or remove the file first.", but S-08 offers no way to hide a file's detail. To confirm later (DEC-123), HR | This file has a customer detail in it, so it can’t be sent in the conversation. Remove it first. |
 
 ## Find your crew (S-H2, L-CREW, added 18 Nov)
 

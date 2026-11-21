@@ -161,12 +161,14 @@ def answer_all(conn: Conn, set_id: str, sharer: dict[str, str], at_: dt.datetime
 
 def attachment(
     conn: Conn, idea_row: dict[str, Any], owner: dict[str, str], file_state: str = "checked",
-    name: str = "plain-rejection-reasons.xlsx",
+    name: str = "plain-rejection-reasons.xlsx", purpose: str = "conversation",
 ) -> str:  # fmt: skip
+    """A file as S-08's "+" leaves it (`purpose` "conversation", BLD-C216), ready to send by its ID; `purpose="idea"`
+    is one of the idea's own files (Proof, the edit page), which a message never takes (BLD-F095)."""
     att_id = f"ATT-2026-{next(_counter) + 500000:06d}"
     conn.execute(
         "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, name, mime, bytes, store_key, state, kind, "
-        "file_state) VALUES (%s, %s, %s, %s, %s, 2048, %s, 'clean', 'file', %s)",
+        "file_state, purpose) VALUES (%s, %s, %s, %s, %s, 2048, %s, 'clean', 'file', %s, %s)",
         (
             att_id,
             idea_row["id"],
@@ -175,6 +177,7 @@ def attachment(
             "application/vnd.ms-excel",
             f"clean/{att_id}",
             file_state,
+            purpose,
         ),
     )
     return att_id

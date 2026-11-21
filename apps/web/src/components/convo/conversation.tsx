@@ -9,8 +9,10 @@
  * - The questions: for the sharer while the set is open, lane B's C-QCARD read from that set (BLD-B249); for anyone
  *   else, or until the set is read, a plain entry with the card's title, the sharer's deadline and "Answer the
  *   questions" (S-R3, S-08.rules/1, BLD-F065).
- * - Files: rows with View for the readers who may open them; no attach control until a conversation can take an
- *   upload (BLD-F064; who may attach is `composer.can_attach`, BLD-F063).
+ * - Files: rows with View for the readers who may open them. The "+" (DEC-124, BLD-F095) for the readers who may
+ *   attach (`composer.can_attach`: the sharer, the review desk and the Ones Committee, BLD-F063): first in the box's
+ *   tool row, it opens the picker; each file is a row in the box until the message goes (`attach.tsx`). A link typed
+ *   there goes into the words, never fetched.
  * - Phone (S-08.rules/4): the compact bar with Back, "Conversation" and an "i" button that opens the side panel as a
  *   sheet; the box is pinned at the bottom, above the tab bar or the keyboard, and the timeline keeps room for it
  *   (BLD-F068, `pin.ts`).
@@ -21,9 +23,9 @@
  * - The review desk (DEC-111): a reader outside the review desk and the Ones Committee gets the desk itself in place of
  *   the person at it ("The review desk", no id, no initials); the screen draws no face for it (`Face`) and the mention
  *   list never offers it (it has no id) (BLD-F082, BLD-F083).
- * - The look follows the boards (lane D's QA of 18 Nov): on a phone the box is one row (the pill and a
- *   round Send; the attach slot waits for BLD-F064)
- *   and who sees the conversation sits under the title with the faces (BLD-F078); wider, the
+ * - The look follows the boards (lane D's QA of 18 Nov): on a phone the box is one row (the "+" for those who may
+ *   attach, the pill and a round Send) and who sees the conversation sits under the title with the faces (BLD-F078,
+ *   BLD-F095); wider, the
  *   header's pill, reference and line share a row and the title runs the column's width (BLD-F079), and the sticky
  *   box is solid with the page's colour under it to the window's edge (BLD-F080). A long conversation opens at its
  *   newest entry (BLD-F081).
@@ -44,6 +46,7 @@ import {
 
 import { QuestionsCardFor } from "@/components/review/qcard-for";
 import { PhoneBar } from "@/components/shell/phone";
+import { AttachButton } from "@/components/ui/attach-button";
 import { Avatar } from "@/components/ui/avatar";
 import { Button, ButtonLink, buttonClass } from "@/components/ui/button";
 import { Empty } from "@/components/ui/empty";
@@ -53,6 +56,7 @@ import { IDEA_STATUS, Pill } from "@/components/ui/pill";
 import type { ConversationEntryView, ConversationView, FileItem, PersonRef } from "@/lib/contracts";
 import { ONES_COMMITTEE, ONES_COMMITTEE_START, REVIEW_DESK, REVIEW_DESK_START } from "@/lib/review-desk";
 
+import { ConvoFileRows, ConvoPicker, useConvoFiles } from "./attach";
 import {
   S08_COPY as C,
   errorText,
@@ -62,6 +66,7 @@ import {
   mentionChoices,
   mentionHint,
   mentionsIn,
+  putLink,
   putMention,
   sideNote,
   withMentions,
@@ -200,6 +205,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<{ id: string; text: string } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
   // The phone's layout (640px and narrower, as conversation.css): where who-sees-it is drawn (BLD-F078)
   const phone = usePhone();
 
@@ -214,6 +220,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
   const logEnd = useRef<HTMLDivElement>(null);
   const infoButton = useRef<HTMLButtonElement>(null);
   const panelClose = useRef<HTMLButtonElement>(null);
+  const plus = useRef<HTMLButtonElement>(null);
 
   const uid = useId();
   const ids = {
@@ -223,6 +230,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
     list: `${uid}-mentions`,
     error: `${uid}-err`,
     who: `${uid}-who`,
+    picker: `${uid}-pick`,
     option: (i: number) => `${uid}-opt-${i}`,
   };
 
@@ -302,6 +310,25 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
     }
   }, [base]);
 
+  // The box's files (S-08's "+", BLD-F095); an idea that closed under an upload is read again.
+  const files = useConvoFiles(view.idea.id, () => void refresh());
+
+  /** The picker closes; with `focus`, focus goes back to the "+" (Escape, or files chosen). */
+  function closePicker(focus: boolean) {
+    setPicking(false);
+    if (focus) requestAnimationFrame(() => plus.current?.focus());
+  }
+
+  /** A link from the picker goes into the words as typed, at the caret or the end; the cursor lands after it. */
+  function addLink(link: string) {
+    const next = putLink(text, box.current?.selectionStart, link);
+    caretAfter.current = next.caret;
+    keyRef.current = null;
+    setText(next.text);
+    if (error) setError(null);
+    setPicking(false);
+  }
+
   /** Put an entry the server returned on screen at once (its POST or DELETE answer), replacing it if it is there;
    * the read that follows confirms it, and if that read fails the entry stays. */
   function place(entry: unknown) {
@@ -366,19 +393,31 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
   async function send(e: FormEvent) {
     e.preventDefault();
     if (busy) return;
-    if (!text.trim()) {
+    const nothing = () => !text.trim() && !files.sendIds().length;
+    if (nothing() && !files.waiting()) {
       setError(C.empty);
       box.current?.focus();
       return;
     }
     setBusy(true);
+    // A file still uploading is waited for, so the message knows its id; the worker then takes the checked files and
+    // refuses one still being checked or holding a customer detail, in its own words (L-CONVO/7, BLD-F095).
+    await files.settle();
+    if (nothing()) {
+      setBusy(false);
+      setError(C.empty);
+      box.current?.focus();
+      return;
+    }
+    const fileIds = files.sendIds();
     setError(null);
     keyRef.current ??= newKey();
+    const mentions = mentionsIn(text, picked);
     try {
       const res = await fetch(`${base}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": keyRef.current },
-        body: JSON.stringify({ text, mentions: mentionsIn(text, picked) }),
+        body: JSON.stringify(fileIds.length ? { text, mentions, file_ids: fileIds } : { text, mentions }),
       });
       const body: unknown = await res.json().catch(() => null);
       if (!res.ok) {
@@ -393,6 +432,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
       setText("");
       setPicked(new Map());
       setMenu(null);
+      files.clearSent(fileIds);
       place((body as { entry?: unknown } | null)?.entry);
       await refresh();
       toBottom();
@@ -560,6 +600,57 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
 
   const composer = view.composer;
   const hint = open ? mentionHint(choices.length) : "";
+  // S-08's "+" and the picker it opens, for the readers who may attach (BLD-F063, BLD-F095); none for anyone else.
+  const attach =
+    composer.can_attach === true && !composer.closed ? (
+      <>
+        <span
+          className="cv-attach"
+          onKeyDown={(e) => {
+            if (e.key !== "Escape" || !picking) return;
+            e.preventDefault();
+            e.stopPropagation();
+            closePicker(true);
+          }}
+        >
+          <AttachButton
+            ref={plus}
+            aria-expanded={picking}
+            aria-controls={picking ? ids.picker : undefined}
+            onClick={() => {
+              if (!picking) files.loadConfig();
+              setPicking((o) => !o);
+            }}
+          />
+        </span>
+        {picking ? (
+          <ConvoPicker
+            id={ids.picker}
+            help={files.help}
+            onFiles={(chosen) => {
+              keyRef.current = null; // other files, another message: a new key (A-API.conventions/3)
+              files.addFiles(chosen);
+              closePicker(true);
+            }}
+            onLink={addLink}
+            onClose={() => closePicker(true)}
+          />
+        ) : null}
+      </>
+    ) : null;
+  const boxFiles = attach ? (
+    <ConvoFileRows
+      rows={files.rows}
+      limitMb={files.limitMb}
+      onRetry={(key) => void files.retry(key)}
+      onRemove={(key) => {
+        keyRef.current = null; // other files, another message: a new key (A-API.conventions/3)
+        void files.remove(key).then((gone) => {
+          if (gone) box.current?.focus(); // the row and its button go: focus back in the box
+        });
+      }}
+    />
+  ) : null;
   const described = [error ? ids.error : null, ids.who].filter(Boolean).join(" ");
 
   return (
@@ -640,9 +731,15 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
                   {linkedText(composer.questions_line, C.answer, openQuestions?.answer_url)}
                 </p>
               ) : null}
-              {/* One grid: on a phone a single row (the pill and the round Send; the attach slot waits for
-                  BLD-F064) with any error above it; wider, the words, then who sees it and Send (BLD-F078) */}
-              <div className="cv-row">
+              {/* One grid, also the box's tool row (`cfoot`, C-PROMPT.anatomy/2): on a phone a single row (the "+"
+                  for those who may attach, the pill and the round Send) with the files, the picker and any error
+                  above it; wider, the words, the files, the picker and any error, then the "+", who sees it and Send
+                  (BLD-F078, BLD-F095). On a phone the files and the "+" come before the words, and wider after
+                  them. The picker always follows the "+" that opens it, so the keyboard goes from the "+" into it;
+                  wider, it is drawn above the row that holds the "+", as Home draws it. */}
+              <div className={cls("cv-row", "cfoot", attach && "with-attach")}>
+                {phone ? boxFiles : null}
+                {phone ? attach : null}
                 <div className="cv-field">
                   <textarea
                     ref={box}
@@ -693,7 +790,9 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
                     </ul>
                   ) : null}
                 </div>
+                {phone ? null : boxFiles}
                 {error ? <FieldMsg id={ids.error}>{error}</FieldMsg> : null}
+                {phone ? null : attach}
                 {phone ? null : (
                   <p id={ids.who} className="cv-sees">
                     {composer.visibility}

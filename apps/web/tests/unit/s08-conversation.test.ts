@@ -381,14 +381,14 @@ describe("S-08 states", () => {
     expect(textbox().getAttribute("aria-label")).toBe("Message the build team");
   });
 
-  it("S-08 idea=Ravi's idea, after teaming up (J-TEAMUP/6): the approval line, Ravi's welcome, the crew's box; no attach control (BLD-F063, BLD-F064)", async () => {
+  it("S-08 idea=Ravi's idea, after teaming up (J-TEAMUP/6): the approval line, Ravi's welcome, the crew's box; no attach control (BLD-F063, BLD-F095)", async () => {
     await show(afterTeamingUp());
     expect(host.textContent).toContain("Ravi Nair approved your team-up request. Today, 10:05 am");
     expect(host.textContent).toContain("Ravi Nair’s idea, Investor service, Hyderabad");
     expect($(".cv-msg b")?.textContent).toBe("Ravi Nair");
     expect(textbox().getAttribute("aria-label")).toBe("Message the crew");
     expect(host.textContent).toContain("The crew and the review desk see this conversation.");
-    expect(host.querySelector('[aria-label="Attach a file"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Add files, a folder or a link"]')).toBeNull();
     expect(host.querySelector('input[type="file"]')).toBeNull();
   });
 

@@ -225,7 +225,7 @@ def test_l_convo_7_files_only_by_id_and_only_once_checked(
         "XLSX",
         "checked",
     )
-    assert f["view_url"] == f"/api/attachments/{ok}" and f["added_by"]["name"] == "Kavya Menon"
+    assert f["view_url"] == f"/api/files/{ok}/view" and f["added_by"]["name"] == "Kavya Menon"  # BLD-F095
     assert (
         db.execute("SELECT conversation_entry_id FROM attachments WHERE id = %s", (ok,)).fetchone()[
             "conversation_entry_id"
@@ -351,7 +351,7 @@ def test_bld_f062_j_teamup_5_6_files_go_only_to_readers_the_attachment_route_let
     sent = send(db, idea["idea_id"], kavya["id"],
                 {"text": "The rejection list, for Tara too.", "file_ids": [att], "mentions": [tara["id"]]},
                 at=fx.at(17, 10))  # fmt: skip
-    assert [f["view_url"] for f in sent["entry"]["files"]] == [f"/api/attachments/{att}"]  # the sharer's own
+    assert [f["view_url"] for f in sent["entry"]["files"]] == [f"/api/files/{att}/view"]  # the sharer's own
     for who in (kavya, meera, core, plain):
         [m] = messages(conversation(db, idea["idea_id"], who["id"], at=NOW))
         assert [f["id"] for f in m["files"]] == [att], who["name"]

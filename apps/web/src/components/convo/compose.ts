@@ -32,6 +32,14 @@ export const S08_COPY = {
   people: "Who is in this conversation",
   close: "Close",
   view: "View",
+  /** The name of the list of files in the box (S-08's "+", BLD-F095). On S-08 a link goes into the words, not into a
+   * row, so it is not Home's "Your files and links". */
+  files: "Your files",
+  /** A file in the box with a customer detail found (DEC-107): the worker never sends it in the conversation
+   * (`file_has_detail`), and S-08 has no way to hide the detail, so the row says so and offers Remove (BLD-F095).
+   * Never Check it's "Only you, the review desk and the Ones Committee can open it.": that is about opening it. */
+  fileHasDetail:
+    "This file has a customer detail in it, so it can’t be sent in the conversation. Remove it to send your message.",
 } as const;
 
 /**
@@ -89,6 +97,25 @@ export function putMention(
     text: text.slice(0, q.start) + inserted + text.slice(caret),
     caret: q.start + inserted.length,
   };
+}
+
+/**
+ * A link from the picker's link field, put into the words as it was typed (S-08's "+", BLD-F095): at the caret, or at
+ * the end, with a space between it and the words either side. It is never fetched (non-negotiable 8) and is masked
+ * with the rest of the message when it is sent (L-CONVO/7). Returns the words and where the caret goes, after it.
+ */
+export function putLink(
+  text: string,
+  caret: number | null | undefined,
+  link: string,
+): { text: string; caret: number } {
+  const at = caret === null || caret === undefined || caret < 0 || caret > text.length ? text.length : caret;
+  const before = text.slice(0, at);
+  const after = text.slice(at);
+  const lead = before && !/\s$/.test(before) ? " " : "";
+  const tail = /^\s/.test(after) ? "" : " "; // so the next word typed is not joined to the link
+  const put = `${lead}${link}${tail}`;
+  return { text: before + put + after, caret: at + put.length };
 }
 
 /** The mentions the words still carry: a picked person whose "@Name" was deleted is not mentioned. */
