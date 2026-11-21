@@ -390,13 +390,23 @@ _FILE_SQL = (
 )
 
 
+def _view_url(f: dict[str, Any]) -> str:
+    """Where the file opens. A 1% Club file (`file_state` set: every file added since the cut-over, the "+" in S-08's
+    box and every answer's file) opens through lane C's `/api/files/:id/view` under DEC-107's rule; the older
+    `/api/attachments/:id` finds none of them (`accessible()` in apps/web/src/server/attachments.ts), so only a file
+    from before the cut-over still opens there (BLD-F095)."""
+    if f.get("file_state"):
+        return f"/api/files/{f['id']}/view"
+    return f"/api/attachments/{f['id']}"
+
+
 def _file_item(ctx: Ctx, f: dict[str, Any]) -> dict[str, Any]:
     name = str(f["name"])
     ext = name.rsplit(".", 1)[-1].upper() if "." in name else (str(f["mime"] or "").split("/")[-1].upper())
     item: dict[str, Any] = {
         "id": f["id"], "kind": f["kind"], "name": name, "type": ext, "size": int(f["bytes"]),
         "state": f["file_state"] or "checked", "added_by": ctx.people.by_code(f["uploaded_by_code"]).ref(),
-        "added_at": f["created_at"], "view_url": f"/api/attachments/{f['id']}",
+        "added_at": f["created_at"], "view_url": _view_url(f),
     }  # fmt: skip
     if f["pages"] is not None:
         item["pages"] = int(f["pages"])
