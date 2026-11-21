@@ -85,7 +85,7 @@ def three_files(
     db: Conn, idea: dict[str, Any], sharer: dict[str, str], desk: dict[str, str]
 ) -> dict[str, str]:
     """(a) the idea's own; (b) the desk's, for the conversation, not sent; (c) the sharer's, sent on a message."""
-    own = fx.attachment(db, idea, sharer, name=OWN)
+    own = fx.attachment(db, idea, sharer, name=OWN, purpose="idea")
     unsent = _for_the_conversation(db, fx.attachment(db, idea, desk, name=DESK_NOTE))
     sent = _for_the_conversation(db, fx.attachment(db, idea, sharer, name=SENT_NOTE))
     send(db, idea["idea_id"], sharer["id"], {"file_ids": [sent]}, at=f.at(15, 10))
@@ -158,7 +158,7 @@ def test_L_QUESTIONS_ask_3_BLD_B274_a_conversation_file_alone_leaves_attached_em
     idea = cast["idea"]
     _for_the_conversation(db, fx.attachment(db, idea, cast["meera"], name=DESK_NOTE))
     assert asking._filled(db, idea)["evidence"] is False
-    fx.attachment(db, idea, cast["kavya"], name=OWN)
+    fx.attachment(db, idea, cast["kavya"], name=OWN, purpose="idea")
     assert asking._filled(db, idea)["evidence"] is True
 
 
