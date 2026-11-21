@@ -23,7 +23,6 @@ import {
   ideaCard,
   ideaUrl,
   pdfWith,
-  PLUS,
   runSeconds,
   seeded,
   signInAs,
@@ -212,6 +211,10 @@ step(
 
 /** The files Tanvi adds to her saved answer with S-R3's "+" (J-TRACK/4a), which the desk reads (J-TRACK/5b). */
 type AnswerFiles = { counts: string; found: string };
+/** S-R3's "+": the Answer board's name and tooltip, not DEC-124's one name, because it opens files only (BLD-B275,
+ * approved by lane D). */
+const ATTACH_ANSWER = "Attach files to this answer";
+const ATTACH_TIP = "Attach files";
 
 step(
   "J-TRACK/4a",
@@ -227,8 +230,8 @@ step(
     carried.counts = counts;
     carried.found = found;
     const rows = page.getByRole("list", { name: "Your files" }).getByRole("listitem");
-    const plus = page.getByRole("button", { name: PLUS });
-    /** DEC-124's "+" under the answer box opens the system's file chooser: files only on S-R3 (BLD-B275 (2)). */
+    const plus = page.getByRole("button", { name: ATTACH_ANSWER });
+    /** The "+" under the answer box opens the system's file chooser: files only on S-R3 (BLD-B275 (2)). */
     async function add(name: string, text: string): Promise<void> {
       const chooser = page.waitForEvent("filechooser");
       await plus.click();
@@ -239,7 +242,7 @@ step(
     await page.goto(ideaUrl(t6, "/answer"));
     await expect(page.getByRole("button", { name: "Question 1, answered" })).toBeVisible();
     await expect(page.getByText(T6_QUESTIONS[0], { exact: true }).first()).toBeVisible();
-    await expect(plus).toHaveAttribute("title", PLUS);
+    await expect(plus).toHaveAttribute("title", ATTACH_TIP);
 
     // The count she saved, as a file with the saved answer: scanned, then checked (DEC-107).
     await add(counts, "Held folios by region, October: about 120, mostly in one region.");
