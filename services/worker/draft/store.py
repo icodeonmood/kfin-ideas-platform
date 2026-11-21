@@ -749,14 +749,22 @@ def _own_receipts(conn: Conn, idea_uuid: str, messages: list[dict[str, Any]]) ->
 
 
 def _files(conn: Conn, idea_uuid: str, owner: Owner) -> list[dict[str, Any]]:
+    """The draft's files with the same lines `POST /files` gives (E-ENTITIES FileItem, BLD-E076): a draft's files
+    are only ever added by its owner (`attachments.files._owner`), and only the owner reads the draft, so each line
+    is the uploader's: the found line, and View on a checked file, one with a customer detail included (C-FILE.row,
+    DEC-107: the sharer always opens their own checked file). `GET /files/:id/view` still checks rights itself."""
+    from attachments.files import Viewer, effective_state, problem_line, rights
+
     rows = conn.execute(
         "SELECT id, kind, name, mime, bytes, pages, item_count, file_state, state, hidden_note, link_scope, "
-        "message_id, created_at FROM attachments WHERE idea_uuid = %s AND parent_id IS NULL "
+        "message_id, created_at, checks FROM attachments WHERE idea_uuid = %s AND parent_id IS NULL "
         "AND purpose = 'idea' AND conversation_entry_id IS NULL ORDER BY created_at",  # never a conversation file
         (idea_uuid,),
     ).fetchall()
+    uploader = Viewer(uploader=True)
     out = []
     for r in rows:
+        row = dict(r)
         item: dict[str, Any] = {
             "id": r["id"], "kind": r["kind"], "name": r["name"], "type": r["mime"] or "", "size": int(r["bytes"]),
             "state": r["file_state"] or r["state"], "added_by": {"id": owner.user_id},
@@ -766,6 +774,13 @@ def _files(conn: Conn, idea_uuid: str, owner: Owner) -> list[dict[str, Any]]:
                          ("link_scope", "link_scope"), ("message_id", "message_id")):  # fmt: skip
             if r[col] is not None:
                 item[key] = str(r[col]) if key == "message_id" else r[col]
+        state = effective_state(row)
+        problem = problem_line(row, state, uploader=True)
+        if problem is not None:
+            item["problem"] = problem
+        _, opens = rights(state, str(r["kind"] or "file"), draft=True, answer_unsent=False, viewer=uploader)
+        if opens:  # as item_json for the uploader: a file once checked or found, never a link
+            item["view_url"] = f"/api/files/{r['id']}/view"
         out.append(item)
     return out
 

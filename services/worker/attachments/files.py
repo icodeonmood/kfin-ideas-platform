@@ -311,7 +311,7 @@ def item_json(conn: Conn, row: dict[str, Any], *, uploader: bool, opens: bool) -
         out["count"] = int(row["item_count"])
     if row.get("hidden_note"):
         out["hidden_note"] = row["hidden_note"]
-    problem = _problem(row, state, uploader=uploader)
+    problem = problem_line(row, state, uploader=uploader)
     if problem:
         out["problem"] = problem
     if kind == "link":
@@ -325,7 +325,8 @@ def item_json(conn: Conn, row: dict[str, Any], *, uploader: bool, opens: bool) -
     return out
 
 
-def _problem(row: dict[str, Any], state: str, *, uploader: bool) -> str | None:
+def problem_line(row: dict[str, Any], state: str, *, uploader: bool) -> str | None:
+    """The FileItem's `problem` line; the draft read (`draft.store._files`) gives the same line (BLD-E076)."""
     if state == CUSTOMER_DETAIL:
         # C-FILE.row's found line is the uploader's, with Hide it for me and Remove file. The pack has no line for
         # the review desk's view of such a file: it reads `customer_detail` (a copy gap, not invented here).
