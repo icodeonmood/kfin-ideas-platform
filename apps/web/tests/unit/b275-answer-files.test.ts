@@ -2,8 +2,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { ProofItem } from "@/app/share/[id]/check/model";
+import { S08_COPY } from "@/components/convo/compose";
 import type { AnswerFile, SetQuestion } from "@/lib/contracts";
 import {
+  ANSWER_FILES_COPY,
   answerFileItem,
   answerUploadForm,
   attachedOf,
@@ -121,5 +123,16 @@ describe('BLD-B275 S-R3 filesLine (Answer.md: "Two screenshots attached, folio h
     expect(filesLine(attachedOf([row(), row({ key: "k2", item: null, localState: "upload_failed" })]))).toBe(
       "One screenshot attached.",
     );
+  });
+});
+
+describe("BLD-B275 S-R3 ANSWER_FILES_COPY", () => {
+  it("the list's name is lane F's for S-08's box, word for word", () => {
+    expect(ANSWER_FILES_COPY.files).toBe(S08_COPY.files);
+  });
+
+  it('the "+" takes the Answer board\'s name and tooltip (Answer.md, PhoneAnswer.md)', () => {
+    expect(ANSWER_FILES_COPY.attach).toBe("Attach files to this answer");
+    expect(ANSWER_FILES_COPY.attachTip).toBe("Attach files");
   });
 });
