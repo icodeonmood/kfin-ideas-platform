@@ -323,16 +323,16 @@ test('S-R3, C-FILE.row, L-QUESTIONS.answer, BLD-B275: a file-only answer through
   await expect(plus).toBeVisible();
   await expect(plus).toHaveAttribute("title", "Attach files");
   await expect(s.getByRole("button", { name: "Skip for now" })).toBeVisible();
-  // The upload makes the answer's row first (an empty save), then carries its id and never `for` (BLD-B274)
+  // The upload makes the answer's row first (an empty save), then carries its id and never `for` (BLD-B274). The
+  // browser does not hand the test a multipart body with a file in it, so the form's fields are pinned by the unit
+  // test (`answerUploadForm`) and the stored row by the query at the end (the answer's id, purpose "idea")
   const upload = s.waitForRequest((r) => r.url().endsWith("/api/files") && r.method() === "POST");
   const chooser = s.waitForEvent("filechooser");
   await plus.click();
   await (
     await chooser
   ).setFiles({ name: NAME, mimeType: "text/markdown", buffer: Buffer.from("The call log for week 47.") });
-  const form = (await upload).postDataBuffer()?.toString("latin1") ?? "";
-  expect(form).toContain('name="answer_id"');
-  expect(form).not.toContain('name="for"');
+  expect((await upload).headers()["content-type"] ?? "").toContain("multipart/form-data");
   await expect(plus).toBeFocused(); // focus stays on the "+" after picking
   // C-FILE.row: the row, named by its file, reaches Checked as the screen asks again
   const row = s.getByRole("list", { name: "Your files" }).getByRole("listitem").filter({ hasText: NAME });
