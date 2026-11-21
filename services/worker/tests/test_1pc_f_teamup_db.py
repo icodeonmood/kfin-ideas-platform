@@ -546,8 +546,9 @@ def test_V_ACC_similar_3_asking_to_merge_holds_the_draft(
     assert _check_it(db, cast, held)["id"] == asked["id"]
     # L-MERGE.request/4: lane C's Submit reads this to refuse `merge_waiting`
     assert drafts.waiting_merge_request(db, draft["id"]) == asked["id"]
-    # L-MERGE.request/3: the note is masked before it is stored; the draft itself is not shared
-    assert "9876543210" not in asked["note"] and f.status_of(db, draft)["status"] == "draft"
+    # L-MERGE.request/3, BLD-F097: the ask is masked when stored and for the lead (test_1pc_f_teamup_hide_db.py pins
+    # both); its typer, the draft's owner, reads their own words back (DEC-103). The draft itself is not shared
+    assert "9876543210" in asked["note"] and f.status_of(db, draft)["status"] == "draft"
     # V-ACC.similar/7's neighbour for L-AUDIT.metrics
     outcome = db.execute("SELECT outcome FROM similar_links WHERE idea_uuid = %s", (draft["id"],)).fetchone()
     assert outcome["outcome"] == "merge_asked"
