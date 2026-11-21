@@ -10,23 +10,28 @@
  * (J-RESUME/4). Row 4 is therefore a second new person with an empty box, who types the same words and sends the
  * first message; their draft and idea carry from row 4 to row 12. Each variation has its own person too.
  * Sign-in is single sign-on only (BLD-E002): the email route is row 2b alone, waiting on `L-AUTH.email-code`.
- * Voice is on at launch (DEC-108); the "By voice" variation is still left out, as are the S1 and S2 experiments and
- * the phone layouts (V-ACC), apart from v6's one look at the phone's dock.
+ * Voice is on at launch (DEC-108); the "By voice" variation is still left out on S-04, as are the S1 and S2
+ * experiments and the phone layouts (V-ACC), apart from v6's one look at the phone's dock and v7's at Home's hint.
+ * v7 is Home's mic (WF-02, BLD-C220): a tone for a microphone, which CI's fake speech route hears as its sample.
  * Walk items of 20 Nov: v4 and v5 are the "+" in the prompt box (DEC-124, WF-01) on Home, Share a problem and the
  * draft page; v6 is the Capture first draft page (DEC-125, WF-04), which switches `ai.all` off on the admin page and
  * always back on. Each has its own new person, so the main path's draft is not touched.
  */
+import AxeBuilder from "@axe-core/playwright";
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import {
-  expectNoSeriousAxeIssues,
-  restoreSwitches,
-  setSwitch,
-  signIn,
-  type SwitchState,
-} from "../e2e/helpers";
+import { restoreSwitches, setSwitch, signIn, type SwitchState } from "../e2e/helpers";
 import { withSwitchLock } from "../e2e/switch-lock";
-import { addFile, carriedFor, expectWithDesk, openPicker, PLUS, runSeconds, step } from "./lib";
+import {
+  addFile,
+  carriedFor,
+  expectNoSeriousAxeIssues,
+  expectWithDesk,
+  openPicker,
+  PLUS,
+  runSeconds,
+  step,
+} from "./lib";
 
 // --- Run-time patterns ----------------------------------------------------------------------------------------------
 
@@ -63,6 +68,7 @@ const AREA_WAITS = fresh(500, "Areawait");
 const HOME_FILES = fresh(600, "Homefiles");
 const BOX_FILES = fresh(800, "Boxfiles");
 const CAPTURE = fresh(1600, "Capturefirst");
+const HOME_VOICE = fresh(1800, "Homevoice");
 
 async function signInAsFresh(page: Page, who: Fresh): Promise<void> {
   await signIn(page, who.emp, { email: who.email, name: who.name });
@@ -632,6 +638,7 @@ step(
     await expectNoSeriousAxeIssues(page);
     // Escape closes it and focus goes back to the "+".
     await link.focus();
+    await expect(link).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(picker).toHaveCount(0);
     await expect(page.getByRole("button", { name: PLUS })).toBeFocused();
@@ -782,5 +789,127 @@ step(
     await page.goto(draft);
     await expect(root).not.toHaveClass(/\bcapture\b/);
     await expect(page.getByRole("heading", { level: 2, name: "Your draft" })).toBeVisible();
+  },
+);
+
+// --- Walk item WF-02: the mic in Home's box (BLD-C220) ----------------------------------------------------------------
+
+/** What CI's fake speech route hears for every 5 seconds of audio (services/worker/gateway/speech.py FAKE_SAMPLE). */
+const HEARD =
+  "Branch staff type every change of bank form twice because the scanned copy is hard to read, and it adds a day to each request.";
+
+/** axe without the reflow check's 320 px resize, for a state a resize would end: Home's box crosses its phone layout
+ * at 640 px (compose.tsx `useIsPhone`) and would remount mid-recording. The same tags and bar as e2e/helpers. */
+async function axeInPlace(page: Page): Promise<void> {
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const blocking = results.violations
+    .filter((v) => v.impact === "serious" || v.impact === "critical")
+    .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
+  expect(blocking, `axe on ${page.url()}`).toEqual([]);
+}
+
+type Rect = { x: number; y: number; width: number; height: number };
+
+function overlaps(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+step(
+  "J-SHARE/v7",
+  "S-04B",
+  'Home\'s mic: the round button in the empty box, its hint clear of the "+" and the first line on a phone; a tap makes the draft once, and the note lands on Share a problem',
+  { needs: ["S-03", "C-PROMPT.voice", "L-DRAFT.voice", "S-04B", "BLD-C220"] },
+  async ({ page }, info) => {
+    info.setTimeout(120_000); // about 5 seconds of tone for the fake route to hear, then the note is finished
+    // CI's browser has no microphone; this one plays a steady tone, which the fake route hears as HEARD. Synthetic.
+    await page.addInitScript(() => {
+      if (!navigator.mediaDevices) return;
+      navigator.mediaDevices.getUserMedia = async () => {
+        const ctx = new AudioContext();
+        const tone = ctx.createOscillator();
+        const out = ctx.createMediaStreamDestination();
+        tone.connect(out);
+        tone.start();
+        return out.stream;
+      };
+    });
+    // Reduced motion keeps the hint from fading after six seconds (compose.css), so nothing races it.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const made: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && new URL(r.url()).pathname === "/api/drafts") made.push(r.url());
+    });
+    await signInAsFresh(page, HOME_VOICE);
+    await page.goto("/home");
+    const box = page.getByRole("textbox", { name: "Say it in your own words" });
+    const round = page.getByRole("button", { name: "Tap to start speaking", exact: true });
+    const hint = page.locator(".hm-prompt .vhint");
+    await expect(box).toHaveValue("");
+    await expect(round).toBeVisible();
+    await expect(hint).toContainText("Tap to start speaking");
+    await expect(hint).toContainText("Not recording until you do");
+    // DEC-128: Home lets its own origin use the microphone (where the browser can say).
+    const allowed = await page.evaluate(() => {
+      const d = document as Document & { featurePolicy?: { allowsFeature(feature: string): boolean } };
+      return d.featurePolicy ? d.featurePolicy.allowsFeature("microphone") : null;
+    });
+    expect(allowed, "DEC-128: the microphone is allowed on Home").not.toBe(false);
+
+    // Lane D's QA: on a phone the hint (about 200 px, two lines, above the round button) covers neither the "+" nor
+    // the box's first line, where the placeholder sits.
+    await page.setViewportSize({ width: 360, height: 780 });
+    await expect(round).toBeVisible();
+    await expect(hint).toBeVisible();
+    const at = await page.evaluate((plusName) => {
+      const prompt = document.querySelector(".hm-prompt");
+      const rect = (el: Element | null | undefined) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      const words = prompt?.querySelector("textarea");
+      let first: { x: number; y: number; width: number; height: number } | null = null;
+      if (words) {
+        const r = words.getBoundingClientRect();
+        const s = getComputedStyle(words);
+        const n = (v: string) => parseFloat(v) || 0;
+        const left = n(s.borderLeftWidth) + n(s.paddingLeft);
+        const right = n(s.borderRightWidth) + n(s.paddingRight);
+        first = {
+          x: r.x + left,
+          y: r.y + n(s.borderTopWidth) + n(s.paddingTop),
+          width: r.width - left - right,
+          height: n(s.lineHeight) || n(s.fontSize) * 1.5,
+        };
+      }
+      return {
+        hint: rect(prompt?.querySelector(".vhint")),
+        plus: rect(prompt?.querySelector(`button[aria-label="${plusName}"]`)),
+        first,
+      };
+    }, PLUS);
+    if (!at.hint || !at.plus || !at.first) throw new Error('Home\'s box has its hint, its "+" and its words');
+    expect(overlaps(at.hint, at.plus), 'the hint covers the "+"').toBe(false);
+    expect(overlaps(at.hint, at.first), "the hint covers the box's first line").toBe(false);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expectNoSeriousAxeIssues(page);
+
+    // A tap makes Home's draft, before any audio, and records (C-PROMPT.voice).
+    await round.click();
+    const stop = page.getByRole("button", { name: "Stop, and use what you said" });
+    await expect(stop).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Listening. Up to 3 minutes.")).toBeVisible();
+    await axeInPlace(page);
+    // About 5 seconds of tone is heard as HEARD, and what is heard comes into the box.
+    await expect(box).toHaveValue(new RegExp(esc(HEARD)), { timeout: 30_000 });
+    await stop.click();
+
+    // Once the note is finished the page goes on to Share a problem, with the note as the draft's message.
+    await page.waitForURL(/\/share\/[0-9a-f-]{36}$/, { timeout: 30_000 });
+    await expect(page.getByText(HEARD).first()).toBeVisible();
+    expect(made, "Home makes one draft").toHaveLength(1);
+    await expectNoSeriousAxeIssues(page);
   },
 );
