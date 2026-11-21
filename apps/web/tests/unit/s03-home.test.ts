@@ -5,8 +5,12 @@
  * with the words (POST /api/drafts, one Idempotency-Key) and opens S-04B on it, never the empty S-04. J-TRACK/2: Needs
  * you carries the desk's questions with the clock and "Answer the questions" into S-R3. J-RESUME/2: the side bar's
  * Drafts read "Friday, on your phone" and open S-04B. The None, One and Several states of each section, with the
- * boards' words (reference/copy/Home.md). Synthetic words only.
+ * boards' words (reference/copy/Home.md). C-PROMPT.voice on Home (WF-02, BLD-C220): the round voice button in the
+ * empty box, on Share's capture (mocked, as s04-review-fixes.test.ts does). Synthetic words only.
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -36,11 +40,58 @@ vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: unknown }) =>
     createElement("a", { href, ...rest }, children as never),
 }));
+// Share's capture (`useVoiceCapture`), as s04-review-fixes.test.ts mocks it, with a small store so a test can move it
+// to recording, done, failed or blocked and Home draws the new state. `start` asks for the draft inside the tap, as
+// the real capture does (`resolveDraft`, BLD-C127).
+const voice = vi.hoisted(() => {
+  const subs = new Set<() => void>();
+  const v = {
+    state: { status: "idle", notice: null } as unknown,
+    options: null as { fetch?: unknown; resolveDraft?: () => Promise<string | null> } | null,
+    set(next: unknown) {
+      v.state = next;
+      for (const f of subs) f();
+    },
+    subscribe(f: () => void) {
+      subs.add(f);
+      return () => void subs.delete(f);
+    },
+    start: vi.fn(async () => {
+      await v.options?.resolveDraft?.();
+    }),
+    stop: vi.fn(),
+    reset: vi.fn(() => v.set({ status: "idle", notice: null })),
+    noticeShown: vi.fn(),
+  };
+  return v;
+});
+vi.mock("@/lib/use-voice-capture", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useVoiceCapture: (_draftId: string, options?: typeof voice.options) => {
+      voice.options = options ?? null;
+      const state = useSyncExternalStore(
+        voice.subscribe,
+        () => voice.state,
+        () => voice.state,
+      );
+      return {
+        state,
+        start: voice.start,
+        stop: voice.stop,
+        reset: voice.reset,
+        noticeShown: voice.noticeShown,
+      };
+    },
+  };
+});
 
 const { HomeScreen, HOME_COPY } = await import("@/app/home/home");
 const { keepFailedSets, loadCrew, loadMine, loadOnes, loadSets, readSets } = await import("@/lib/home/data");
 const { askingDevice, draftRows } = await import("@/server/shell");
 const { DEVICE_COOKIE } = await import("@/lib/compose/client");
+const { MIC_BLOCKED } = await import("@/lib/voice-capture");
+const { BANNERS } = await import("@/lib/killswitch-routes");
 
 const NEW_DRAFT = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
 const WORDS =
@@ -207,6 +258,11 @@ let root: Root;
 
 beforeEach(() => {
   push.mockReset();
+  voice.state = { status: "idle", notice: null };
+  voice.options = null;
+  voice.start.mockClear();
+  voice.stop.mockClear();
+  voice.reset.mockClear();
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -414,7 +470,8 @@ describe("S-03.hero: ask first (BLD-C143, C144)", () => {
     act(() => link("Continue to Share a problem")!.click());
     await flush();
     expect(posts).toBe(1);
-    expect(host.querySelector('[role="alert"]')).toBeNull();
+    // No alert says anything (the voice notices' alert region stays mounted, empty, BLD-C220).
+    expect([...host.querySelectorAll('[role="alert"]')].map((a) => a.textContent).join("")).toBe("");
     expect(text()).not.toContain("Something went wrong");
     expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe(WORDS);
     expect(link("Continue to Share a problem")).toBeDefined(); // not stuck sending
@@ -1148,5 +1205,228 @@ describe("C-SIDEBAR Drafts on this device (J-RESUME/2, BLD-C147)", () => {
     request.headers = new Headers({ "user-agent": "Mozilla/5.0 (Linux; Android 14) Mobile" });
     request.cookies.set(DEVICE_COOKIE, "bad id with spaces");
     expect(await askingDevice()).toEqual({ kind: "phone", id: null });
+  });
+});
+
+describe("S-03 C-PROMPT.voice: the round voice button in Home's empty box (WF-02, BLD-C220)", () => {
+  const STREAM = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+  const NOTE = {
+    streamId: STREAM,
+    text: "Branch mein roz das log nominee badalne aate hain aur har baar do form bharne padte hain",
+    spans: [],
+    textEn: "Ten people come to the branch every day to change a nominee and fill two forms each time",
+    enLabel: "Typed up in English",
+    seconds: 6,
+    endedBy: "person",
+    hiddenCount: 0,
+    translated: true,
+    translationFailure: null,
+    lang: "hi-IN",
+    language: "Hindi",
+    summary: "Voice message, 6 seconds, in Hindi",
+  };
+  const TYPED = "Synthetic: the nominee screen asks for the same details twice.";
+
+  const button = (name: string) =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (b) => (b.getAttribute("aria-label") ?? b.textContent ?? "").replace(/\s+/g, " ").trim() === name,
+    );
+  const box = () => host.querySelector("textarea") as HTMLTextAreaElement;
+
+  /** Let Home take a capture state (it does so on the next tick, as Share does) and finish what follows. */
+  async function settle() {
+    for (let i = 0; i < 6; i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+  }
+  async function hear(state: unknown) {
+    await act(async () => voice.set(state));
+    await settle();
+  }
+  async function tap(name: string) {
+    await act(async () => button(name)!.click());
+    await settle();
+  }
+
+  async function axeSerious(): Promise<string[]> {
+    const axe = (await import("axe-core")).default;
+    const result = await axe.run(host.querySelector<HTMLElement>(".hm-hero-in")!, {
+      rules: { "color-contrast": { enabled: false } },
+      resultTypes: ["violations"],
+    });
+    return result.violations
+      .filter((v) => v.impact === "serious" || v.impact === "critical")
+      .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
+  }
+
+  /** Home's draft: one create with no words (for the tap, or a first file), and the messages added to it. */
+  function draftRoutes(answer?: (body: Record<string, unknown>) => { status: number; body?: unknown }) {
+    const created: unknown[] = [];
+    const messages: Record<string, unknown>[] = [];
+    const keys: (string | null)[] = [];
+    const routes = baseRoutes({
+      [`/api/drafts/${NEW_DRAFT}/messages`]: (init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        messages.push(body);
+        keys.push(new Headers(init?.headers).get("Idempotency-Key"));
+        return (
+          answer?.(body) ?? {
+            status: 202,
+            body: {
+              run_id: "r-1",
+              message: { id: `m-${messages.length}` },
+              draft: { id: NEW_DRAFT, messages: [] },
+            },
+          }
+        );
+      },
+      "/api/drafts": (init) => {
+        created.push(JSON.parse(String(init?.body)));
+        return { status: 201, body: { draft: { id: NEW_DRAFT, messages: [] }, run_id: null } };
+      },
+    });
+    return { routes, created, messages, keys };
+  }
+
+  it("V-ACC S-03, C-PROMPT.voice: the empty box's round button is the microphone, a sound wave named Tap to start speaking, with both hint lines; axe", async () => {
+    await show(baseRoutes());
+    const round = button("Tap to start speaking")!;
+    expect(round).toBeTruthy();
+    expect(round.classList.contains("send")).toBe(true);
+    expect(round.querySelector("svg.wave")).toBeTruthy();
+    expect(round.textContent?.trim()).toBe(""); // no visible label
+    const hint = host.querySelector(".prompt .vhint")!;
+    expect(hint.getAttribute("aria-hidden")).toBe("true");
+    expect(hint.querySelector("b")?.textContent).toBe("Tap to start speaking");
+    expect(hint.querySelector("span")?.textContent).toBe("Not recording until you do");
+    expect(hint.nextElementSibling).toBe(round);
+    expect(host.querySelector(".prompt .mic2")!.classList.contains("hid")).toBe(true);
+    expect(link("Continue to Share a problem")).toBeUndefined();
+    expect(voice.start).not.toHaveBeenCalled(); // nothing records until the person taps
+    expect(await axeSerious()).toEqual([]);
+  });
+
+  it("V-ACC S-03, C-PROMPT.voice: with words in the box the round button sends again, and the small microphone shows", async () => {
+    await show(baseRoutes());
+    type(WORDS);
+    expect(button("Tap to start speaking")).toBeUndefined();
+    expect(host.querySelector(".prompt .vhint")).toBeNull();
+    expect(link("Continue to Share a problem")).toBeDefined();
+    const mic = button("Speak instead")!;
+    expect(mic.classList.contains("mic2")).toBe(true);
+    expect(mic.classList.contains("hid")).toBe(false);
+  });
+
+  it("V-ACC S-03, C-PROMPT.voice, L-DRAFT.voice: a tap calls start, which asks for Home's draft inside the tap, made once with no words", async () => {
+    const d = draftRoutes();
+    await show(d.routes);
+    await tap("Tap to start speaking");
+    expect(voice.start).toHaveBeenCalledTimes(1);
+    expect(d.created).toEqual([{ channel: "web" }]);
+    expect(d.messages).toEqual([]);
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("V-ACC S-03, L-DRAFT.voice: recording shows Stop (axe); a finished note goes into the draft the tap made, as voice with its stream, and S-04B opens on it", async () => {
+    const d = draftRoutes();
+    await show(d.routes);
+    await tap("Tap to start speaking");
+    await hear({ status: "recording", seconds: 3, maxSeconds: 180, text: NOTE.text, spans: [] });
+    const stop = button("Stop, and use what you said")!;
+    expect(stop).toBeTruthy();
+    expect(stop.getAttribute("aria-pressed")).toBe("true");
+    expect(box().value).toBe(NOTE.text); // the words as they are heard
+    expect(await axeSerious()).toEqual([]);
+    await act(async () => stop.click());
+    expect(voice.stop).toHaveBeenCalledTimes(1);
+
+    await hear({ status: "done", note: NOTE });
+    expect(d.created).toHaveLength(1);
+    expect(d.messages.map((m) => [m.via, m.text, m.stream_id])).toEqual([["voice", NOTE.text, STREAM]]);
+    expect(d.keys).toEqual([d.messages[0]!.client_id]);
+    expect(voice.reset).toHaveBeenCalled();
+    expect(push).toHaveBeenCalledWith(`/share/${NEW_DRAFT}`);
+    expect(push).toHaveBeenCalledTimes(1);
+  });
+
+  it("V-ACC S-03, L-DRAFT.voice: typed words go first, as typed, then the note as voice; one draft however often the microphone is tapped", async () => {
+    const d = draftRoutes();
+    await show(d.routes);
+    await tap("Tap to start speaking");
+    await hear({ status: "failed", reason: "no_microphone", text: "", spans: [] }); // no line, the mic is ready again
+    type(TYPED);
+    await tap("Speak instead");
+    expect(voice.start).toHaveBeenCalledTimes(2);
+    await hear({ status: "done", note: NOTE });
+    expect(d.created).toHaveLength(1); // the draft the first tap made (or a first file: the same create-once draft)
+    expect(d.messages.map((m) => [m.via, m.text, m.stream_id])).toEqual([
+      ["typed", TYPED, undefined],
+      ["voice", NOTE.text, STREAM],
+    ]);
+    expect(d.keys[0]).toBe(d.messages[0]!.client_id);
+    expect(d.keys[1]).toBe(d.messages[1]!.client_id);
+    expect(d.keys[0]).not.toBe(d.keys[1]);
+    expect(push).toHaveBeenCalledWith(`/share/${NEW_DRAFT}`);
+  });
+
+  it("V-ACC S-03, L-DRAFT.voice: a note that cannot be added keeps its words in the box and says why; nothing opens", async () => {
+    const d = draftRoutes(() => ({
+      status: 422,
+      body: { error: { code: "too_long", message: "That message is too long." } },
+    }));
+    await show(d.routes);
+    await tap("Tap to start speaking");
+    await hear({ status: "done", note: NOTE });
+    expect(d.messages).toHaveLength(1);
+    expect(box().value).toBe(NOTE.text);
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("That message is too long.");
+    expect(push).not.toHaveBeenCalled();
+    expect(link("Continue to Share a problem")).toBeDefined(); // not stuck sending
+  });
+
+  it("C-PROMPT.voice: a note that failed with words heard puts them in the box; signed out says Sign in again to carry on", async () => {
+    await show(baseRoutes());
+    await hear({ status: "failed", reason: "signed_out", text: NOTE.text, spans: [] });
+    expect(box().value).toBe(NOTE.text);
+    const again = link("Sign in again to carry on")!;
+    expect(again.getAttribute("href")).toBe("/sign-in?next=%2Fhome");
+    expect(again.closest('[role="alert"]')).toBeTruthy();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("V-ACC S-03, C-PROMPT.voice: blocked shows the browser's words as an alert and the microphone as blocked; axe", async () => {
+    await show(baseRoutes());
+    await hear({ status: "blocked", device: "desktop", ...MIC_BLOCKED.desktop });
+    const alert = host.querySelector('.blkn[role="alert"]')!;
+    expect(alert.textContent).toContain(MIC_BLOCKED.desktop.title);
+    expect(alert.textContent).toContain(MIC_BLOCKED.desktop.body);
+    expect(button("Microphone blocked")).toBeTruthy();
+    expect(button("Tap to start speaking")).toBeUndefined();
+    expect(await axeSerious()).toEqual([]);
+  });
+
+  it("C-PROMPT.voice, kill switches: voice switched off shows the switch's own line, as on Share; typing still sends", async () => {
+    await show(baseRoutes());
+    await hear({
+      status: "paused",
+      banner: BANNERS["capture.voice"],
+      switchName: "capture.voice",
+      text: "",
+      spans: [],
+      note: null,
+    });
+    expect(host.querySelector('.vlive[role="status"]')?.textContent).toBe(BANNERS["capture.voice"]);
+    expect(push).not.toHaveBeenCalled();
+    type(WORDS);
+    expect(link("Continue to Share a problem")).toBeDefined();
+  });
+
+  it("the hint shows on a phone, as PhoneHome draws it, and never over the open picker (Home.dc.html)", () => {
+    const css = readFileSync(path.resolve(__dirname, "../../src/app/home/home.css"), "utf8");
+    const phone = css.slice(css.indexOf("@media (max-width: 640px)"));
+    expect(phone).toMatch(/\.hm \.cz \.hm-prompt \.vhint \{\s*display: flex;/);
+    expect(css).toMatch(/\.hm \.cz \.hm-prompt:has\(\.cpick\) \.vhint \{\s*display: none;/);
   });
 });
