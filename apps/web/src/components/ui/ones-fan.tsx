@@ -5,15 +5,12 @@ import {
   useEffect,
   useRef,
   useState,
-  useSyncExternalStore,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
 } from "react";
 
 import Link from "next/link";
-
-import { reducedMotion } from "@/lib/motion/flip";
 
 import { Avatar } from "./avatar";
 
@@ -33,6 +30,9 @@ export const ONES_FAN_COPY = {
 export const FAN_PHONE = "(max-width: 640px)";
 /** The fly-out plays only where there is a stack to fly out of and motion is allowed (F-MOTION.reduced). */
 export const FAN_FLY = "(min-width: 641px) and (prefers-reduced-motion: no-preference)";
+/** JS moves (the phone row's glide, the tilt) only where motion is allowed outright, as the CSS does (F-MOTION.reduced):
+ * a browser that matches neither this nor "reduce" stays still too. */
+export const FAN_MOVES = "(prefers-reduced-motion: no-preference)";
 /** The pointer tilt needs a pointer that hovers and is fine: never on touch (C-ONES-FAN.behaviour/6). */
 export const FAN_FINE = "(hover: hover) and (pointer: fine)";
 /** Home.dc.html's timings: a card flies for 0.8s, 45ms after the one before it; the side panel is gone after 0.4s. */
@@ -43,20 +43,29 @@ const holds = (query: string) =>
   typeof window.matchMedia === "function" &&
   window.matchMedia(query).matches;
 
-function onPhoneChange(cb: () => void) {
-  if (typeof window.matchMedia !== "function") return () => undefined;
-  const m = window.matchMedia(FAN_PHONE);
-  m.addEventListener("change", cb);
-  return () => m.removeEventListener("change", cb);
+const cardsIn = (view: HTMLElement) => [
+  ...view.querySelectorAll<HTMLElement>(":scope > .fan-track > .fan-card"),
+];
+
+/** How far a card sits from the phone row's snap point (the view's left edge plus its scroll padding). */
+function fromSnap(view: HTMLElement, card: HTMLElement): number {
+  const pad = parseFloat(getComputedStyle(view).scrollPaddingLeft) || 0;
+  return card.getBoundingClientRect().left - view.getBoundingClientRect().left - pad;
 }
 
-/** Whether the fan is drawn as PhoneHome's row; false on the server and wherever the width cannot be read. */
-function usePhoneRow(): boolean {
-  return useSyncExternalStore(
-    onPhoneChange,
-    () => holds(FAN_PHONE),
-    () => false,
-  );
+/** The card the phone row rests on: the one nearest its snap point (the last card when the row is scrolled to its end,
+ * as the last card cannot reach the snap point). */
+function restingCard(view: HTMLElement): number {
+  let best = 0;
+  let gap = Infinity;
+  cardsIn(view).forEach((card, i) => {
+    const d = Math.abs(fromSnap(view, card));
+    if (d < gap) {
+      gap = d;
+      best = i;
+    }
+  });
+  return best;
 }
 
 /**
@@ -67,13 +76,19 @@ function usePhoneRow(): boolean {
  *   row scrolls by swipe with snap.
  * - **Several:** stacked at rest, the first card facing you and up to three behind it, offset and darker, with the
  *   side panel ("6 fixes, 6 people", See details). The first interaction (a click, focus, an arrow, the wheel, a swipe
- *   or See details) spreads it into a row 12px apart and the side panel goes. Previous and Next, ← and →, a sideways
- *   swipe and the wheel move one card at a time; at either end the wheel hands the scroll back to the page, so the
- *   page never gets stuck (C-ONES-FAN.behaviour/4). "Post 1 of 4" says where you are. Only the front card is in the
- *   reading order. On a phone the row shows at rest and a swipe moves one card.
+ *   or See details) spreads it into a row 12px apart, and the side panel fades and slides out. Previous and Next, ←
+ *   and →, a sideways swipe and the wheel move one card at a time; at either end the wheel hands the scroll back to
+ *   the page, so the page never gets stuck (C-ONES-FAN.behaviour/4). "Post 1 of 4" says where you are. Only the
+ *   current card is in the reading order; when it leaves with focus inside it, focus moves on to Next (Previous at the
+ *   last card). On a phone there is no stack: the row is the view's own scroll with snap. A swipe or a fling moves
+ *   it natively; Previous, Next, ← → and the wheel scroll it to the next card's snap point, a quick second press going
+ *   one card further; and the line, the reading order and the buttons follow the card the row settles on, once per
+ *   settle (C-ONES-FAN.behaviour/7).
  *
- * Static in this slot: the stack's angled pose and the row's angled edge are drawn, not animated, and under reduced
- * motion the stack is a flat offset. The fly out, cheerPop and the spread glide come with the motion slot.
+ * Motion (BLD-D026; the rules are in motion.css, the look in components.css): the first spread flies the cards out
+ * of the stack into the row, each 45ms after the one before; with a fine pointer, hovering the stack opens it a
+ * little and the cards tilt toward the pointer; Cheer pops once on the person's own press. Unless motion is allowed
+ * outright (`FAN_MOVES`), nothing flies, tilts, glides or pops: the cards take their poses at once (F-MOTION.reduced).
  */
 export function OnesFan({
   label = "Posts from the Ones",
@@ -99,12 +114,16 @@ export function OnesFan({
   // The fly-out playing (the region's data-fly), and the side panel on its way out: both only with motion allowed
   const [fly, setFly] = useState(false);
   const [sideOut, setSideOut] = useState(false);
-  const phone = usePhoneRow();
   const spreadOnce = useRef(false);
+  // The card the line names, for the listeners; and on a phone, the card a Previous, Next, arrow or wheel scroll is
+  // heading for until the row settles. A finger on the row clears it: the person has taken over.
+  const atNow = useRef(0);
+  const pending = useRef<number | null>(null);
   const tiltOn = useRef(false);
   const view = useRef<HTMLDivElement>(null);
   const side = useRef<HTMLDivElement>(null);
   const next = useRef<HTMLButtonElement>(null);
+  const prev = useRef<HTMLButtonElement>(null);
   const focusNext = useRef(false);
   const lastWheel = useRef(0);
   const swipe = useRef<{ x: number; y: number } | null>(null);
@@ -123,14 +142,30 @@ export function OnesFan({
     setSpread(true);
   }, []);
 
-  // On a phone the row is the view's own scroll: bring the card to its snap point (no glide under reduced motion)
-  const snapTo = useCallback((n: number) => {
+  // Every change of card comes through here. Focus never stays in a card that leaves the reading order: it moves on
+  // to Next, or to Previous at the last card, before the card turns inert (WCAG 2.4.3)
+  const moveTo = useCallback(
+    (n: number) => {
+      const from = atNow.current;
+      if (n !== from) {
+        const out = view.current ? cardsIn(view.current)[from] : undefined;
+        if (out && out.contains(document.activeElement)) (n >= count - 1 ? prev : next).current?.focus();
+        atNow.current = n;
+      }
+      setAt(n);
+    },
+    [count],
+  );
+
+  // On a phone the row is the view's own scroll: bring card n to its snap point. False when nothing will scroll
+  const snapTo = useCallback((n: number, instant: boolean) => {
     const el = view.current;
-    const card = el?.querySelectorAll<HTMLElement>(":scope > .fan-track > .fan-card")[n];
-    if (!el || !card || typeof el.scrollTo !== "function") return;
-    const pad = parseFloat(getComputedStyle(el).scrollPaddingLeft) || 0;
-    const left = el.scrollLeft + card.getBoundingClientRect().left - el.getBoundingClientRect().left - pad;
-    el.scrollTo({ left, behavior: reducedMotion() ? "auto" : "smooth" });
+    const card = el ? cardsIn(el)[n] : undefined;
+    if (!el || !card || typeof el.scrollTo !== "function") return false;
+    const by = fromSnap(el, card);
+    if (Math.abs(by) < 1) return false;
+    el.scrollTo({ left: el.scrollLeft + by, behavior: instant ? "auto" : "smooth" });
+    return true;
   }, []);
 
   const go = useCallback(
@@ -138,10 +173,27 @@ export function OnesFan({
       if (count < 2) return;
       const n = Math.min(Math.max(to, 0), count - 1);
       spreadOut();
-      setAt(n);
-      if (phone) snapTo(n);
+      if (!holds(FAN_PHONE)) {
+        moveTo(n);
+        return;
+      }
+      // On a phone the line changes when the row settles, once; without a glide the jump is instant, so it changes
+      // at once and the settle that follows agrees with it
+      const glide = holds(FAN_MOVES);
+      pending.current = n;
+      if (!glide) moveTo(n);
+      if (!snapTo(n, !glide)) {
+        pending.current = null;
+        moveTo(n);
+      }
     },
-    [count, phone, snapTo, spreadOut],
+    [count, moveTo, snapTo, spreadOut],
+  );
+
+  // One card on from where the row is heading, so a quick second Next goes two cards on, never back
+  const step = useCallback(
+    (d: 1 | -1) => go((pending.current ?? Math.min(atNow.current, count - 1)) + d),
+    [count, go],
   );
 
   // The fly-out and the side panel's exit end on the board's timings; nothing is left running after them
@@ -160,26 +212,45 @@ export function OnesFan({
     return () => clearTimeout(t);
   }, [fly, count]);
 
-  // On a phone the position line follows the card the row snapped to, however it got there (a swipe, a fling,
-  // Previous or Next). The observer only reports changes, so nothing runs while the row is still or off-screen.
+  // On a phone the row settles where a button or the person left it, and the line, the reading order and Previous
+  // and Next follow that card, once per settle: on scrollend, or where a browser has no scrollend, once the row has
+  // been still for 120ms. Only a scroll of the row runs this, so nothing runs while it is still or off-screen.
   useEffect(() => {
     const el = view.current;
-    if (!phone || !el || count < 2 || typeof IntersectionObserver !== "function") return;
-    const items = [...el.querySelectorAll<HTMLElement>(":scope > .fan-track > .fan-card")];
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          const i = items.indexOf(e.target as HTMLElement);
-          if (i < 0 || !e.isIntersecting || e.intersectionRatio < 0.6) continue;
-          if (i > 0) spreadOut();
-          setAt(i);
-        }
-      },
-      { root: el, threshold: 0.6 },
-    );
-    for (const c of items) io.observe(c);
-    return () => io.disconnect();
-  }, [phone, count, spreadOut]);
+    if (!el || count < 2) return;
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const settle = () => {
+      clearTimeout(quiet);
+      if (!holds(FAN_PHONE)) return;
+      const i = restingCard(el);
+      pending.current = null;
+      if (i > 0) spreadOut();
+      moveTo(i);
+    };
+    const onScroll = () => {
+      clearTimeout(quiet);
+      quiet = setTimeout(settle, 120);
+    };
+    const ends = "onscrollend" in window;
+    el.addEventListener("scrollend", settle);
+    if (!ends) el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      clearTimeout(quiet);
+      el.removeEventListener("scrollend", settle);
+      el.removeEventListener("scroll", onScroll);
+    };
+  }, [count, moveTo, spreadOut]);
+
+  // Turned to a phone's width (a window narrowed, a phone rotated), the row goes to the card the line names
+  useEffect(() => {
+    if (count < 2 || typeof window.matchMedia !== "function") return;
+    const m = window.matchMedia(FAN_PHONE);
+    const onChange = () => {
+      if (m.matches) snapTo(Math.min(atNow.current, count - 1), true);
+    };
+    m.addEventListener("change", onChange);
+    return () => m.removeEventListener("change", onChange);
+  }, [count, snapTo]);
 
   // The wheel steps one card per gesture while there is a card to go to; otherwise the page scrolls on.
   useEffect(() => {
@@ -187,26 +258,30 @@ export function OnesFan({
     if (!el || count < 2) return;
     const onWheel = (e: WheelEvent) => {
       const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
-      if (Math.abs(delta) < 4) return;
+      if (Math.abs(delta) < 4) {
+        pending.current = null; // the browser scrolls this one: the person has taken over
+        return;
+      }
       const forward = delta > 0;
       // A phone's row has no stack to open: the first step already moves a card
-      if (!spread && !phone) {
+      if (!spread && !holds(FAN_PHONE)) {
         if (!forward) return;
         e.preventDefault();
         spreadOut();
         lastWheel.current = Date.now();
         return;
       }
-      const can = forward ? cur < count - 1 : cur > 0;
+      const from = pending.current ?? cur;
+      const can = forward ? from < count - 1 : from > 0;
       if (!can) return;
       e.preventDefault();
       if (Date.now() - lastWheel.current < 380) return;
       lastWheel.current = Date.now();
-      go(cur + (forward ? 1 : -1));
+      step(forward ? 1 : -1);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [cur, count, go, phone, spread, spreadOut]);
+  }, [cur, count, spread, spreadOut, step]);
 
   // Once spread, focus that was in the side panel (or on See details) moves on to Next.
   useEffect(() => {
@@ -222,16 +297,16 @@ export function OnesFan({
     if (!several) return;
     if (e.key === "ArrowRight") {
       e.preventDefault();
-      go(cur + 1);
+      step(1);
     } else if (e.key === "ArrowLeft") {
       e.preventDefault();
-      go(cur - 1);
+      step(-1);
     }
   };
 
-  // The tilt follows a mouse that hovers with a fine pointer, never a finger, and never under reduced motion
+  // The tilt follows a mouse that hovers with a fine pointer, never a finger, and only with motion allowed
   const tiltIn = (e: PointerEvent<HTMLDivElement>) => {
-    tiltOn.current = e.pointerType === "mouse" && holds(FAN_FINE) && !reducedMotion();
+    tiltOn.current = e.pointerType === "mouse" && holds(FAN_FINE) && holds(FAN_MOVES);
   };
   const tilt = (e: PointerEvent<HTMLDivElement>) => {
     if (!tiltOn.current) return;
@@ -244,7 +319,7 @@ export function OnesFan({
 
   const open = () => {
     focusNext.current = true;
-    setAt(0);
+    moveTo(0);
     spreadOut();
   };
 
@@ -265,15 +340,19 @@ export function OnesFan({
           onFocusCapture={several ? spreadOut : undefined}
           onClick={several ? spreadOut : undefined}
           onPointerDown={(e) => {
+            pending.current = null; // a finger or the pointer on the row: the person has taken over
             swipe.current = { x: e.clientX, y: e.clientY };
+          }}
+          onTouchStart={() => {
+            pending.current = null;
           }}
           onPointerUp={(e) => {
             const s = swipe.current;
             swipe.current = null;
             // On a phone a finger scrolls the row natively; only a mouse drag steps it here
-            if (!s || !several || (phone && e.pointerType !== "mouse")) return;
+            if (!s || !several || (holds(FAN_PHONE) && e.pointerType !== "mouse")) return;
             const dx = e.clientX - s.x;
-            if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(e.clientY - s.y)) go(cur + (dx < 0 ? 1 : -1));
+            if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(e.clientY - s.y)) step(dx < 0 ? 1 : -1);
           }}
         >
           <div className="fan-track">
@@ -326,10 +405,11 @@ export function OnesFan({
           <>
             <button
               type="button"
+              ref={prev}
               className="round-btn"
               aria-label="Previous post"
               aria-disabled={cur === 0 ? true : undefined}
-              onClick={() => go(cur - 1)}
+              onClick={() => step(-1)}
             >
               <svg
                 width="18"
@@ -351,7 +431,7 @@ export function OnesFan({
               className="round-btn"
               aria-label="Next post"
               aria-disabled={cur >= count - 1 ? true : undefined}
-              onClick={() => go(cur + 1)}
+              onClick={() => step(1)}
             >
               <svg
                 width="18"
