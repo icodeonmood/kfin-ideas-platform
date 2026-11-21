@@ -6,7 +6,15 @@
  * problem, in their words" is one checked sentence. The card shows only what that card carries. "Team up on
  * {title}, with {lead}" opens lane F's team-up sheet. Lane F's own card on S-H2 is not exported and says more (the
  * looking-for line, Waiting for), so Home keeps this one; nothing here writes under lane F's paths.
+ *
+ * DEC-126 (WF-03b, BLD-C219): a card the person has asked to join (`card.request`, from the server after a reload or
+ * set by Home after a send) draws lane F's `RequestedAction` where "Team up" was: "Requested", greyed and inactive
+ * but focusable and read out, with "Withdraw" under it. S-H2 draws the same component, so the two screens match.
+ * "Team up" carries `teamUpOpener(card.id)`, as "Requested" does, so the sheet's focus comes back to whichever of the
+ * two stands there, and focus moves to "Team up" after a withdraw.
  */
+import { RequestedAction } from "@/components/teamup/requested-action";
+import { teamUpOpener, type TeamUpSent } from "@/components/teamup/teamup-sheet";
 import { CrewFaces } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { StatusPill, IDEA_STATUS, type IdeaStatus } from "@/components/ui/pill";
@@ -59,7 +67,32 @@ export function teamUpName(card: Pick<CrewCard, "title" | "lead">): string {
   return `Team up on ${card.title}, with ${lead}`;
 }
 
-export function CrewCardView({ card, onTeamUp }: { card: CrewCard; onTeamUp(ideaId: string): void }) {
+/**
+ * After a send (DEC-126 (1), (2)): the card asked about carries its request and goes to the end of the deck, where the
+ * server keeps it after a reload (BLD-F094). The other cards keep their order. Unchanged when the card is not there.
+ */
+export function requestedLast(top: CrewCard[], sent: Pick<TeamUpSent, "ideaId" | "id" | "kind">): CrewCard[] {
+  const card = top.find((c) => c.id === sent.ideaId);
+  if (!card) return top;
+  return [...top.filter((c) => c.id !== sent.ideaId), { ...card, request: { id: sent.id, kind: sent.kind } }];
+}
+
+/** After a withdraw (DEC-126 (4)): the card drops its request where it stands; no card moves. */
+export function requestDropped(top: CrewCard[], ideaId: string): CrewCard[] {
+  if (!top.some((c) => c.id === ideaId && c.request)) return top;
+  return top.map((c) => (c.id === ideaId ? { ...c, request: undefined } : c));
+}
+
+export function CrewCardView({
+  card,
+  onTeamUp,
+  onWithdrawn,
+}: {
+  card: CrewCard;
+  onTeamUp(ideaId: string): void;
+  /** After "Withdraw" under "Requested" (DEC-126 (4)): the host drops `card.request` in place. */
+  onWithdrawn?(sent: TeamUpSent): void;
+}) {
   const status = (card.status in IDEA_STATUS ? card.status : "with_review_desk") as IdeaStatus;
   const everyone = [card.lead, ...card.crew_faces.filter((p) => p.id !== card.lead.id)];
   // A face only for someone with initials: "A colleague" would be an empty circle that still takes focus. They are
@@ -90,14 +123,28 @@ export function CrewCardView({ card, onTeamUp }: { card: CrewCard; onTeamUp(idea
           total={Math.max(card.crew_count, everyone.length)}
           leadName={card.lead.name}
         />
-        <Button
-          size="full"
-          aria-label={teamUpName(card)}
-          icon={<TeamUpIcon />}
-          onClick={() => onTeamUp(card.id)}
-        >
-          Team up
-        </Button>
+        {card.request ? (
+          // DEC-126: "Requested" in Team up's look and place, with "Withdraw" under it (lane F's component).
+          <RequestedAction
+            ideaId={card.id}
+            title={card.title}
+            request={card.request}
+            variant="primary"
+            size="full"
+            onWithdrawn={(sent) => onWithdrawn?.(sent)}
+          />
+        ) : (
+          <Button
+            variant="primary"
+            size="full"
+            aria-label={teamUpName(card)}
+            icon={<TeamUpIcon />}
+            onClick={() => onTeamUp(card.id)}
+            {...teamUpOpener(card.id)}
+          >
+            Team up
+          </Button>
+        )}
       </div>
     </article>
   );

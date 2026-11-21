@@ -19,7 +19,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import { Prompt, PROMPT_COPY, STARTERS } from "@/components/compose/prompt";
 import { QuestionsCard } from "@/components/review/qcard";
-import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
+import { useTeamUpSheet, type TeamUpSent } from "@/components/teamup/teamup-sheet";
 import { ButtonLink } from "@/components/ui/button";
 import { Deck } from "@/components/ui/deck";
 import { FieldMsg } from "@/components/ui/field";
@@ -45,7 +45,7 @@ import {
 
 import { useBoxFiles } from "../share/box-files";
 
-import { CrewCardView, shownAsColleague } from "./crew-card";
+import { CrewCardView, requestDropped, requestedLast, shownAsColleague } from "./crew-card";
 
 export const HOME_COPY = {
   question: (name: string) => `What keeps getting in your way, ${name}?`,
@@ -401,7 +401,32 @@ export function HomeScreen({
   const [crew, setCrew] = useState<Loaded<{ total: number; top: CrewCard[] } | null>>({ state: "loading" });
   const [ones, setOnes] = useState<Loaded<HomePost[] | null>>({ state: "loading" });
   const [crewAt, setCrewAt] = useState(0);
-  const teamUp = useTeamUpSheet({ doneLabel: "Done" });
+  // DEC-126 (WF-03b, BLD-C219). After a send the card reads "Requested" with "Withdraw" and goes to the end of the
+  // deck, where the server keeps it after a reload (BLD-F094); it stays there until the next read. The deck follows
+  // it, so "Requested" is in front when the sheet closes and the sheet's focus comes back to it (WCAG 2.4.3). After a
+  // withdraw, from the card or from the sheet, "Team up" is drawn again where the card stands: nothing moves.
+  const crewIds = crew.state === "ready" ? (crew.value?.top.map((c) => c.id) ?? []) : [];
+  const onTeamUpSent = (s: TeamUpSent) => {
+    if (!crewIds.includes(s.ideaId)) return;
+    setCrew((c) =>
+      c.state === "ready" && c.value
+        ? { state: "ready", value: { ...c.value, top: requestedLast(c.value.top, s) } }
+        : c,
+    );
+    setCrewAt(crewIds.length - 1);
+  };
+  const onTeamUpWithdrawn = (s: TeamUpSent) => {
+    setCrew((c) =>
+      c.state === "ready" && c.value
+        ? { state: "ready", value: { ...c.value, top: requestDropped(c.value.top, s.ideaId) } }
+        : c,
+    );
+  };
+  const teamUp = useTeamUpSheet({
+    doneLabel: "Done",
+    onSent: onTeamUpSent,
+    onWithdrawn: onTeamUpWithdrawn,
+  });
   // Each read of Needs you gets a number, and an older read never overwrites a newer one that is shown.
   const needsRead = useRef(0);
   const needsShown = useRef(0);
@@ -730,7 +755,12 @@ export function HomeScreen({
                     index={crewAt}
                     onIndexChange={setCrewAt}
                     cards={crewData.top.map((c) => (
-                      <CrewCardView key={c.id} card={c} onTeamUp={teamUp.open} />
+                      <CrewCardView
+                        key={c.id}
+                        card={c}
+                        onTeamUp={teamUp.open}
+                        onWithdrawn={onTeamUpWithdrawn}
+                      />
                     ))}
                   />
                 </div>

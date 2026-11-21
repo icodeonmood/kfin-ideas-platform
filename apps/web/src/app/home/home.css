@@ -682,35 +682,6 @@
   color: #b4b4bd;
 }
 
-.hm-o-next {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.hm-o-nt {
-  margin: 0;
-  font: 500 22px/1.25 var(--fd);
-  color: #ffffff;
-}
-
-.hm-o-np {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.5;
-  color: #b4b4bd;
-}
-
-.hm-o-more {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  font: 500 15px/1 var(--ft);
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-
 /* ---------- narrower windows (F-SPACE.breakpoints) ---------- */
 @media (max-width: 1100px) {
   .hm-grid,
