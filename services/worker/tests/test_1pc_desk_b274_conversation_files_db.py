@@ -33,10 +33,11 @@ from tests import desk_fixtures as f
 from tests.desk_fixtures import clean_up_desk_rows  # noqa: F401 (autouse: removes what the helpers made)
 
 NOW = f.at(16, 13)  # Monday 16 November 2026, 1 pm IST
-OWN, DESK_NOTE, SENT_NOTE = (
+OWN, DESK_NOTE, SENT_NOTE, ON_ENTRY = (
     "branch-call-log-nov.xlsx",
     "desk-notes-for-the-chat.xlsx",
     "sms-sent-in-the-chat.xlsx",
+    "sms-moved-into-the-chat.xlsx",
 )
 QS: list[dict[str, Any]] = [
     {"part": "evidence", "text": "Can you add the call log for the whole of November?"}
@@ -255,3 +256,30 @@ def test_BLD_B274_committee_qualify_evidence_counts_only_the_members_own_files(
     db.execute("UPDATE ideas SET cluster_id = %s WHERE id = %s", (cluster, cast["idea"]["id"]))
     _gate, found = qualify._evidence(db, cluster, qualify._members(db, cluster))
     assert found["clean_files"] == 1
+
+
+# ---- both halves of IDEA_OWN -----------------------------------------------------------------------------------------
+def test_S_R2_left_2_L_QUESTIONS_BLD_B274_a_file_on_an_entry_is_never_the_ideas_own_whatever_its_purpose(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """Lane C's condition has two halves. A file on a conversation entry whose `purpose` still says 'idea' (set in
+    SQL; the composer never writes one) is not one of the idea's files either: the desk's page leaves it out, it
+    leaves Attached empty, and it cannot go on an answer. The other tests pin the `purpose` half; this one pins
+    `conversation_entry_id IS NULL`."""
+    idea, kavya = cast["idea"], cast["kavya"]["id"]
+    on_entry = _for_the_conversation(db, fx.attachment(db, idea, cast["kavya"], name=ON_ENTRY))
+    send(db, idea["idea_id"], kavya, {"file_ids": [on_entry]}, at=f.at(15, 11))
+    db.execute("UPDATE attachments SET purpose = 'idea' WHERE id = %s", (on_entry,))
+    row = db.execute(
+        "SELECT purpose, conversation_entry_id FROM attachments WHERE id = %s", (on_entry,)
+    ).fetchone()
+    assert row is not None and row["purpose"] == "idea" and row["conversation_entry_id"] is not None
+    assert asking._filled(db, idea)["evidence"] is False
+    assert _page_files(reads.reviewer_idea(db, idea["idea_id"], cast["meera"]["id"], NOW)) == []
+    sent = asking.send_set(db, idea["idea_id"], cast["meera"]["id"],
+                           {"questions": QS, "time_to_answer": "3d"}, f.at(16, 9))  # fmt: skip
+    with pytest.raises(Refused) as refused:
+        asking.save_answer(
+            db, sent["questions"][0]["id"], kavya, "The log is attached.", [on_entry], f.at(16, 10)
+        )
+    assert (refused.value.status, refused.value.code) == (422, "file_not_found")
