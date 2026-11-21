@@ -770,6 +770,15 @@
   .cv-box:focus-within {
     box-shadow: none;
   }
+  /* With the picker or files in it the dock can outgrow a short screen (400% zoom, 320 x 256; a phone with its
+   * keyboard up), so it never reaches above the phone bar (`.pnav`: 44px, its 6px under and max(8px, the safe area)
+   * above) and scrolls inside itself (WCAG 1.4.10, 2.4.7; lane D's QA, BLD-F095). Only then: without them the
+   * @mention list, drawn above the pill, must not be clipped. pin.ts measures the capped box as before. */
+  .cv-box:has(.cv-pick, .cv-files) {
+    max-height: calc(100dvh - var(--cv-at, 0px) - 50px - max(8px, env(safe-area-inset-top, 0px)));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
   /* One row (PhoneMessages, `.cvrow`): the pill and the round Send, on the row's bottom edge as the pill grows; an
    * error sits just above the row. For a reader who may not attach the pill starts at the content edge, so no empty
    * gap reads as a misalignment (lane D's QA, BLD-F078); the attach slot is `.cv-row.with-attach`, below (BLD-F095) */

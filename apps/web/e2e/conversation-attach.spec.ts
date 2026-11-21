@@ -242,6 +242,35 @@ test('BLD-F063 at 375px: a crew reader\'s box has no "+" and no file input; the 
   await expect(page.locator("form.cv-box").getByRole("button")).toHaveCount(1); // Send
 });
 
+test("WCAG 1.4.10, S-08.layout/3, BLD-F095 at 320 x 256 (400% zoom): with the picker open the box stays under the phone bar and scrolls inside itself, so focus on Choose a folder and browse is in view", async ({
+  page,
+}) => {
+  await answer(page);
+  await openAsSharer(page);
+  await page.setViewportSize({ width: 320, height: 256 });
+  await openPicker(page);
+  await settleMotion(page);
+  for (const name of ["Choose a folder", "browse"]) {
+    const button = page.getByRole("button", { name, exact: true });
+    await button.focus();
+    await expect(button).toBeFocused();
+    await expect(button, name).toBeInViewport();
+  }
+  // The capped box: its top is on screen, below the phone bar, and it scrolls inside itself (lane D's QA)
+  const at = await page.evaluate(() => {
+    const form = document.querySelector<HTMLElement>("form.cv-box")!;
+    const bar = document.querySelector(".pnav")?.getBoundingClientRect();
+    return {
+      top: form.getBoundingClientRect().top,
+      bar: bar ? bar.bottom : 0,
+      overflow: getComputedStyle(form).overflowY,
+    };
+  });
+  expect(at.top).toBeGreaterThanOrEqual(0);
+  expect(at.top).toBeGreaterThanOrEqual(at.bar - 1);
+  expect(at.overflow).toBe("auto");
+});
+
 test.describe('S-08\'s "+" at 1440px (Messages.jpg)', () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 

@@ -628,6 +628,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
             id={ids.picker}
             help={files.help}
             onFiles={(chosen) => {
+              keyRef.current = null; // other files, another message: a new key (A-API.conventions/3)
               files.addFiles(chosen);
               closePicker(true);
             }}
@@ -642,11 +643,12 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
       rows={files.rows}
       limitMb={files.limitMb}
       onRetry={(key) => void files.retry(key)}
-      onRemove={(key) =>
+      onRemove={(key) => {
+        keyRef.current = null; // other files, another message: a new key (A-API.conventions/3)
         void files.remove(key).then((gone) => {
           if (gone) box.current?.focus(); // the row and its button go: focus back in the box
-        })
-      }
+        });
+      }}
     />
   ) : null;
   const described = [error ? ids.error : null, ids.who].filter(Boolean).join(" ");
@@ -732,8 +734,9 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
               {/* One grid, also the box's tool row (`cfoot`, C-PROMPT.anatomy/2): on a phone a single row (the "+"
                   for those who may attach, the pill and the round Send) with the files, the picker and any error
                   above it; wider, the words, the files, the picker and any error, then the "+", who sees it and Send
-                  (BLD-F078, BLD-F095). On a phone the files and the "+" come before the words and wider after them,
-                  so a keyboard meets them in the order they are on screen; the picker follows the "+" it opens. */}
+                  (BLD-F078, BLD-F095). On a phone the files and the "+" come before the words, and wider after
+                  them. The picker always follows the "+" that opens it, so the keyboard goes from the "+" into it;
+                  wider, it is drawn above the row that holds the "+", as Home draws it. */}
               <div className={cls("cv-row", "cfoot", attach && "with-attach")}>
                 {phone ? boxFiles : null}
                 {phone ? attach : null}
