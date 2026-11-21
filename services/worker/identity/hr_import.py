@@ -8,6 +8,8 @@ CSV header: employee_id,name,email,department,job_title,location,manager_employe
 - A user from an earlier import who is missing from this one becomes inactive, never deleted.
 - Refuses a file that would deactivate more than half of today's active users, unless forced: a truncated
   export must not switch off the organisation.
+- Refuses a row whose email is already on someone else's record in the app (BLD-A238): a sign-in under another
+  employee ID, or a leaver whose email HR has reissued. Nothing is re-keyed or merged; nothing is changed.
 
 python -m identity.hr_import <file.csv> [--repo <company repo>] [--force]
 python -m identity.hr_import - [--repo <company repo>] [--force] < <file.csv>
@@ -32,7 +34,7 @@ from psycopg.types.json import Jsonb
 from core.config import get_settings
 from core.db import Conn, connect
 from core.logging import get_logger
-from identity.codes import assign_contributor_code, emp_id_hash
+from identity.codes import assign_contributor_code, email_key_hash, emp_id_hash
 from identity.taxonomy_map import TaxonomyMap, load
 
 log = get_logger("identity.hr_import")
@@ -54,6 +56,8 @@ class HrRow:
     job_title: str
     location: str
     manager_employee_id: str
+    # The line of HR's file where this row ends, for a refusal to name (BLD-A238). The upsert never reads it.
+    line: int = field(default=0, compare=False)
 
 
 @dataclass
@@ -85,15 +89,26 @@ def read_stream(fh: TextIO) -> list[HrRow]:
     reader = csv.DictReader(fh)
     if reader.fieldnames is None or [f.strip() for f in reader.fieldnames] != HEADER:
         raise ValueError(f"HR CSV header must be exactly: {','.join(HEADER)}")
+    # The check reads the names stripped, so the rows are keyed by the stripped names too (BLD-A238): with
+    # `employee_id, name, …` or `department ` every row would otherwise read that field as empty.
+    reader.fieldnames = list(HEADER)
     rows = []
     try:
         for raw in reader:
-            values = {k: (raw.get(k) or "").strip() for k in HEADER}
+            # The reader's own count: the line of HR's file where this row ends (a quoted field can hold a line
+            # break, so a row can span lines).
+            line = reader.line_num
+            # DictReader puts extra fields under the key None and gives a short row None for each missing one. An
+            # unquoted comma in a name would shift every value after it, so the row is refused (BLD-A238).
+            found = len(HEADER) + len(raw[None]) if None in raw else sum(raw[k] is not None for k in HEADER)
+            if found != len(HEADER):
+                raise ValueError(f"line {line}: expected {len(HEADER)} fields, found {found}")
+            values = {k: raw[k].strip() for k in HEADER}
             if not values["employee_id"] or not values["email"] or not values["name"]:
-                # The reader's own count: the line of HR's file where this row ends (a quoted field can hold a
-                # line break, so a row can span lines).
-                raise ValueError(f"line {reader.line_num}: employee_id, name and email are required")
-            rows.append(HrRow(**values))
+                raise ValueError(f"line {line}: employee_id, name and email are required")
+            if values["email"].count("@") != 1:
+                raise ValueError(f"line {line}: email is not an address (it needs exactly one @)")
+            rows.append(HrRow(**values, line=line))
     except csv.Error:
         # The inner reader's count: DictReader's own is only updated after a row is read whole.
         raise ValueError(f"line {reader.reader.line_num}: not a valid CSV row") from None
@@ -152,13 +167,33 @@ def import_rows(conn: Conn, rows: list[HrRow], tax: TaxonomyMap, *, force: bool 
                 )
             if role is None and r.job_title:
                 result.unmapped_titles[r.job_title] = result.unmapped_titles.get(r.job_title, 0) + 1
-            # Adopt someone who signed in before HR listed them (email-keyed, source "sign_in"): give their row
-            # the HR employee hash first, so the upsert below updates it instead of colliding on email.
+            # Adopt someone who signed in before HR listed them, keyed by their email because SSO released no
+            # employee ID (source "sign_in", emp_id_hash = email_key_hash(email)): give their row the HR employee
+            # hash first, so the upsert below updates it instead of colliding on email. Only such a row
+            # (BLD-A238): a row keyed by Entra's employeeId claim, or a leaver's HR row whose email HR has given
+            # to someone new, is another account and is never re-keyed (DEC-103, non-negotiable 4).
             conn.execute(
                 "UPDATE users SET emp_id_hash = %s WHERE lower(email) = lower(%s) AND emp_id_hash <> %s "
+                "AND source = 'sign_in' AND emp_id_hash = %s "
                 "AND NOT EXISTS (SELECT 1 FROM users WHERE emp_id_hash = %s)",
-                (hashes[r.employee_id], r.email, hashes[r.employee_id], hashes[r.employee_id]),
-            )
+                (
+                    hashes[r.employee_id], r.email, hashes[r.employee_id], email_key_hash(r.email),
+                    hashes[r.employee_id],
+                ),
+            )  # fmt: skip
+            # Anyone else still holding this email would make the upsert fail on users_email_lower: a sign-in
+            # keyed by another employee ID, a leaver whose email HR has reissued, or a sign-in whose person HR
+            # already lists under this employee ID with another email. Refuse before this row is written, naming
+            # the line only; the transaction rolls back, so nothing is changed (BLD-A238). No merge of two rows:
+            # it would move ideas, points and grants between people.
+            if conn.execute(
+                "SELECT 1 FROM users WHERE lower(email) = lower(%s) AND emp_id_hash <> %s",
+                (r.email, hashes[r.employee_id]),
+            ).fetchone():
+                raise ImportRefused(
+                    f"line {r.line}: this email already belongs to another person in the app (a different "
+                    "employee ID); check the employee_id and email with HR, nothing was changed"
+                )
             row = conn.execute(
                 """
                 INSERT INTO users (emp_id_hash, name, email, lob_id, role_title, role_family, location,

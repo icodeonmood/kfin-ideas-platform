@@ -10,7 +10,8 @@ import generators as g
 import pytest
 
 from bootstrap.synthetic_hr import DOMAIN, generate
-from identity.codes import emp_id_hash
+from identity import hr_import
+from identity.codes import email_key_hash, emp_id_hash
 from identity.hr_import import HEADER, ImportRefused, import_rows, read_csv
 from identity.taxonomy_map import load
 
@@ -163,3 +164,129 @@ def test_duplicate_emails_are_rejected(tmp_path: Path) -> None:
     people[1]["email"] = people[0]["email"].upper()
     with pytest.raises(ValueError, match="same email"):
         read_csv(_csv(tmp_path / "dup.csv", people))
+
+
+# ---- BLD-A238: the email adoption takes only an email-keyed sign-in; anyone else holding the email is a refusal ----
+
+REFUSED = (
+    "this email already belongs to another person in the app (a different employee ID); "
+    "check the employee_id and email with HR, nothing was changed"
+)
+
+
+def _signed_in(db: Any, key: str, person: dict[str, str]) -> None:
+    """A row as the web app's first sign-in writes it (users.ts): source "sign_in", keyed by `key`."""
+    db.execute(
+        "INSERT INTO users (emp_id_hash, name, email, source) VALUES (%s, %s, %s, 'sign_in')",
+        (key, person["name"], person["email"]),
+    )
+
+
+def _state(db: Any) -> dict[str, Any]:
+    """Everything an import writes, to show a refusal changed nothing."""
+    return {
+        "users": db.execute(
+            "SELECT u.id, u.emp_id_hash, u.name, u.email, u.source, u.active, u.lob_id, u.role_family, "
+            "u.manager_user_id, u.last_seen_in_hr_at, m.contributor_code FROM users u "
+            "LEFT JOIN contributor_map m ON m.user_id = u.id ORDER BY u.emp_id_hash"
+        ).fetchall(),
+        "proposals": db.execute(
+            "SELECT ref_id, proposal FROM review_items WHERE item_type = 'taxonomy_proposal' ORDER BY ref_id"
+        ).fetchall(),
+    }
+
+
+def _values(people: list[dict[str, str]]) -> list[str]:
+    return [v for p in people for v in p.values() if v]
+
+
+def test_a238_a_claim_keyed_sign_in_with_another_employee_id_is_not_rekeyed(
+    db: Any, company_repo: Path, tmp_path: Path
+) -> None:
+    """Fix 3: Entra released an employeeId (SYN-89003) that is not HR's (SYN-80003) for the same email. The row
+    keyed by the claim is someone's account and keeps its key; the import is refused at HR's line 4."""
+    people = _people()
+    claim = emp_id_hash("SYN-89003")
+    _signed_in(db, claim, people[2])
+    before = _state(db)
+    with pytest.raises(ImportRefused) as caught:
+        import_rows(db, read_csv(_csv(tmp_path / "hr.csv", people)), load(company_repo))
+    assert str(caught.value) == f"line 4: {REFUSED}"
+    assert not [v for v in _values(people) if v in str(caught.value)]
+    assert _state(db) == before  # nothing changed: lines 2 and 3, written first, were rolled back too
+    assert before["users"][0]["emp_id_hash"] == claim and before["users"][0]["source"] == "sign_in"
+    assert _user(db, people[2]["employee_id"]) is None
+
+
+def test_a238_a_leavers_account_is_not_given_to_a_joiner_with_the_same_email(
+    db: Any, company_repo: Path, tmp_path: Path
+) -> None:
+    """Fix 3 (DEC-103, non-negotiable 4): HR reissues a leaver's email to a joiner. The leaver's row stays theirs,
+    inactive, with their contributor code; the import is refused at the joiner's line, and nothing changes."""
+    tax = load(company_repo)
+    people = _people()
+    import_rows(db, read_csv(_csv(tmp_path / "hr1.csv", people)), tax)
+    stayers = [p for p in people if p["employee_id"] != "SYN-80005"]
+    assert import_rows(db, read_csv(_csv(tmp_path / "hr2.csv", stayers)), tax).deactivated == 1
+    leaver = _user(db, "SYN-80005")
+    assert leaver["active"] is False
+
+    joiner = dict(people[4], employee_id="SYN-80099", name=g.person_name(g.default_rng(78)))
+    before = _state(db)
+    with pytest.raises(ImportRefused) as caught:
+        import_rows(db, read_csv(_csv(tmp_path / "hr3.csv", [*stayers, joiner])), tax)  # joiner on line 7
+    assert str(caught.value) == f"line 7: {REFUSED}"
+    assert not [v for v in _values([*people, joiner]) if v in str(caught.value)]
+    assert _state(db) == before
+    assert _user(db, "SYN-80099") is None
+    still = _user(db, "SYN-80005")
+    assert (still["id"], still["active"], still["contributor_code"]) == (
+        leaver["id"],
+        False,
+        leaver["contributor_code"],
+    )
+
+
+def test_a238_a_sign_in_for_someone_hr_lists_with_another_email_is_refused_not_a_unique_violation(
+    db: Any, company_repo: Path, tmp_path: Path
+) -> None:
+    """Fix 4, the r3 review's itwalk-03: SYN-80003 signed in without the employeeId claim under the address they
+    use, while HR's row held another. HR corrects the file to that address: refused at line 4, nothing changed."""
+    tax = load(company_repo)
+    people = _people()
+    import_rows(db, read_csv(_csv(tmp_path / "hr1.csv", people)), tax)
+    address = f"p.003.signin@{DOMAIN}"
+    _signed_in(db, email_key_hash(address), dict(people[2], email=address))
+    corrected = [dict(p) for p in people]
+    corrected[2]["email"] = address
+    before = _state(db)
+    with pytest.raises(ImportRefused) as caught:
+        import_rows(db, read_csv(_csv(tmp_path / "hr2.csv", corrected)), tax)
+    assert str(caught.value) == f"line 4: {REFUSED}"
+    assert _state(db) == before
+
+
+def test_a238_the_command_prints_refused_with_the_line_and_no_value(
+    db: Any,
+    company_repo: Path,
+    tmp_path: Path,
+    test_database: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    captured_logs: Any,
+) -> None:
+    """Fix 4 through `main`: `refused: line N: …`, exit 2, never `UniqueViolation`, no name, email or ID."""
+    from core.db import connect
+    from tests import helpers
+
+    people = _people()
+    _signed_in(db, emp_id_hash("SYN-89003"), people[2])
+    monkeypatch.setattr(hr_import, "connect", lambda **kw: connect(helpers.db_url(test_database), **kw))
+    path = _csv(tmp_path / "hr.csv", people)
+    assert hr_import.main([str(path), "--repo", str(company_repo)]) == 2
+    out = capsys.readouterr()
+    assert out.out == f"refused: line 4: {REFUSED}\n"
+    assert "UniqueViolation" not in out.out + out.err
+    logs = captured_logs.getvalue()
+    assert not [v for v in _values(people) if v in out.out or v in out.err or v in logs]
+    assert db.execute("SELECT count(*) AS n FROM users").fetchone()["n"] == 1

@@ -386,8 +386,8 @@ def test_a235_hr_import_a_bare_carriage_return_in_a_quoted_field_counts_as_a_lin
 def test_a235_hr_import_a_row_with_an_extra_column_keeps_the_line_count(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Delta review 2: an extra column (DictReader's list under None), holding a line break, then a row with no
-    name: the reader's own count still names line 4."""
+    """Delta review 2: an extra column (DictReader's list under None), holding a line break. Since BLD-A238 the
+    extra field is itself refused, named by the line the row ends on (3), and the row after it is never read."""
     people = _people(3)
     rows = [
         ",".join(HEADER),
@@ -395,8 +395,8 @@ def test_a235_hr_import_a_row_with_an_extra_column_keeps_the_line_count(
         ",".join(dict(people[1], name="")[k] for k in HEADER),
     ]
     out = _failed(monkeypatch, capsys, ("\n".join(rows) + "\n").encode("utf-8"))
-    assert out == "failed: line 4: employee_id, name and email are required; nothing was changed\n"
-    assert people[1]["email"] not in out
+    assert out == "failed: line 3: expected 7 fields, found 8; nothing was changed\n"
+    assert not [v for v in _personal(people) if v in out]
 
 
 def test_a235_hr_import_wrong_header_names_the_expected_header_only(
