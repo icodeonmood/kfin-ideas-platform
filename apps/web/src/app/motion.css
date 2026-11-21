@@ -302,6 +302,93 @@
   }
 }
 
+/* --- 5. C-ONES-FAN (Home.dc.html .ofan, .ocard, .ofan-side, .oc-cheer; BLD-D026). The fan's poses at rest are in
+   components.css; these rules only move between them, and only with motion allowed, so under reduced motion the
+   cards take each pose at once and nothing flies, tilts or pops (F-MOTION.reduced). Only transform (and translate,
+   rotate), opacity and filter move (F-MOTION.rules/6). --- */
+@media (min-width: 641px) and (prefers-reduced-motion: no-preference) {
+  .fan.several {
+    --fan-fly: 0.8s;
+    --fan-ease: cubic-bezier(0.2, 0.85, 0.25, 1);
+    --fan-stagger: 45ms;
+  }
+
+  /* Every card glides between its poses: the stack, its hover, the row, the edge card straightening as it comes up */
+  .fan.several .fan-card {
+    transform-origin: 0% 50%;
+    transition:
+      transform var(--fan-fly) var(--fan-ease),
+      filter 0.5s ease,
+      opacity 0.45s ease;
+  }
+
+  /* The fly-out (C-ONES-FAN.behaviour/2): the cards leave the stack one after another, 45ms apart, each arcing up on
+     its way (oFly). The region carries data-fly only while they fly, and so does will-change */
+  .fan.several[data-fly="open"] .fan-card {
+    transition-delay: calc(var(--i) * var(--fan-stagger));
+    animation: oFly var(--fan-fly) var(--fan-ease) calc(var(--i) * var(--fan-stagger)) both;
+    will-change: transform, filter;
+  }
+
+  /* The stack shows four: the cards after them fade in as they fly */
+  .fan.several[data-fly="open"] .fan-card:nth-child(n + 5) {
+    animation:
+      oFly var(--fan-fly) var(--fan-ease) calc(var(--i) * var(--fan-stagger)) both,
+      oShow 0.45s ease calc(var(--i) * var(--fan-stagger)) both;
+  }
+
+  /* The side panel fades and slides out over the cards as the fan spreads, then leaves the page (ones-fan.tsx). Out
+     of the grid, it keeps the column it sat in, centred on the stack as before */
+  .fan-stage:has(> .fan-side[data-leaving]) {
+    position: relative;
+  }
+
+  .fan-side[data-leaving] {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: min(28%, 280px);
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    translate: 32px 0;
+    pointer-events: none;
+    transition:
+      opacity 0.25s ease,
+      translate 0.4s ease,
+      visibility 0s linear 0.4s;
+  }
+
+  /* Where the panel sat under the stack, it fades out where it is */
+  @container fan (max-width: 860px) {
+    .fan-side[data-leaving] {
+      position: static;
+      width: auto;
+    }
+  }
+}
+
+/* Hover on the stack, with a pointer that hovers and is fine only (never on touch): the fan opens a little (52px to
+   68px a card, -24deg to -16deg) and the top card leans out toward the pointer (C-ONES-FAN.behaviour/6) */
+@media (min-width: 641px) and (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+  .fan.several:not(.spread) .fan-stage:hover .fan-card:not(:first-child) {
+    transform: translateX(calc(var(--i) * -1 * (var(--fan-w) + var(--fan-gap)))) perspective(1400px)
+      translateX(calc(var(--fan-w) * 0.6 + 68px * (var(--i) - 1))) translateZ(calc(var(--i) * -70px))
+      rotateY(-16deg);
+  }
+
+  .fan.several:not(.spread) .fan-stage:hover .fan-card:first-child {
+    transform: perspective(1400px) translateZ(24px) rotateY(4deg);
+  }
+}
+
+/* Cheer: the heart pops once as it fills, on the person's own press only (the "on" class, ones-fan.tsx), never for a
+   cheer already there when the page loads */
+@media (prefers-reduced-motion: no-preference) {
+  button.opost-cheer.on svg {
+    animation: cheerPop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
 /* Rules the motion helpers rely on */
 .mo-leaving,
 .mo-leaving * {
@@ -584,5 +671,25 @@
     box-shadow:
       inset 0 0 0 2px var(--blue),
       0 0 0 4px rgba(57, 93, 237, 0.16);
+  }
+}
+
+/* C-ONES-FAN (BLD-D026): the arc on the way out of the stack, the cards past the fourth showing, and Cheer's pop */
+@keyframes oFly {
+  40% {
+    translate: 0 -26px;
+    rotate: -1.5deg;
+  }
+}
+
+@keyframes oShow {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cheerPop {
+  40% {
+    transform: scale(1.35);
   }
 }

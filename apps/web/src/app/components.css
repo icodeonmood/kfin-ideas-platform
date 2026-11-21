@@ -1671,9 +1671,10 @@ textarea:is(.fld, .textarea) {
 }
 
 /* ---------- C-ONES-FAN: the Ones' posts on the dark slab (Home.dc.html .ofan, .ocard, PhoneHome.dc.html; BLD-D020) ---------- */
-/* Static in this slot: the stack's angled pose and the row's angled edge are drawn, not animated (the fly out, the
-   tilt's new pose, cheerPop and the spread glide come with the motion slot). Tier colour only ever comes from the
-   tokens, through data-tier: --heat is var(--tier-N) (offer.css) and --opost-ring is var(--tier-N-ring) (below). */
+/* The look at rest: the stack's angled pose and the row's angled edge. The moves between these poses (the fly out,
+   the hover, the edge straightening, the side panel's exit, cheerPop) are in motion.css (BLD-D026), so this section
+   holds no animation. Tier colour only ever comes from the tokens, through data-tier: --heat is var(--tier-N)
+   (offer.css) and --opost-ring is var(--tier-N-ring) (below). */
 .fan {
   --fan-w: 341px;
   --fan-h: 511px;
@@ -1731,8 +1732,11 @@ textarea:is(.fld, .textarea) {
   transition: transform var(--mo-move) var(--mo-out);
 }
 
-.fan.spread .fan-track {
-  transform: translateX(calc(var(--at) * -1 * (var(--fan-w) + var(--fan-gap))));
+/* Wider than a phone the row is a track the controls move; on a phone it is the view's own scroll (below) */
+@media (min-width: 641px) {
+  .fan.spread .fan-track {
+    transform: translateX(calc(var(--at) * -1 * (var(--fan-w) + var(--fan-gap))));
+  }
 }
 
 .fan-card {
@@ -1764,6 +1768,26 @@ textarea:is(.fld, .textarea) {
 
 .fan.one .fan-card {
   scroll-snap-align: start;
+}
+
+/* Several posts on a phone (PhoneHome.dc.html .ofan.spread): the same native row, a card per snap, whatever moves it
+   (a swipe, Previous and Next, ← →); the position line follows the card it snaps to (C-ONES-FAN.behaviour/7) */
+@media (max-width: 640px) {
+  .fan.several .fan-view {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    touch-action: auto;
+  }
+
+  .fan.several .fan-view::-webkit-scrollbar {
+    display: none;
+  }
+
+  .fan.several .fan-card {
+    scroll-snap-align: start;
+  }
 }
 
 /* Stacked (several posts at rest, wider than a phone): the first card faces you and up to three sit behind it,
@@ -1807,7 +1831,8 @@ textarea:is(.fld, .textarea) {
 }
 
 /* With motion allowed, the board's pose: the cards behind angled into the page, and the card at the row's edge
-   angled in. A still pose: no transition or animation on it in this slot */
+   angled in. The edge and far poses repeat the stack's list of functions (translateX(0) is no move), so a card
+   glides from one pose to the next function by function rather than through a matrix */
 @media (min-width: 641px) and (prefers-reduced-motion: no-preference) {
   .fan.several:not(.spread) .fan-card:not(:first-child) {
     transform: translateX(calc(var(--i) * -1 * (var(--fan-w) + var(--fan-gap)))) perspective(1400px)
@@ -1817,12 +1842,12 @@ textarea:is(.fld, .textarea) {
   }
 
   .fan.spread .fan-card.edge {
-    transform: perspective(1400px) translateZ(-60px) rotateY(-16deg);
+    transform: translateX(0) perspective(1400px) translateX(0) translateZ(-60px) rotateY(-16deg);
     transform-origin: 0% 50%;
   }
 
   .fan.spread .fan-card.far {
-    transform: perspective(1400px) translateZ(-90px) rotateY(-24deg);
+    transform: translateX(0) perspective(1400px) translateX(0) translateZ(-90px) rotateY(-24deg);
     transform-origin: 0% 50%;
   }
 }
@@ -1910,6 +1935,11 @@ textarea:is(.fld, .textarea) {
   .fan-track,
   .fan-card > * {
     transition: none;
+  }
+
+  /* The phone row still snaps; Previous and Next jump to the card instead of gliding */
+  .fan-view {
+    scroll-behavior: auto;
   }
 }
 
