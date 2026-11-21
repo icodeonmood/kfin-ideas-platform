@@ -432,6 +432,29 @@ export function pdfWith(text: string): Buffer {
   return Buffer.from(out, "latin1");
 }
 
+/** The "+" in every prompt box (DEC-124): its name and tooltip are the board's words (Home.md, `attachments`).
+ * J-SHARE (Home, Share a problem, the draft page) and J-TEAMUP (the conversation, S-08). */
+export const PLUS = "Add files, a folder or a link";
+
+/** Opens the picker the "+" controls (aria-controls) and returns it. */
+export async function openPicker(page: Page): Promise<Locator> {
+  const plus = page.getByRole("button", { name: PLUS });
+  await expect(plus).toHaveAttribute("aria-expanded", "false");
+  await plus.click();
+  await expect(plus).toHaveAttribute("aria-expanded", "true");
+  const id = await plus.getAttribute("aria-controls");
+  expect(id, 'the "+" names the picker it opens').toBeTruthy();
+  return page.locator(`[id="${id ?? ""}"]`);
+}
+
+/** "+", then "browse", then the person's file (a one-page PDF of `text`) in the system's file chooser. */
+export async function addFile(page: Page, name: string, text: string): Promise<void> {
+  const picker = await openPicker(page);
+  const chooser = page.waitForEvent("filechooser");
+  await picker.getByRole("button", { name: "browse", exact: true }).click();
+  await (await chooser).setFiles({ name, mimeType: "application/pdf", buffer: pdfWith(text) });
+}
+
 // --- Steps -------------------------------------------------------------------------------------------------------------
 
 export type StepRef = `${JourneyId}/${string}`;

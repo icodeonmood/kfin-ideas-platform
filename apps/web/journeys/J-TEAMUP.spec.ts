@@ -13,12 +13,25 @@
  * request on Bhavesh's crew deck as "Requested", withdraws it there and sends the same note again, so row 4 reads the
  * newest request; its passes on the way are put back with "See them again" (he has no seeded passes). R1 is shared with
  * J-SIMILAR (lib SEED): both only add requests, crew and messages, and nobody decides it, so no row here depends on
- * whether R1 is picked. Row 1 ends with the sheet open from a card, which is where row 2 starts.
+ * whether R1 is picked. Row 1 ends with the sheet open from a card, which is where row 2 starts. Rows 6b and 6c
+ * (DEC-124, walk item WF-01): Rekha sends a file and a link with the "+" in R1's conversation, the crew reads it, and
+ * the review desk finds the file there but not among S-R2's attachments (BLD-B274); files are made here (lib pdfWith).
  */
 import { expect, type Page } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues } from "../e2e/helpers";
-import { ideaUrl, seeded, signInAs, snap, step } from "./lib";
+import {
+  addFile,
+  carriedFor,
+  ideaUrl,
+  openPicker,
+  PLUS,
+  runSeconds,
+  seeded,
+  signInAs,
+  snap,
+  step,
+} from "./lib";
 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`;
 
@@ -281,5 +294,143 @@ step(
       await snap(lead, info, "J-TEAMUP/6", "S-08", "rekha");
       await context.close();
     }
+  },
+);
+
+// --- Walk item WF-01 in the conversation: S-08's "+" (DEC-124, BLD-F095) ------------------------------------------
+
+/** Rekha's message with her file and a link (row 6b). Synthetic words and a synthetic SharePoint address. */
+const WITH_FILE = "Here are the branch notes on failed SIP debits, and the reasons page we keep.";
+const REASONS_LINK = "https://synthetic.sharepoint.com/sites/branch-ops/sip-debit-reasons";
+/** S-08's line on a file with a customer detail found: it can't go in the conversation (DEC-107, BLD-F095). */
+const HAS_DETAIL =
+  "This file has a customer detail in it, so it can’t be sent in the conversation. Remove it to send your message.";
+/**
+ * BLD-F062 (docs/DECISIONS.md): the crew reads a conversation without its files until DEC-107's black-out lands, though
+ * P-PRODUCT.privacy gives the crew checked files. Lane F has asked the product lead (21 Nov); flip this with the answer.
+ */
+const CREW_SEES_FILES = false;
+
+/** A file's row in S-08's box (C-FILE.row): the list "Your files" (a link goes into the words, so no link rows). */
+function convoRow(page: Page, name: string) {
+  return page.getByRole("list", { name: "Your files" }).getByRole("listitem").filter({ hasText: name });
+}
+
+step(
+  "J-TEAMUP/6b",
+  "S-08",
+  'Rekha\'s "+" in the conversation: a checked file and a link go with her message, a file with a customer detail stays out, and the crew reads the message',
+  {
+    needs: ["S-08", "C-PROMPT.attach", "C-FILE", "L-CONVO", "BLD-F095"],
+    changes: ["R1"],
+    after: ["J-TEAMUP/6"],
+  },
+  async ({ page, browser }, info) => {
+    info.setTimeout(150_000); // two files through their checks (up to 30 s each) and three axe runs
+    const r1 = await seeded("R1");
+    const carried = carriedFor<{ file: string }>("J-TEAMUP");
+    const name = `branch-sip-debit-notes-${runSeconds()}.pdf`;
+    const found = `courier-callback-${runSeconds()}.pdf`;
+    carried.file = name;
+    const box = page.getByRole("textbox", { name: "Message the crew" });
+
+    await signInAs(page, "rekha");
+    await page.goto(ideaUrl(r1, "/conversation"));
+    await expect(page.getByText(HELLO, { exact: true })).toBeVisible();
+    // DEC-124: the "+" comes first in the box's tool row (BLD-F095: `.cv-row.cfoot`), for the sharer (BLD-F063).
+    await expect(page.locator(".cfoot").getByRole("button").first()).toHaveAccessibleName(PLUS);
+    await expect(page.getByRole("button", { name: PLUS })).toHaveAttribute("title", PLUS);
+
+    // The picker, with Home's words; a link goes into the words, so it has no internal or external line.
+    await box.fill(WITH_FILE);
+    const picker = await openPicker(page);
+    await expect(picker.getByText(/^Drop files or a folder here, or/)).toBeVisible();
+    for (const label of ["browse", "Choose a folder", "Add link"]) {
+      await expect(picker.getByRole("button", { name: label, exact: true })).toBeVisible();
+    }
+    await expectNoSeriousAxeIssues(page);
+    const link = picker.getByRole("textbox", { name: "Or paste a link to a page, file or idea" });
+    await link.focus();
+    await page.keyboard.press("Escape");
+    await expect(picker).toHaveCount(0);
+    await expect(page.getByRole("button", { name: PLUS })).toBeFocused();
+
+    // A link goes into the words as typed, never a row and never fetched (non-negotiable 8).
+    const again = await openPicker(page);
+    await again.getByRole("textbox", { name: "Or paste a link to a page, file or idea" }).fill(REASONS_LINK);
+    await again.getByRole("button", { name: "Add link", exact: true }).click();
+    await expect(box).toHaveValue(new RegExp(`^${esc(WITH_FILE)} ${esc(REASONS_LINK)}\\s*$`));
+
+    // A checked file is a row in the box; one with a customer detail (a synthetic number, as J-RECOVER/8) can't go.
+    await addFile(page, name, "Failed SIP debits by reason, branch notes, week 47.");
+    await expect(convoRow(page, name).getByText("Checked", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await addFile(page, found, "Investor called back on 9800000012 about the failed debit.");
+    await expect(convoRow(page, found).getByText(HAS_DETAIL, { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await convoRow(page, found)
+      .getByRole("button", { name: `Remove ${found}` })
+      .click();
+    await expect(convoRow(page, found)).toHaveCount(0);
+
+    // Send: the words with the link, and the file on the message with View (L-CONVO/7); the box is empty again.
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    const onMessage = page.getByRole("list", { name: "Files in your message" }).last();
+    await expect(onMessage.getByRole("link", { name: `View ${name}` })).toHaveAttribute(
+      "href",
+      /^\/api\/files\/ATT-\d{4}-\d{6}\/view$/,
+    );
+    await expect(page.getByText(REASONS_LINK).last()).toBeVisible();
+    await expect(page.getByRole("list", { name: "Your files" })).toHaveCount(0);
+    await expect(box).toHaveValue("");
+    await expect(page.getByText(found)).toHaveCount(0);
+    await expectNoSeriousAxeIssues(page);
+
+    // The crew: the message, no "+" (BLD-F063), and the file as BLD-F062 or the lead's answer says.
+    const context = await browser.newContext();
+    const crew = await context.newPage();
+    try {
+      await signInAs(crew, "bhavesh");
+      await crew.goto(ideaUrl(r1, "/conversation"));
+      await expect(crew.getByText(WITH_FILE).last()).toBeVisible();
+      await expect(crew.getByRole("button", { name: PLUS })).toHaveCount(0);
+      if (CREW_SEES_FILES) {
+        await expect(crew.getByRole("link", { name: `View ${name}` })).toBeVisible();
+      } else {
+        await expect(crew.getByText(name)).toHaveCount(0);
+      }
+      await expectNoSeriousAxeIssues(crew);
+    } finally {
+      await snap(crew, info, "J-TEAMUP/6b", "S-08", "bhavesh");
+      await context.close();
+    }
+  },
+);
+
+step(
+  "J-TEAMUP/6c",
+  "S-R2",
+  "The review desk has the \"+\" in the conversation and reads Rekha's file there; S-R2's attachments leave it out",
+  {
+    needs: ["S-08", "L-CONVO", "BLD-F095", "S-R2", "BLD-B274"],
+    changes: ["R1"], // opening S-R2 may mark R1 as read by the desk
+    after: ["J-TEAMUP/6b"],
+  },
+  async ({ page }) => {
+    const r1 = await seeded("R1");
+    const name = carriedFor<{ file: string }>("J-TEAMUP").file;
+    expect(name, "row 6b names the file it sent").toBeTruthy();
+
+    await signInAs(page, "lavanya");
+    await page.goto(ideaUrl(r1, "/conversation"));
+    // BLD-F063, BLD-B270: the review desk may attach, and reads the files on a message.
+    await expect(page.getByRole("button", { name: PLUS })).toBeVisible();
+    await expect(page.getByRole("link", { name: `View ${name ?? ""}` })).toBeVisible();
+
+    // BLD-B274: a conversation file is not one of the idea's attachments on S-R2.
+    await page.goto(`/desk/ideas/${r1.ref ?? r1.uuid}`);
+    await expect(page.getByRole("heading", { name: "Attachments and artefacts" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Attached", exact: true })).toBeVisible();
+    await expect(page.getByText(name ?? "")).toHaveCount(0);
   },
 );
