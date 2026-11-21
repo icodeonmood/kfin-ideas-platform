@@ -400,6 +400,153 @@
 .cv-send-ic {
   display: none;
 }
+
+/* ---------- S-08's "+" (DEC-124, BLD-F095): the tool row, the files in the box, the picker ---------- */
+/* For the readers who may attach the grid gains a first column. Wider than a phone the "+", who sees it and Send
+ * share the last row (Messages.jpg, `.cvbar`), and the files and the picker sit between the words and that row, as
+ * on Home (C-PROMPT.attach). The "+" is lane D's AttachButton (`.attach-btn`, 44px); only its place is set here. */
+.cv-row.with-attach {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "field field field"
+    "files files files"
+    "pick pick pick"
+    "err err err"
+    "attach sees send";
+}
+.cv-attach {
+  grid-area: attach;
+  display: inline-flex;
+  margin: 6px 0 0 -8px; /* the board's `.cvtool`: the icon in line with the words */
+}
+/* The files in the box (Messages.md, `.cvfile`): compact rows that wrap, one with a line under it on its own row */
+.cv-files {
+  grid-area: files;
+  min-width: 0;
+  padding-top: 10px;
+}
+.cv-files .flist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+.cv-files .frow {
+  flex: 0 1 260px;
+  min-width: 0;
+}
+.cv-files .frow:has(.fmsg) {
+  flex-basis: 100%;
+}
+.cv-files .frow-in {
+  gap: 10px;
+  padding: 8px 8px 8px 10px;
+}
+.cv-files .fbadge {
+  width: 36px;
+  height: 30px;
+  font-size: 11px;
+}
+.cv-files .frow-n {
+  overflow: hidden;
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+.cv-files .frow-s {
+  font-size: 12.5px;
+}
+.cv-files .frow-a {
+  align-items: center;
+  gap: 4px;
+}
+/* "Remove {name}": a 32px round target (F-SPACE.targets/1, 24px at least), padded to 44px on touch below */
+.cv-file-x {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-round);
+  background: transparent;
+  color: var(--mute2);
+  cursor: pointer;
+}
+.cv-file-x:hover {
+  background: var(--hover-fill-strong);
+  color: var(--ink);
+}
+.cv-file-x:focus-visible,
+.cv-pick-folder:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+/* The picker (Home.md, `attachments=Picker open`): the drop area with the folder, then the link field */
+.cv-pick {
+  grid-area: pick;
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 1px var(--rule2);
+}
+.cv-pick-drop {
+  position: relative;
+}
+.cv-pick-drop .fdrop {
+  padding-top: 64px;
+}
+.cv-pick-folder {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--wash);
+  color: var(--blueT);
+  cursor: pointer;
+}
+.cv-pick-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cv-pick-link .fld {
+  flex: 1;
+  min-width: 0;
+  padding-left: 38px;
+}
+.cv-pick-li {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  color: var(--mute);
+  pointer-events: none;
+}
+/* On touch the remove button's hit area is padded to 44px (F-SPACE.targets/2, lane C's and lane D's pattern): an
+ * empty layer 6px above and below its 32px circle, 8px to its right (the row's own padding) and 4px to its left. */
+@media (pointer: coarse) {
+  .cv-file-x {
+    position: relative;
+  }
+  .cv-file-x::after {
+    content: "";
+    position: absolute;
+    inset: -6px -8px -6px -4px;
+  }
+}
+
 .cv-closed {
   margin: 32px 0 0;
   padding: 14px 18px;
@@ -635,6 +782,31 @@
     column-gap: 6px;
   }
   .cv-row > .fmsg {
+    margin: 0 0 8px;
+  }
+  /* With the "+" (BLD-F095): the board's attach slot comes back, first in the one row (PhoneMessages, `.cvrow`,
+   * `.cvtool`), and the files and the picker sit above the row with any error, inside the dock. Send is unchanged. */
+  .cv-row.with-attach {
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    grid-template-areas:
+      "files files files"
+      "pick pick pick"
+      "err err err"
+      "attach field send";
+  }
+  .cv-attach {
+    margin: 0;
+  }
+  .cv-files {
+    padding: 0 0 8px;
+  }
+  .cv-files .frow-in {
+    flex-wrap: nowrap; /* one line in the dock: the name gives way first */
+  }
+  .cv-files .frow-a {
+    width: auto;
+  }
+  .cv-pick {
     margin: 0 0 8px;
   }
   /* Who sees it is under the title on a phone (.cv-seen); the box still names it to a screen reader (describedby) */
