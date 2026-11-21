@@ -311,6 +311,18 @@ describe("C-PROMPT.anatomy/2, DEC-124: the “+” attach button (BLD-D019)", ()
     expect(button.hasAttribute("aria-expanded")).toBe(false);
   });
 
+  it("C-PROMPT.anatomy/2, S-R3, BLD-B275: `label` and `tooltip` set the name and the title; by default both stay ATTACH_NAME", async () => {
+    const plain = await render(createElement(AttachButton, { label: undefined, tooltip: undefined }));
+    expect(plain.getAttribute("aria-label")).toBe(ATTACH_NAME);
+    expect(plain.getAttribute("title")).toBe(ATTACH_NAME);
+    const answer = await render(
+      createElement(AttachButton, { label: "Attach files to this answer", tooltip: "Attach files" }),
+    );
+    expect(answer.getAttribute("aria-label")).toBe("Attach files to this answer");
+    expect(answer.getAttribute("title")).toBe("Attach files");
+    expect(answer.className).toBe("attach-btn");
+  });
+
   it("F-ICONS.style/1–5, DEC-124: a “+” at stroke 2 in the text's colour, hidden from screen readers, not the paperclip", async () => {
     const button = await render(createElement(AttachButton));
     const svg = button.querySelector("svg")!;
