@@ -317,9 +317,11 @@ test('S-R3, C-FILE.row, L-QUESTIONS.answer, BLD-B275: a file-only answer through
 
   const s = sharer.page;
   await s.goto(`/ideas/${ideaId}/answer`);
-  // C-PROMPT.anatomy/2, DEC-124: the "+" in the box's tool row, with the board's name
-  const plus = s.getByRole("button", { name: "Add files, a folder or a link" });
+  // C-PROMPT.anatomy/2, DEC-124: the "+" in the box's tool row, with the Answer board's name and tooltip (it opens
+  // files only, BLD-B275)
+  const plus = s.getByRole("button", { name: "Attach files to this answer" });
   await expect(plus).toBeVisible();
+  await expect(plus).toHaveAttribute("title", "Attach files");
   await expect(s.getByRole("button", { name: "Skip for now" })).toBeVisible();
   // The upload makes the answer's row first (an empty save), then carries its id and never `for` (BLD-B274)
   const upload = s.waitForRequest((r) => r.url().endsWith("/api/files") && r.method() === "POST");

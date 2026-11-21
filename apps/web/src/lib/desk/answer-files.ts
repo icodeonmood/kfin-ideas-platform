@@ -12,6 +12,16 @@
 import type { ProofItem } from "@/app/share/[id]/check/model";
 import type { AnswerFile, FileItem, SetQuestion } from "@/lib/contracts";
 
+/** S-R3's words for the "+" and its rows. The name and tooltip are the Answer board's (Answer.md, PhoneAnswer.md: the
+ * button "Attach files to this answer", its tooltip "Attach files"), through lane D's `label` and `tooltip`, because
+ * S-R3's "+" opens files only (BLD-B275). The list's name is lane F's for S-08's box (`S08_COPY.files`), kept here so
+ * S-R3 does not load S-08's module, and pinned equal to it by a test. */
+export const ANSWER_FILES_COPY = {
+  attach: "Attach files to this answer",
+  attachTip: "Attach files",
+  files: "Your files",
+} as const;
+
 /** The multipart body of `POST /api/files` for an answer (A-API.files): `answer_id` and `file`. Never `for`. */
 export function answerUploadForm(answerId: string, file: File): FormData {
   const form = new FormData();
