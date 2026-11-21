@@ -225,8 +225,11 @@ step(
     info.setTimeout(120_000); // two files, each scanned and checked
     const t6 = await seeded("T6");
     const carried = carriedFor<AnswerFiles>("J-TRACK");
-    const counts = `held-folios-october-${runSeconds()}.pdf`;
-    const found = `held-folio-callback-${runSeconds()}.pdf`;
+    // File names are masked like any words (L-HIDE): a long number beside "folio" reads as a folio number, so the
+    // run's tag is short letters and digits and no name says "folio".
+    const tag = runSeconds().toString(36);
+    const counts = `held-count-october-${tag}.pdf`;
+    const found = `courier-callback-notes-${tag}.pdf`;
     carried.counts = counts;
     carried.found = found;
     const rows = page.getByRole("list", { name: "Your files" }).getByRole("listitem");
