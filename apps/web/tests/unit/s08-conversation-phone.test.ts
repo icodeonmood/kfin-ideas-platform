@@ -302,7 +302,7 @@ describe("The look pass from lane D's QA (BLD-F078 to F081)", () => {
     expect(send.getAttribute("type")).toBe("submit");
     expect(nameOf(send)).toBe("Send");
     expect(send.querySelector("svg.cv-send-ic")?.getAttribute("aria-hidden")).toBe("true");
-    // The attach control is deferred (BLD-F064): the slot is left empty, never a button that does nothing.
+    // The crew may not attach (BLD-F063): no "+" and no empty slot (the sharer's: s08-conversation-attach, BLD-F095).
     expect(form.querySelectorAll("button")).toHaveLength(1);
     expect(form.textContent).not.toContain("Attach");
   });
@@ -354,7 +354,7 @@ describe("The look pass from lane D's QA (BLD-F078 to F081)", () => {
     expect(host.textContent!.split(line)).toHaveLength(2);
   });
 
-  it("BLD-F078 at 640px and narrower: one row of the pill and a round 44px Send (no empty attach slot until BLD-F064), any error above it; the line in the box gives way to the header's", () => {
+  it("BLD-F078 at 640px and narrower: one row of the pill and a round 44px Send (no empty attach slot where the reader may not attach, BLD-F063), any error above it; the line in the box gives way to the header's", () => {
     const { phone, wide } = sheet();
     const row = rule(phone, ".cv-row");
     expect(row).toMatch(/grid-template-columns: minmax\(0, 1fr\) 44px;/);
