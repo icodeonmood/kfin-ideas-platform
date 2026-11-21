@@ -16,6 +16,8 @@ from typing import Any
 import pytest
 
 from attachments import files as F
+from attachments import store
+from convo import post
 from convo.messages import FILE_HAS_DETAIL, FILE_NOT_CHECKED, FILE_UNAVAILABLE, send
 from convo.reads import conversation
 from convo.store import Refused
@@ -104,24 +106,49 @@ def test_l_convo_7_dec_107_bld_f095_a_message_takes_only_the_senders_checked_con
     assert on_entry(db, own) is None  # the idea's own file never moved
 
 
-def test_bld_f095_a_sent_conversation_file_opens_through_the_files_route_for_its_readers(
-    db: Any, told: list[dict[str, Any]]
+def test_l_convo_3_bld_f095_files_on_messages_and_answers_open_through_the_files_route(
+    db: Any, told: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """BLD-F095: the old `/api/attachments/:id` finds no 1% Club file, so a sent file's View goes to lane C's
-    `/api/files/:id/view`, which lets the sharer and the desk open it (DEC-107)."""
+    """L-CONVO/3, BLD-F095: the old `/api/attachments/:id` finds no 1% Club file (one with `file_state`), so View on
+    a sent conversation file and on an answer's file goes to lane C's `/api/files/:id/view`, which serves the stored
+    copy to the sharer and the desk (DEC-107). A file from before the cut-over (no `file_state`) keeps the old link."""
+    monkeypatch.setattr(store, "get", lambda bucket, key: b"synthetic copy")  # no object store here
     kavya = fx.person(db, "Kavya Menon")
     meera = fx.person(db, "Meera Iyer", roles=(("reviewer", None),))
     idea = fx.idea(db, kavya)
     att = fx.attachment(db, idea, kavya, name="branch-call-log.pdf")
-    send(db, idea["idea_id"], kavya["id"], {"text": "The call log.", "file_ids": [att]}, at=fx.at(21, 10))
+    old = fx.attachment(db, idea, kavya, name="old-call-log.xlsx")
+    db.execute("UPDATE attachments SET file_state = NULL WHERE id = %s", (old,))  # before the cut-over: clean
+    send(
+        db, idea["idea_id"], kavya["id"], {"text": "The call log.", "file_ids": [att, old]}, at=fx.at(21, 10)
+    )
+
+    # An answer's file (lane B's S-R3 adds it with the answer; written here for the conversation's read only).
+    set_id = fx.question_set(db, idea, meera, ("evidence",), fx.at(21, 9))
+    fx.answer_all(db, set_id, kavya, fx.at(21, 9, 30))
+    answer = db.execute(
+        "SELECT a.id FROM answers a JOIN questions q ON q.id = a.question_id WHERE q.set_id = %s", (set_id,)
+    ).fetchone()["id"]
+    shot = fx.attachment(db, idea, kavya, name="sms-screenshot.png", purpose="idea")
+    db.execute("UPDATE attachments SET answer_id = %s WHERE id = %s", (answer, shot))
+    post(db, str(idea["id"]), "sharer.answered", author_code=kavya["code"], payload={"set_id": set_id, "count": 1},
+         question_set_id=set_id, entry_type="answers", at=fx.at(21, 9, 30))  # fmt: skip
+
     for who in (kavya, meera):
-        [m] = [
-            e
-            for e in conversation(db, idea["idea_id"], who["id"], at=NOW)["entries"]
-            if e["type"] == "message"
+        view = conversation(db, idea["idea_id"], who["id"], at=NOW)
+        [m] = [e for e in view["entries"] if e["type"] == "message"]
+        assert {f["id"]: f["view_url"] for f in m["files"]} == {
+            att: f"/api/files/{att}/view",
+            old: f"/api/attachments/{old}",
+        }, who["name"]
+        [a] = [e for e in view["entries"] if e["type"] == "answers"]
+        assert [f["view_url"] for x in a["answers"] for f in x["files"]] == [f"/api/files/{shot}/view"], who[
+            "name"
         ]
-        assert [f["view_url"] for f in m["files"]] == [f"/api/files/{att}/view"], who["name"]
-        assert F.get_item(db, att, who["id"])["view_url"] == f"/api/files/{att}/view", who["name"]
+        for fid in (att, shot):  # the route behind the link serves it to them
+            assert F.get_item(db, fid, who["id"])["view_url"] == f"/api/files/{fid}/view", who["name"]
+            data, _, name = F.content(db, fid, who["id"])
+            assert data == b"synthetic copy" and name in ("branch-call-log.pdf", "sms-screenshot.png")
 
 
 def test_dec_107_bld_f062_bld_f095_the_crew_never_opens_a_conversation_file_with_a_customer_detail(
