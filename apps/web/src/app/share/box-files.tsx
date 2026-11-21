@@ -21,7 +21,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { AttachButton } from "@/components/compose/attach-button";
+import { AttachButton } from "@/components/ui/attach-button";
 import { IconClose, IconFolder, IconLink } from "@/components/compose/icons";
 import { Button } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";

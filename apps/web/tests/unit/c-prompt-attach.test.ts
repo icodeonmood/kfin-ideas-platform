@@ -30,7 +30,7 @@ vi.mock("next/link", () => ({
 
 const { HomeScreen } = await import("@/app/home/home");
 const { Compose } = await import("@/app/share/compose");
-const { ATTACH_LABEL } = await import("@/components/compose/attach-button");
+const { ATTACH_NAME: ATTACH_LABEL } = await import("@/components/ui/attach-button");
 const { PANEL_COPY, READINESS } = await import("@/components/compose/draft-panel");
 const { boxFilesOf } = await import("@/app/share/box-files");
 
@@ -531,9 +531,11 @@ describe('The "+" and the Capture first layout in CSS (WCAG 2.1 AA; BLD-C212, C2
     return css.slice(at, css.indexOf("}", at));
   };
 
-  it('WCAG 2.5.8: the "+" is 44 × 44 CSS px (at least 24 × 24) with a visible focus ring; a file\'s remove is 32 × 32', () => {
-    expect(rule(".cz .attach-btn")).toMatch(/width: 44px;[\s\S]*height: 44px;/);
-    expect(css).toMatch(/\.cz \.attach-btn:focus-visible,[\s\S]*?outline: 2px solid var\(--blue\);/);
+  it("WCAG 2.5.8: the \"+\" is lane D's shared 44 × 44 button with a visible focus ring (BLD-D019, BLD-D025); a file's remove is 32 × 32, padded to 44 on touch", () => {
+    const shared = readFileSync(resolve(__dirname, "../../src/app/components.css"), "utf8");
+    expect(shared).toMatch(/\n\.attach-btn \{[^}]*width: var\(--target\);[^}]*height: var\(--target\);/);
+    expect(shared).toMatch(/\n\.attach-btn:focus-visible \{[^}]*outline: 2px solid var\(--blue\);/);
+    expect(css).not.toMatch(/\.attach-btn/);
     expect(rule(".cz .cfile-x")).toMatch(/width: 32px;[\s\S]*height: 32px;/);
   });
 

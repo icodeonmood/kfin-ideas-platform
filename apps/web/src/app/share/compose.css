@@ -297,7 +297,7 @@
 }
 
 /* ---------- C-PROMPT.attach (DEC-124, BLD-C213): the "+" first in the tool row, the picker, the rows ---------- */
-/* Lane C's `.attach-btn` until lane D's shared AttachButton (BLD-D019) is on main: subtle, the mic's size and look */
+/* The "+" is lane D's shared AttachButton (BLD-D019, `.attach-btn` in app/components.css); only its place here */
 .cz .cfoot.tools {
   padding-left: 10px;
 }
@@ -307,27 +307,6 @@
   flex: none;
 }
 
-.cz .attach-btn {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  border-radius: var(--r-round);
-  background: transparent;
-  color: var(--ink2);
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.cz .attach-btn:hover,
-.cz .attach-btn[aria-expanded="true"] {
-  background: var(--hover-fill-strong);
-  color: var(--ink);
-}
-
-.cz .attach-btn:focus-visible,
 .cz .cfile-x:focus-visible,
 .cz .cpick-folder:focus-visible {
   outline: 2px solid var(--blue);
@@ -398,6 +377,21 @@
 .cz .cfile-x:hover {
   background: var(--hover-fill-strong);
   color: var(--ink);
+}
+
+/* On touch the remove button's hit area is padded to 44px (F-SPACE.targets/2, BLD-D025, BLD-D018's pattern): an empty
+   layer 6px above and below its 32px circle, 8px to its right (the row's own padding) and 4px to its left, the gap to
+   "Try again", so it never reaches a neighbour. It takes no room and draws nothing. */
+@media (pointer: coarse) {
+  .cz .cfile-x {
+    position: relative;
+  }
+
+  .cz .cfile-x::after {
+    content: "";
+    position: absolute;
+    inset: -6px -8px -6px -4px;
+  }
 }
 
 /* the picker, between the words and the tool row (Home.md, `attachments=Picker open`) */
