@@ -112,3 +112,16 @@
 .ans .help-l {
   display: block;
 }
+
+/* The box's tool row under the answer box (C-PROMPT.anatomy/2, DEC-124, BLD-B275): lane D's "+" (`.attach-btn`, its
+   own 44px target and look); only its place is set here. The same row inside the phone's sheet; the dock is unchanged */
+.ans-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: -8px; /* the icon in line with the box's edge, as in S-08's box */
+}
+/* An answer's files (C-FILE.row), under its tool row */
+.ans-files .flist {
+  margin: 0;
+}
