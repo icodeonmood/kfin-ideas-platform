@@ -618,7 +618,12 @@ def answer(conn: Conn, request_id: str, user_id: str, body: dict[str, Any]) -> d
             # Every idea the answer touches first, in id order (`lock_ideas`), then the request row. A merge
             # (`apply_lead_merge`) and a draft's ask lock ideas the same way, so two leads answering each other's
             # requests at once wait for each other instead of deadlocking. The ideas a request names never change.
-            lock_ideas(conn, peek.idea["id"], *(b["id"] for b in peek.brought))
+            # Before those row locks, lane C's lock on each of the same ideas in the same order (BLD-B247,
+            # BLD-F096): a merge forgets what hide kept for the merged idea's queued questions (`drop_queued`), and
+            # a reviewer's "Hide this" and lane B's desk merge take lane C's lock first too.
+            touched = (peek.idea["id"], *(b["id"] for b in peek.brought))
+            adapters.lock_hide(conn, *touched)
+            lock_ideas(conn, *touched)
             req = load_request(conn, request_id, lock=True)
             _require_lead(conn, req, code, user_id, ans)
             who = person_by_code(conn, req.row["from_code"])

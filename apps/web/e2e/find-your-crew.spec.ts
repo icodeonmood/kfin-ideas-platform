@@ -5,8 +5,10 @@
  * (lane D's helper, which settles motion first and checks reflow at 320px); the deck and the filter chips by
  * keyboard; 44px targets; Keep looking after a send. DEC-126 (WF-03b): after a send the card reads "Requested" and
  * goes to the end of the deck; "Withdraw" under it (its contrast, focus ring and target measured) turns it back to
- * "Team up" in place; axe on the Requested state at 375px and at 1440px; reduced motion. Synthetic people only: the
- * pack's fictional cast (Kavya asks, Ravi leads) and made-up colleagues.
+ * "Team up" in place; axe on the Requested state at 375px and at 1440px; reduced motion. Both are lane D's shared
+ * looks (BLD-D019, BLD-D018; folded in by BLD-F096): "Requested" `.btn.is-inactive`, "Withdraw" `.link-quiet`, whose
+ * target is 24px with a mouse and padded to 44px on touch. Synthetic people only: the pack's fictional cast (Kavya
+ * asks, Ravi leads) and made-up colleagues.
  */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
@@ -260,8 +262,9 @@ async function contrastOf(page: Page, name: string): Promise<number> {
 
 /**
  * DEC-126 on a card asked about before this visit: Requested is greyed, inactive but focusable and read out;
- * Withdraw under it is sub-text grey at 4.5:1 or better, with the shared 2px focus ring and a 44px target. axe on
- * this state. Then Withdraw turns it back to Team up where it stands, with focus on it, and Your crews drops it.
+ * Withdraw under it is sub-text grey at 4.5:1 or better, with the shared 2px focus ring and lane D's shared target
+ * (at least 24px with a mouse, WCAG 2.5.8; padded to 44px on touch, BLD-D018). axe on this state. Then Withdraw
+ * turns it back to Team up where it stands, with focus on it, and Your crews drops it.
  */
 async function requestedThenWithdraw(page: Page) {
   const seen = await answerWithdraw(page);
@@ -281,12 +284,16 @@ async function requestedThenWithdraw(page: Page) {
   await expect(requested).toHaveAttribute("aria-disabled", "true");
   await expect(requested).not.toHaveAttribute("disabled");
   await expect(requested).toHaveText("Requested");
+  // lane D's shared looks (BLD-D019, BLD-F096): Team up's own button, inactive
+  await expect(requested).toHaveClass(/(^|\s)btn(\s|$)/);
+  await expect(requested).toHaveClass(/(^|\s)is-inactive(\s|$)/);
   // Inactive: a click opens nothing (dispatched: Playwright waits for an aria-disabled button to be enabled).
   await requested.dispatchEvent("click");
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   const withdraw = page.getByRole("button", { name: WITHDRAW, exact: true });
   await expect(withdraw).toHaveText("Withdraw");
+  await expect(withdraw).toHaveClass("link-quiet");
   expect(await contrastOf(page, WITHDRAW)).toBeGreaterThanOrEqual(4.5);
   const look = await withdraw.evaluate((el) => {
     const c = getComputedStyle(el);
@@ -295,9 +302,11 @@ async function requestedThenWithdraw(page: Page) {
   expect(look.line).toContain("underline");
   expect(look.size).toBeLessThanOrEqual(14);
   expect(Number(look.weight)).toBeLessThanOrEqual(400);
+  // The shared quiet link's own box (a mouse here): at least 24px each way (WCAG 2.5.8); on touch its hit area is
+  // padded to 44px by `.link-quiet::after` (BLD-D018, pinned in targets-css.test.ts).
   const box = (await withdraw.boundingBox())!;
-  expect(box.height).toBeGreaterThanOrEqual(44);
-  expect(box.width).toBeGreaterThanOrEqual(44);
+  expect(box.height).toBeGreaterThanOrEqual(24);
+  expect(box.width).toBeGreaterThanOrEqual(24);
   // By keyboard: Requested is a tab stop, then Withdraw, with the visible focus ring.
   await requested.focus();
   await expect(requested).toBeFocused();
@@ -496,6 +505,9 @@ test("DEC-126 at 375px with reduced motion: after a send the card goes to the en
   await expect(page.locator(".crew-fly")).toHaveCount(0);
   await expect(page.locator(".dcard").last()).toContainText(C1.title);
   await expect(page.locator(".dcard").last()).toContainText("Requested");
+  // the same shared looks without the flight (BLD-F096)
+  await expect(page.locator(".dcard").last().locator("button.btn.is-inactive")).toHaveText("Requested");
+  await expect(page.locator(".dcard").last().locator("button.link-quiet")).toHaveText("Withdraw");
 });
 
 test.describe("at 1440px", () => {

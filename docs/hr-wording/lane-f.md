@@ -203,6 +203,7 @@ For HR's sign-off under DEC-111. The sharer, the crew, the build team and anyone
 | `L-CONVO/8`, "In this conversation" | Meera from the review desk, Reviewing it (one row per reviewer, each with initials) | The review desk, Reviewing it (one row for the desk, no circle; also Picked it / Chose Not now / Didn’t pick it / From the review desk) |
 | `L-CONVO/5`, the box of a person the desk mentioned | Reply to Meera | Reply to the review desk |
 | `L-CONVO/6`, a person at the desk mentioned in the desk's message | @Harish Kulkarni (highlighted) | @the review desk (highlighted); the mention list does not offer the desk to the sharer, the crew or the build team (BLD-F083) |
+| `L-CONVO/8`, "In this conversation", no reviewer on the idea and a person at the desk only mentioned (BLD-F093, added 21 Nov) | The review desk, Mentioned (and still Mentioned after someone at the desk wrote) | The review desk, Mentioned until someone at the desk writes, then The review desk, From the review desk (as section 8 has it for the Ones Committee). To confirm later (DEC-123), HR |
 
 ### 7. Teams named only while Teams messages go out (DEC-105, BLD-F086, added 18 Nov)
 

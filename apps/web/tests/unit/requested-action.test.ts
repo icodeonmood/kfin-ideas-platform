@@ -4,6 +4,7 @@
  * Home's crew card (S-03, lane C) drops it in: the inactive but focusable "Requested" marked as the opener, the
  * "Withdraw" link calling `DELETE /api/team-up/:id` for either kind, busy while it goes, `onWithdrawn` with the same
  * `TeamUpSent` the sheet hands over, focus to the host's "Team up" drawn again, and a failed withdraw saying why.
+ * Both are lane D's shared `Button` (BLD-D019): "Requested" `inactive`, "Withdraw" `variant="quiet"` (BLD-F096).
  * Synthetic people only: the pack's fictional cast (Kavya asks, Ravi leads).
  */
 import { act, createElement, useState } from "react";
@@ -108,7 +109,8 @@ describe("RequestedAction (DEC-126)", () => {
     expect(requested!.hasAttribute("disabled")).toBe(false);
     expect(requested!.getAttribute("aria-label")).toBe(`Requested: you asked to team up on ${TITLE}`);
     expect(requested!.getAttribute("data-teamup-opener")).toBe(IDEA);
-    expect(requested!.className).toContain("is-inactive");
+    // lane D's shared looks (BLD-D019, BLD-F096): the host's "Team up" variant and size, inactive
+    expect(requested!.className).toBe("btn btn-primary btn-full is-inactive");
     requested!.focus();
     expect(document.activeElement).toBe(requested);
     await act(async () => requested!.click());
@@ -140,6 +142,9 @@ describe("RequestedAction (DEC-126)", () => {
     expect(calls).toEqual([{ url: "/api/team-up/req-7", method: "DELETE" }]);
     expect(text(withdraw)).toBe("Withdrawing…");
     expect(withdraw.getAttribute("aria-busy")).toBe("true");
+    // busy as every shared Button is busy: the quiet link keeps its look, with the spinner beside the words
+    expect(withdraw.className).toBe("link-quiet");
+    expect(withdraw.querySelector(".spin")?.getAttribute("aria-hidden")).toBe("true");
     await act(async () => withdraw.click()); // ignored while busy
     expect(calls.length).toBe(1);
     await act(async () => release());

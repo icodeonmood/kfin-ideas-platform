@@ -5,18 +5,20 @@
  * once the person has asked to join the idea. Find your crew (S-H2) draws it on its cards; Home's crew card (S-03,
  * lane C) drops it in the same way.
  *
- * - "Requested" is the host's own "Team up" button, greyed and inactive: `aria-disabled="true"` (never `disabled`),
- *   so it stays focusable and is read out as its state, and clicks do nothing. An inactive control may sit below
- *   4.5:1. It carries `teamUpOpener(ideaId)`, so the sheet's focus comes back to it when the host re-drew "Team up"
- *   as "Requested" while the sheet was open (WCAG 2.4.3).
- * - "Withdraw" is its own control under the button, never inside it: grey, sub-text size and weight, underlined, at
- *   4.5:1 or better on the card, with the shared focus ring. It calls `DELETE /api/team-up/:id` with the card's
- *   request id (either kind) and then `onWithdrawn`. The host draws "Team up" again in the same place, marked with
- *   `teamUpOpener(ideaId)`, and focus moves there; that announces the change, so the pair needs no live region.
+ * - "Requested" is the host's own "Team up" button, greyed and inactive: lane D's `Button` `inactive` (BLD-D019),
+ *   so `aria-disabled="true"` (never `disabled`) and `.is-inactive`: it stays focusable and is read out as its
+ *   state, and clicks do nothing. An inactive control may sit below 4.5:1. It carries `teamUpOpener(ideaId)`, so the
+ *   sheet's focus comes back to it when the host re-drew "Team up" as "Requested" while the sheet was open (WCAG
+ *   2.4.3).
+ * - "Withdraw" is its own control under the button, never inside it: lane D's quiet link (`Button` `variant="quiet"`,
+ *   `.link-quiet`): grey, sub-text size and weight, underlined, at 4.5:1 or better on the card, the shared focus
+ *   ring, a 24px target that reaches 44px on touch (BLD-D018), and busy as every `Button` is busy. It calls
+ *   `DELETE /api/team-up/:id` with the card's request id (either kind) and then `onWithdrawn`. The host draws
+ *   "Team up" again in the same place, marked with `teamUpOpener(ideaId)`, and focus moves there; that announces the
+ *   change, so the pair needs no live region.
  *
- * Styles: the class names are lane D's shared ones (`is-inactive` on the button, `link-quiet` on the link,
- * BLD-D019). Until BLD-D019 is on `main` they are drawn for S-H2 only, in `app/crew/crew.css`; a host elsewhere needs
- * lane D's shared copy (the button already greys through its own `aria-disabled` look).
+ * Styles: lane D's shared ones only (`app/offer.css`, BLD-D019, BLD-D018; folded in by BLD-F096), so any host draws
+ * the pair the same way; the grid that stacks them is `.tu-req` (`teamup-sheet.css`).
  *
  * Privacy: the request id is the viewer's own; nothing else about the request is read or shown, and nothing is
  * logged (non-negotiable 3).
@@ -103,8 +105,8 @@ export function RequestedAction({
       <Button
         variant={variant}
         size={size}
-        className={["is-inactive", className].filter(Boolean).join(" ")}
-        disabled
+        className={className}
+        inactive
         aria-label={title ? REQUESTED_COPY.requestedOn(title) : undefined}
         {...teamUpOpener(ideaId)}
       >
@@ -112,16 +114,15 @@ export function RequestedAction({
       </Button>
       {/* A reply with no request id leaves nothing to withdraw (BLD-F074). */}
       {request.id ? (
-        <button
+        <Button
           ref={link}
-          type="button"
-          className="link-quiet"
+          variant="quiet"
+          busy={busy}
           aria-label={title && !busy ? REQUESTED_COPY.withdrawOn(title) : undefined}
-          aria-busy={busy ? true : undefined}
           onClick={() => void withdraw()}
         >
           {busy ? REQUESTED_COPY.withdrawing : REQUESTED_COPY.withdraw}
-        </button>
+        </Button>
       ) : null}
       {error ? <FieldMsg>{error.message}</FieldMsg> : null}
     </div>

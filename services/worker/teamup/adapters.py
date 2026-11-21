@@ -9,6 +9,10 @@
   `conversation_entries` directly, as an event with IDs only, exactly as lane B's `say` does.
 - `hide`: L-HIDE (lane C). Until lane C's entry point is on `main`, free text others read (the note, the lead's
   reason) is masked with the shared patterns (kind + •••• + last two), as lane B's `adapters.hide` does.
+- `lock_hide`: lane C's per-idea lock (`hide.core.lock`), taken FIRST, in uuid order, in a transaction that can reach
+  lane C's hide or `forget`, before `store.lock_ideas` takes the ideas' rows in the same order (BLD-B247, BLD-F096).
+- `drop_queued`: lane B's `desk.asking.drop_queued`: a merged idea's queued question sets go, and first what lane C's
+  hide kept for each of their questions (L-MERGE.effects/5, BLD-B272).
 - `note_min`: the team-up note's minimum length, a promise in the company repo's `rules/promises.md`.
 """
 
@@ -24,6 +28,7 @@ from psycopg.types.json import Jsonb
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
+from hide import core as hide_core
 from pii.patterns import scan
 
 log = get_logger("teamup")
@@ -164,6 +169,26 @@ def hide(conn: Conn, idea_uuid: str, text: str) -> tuple[str, int]:
         last, n = m.end, n + 1
     out.append(text[last:])
     return "".join(out), n
+
+
+def lock_hide(conn: Conn, *idea_uuids: object) -> None:
+    """Lane C's lock on each idea, in uuid order (the order `store.lock_ideas` locks their rows in), held until the
+    caller's transaction ends and re-entrant in one session (BLD-B247, BLD-F096). Take it as the first lock of any
+    transaction that can reach lane C's hide or `forget` on these ideas, before any row lock: a reviewer's "Hide this"
+    takes it first too, and lane B's desk merge takes both ideas' locks first (`desk.adapters.lock_refs`, then
+    `lock_pair`), so a team-up answer and a desk action on the same two ideas always queue in one order."""
+    for idea_uuid in sorted({str(u) for u in idea_uuids if u}):
+        hide_core.lock(conn, idea_uuid)
+
+
+def drop_queued(conn: Conn, idea_uuid: str) -> list[str]:
+    """Lane B's `desk.asking.drop_queued` (BLD-B272): every reviewer's queued question set on the idea goes with its
+    questions, and first, for each question, what lane C's hide kept for it (`forget`): a reviewer's "Hide this"
+    writes a `hidden_details` row keyed by every question's id, and the sharer's page lists every row of the idea.
+    Lane C's lock on the idea must be held already (`lock_hide`, taken first). Returns the deleted sets' ids."""
+    from desk.asking import drop_queued as desk_drop_queued  # lane B's module, loaded when a merge needs it
+
+    return desk_drop_queued(conn, idea_uuid)
 
 
 def note_min() -> int:
