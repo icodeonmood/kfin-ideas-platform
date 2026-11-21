@@ -12,6 +12,12 @@
  * so the first file makes it, with the same call Share a problem's first send makes (`POST /api/drafts`), once; the
  * file goes into it and its row stays in the box. Sending then adds the words to THAT draft as its first message and
  * opens it, never a new one. Left unsent, it stays a private draft like any other.
+ * Speaking (C-PROMPT.voice, walk item WF-02, BLD-C220): while the box is empty its round button is the microphone,
+ * with "Tap to start speaking" and "Not recording until you do" beside it (Home.dc.html, PhoneHome.dc.html). It is
+ * Share's own capture (`useVoiceCapture`), which asks for the draft inside the tap from the same create-once draft the
+ * first file makes, so a file and a note always share one draft. A finished note goes into that draft at once, after
+ * any typed words, and the person lands on S-04B on it, as after typing. The microphone is allowed for this site on
+ * every page (DEC-128).
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -29,6 +35,8 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { DraftClient, DraftError, newClientId } from "@/lib/compose/client";
 import type { CrewCard, MyIdeaRow } from "@/lib/contracts";
 import { COUNTS_EVENT } from "@/lib/inbox-events";
+import { useVoiceCapture } from "@/lib/use-voice-capture";
+import type { VoiceCaptureState, VoiceNote } from "@/lib/voice-capture";
 import {
   cheer,
   keepFailedSets,
@@ -44,6 +52,7 @@ import {
 } from "@/lib/home/data";
 
 import { useBoxFiles } from "../share/box-files";
+import { COMPOSE_COPY, voiceFailedLine } from "../share/compose";
 
 import { CrewCardView, requestDropped, requestedLast, shownAsColleague } from "./crew-card";
 
@@ -146,6 +155,9 @@ export const HOME_LINKS = {
   how: "/how-it-works",
   share: "/share",
 } as const;
+
+/** A note that failed because the session ended: sign in again and come back to Home (L-AUTH.states). */
+const HOME_SIGN_IN = `/sign-in?next=${encodeURIComponent("/home")}`;
 
 type Loaded<T> = { state: "loading" } | { state: "ready"; value: T };
 
@@ -382,6 +394,96 @@ export function HomeScreen({
     }
   }, [box, sending, client, router, refused, settleFiles]);
 
+  // ── speaking (C-PROMPT.voice, WF-02, BLD-C220): Share's capture with Home's create-once draft ─────────────────────
+  const voiceOptions = useMemo(
+    () => ({ fetch: client.fetch, resolveDraft: draftForFiles }),
+    [client, draftForFiles],
+  );
+  // Home starts with no draft: the hook asks for one inside the tap (`draftForFiles`), as Share's S-04 does.
+  const voice = useVoiceCapture("", voiceOptions);
+  /** One message key per note, so a note is never added twice however it is retried. */
+  const noteKeys = useRef(new Map<string, string>());
+
+  /** A finished note: into the draft at once, after the typed words if any, then on to S-04B, as after typing. A
+   * failure keeps the words in the box and says why, as `send()` does. */
+  const takeNote = useCallback(
+    async (note: VoiceNote) => {
+      const words = note.text;
+      if (!words.trim()) return;
+      const typed = box.trim() ? box : "";
+      const both = typed ? `${typed.replace(/\s+$/, "")} ${words}` : words;
+      const keep = (rest: string, err: unknown) => {
+        setBox(rest);
+        createKey.current = "";
+        messageKey.current = "";
+        setSending(false);
+        refused(err);
+      };
+      setProblem(null);
+      setSending(true);
+      setBox(both); // what goes, while it goes
+      const id = await draftForFiles(); // the draft the tap asked for (or a file made); it has said why if none
+      if (!id) {
+        keep(both, null);
+        return;
+      }
+      if (typed) {
+        // The typed words first, as their own message, with send()'s key: one message however often it is retried.
+        if (!messageKey.current) messageKey.current = newClientId();
+        try {
+          await client.addMessage(id, { clientId: messageKey.current, text: typed, via: "typed" });
+        } catch (err) {
+          keep(both, err);
+          return;
+        }
+      }
+      let key = noteKeys.current.get(note.streamId);
+      if (!key) {
+        key = newClientId();
+        noteKeys.current.set(note.streamId, key);
+      }
+      try {
+        await client.addMessage(id, { clientId: key, text: words, via: "voice", streamId: note.streamId });
+      } catch (err) {
+        keep(words, err); // any typed words are on the draft already; the note's words come back to the box
+        return;
+      }
+      await settleFiles(); // every file in the box is on the draft before Tell it reads it
+      try {
+        router.push(`/share/${id}`);
+      } catch {
+        setSending(false);
+      }
+    },
+    [box, client, draftForFiles, refused, router, settleFiles],
+  );
+
+  const handledVoice = useRef<VoiceCaptureState | null>(null);
+  const { state: voiceState, reset: voiceReset } = voice;
+  useEffect(() => {
+    const s = voiceState;
+    if (handledVoice.current === s) return;
+    // Taken on the next tick, once per state, as Share does: the capture is an outside system telling Home what it
+    // heard.
+    const t = setTimeout(() => {
+      if (handledVoice.current === s) return;
+      handledVoice.current = s;
+      if (s.status === "done") {
+        void takeNote(s.note);
+        voiceReset();
+      } else if (s.status === "paused" && s.note) {
+        void takeNote(s.note);
+      } else if (s.status === "failed" && s.text.trim()) {
+        const heard = s.text;
+        setBox((b) => (b.trim() ? `${b.replace(/\s+$/, "")} ${heard}` : heard)); // nothing heard is lost
+        createKey.current = "";
+        messageKey.current = "";
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, [voiceState, voiceReset, takeNote]);
+  const failedVoice = voice.state.status === "failed" ? voiceFailedLine(voice.state.reason) : null;
+
   const pick = (opener: string) => {
     setBox(opener);
     setProblem(null);
@@ -576,8 +678,29 @@ export function HomeScreen({
             attach={files.button}
             files={files.rows}
             picker={files.picker}
+            voice={{
+              state: voice.state,
+              start: () => void voice.start(),
+              stop: voice.stop,
+              noticeShown: voice.noticeShown,
+            }}
+            micFirst
           >
             {problem ? <FieldMsg kind={problem.kind}>{problem.text}</FieldMsg> : null}
+            {/* Share's voice notices (C-PROMPT.voice): both regions stay mounted, so a notice that appears in them is
+                announced (WCAG 4.1.3). */}
+            <div className="vlive" role="status">
+              {voice.state.status === "paused" ? <p className="vnotice">{voice.state.banner}</p> : null}
+            </div>
+            <div className="vlive" role="alert">
+              {failedVoice === "paused" ? (
+                <p className="vnotice">{COMPOSE_COPY.voicePaused}</p>
+              ) : failedVoice === "sign_in" ? (
+                <p className="vnotice">
+                  <a href={HOME_SIGN_IN}>{COMPOSE_COPY.signInAgain}</a>
+                </p>
+              ) : null}
+            </div>
           </Prompt>
           <p className="hm-pnote">{HOME_COPY.help}</p>
           <div className="hstarters hm-starters" role="group" aria-label={PROMPT_COPY.startersLabel}>

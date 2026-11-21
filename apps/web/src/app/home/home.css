@@ -62,6 +62,12 @@
   text-align: left;
 }
 
+/* WF-02 (BLD-C220, C-PROMPT.voice): "Tap to start speaking" over the round button, as both Home boards draw it, but
+   never over the open picker (Home.dc.html). */
+.hm .cz .hm-prompt:has(.cpick) .vhint {
+  display: none;
+}
+
 .hm-pnote {
   margin: 12px 0 0;
   font-size: 13.5px;
@@ -746,6 +752,11 @@
   .hm .cz .hm-prompt {
     order: 2;
     margin-top: 20px;
+  }
+
+  /* PhoneHome.dc.html draws the hint on a phone too; Share's phone layout hides it (compose.css), Home keeps it. */
+  .hm .cz .hm-prompt .vhint {
+    display: flex;
   }
 
   .hm-pnote {
