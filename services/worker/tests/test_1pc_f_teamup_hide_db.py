@@ -601,6 +601,7 @@ def test_l_hide_dec_103_dec_104_bld_f097_the_leads_edit_page_and_track_leave_out
     page = submit_edit.page(db, lead["idea_id"], cast["ravi"]["id"], now=f.at(14, 12))
     assert not ids & {str(h["id"]) for h in page["hidden"]}
     idea = db.execute("SELECT * FROM ideas WHERE id = %s", (lead["id"],)).fetchone()
+    assert idea is not None
     track = handover(db, dict(idea), f.at(14, 12))
     assert "No personal details found" in str(track["stages"])
 
