@@ -772,9 +772,11 @@
   }
   /* With the picker or files in it the dock can outgrow a short screen (400% zoom, 320 x 256; a phone with its
    * keyboard up), so it never reaches above the phone bar (`.pnav`: 44px, its 6px under and max(8px, the safe area)
-   * above) and scrolls inside itself (WCAG 1.4.10, 2.4.7; lane D's QA, BLD-F095). Only then: without them the
-   * @mention list, drawn above the pill, must not be clipped. pin.ts measures the capped box as before. */
-  .cv-box:has(.cv-pick, .cv-files) {
+   * above) and scrolls inside itself (WCAG 1.4.10, 2.4.7; lane D's QA, BLD-F095). Never while the @mention list is
+   * open (`.cv-menu`, drawn above the pill and outside the box): a scrolling box clips whatever lies outside it, so
+   * the cap is lifted then and comes back when the list closes (lane D's delta re-check). pin.ts measures the box,
+   * capped or not, as before. */
+  .cv-box:has(.cv-pick, .cv-files):not(:has(.cv-menu)) {
     max-height: calc(100dvh - var(--cv-at, 0px) - 50px - max(8px, env(safe-area-inset-top, 0px)));
     overflow-y: auto;
     overscroll-behavior: contain;
