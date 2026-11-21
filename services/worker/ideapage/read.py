@@ -337,7 +337,7 @@ def hidden(conn: Conn, idea_uuid: str) -> list[dict[str, Any]]:
         for r in conn.execute(
             "SELECT h.id, h.kind, h.masked, h.state, h.reason, h.shown_at, h.source, a.name AS file_name "
             "FROM hidden_details h LEFT JOIN attachments a ON h.source = 'file' AND a.id = h.source_id "
-            "WHERE h.idea_uuid = %s ORDER BY h.created_at",
+            "WHERE h.idea_uuid = %s AND h.source <> 'teamup' ORDER BY h.created_at",
             (idea_uuid,),
         ).fetchall()
     ]

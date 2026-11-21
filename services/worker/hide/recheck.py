@@ -49,13 +49,17 @@ def run(conn: Conn, payload: dict[str, Any]) -> None:
         raise GatekeeperUnavailable("ai_off")  # tried again later, never finished with nothing found
     with conn.transaction():
         before = {str(d["vault_tag"]) for d in details_for(conn, idea_uuid, source, source_id)}
-        _, kept = _hide(
+        done, kept = _hide(
             conn, idea_uuid, words, by=by, source=source, source_id=source_id, gatekeeper=True, recheck=True
         )
         if source in ("message", "answer", "conversation"):
             found = desk.load_sealed(conn, idea_uuid, source, source_id)
             if found:
                 desk._write_sealed(conn, idea_uuid, found[0], details_for(conn, idea_uuid, source, source_id))
+        elif source == "teamup":  # a team-up note, reason or ask: lane F's writer (BLD-F097)
+            from teamup.adapters import write_masked
+
+            write_masked(conn, source_id, done.masked)
         fresh = [d for d in kept if d["found_by"] == "gatekeeper" and str(d["vault_tag"]) not in before]
         copies = 0
         for d in fresh:

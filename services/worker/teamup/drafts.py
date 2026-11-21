@@ -15,7 +15,7 @@ import psycopg
 
 from core.db import Conn
 from teamup import adapters, rules
-from teamup.requests import Req, end_sent_drafts, ended, load_request, settle, tell_lead, waiting_from
+from teamup.requests import Req, end_sent_drafts, ended, load_request, settle, tell_lead, waiting_from, words
 from teamup.store import (
     Refused,
     actor,
@@ -58,7 +58,8 @@ def waiting_merge_request(conn: Conn, draft_uuid: Any) -> str | None:
 def merge_request_json(conn: Conn, req: Req | None, user_id: str) -> dict[str, Any]:
     """E-ENTITIES Draft.merge_request `{other_idea_id, state, note, lead_reason?}`, plus the request id, the lead
     and what Check it shows (`after`, L-MERGE.request/4–8). `{state: 'none'}` when there has been none. Only the
-    draft's owner (`user_id`) reads it; the lead is named to them only as DEC-104 allows (BLD-F029)."""
+    draft's owner (`user_id`) reads it; the lead is named to them only as DEC-104 allows (BLD-F029). The owner
+    typed the ask, so `note` is their own words (lane C's sealed copy, BLD-F097); the lead's reason is masked."""
     if req is None:
         return {"state": "none", "after": None}
     lead = lead_seen_by(conn, req.idea, user_id, str(req.row["from_code"]))
@@ -67,7 +68,7 @@ def merge_request_json(conn: Conn, req: Req | None, user_id: str) -> dict[str, A
         "id": req.id,
         "other_idea_id": req.idea["idea_id"],
         "state": req.state,
-        "note": unseal(req.row["note_encrypted"], "merge_requests", "note_encrypted", req.id) or "",
+        "note": words(conn, req, "note", mine=True) or "",
         "lead": lead.ref,
         "after": rules.draft_after(
             req.state, lead_first=lead.first, lead_ref=str(req.idea["idea_id"]), reason=reason
@@ -104,6 +105,9 @@ def ask(
     with audited(conn), conn.transaction():
         draft = load_draft(conn, draft_id, code)
         other = load_idea_for(conn, str(body.get("other_idea_id") or ""), code)
+        # lane C's lock on both ideas first, in uuid order, then their rows in the same order (BLD-B247, BLD-F097):
+        # the ask goes through lane C's hide below, which takes the draft's again (re-entrant)
+        adapters.lock_hide(conn, draft["id"], other["id"])
         locked = lock_ideas(conn, draft["id"], other["id"])
         draft, other = locked[str(draft["id"])], locked[str(other["id"])]
         if hidden_from(conn, other, code):  # withdrawn while this waited for the lock
@@ -128,8 +132,12 @@ def ask(
         problem = rules.check_note(note, adapters.note_min())
         if problem:
             raise Refused(problem.status, problem.code, problem.message, problem.field)
-        masked, _ = adapters.hide(conn, str(other["id"]), note.strip())
+        # L-HIDE, DEC-103, BLD-F097: lane C's hide (patterns, then the gatekeeper) before the lead or anything else
+        # sees the ask, under the draft (its owner typed it) and the merge request's id, made first
         rid = str(uuid.uuid4())
+        masked, _ = adapters.hide(
+            conn, str(draft["id"]), note.strip(), by=user_id, source_id=adapters.ask_id(rid)
+        )
         try:
             with conn.transaction():
                 conn.execute(

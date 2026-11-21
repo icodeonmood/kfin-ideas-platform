@@ -36,6 +36,7 @@ SEALED_SOURCES = (
     "answer",
     "conversation",
     "edit",
+    "teamup",
 )  # idea_words_sealed.source (E-ENUMS sealed_source)
 DETAIL_SOURCES = (*SEALED_SOURCES, "file", "desk", "title", "part")  # what hide_into takes (BLD-C062)
 SWEPT_SOURCES = ("fix", "version", "similar", "run")  # hidden_details.source for swept copies only (BLD-C066)

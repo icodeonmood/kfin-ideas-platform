@@ -232,21 +232,52 @@ def _brought_ref(conn: Conn, req: Req, brought: dict[str, Any], t: dt.datetime, 
     return idea_ref(conn, brought, t, full=full)
 
 
+def text_key(req: Req, part: str) -> tuple[str, str]:
+    """(idea uuid, source_id) under which lane C's hide keeps one of a request's texts (BLD-F097): the note of a
+    team-up request under the idea asked about and the request's id; a draft's ask under the draft and `ask_id`;
+    the lead's decline reason under the lead's idea and `decline_id`."""
+    if part == "decline":
+        return str(req.idea["id"]), adapters.decline_id(req.id)
+    if req.kind == "merge":
+        return str(req.row["draft_uuid"]), adapters.ask_id(req.id)
+    return str(req.idea["id"]), req.id
+
+
+def words(conn: Conn, req: Req, part: str, *, mine: bool) -> str | None:
+    """A request's note (`part` "note") or the lead's decline reason ("decline") as its reader may read it
+    (DEC-103, DEC-104, BLD-F097): the person who typed it (`mine`) gets their own words from lane C's sealed copy;
+    everyone else, and the typer when nothing was sealed (a request sent before BLD-F097, or seeded), the masked
+    copy stored on the request."""
+    column = "lead_reason_encrypted" if part == "decline" else "note_encrypted"
+    masked = unseal(req.row[column], req.table, column, req.id)
+    if not mine or masked is None:
+        return masked
+    return adapters.own_words(conn, *text_key(req, part)) or masked
+
+
+def _lead_typed_it(conn: Conn, req: Req) -> bool:
+    """Whether the idea's lead now is the one who answered and so typed the reason: a lead who took over since
+    reads the masked copy, like everyone else but its typer."""
+    by = req.row.get("answered_by_code")
+    return by is not None and lead_code(conn, req.idea) == by
+
+
 def request_json(conn: Conn, req: Req, *, full: bool = False) -> dict[str, Any]:
     """E-ENTITIES TeamUpRequest, plus `request` ('teamup' or 'merge'). A draft merge request reads with team-up
-    states. Only its two parties ever get one (the requester and the lead); `full` is the lead's view."""
+    states. Only its two parties ever get one (the requester and the lead); `full` is the lead's view. Each reads
+    their own words back and the other's masked copy (`words`): the requester their note, the lead their reason."""
     t = clock_now()
     out: dict[str, Any] = {
         "id": req.id,
         "request": req.kind,
         "idea_id": req.idea.get("idea_id"),
         "from": person_by_code(conn, req.row["from_code"]).as_json(),
-        "note": unseal(req.row["note_encrypted"], req.table, "note_encrypted", req.id) or "",
+        "note": words(conn, req, "note", mine=not full) or "",
         "brought": [_brought_ref(conn, req, b, t, full) for b in req.brought],
         "state": req.teamup_state,
         "sent_at": req.row["sent_at"].isoformat(),
     }
-    reason = unseal(req.row["lead_reason_encrypted"], req.table, "lead_reason_encrypted", req.id)
+    reason = words(conn, req, "decline", mine=full and _lead_typed_it(conn, req))
     if reason:
         out["lead_reason"] = reason
     if req.row["answered_at"] is not None:
@@ -456,9 +487,13 @@ def send(
     with audited(conn), conn.transaction():
         code = require_code(conn, user_id)
         # BLD-F027: every idea this send touches, in id order, before anything else: the idea, the ideas brought
-        # (the foreign keys on `teamup_brought` share-lock them) and the draft kept separate (marked below).
-        lock_ideas(conn, idea["id"], *_named_ideas(conn, body.get("brought_idea_ids")),
+        # (the foreign keys on `teamup_brought` share-lock them) and the draft kept separate (marked below). Before
+        # those row locks, lane C's lock on each of the same ideas in the same order (BLD-B247, BLD-F097): the note
+        # goes through lane C's hide below, which takes it again (re-entrant).
+        touched = (idea["id"], *_named_ideas(conn, body.get("brought_idea_ids")),
                    *([d] if (d := _as_uuid(draft_id)) else []))  # fmt: skip
+        adapters.lock_hide(conn, *touched)
+        lock_ideas(conn, *touched)
         idea = load_idea_for(conn, ref, code, lock=True)
         # the same key sent twice at once: the second waited for the lock, and returns the first
         made = remembered(conn, user_id, idempotency_key, ROUTE_SEND, asked)
@@ -480,8 +515,10 @@ def send(
         if problem:
             raise Refused(problem.status, problem.code, problem.message, problem.field)
         brought = _brought_rows(conn, body.get("brought_idea_ids"), code, idea["id"])
-        masked, _ = adapters.hide(conn, str(idea["id"]), note.strip())
+        # L-HIDE, DEC-103, BLD-F097: lane C's hide (patterns, then the gatekeeper) before the lead or anything else
+        # sees the note; the requester's own words are sealed for them under the request's id, made first
         rid = str(uuid.uuid4())
+        masked, _ = adapters.hide(conn, str(idea["id"]), note.strip(), by=user_id, source_id=rid)
         t = clock_now()
         try:
             with conn.transaction():
@@ -531,7 +568,7 @@ def read(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
         who = person_by_code(conn, req.row["from_code"])
         out["reader"] = rules.reader_words(who.name, who.first_name, len(req.brought))
         out["answers"] = rules.answers_for(bool(req.brought)) if req.waiting else []
-        out.update(_answered(req, who, out.get("lead_reason")))
+        out.update(_answered(req, who, words(conn, req, "decline", mine=False)))  # as `_answer`'s line reads
     if is_from:
         out["after"] = after_for(conn, req, crew_role(conn, req.idea["id"], code) if code else None, user_id)
     return out
@@ -663,7 +700,13 @@ def _answer(
             raise Refused(problem.status, problem.code, problem.message, problem.field)
     t = clock_now()
     state = (rules.TEAMUP_STATE_FOR if req.kind == "teamup" else rules.MERGE_STATE_FOR)[ans]
-    masked_reason = adapters.hide(conn, str(req.idea["id"]), reason)[0] if reason else None
+    # L-HIDE, DEC-103, BLD-F097: lane C's hide before the requester reads it; the lead's own words sealed for them.
+    # `answer` already holds lane C's lock on the idea, taken first.
+    masked_reason = (
+        adapters.hide(conn, str(req.idea["id"]), reason, by=user_id, source_id=adapters.decline_id(req.id))[0]
+        if reason
+        else None
+    )
     conn.execute(
         f"UPDATE {req.table} SET state = %s, lead_reason_encrypted = %s, answered_by_code = %s, "  # noqa: S608
         "answered_at = %s WHERE id = %s",
