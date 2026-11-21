@@ -629,9 +629,10 @@ def test_l_draft_autosave_2_files_added_with_a_message_resume_with_it(drafting: 
     assert [f["id"] for f in draft["files"]] == ["ATT-2026-000901"]
 
 
-def test_l_draft_autosave_2_C_FILE_row_a_found_file_keeps_its_line_after_a_reload(drafting: Any) -> None:
+def test_l_draft_autosave_2_C_FILE_row_the_found_line_and_view_stay_after_a_reload(drafting: Any) -> None:
     """BLD-E076: the draft read gives the owner the same FileItem lines as `POST /files` (E-ENTITIES FileItem), so
-    Check it and the prompt box show the whole found line after a reload (C-FILE.row, L-HIDE.files, DEC-107)."""
+    Check it and the prompt box show the whole found line, and View, after a reload (C-FILE.row, L-HIDE.files).
+    DEC-107: the sharer always opens their own checked file, one with a customer detail included."""
     db, owner = drafting
     _switch(db, "ai.all", "off")
     idea, _ = store.create(db, owner, LAPTOP, text=W1)
@@ -653,3 +654,6 @@ def test_l_draft_autosave_2_C_FILE_row_a_found_file_keeps_its_line_after_a_reloa
         "Found a phone number on page 1. Only you, the review desk and the Ones Committee can open it."
     )
     assert "problem" not in files["ATT-2026-000903"] and "problem" not in files["ATT-2026-000904"]
+    assert found["view_url"] == "/api/files/ATT-2026-000902/view"
+    assert files["ATT-2026-000903"]["view_url"] == "/api/files/ATT-2026-000903/view"
+    assert "view_url" not in files["ATT-2026-000904"]  # nobody opens a file before its checks finish
