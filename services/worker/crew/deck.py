@@ -226,19 +226,23 @@ def order_key(c: Card) -> tuple[int, int, int, int, int, float]:
 
 
 def limited(shown: Sequence[Card], limit: int | None) -> list[Card]:
-    """A short read of the deck (`limit`; Home's top three, S-03), lane F's reading of DEC-126 (2) (BLD-F094).
+    """A short read of the deck (`limit`; Home's top three, S-03), lane F's reading of DEC-126 (2) (BLD-F094; amended
+    by BLD-F096).
 
     Requested cards sort last, so a person with `limit` or more other cards would lose the one they just asked about
-    from Home after a reload. So when the deck is longer than `limit` and holds a requested card, the read is the
-    first `limit - 1` other cards and then the most recently requested card, last: at most one requested card.
-    A deck that fits in `limit` comes whole, in order, as without a limit."""
+    from Home after a reload. So when the deck is longer than `limit` and holds a requested card, the read is up to
+    `limit - 1` other cards in deck order, then the latest requested cards in deck order to fill the read to `limit`
+    (requested cards are oldest request first, so the most recently requested card is last). The read always holds
+    `min(limit, len(shown))` cards. A deck that fits in `limit` comes whole, in order, as without a limit."""
     if not limit or len(shown) <= limit:
         return list(shown)
     asked = [c for c in shown if c.request is not None]
     if not asked:
         return list(shown[:limit])
-    others = [c for c in shown if c.request is None]
-    return [*others[: limit - 1], asked[-1]]
+    others = [c for c in shown if c.request is None][: limit - 1]
+    # at least 1, and never more than `asked` holds, since the deck is longer than `limit`
+    room = limit - len(others)
+    return [*others, *asked[-room:]]
 
 
 @dataclass(frozen=True)

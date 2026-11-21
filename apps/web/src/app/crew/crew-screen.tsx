@@ -273,12 +273,14 @@ function CardView({
           leadName={card.lead.name}
         />
         {ghost ? (
+          // The flying copy draws the pair's looks only (lane D's shared classes), and "Withdraw" only where
+          // RequestedAction draws it: a reply with no request id leaves nothing to withdraw (BLD-F074, BLD-F096)
           card.request ? (
             <div className="tu-req">
               <span className={buttonClass("primary", "full", "crew-join is-inactive")}>
                 {REQUESTED_COPY.requested}
               </span>
-              <span className="link-quiet">{REQUESTED_COPY.withdraw}</span>
+              {card.request.id ? <span className="link-quiet">{REQUESTED_COPY.withdraw}</span> : null}
             </div>
           ) : null
         ) : card.request ? (
@@ -550,11 +552,22 @@ export function CrewScreen(): JSX.Element {
     focusFront();
   }, [at, cards, ended, focusFront]);
 
-  // The flight is 620 ms; drop the copy if its end never fires (a hidden tab, say).
+  // The flight is 620 ms; drop the copy if its end never fires (a hidden tab, say). With reduced motion the copy is
+  // not drawn (`.crew-fly` is display: none), so its end never fires: drop it at once, also when the person turns
+  // reduced motion on while it flies (BLD-F096).
   useEffect(() => {
     if (!flying) return;
-    const t = window.setTimeout(() => setFlying(null), 900);
-    return () => window.clearTimeout(t);
+    const drop = () => setFlying(null);
+    const t = window.setTimeout(drop, reducedMotion() ? 0 : 900);
+    const less = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    const onChange = (e: { matches: boolean }) => {
+      if (e.matches) drop();
+    };
+    less?.addEventListener?.("change", onChange);
+    return () => {
+      window.clearTimeout(t);
+      less?.removeEventListener?.("change", onChange);
+    };
   }, [flying]);
   const teamUp = useTeamUpSheet({
     onSent,

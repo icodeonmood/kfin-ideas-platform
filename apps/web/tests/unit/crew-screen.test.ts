@@ -10,6 +10,8 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { cssRules } from "./helpers/css-rules";
+
 vi.mock("@/lib/motion/spark", () => ({ sparkBurst: vi.fn() }));
 vi.mock("next/link", async () => {
   const { createElement: h } = await import("react");
@@ -532,10 +534,14 @@ describe("S-H2 Find your crew", () => {
     expect(requested.getAttribute("aria-disabled")).toBe("true");
     expect(requested.hasAttribute("disabled")).toBe(false);
     expect(requested.classList.contains("is-inactive")).toBe(true);
+    // lane D's shared looks (BLD-D019, BLD-F096): Team up's own classes, inactive; the quiet link under it
+    expect(requested.className).toBe("btn btn-primary btn-full is-inactive crew-join");
     expect(requested.getAttribute("aria-label")).toBe(
       "Requested: you asked to team up on Rejection SMS codes confuse investors",
     );
     const withdraw = last.querySelector<HTMLButtonElement>(".link-quiet")!;
+    expect(withdraw.tagName).toBe("BUTTON");
+    expect(withdraw.className).toBe("link-quiet");
     expect(text(withdraw)).toBe("Withdraw");
     expect(withdraw.getAttribute("aria-label")).toBe(
       "Withdraw your request to team up on Rejection SMS codes confuse investors",
@@ -598,6 +604,65 @@ describe("S-H2 Find your crew", () => {
       root = createRoot(host);
       calls = [];
     }
+  });
+
+  it("DEC-126, BLD-F096: a reply with no request id flies a copy with Requested and no Withdraw", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((q: string) => ({ matches: false, media: q })),
+    );
+    answerTeamUp();
+    routes[`POST /api/ideas/${C1.id}/team-up`] = { status: 201, body: {} };
+    await mount();
+    await click(button("Team up on Rejection SMS codes confuse investors: send Ravi a note"));
+    const sheet = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    await click(Array.from(sheet.querySelectorAll("button")).find((b) => text(b).startsWith("Send to Ravi")));
+    await click(button("Keep looking"));
+    const fly = document.querySelector<HTMLElement>(".crew-fly");
+    expect(fly).toBeTruthy();
+    expect(text(fly)).toContain("Requested");
+    expect(text(fly)).not.toContain("Withdraw");
+    expect(fly!.querySelectorAll(".link-quiet").length).toBe(0);
+    // the card itself draws the same: nothing to withdraw (BLD-F074)
+    expect(text(slots()[2])).toContain("Requested");
+    expect(text(slots()[2])).not.toContain("Withdraw");
+  });
+
+  it("DEC-126, BLD-F096: reduced motion turned on while the copy flies drops it at once", async () => {
+    const heard: { media: string; fn: (e: { matches: boolean }) => void }[] = [];
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: (_: string, fn: (e: { matches: boolean }) => void) => heard.push({ media: q, fn }),
+        removeEventListener: () => {},
+      })),
+    );
+    answerTeamUp();
+    await mount();
+    await click(button("Team up on Rejection SMS codes confuse investors: send Ravi a note"));
+    const sheet = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    await click(Array.from(sheet.querySelectorAll("button")).find((b) => text(b).startsWith("Send to Ravi")));
+    await click(button("Keep looking"));
+    expect(document.querySelector(".crew-fly")).toBeTruthy();
+    // `.crew-fly` is display: none with reduced motion, so its animation's end never comes: no wait for 900 ms
+    await act(async () => {
+      for (const h of heard.filter((x) => x.media.includes("prefers-reduced-motion")))
+        h.fn({ matches: true });
+    });
+    expect(document.querySelector(".crew-fly")).toBeNull();
+    expect(slotTitles()).toEqual([C2.title, C3.title, C1.title]);
+  });
+
+  it("DEC-126, BLD-F096: S-H2 draws Requested and Withdraw with lane D's shared styles only, no copy of its own", () => {
+    const own = cssRules("app/crew/crew.css")
+      .flatMap((r) => r.selectors)
+      .filter((sel) => /is-inactive|link-quiet/.test(sel));
+    expect(own).toEqual([]);
+    const shared = cssRules("app/offer.css").flatMap((r) => r.selectors);
+    expect(shared).toContain(".link-quiet");
+    expect(shared).toContain(".btn.is-inactive");
   });
 
   it("DEC-126 after a reload: a requested card reads Requested; Withdraw turns it back to Team up in place, focus on Team up, Your crews drops it", async () => {

@@ -14,6 +14,7 @@ from convo import post
 from convo.reads import conversation
 from convo.store import Refused
 from ideapage import read as page_read
+from ideapage.shape import at_desk
 from tests import convo_fixtures as fx
 
 NOW = fx.at(17, 10, 30)  # Tuesday 17 November 2026, IST
@@ -401,13 +402,15 @@ def test_l_convo_8_s_08_no_messages_yet_and_the_side_panel(db: Any, cast: dict[s
     ]
 
 
-@pytest.mark.parametrize("status", ["checking", "with_review_desk"])
+@pytest.mark.parametrize("status", ["checking", "with_review_desk", "needs_you"])
 def test_s_08_l_convo_8_bld_f088_no_messages_yet_while_the_idea_is_at_the_review_desk(
     db: Any, cast: dict[str, Any], status: str
 ) -> None:
     """Messages.md draws "No messages yet" with the review desk: the sharer of an idea being checked or waiting on
-    the desk, with no entries yet, reads it under the idea's own lines."""
+    the desk, with no entries yet, reads it under the idea's own lines. `needs_you` is at the desk too (lane E's
+    `at_desk`); seeded with no question set, so no questions entry hides the block (f-convo-empty review, BLD-F093)."""
     idea = fx.idea(db, cast["kavya"], status=status)
+    assert at_desk(idea)
     view = conversation(db, idea["idea_id"], cast["kavya"]["id"], at=NOW)
     assert {e["type"] for e in view["entries"]} == {"event"}
     assert view["empty"]["title"] == "No messages yet"

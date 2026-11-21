@@ -179,6 +179,25 @@ def test_DEC_126_L_CREW_10_a_short_read_ends_with_the_latest_requested_card() ->
     assert deck.limited(plain, 3) == plain[:3]  # nobody asked: the first three
     mid, older = _asked(BOARD[2], "r-mid", 5), _asked(BOARD[3], "r-4", 8)
     only_asked = sorted([old, new, mid, older], key=deck.order_key)
-    assert [c.ref for c in deck.limited(only_asked, 3)] == [new.ref]  # at most one requested card
+    # BLD-F096: nobody else to show, so the three latest requests, oldest first, the newest last
+    assert [c.ref for c in deck.limited(only_asked, 3)] == [older.ref, mid.ref, new.ref]
     fits_asked = sorted([BOARD[2], old, new], key=deck.order_key)
     assert deck.limited(fits_asked, 3) == fits_asked  # a deck of three keeps both requested cards
+
+
+def test_DEC_126_L_CREW_10_BLD_F096_a_short_read_fills_to_the_limit_with_the_latest_requested_cards() -> None:
+    """BLD-F096 (amends BLD-F094): one other card and three requested ones at `limit=3` read three cards, not two:
+    the other card, then the two latest requested cards in deck order, the most recently requested last."""
+    other = BOARD[4]
+    oldest, mid, newest = _asked(BOARD[0], "r-1", 30), _asked(BOARD[1], "r-2", 5), _asked(BOARD[2], "r-3", 1)
+    whole = sorted([newest, other, oldest, mid], key=deck.order_key)
+    assert [c.ref for c in whole] == [other.ref, oldest.ref, mid.ref, newest.ref]
+    short = deck.limited(whole, 3)
+    assert [c.ref for c in short] == [other.ref, mid.ref, newest.ref]
+    assert short[-1].request == ("r-3", "teamup")  # the most recent request stays last
+    # every read holds min(limit, deck) cards
+    for limit in range(1, 6):
+        assert len(deck.limited(whole, limit)) == min(limit, len(whole)), limit
+    assert [c.ref for c in deck.limited(whole, 1)] == [newest.ref]  # a read of one: the latest request
+    assert [c.ref for c in deck.limited(whole, 2)] == [other.ref, newest.ref]
+    assert deck.limited(whole, 4) == whole and deck.limited(whole, None) == whole

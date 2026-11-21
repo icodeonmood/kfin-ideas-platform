@@ -7,8 +7,15 @@
   id is logged instead.
 - `say`: L-CONVO (lane F3, `convo.post`, SHIP_PLAN §5a). Used when importable; otherwise the line is written to
   `conversation_entries` directly, as an event with IDs only, exactly as lane B's `say` does.
-- `hide`: L-HIDE (lane C). Until lane C's entry point is on `main`, free text others read (the note, the lead's
-  reason) is masked with the shared patterns (kind + •••• + last two), as lane B's `adapters.hide` does.
+- `hide`: L-HIDE (lane C's `hide.hide_text`: the patterns, then the gatekeeper, then names; DEC-103, BLD-F097) on
+  the three team-up texts others read, as the sealed source `teamup`: the note (`source_id` = the request id), the
+  lead's decline reason (`decline_id`) and a draft's ask (`ask_id`). Each value is kept in lane C's vault under the
+  idea's scope and the typer's own words are sealed for them alone (`own_words`); everyone else reads the masked
+  copy. `write_masked` is lane F's writer for lane C's re-check (`hide/recheck.py`).
+- `lock_hide`: lane C's per-idea lock (`hide.core.lock`), taken FIRST, in uuid order, in a transaction that can reach
+  lane C's hide or `forget`, before `store.lock_ideas` takes the ideas' rows in the same order (BLD-B247, BLD-F096).
+- `drop_queued`: lane B's `desk.asking.drop_queued`: a merged idea's queued question sets go, and first what lane C's
+  hide kept for each of their questions (L-MERGE.effects/5, BLD-B272).
 - `note_min`: the team-up note's minimum length, a promise in the company repo's `rules/promises.md`.
 """
 
@@ -24,7 +31,9 @@ from psycopg.types.json import Jsonb
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
-from pii.patterns import scan
+from hide import core as hide_core
+from hide import hide_text
+from onepc.context import seal_text
 
 log = get_logger("teamup")
 
@@ -137,33 +146,87 @@ def _next_at(conn: Conn, idea_uuid: str, at: dt.datetime | None) -> dt.datetime:
     return last + dt.timedelta(microseconds=1) if last is not None and last >= t else t
 
 
-_KINDS = {"Mobile": "Phone", "Email": "Email", "Bank": "Account", "Date": "Date of birth"}
+HIDE_SOURCE = "teamup"  # lane C's sealed source for the three team-up texts (E-ENUMS sealed_source, BLD-F097)
+_TEXT_TABLES = {  # where each team-up text's masked copy is stored, by its source_id's suffix
+    "": ("teamup_requests",),  # the note
+    "ask": ("merge_requests",),  # a draft's ask
+    "decline": ("teamup_requests", "merge_requests"),  # the lead's reason, on the request's own table
+}
 
 
-def _mask(value: str, label: str, before: str) -> str:
-    """'Folio ••••89': the kind, unless the words just before already name it, then the last two characters."""
-    first = label.split(" ")[0]
-    kind = _KINDS.get(first, first)
-    tail = "".join(ch for ch in value if ch.isalnum())[-2:]
-    lead_in = before[-16:].lower().rstrip(" :#-")
-    named = lead_in.endswith(kind.lower()) or lead_in.endswith(first.lower())
-    return f"••••{tail}" if named else f"{kind} ••••{tail}"
+def decline_id(request_id: str) -> str:
+    """The hide `source_id` of the lead's decline reason on a team-up or draft merge request."""
+    return f"{request_id}:decline"
 
 
-def hide(conn: Conn, idea_uuid: str, text: str) -> tuple[str, int]:
-    """The masked copy of `text` and how many details were hidden (L-HIDE; DEC-103)."""
-    _ = (conn, idea_uuid)  # lane C's version keeps the values in the vault under the idea's scope
-    matches = sorted(scan(text, kfin_domains=get_settings().kfin_domains), key=lambda m: m.start)
-    out: list[str] = []
-    last, n = 0, 0
-    for m in matches:
-        if m.start < last:
-            continue
-        out.append(text[last : m.start])
-        out.append(_mask(text[m.start : m.end], m.label, text[: m.start]))
-        last, n = m.end, n + 1
-    out.append(text[last:])
-    return "".join(out), n
+def ask_id(merge_request_id: str) -> str:
+    """The hide `source_id` of a draft's ask (the merge request's note)."""
+    return f"{merge_request_id}:ask"
+
+
+def hide(conn: Conn, idea_uuid: str, text: str, *, by: str, source_id: str) -> tuple[str, int]:
+    """The masked copy of a team-up text and how many details were hidden (L-HIDE, DEC-103, BLD-F097), through lane
+    C's `hide_text`: patterns, then the gatekeeper, then names. `by` is the users.id of the person who typed it, the
+    one person who reads it back (`own_words`). Call it in the transaction that stores the masked copy, after lane
+    C's lock on every idea the transaction locks (`lock_hide`, taken first). `source_id` must be distinct across
+    ideas: the request id for a note, `decline_id` for a reason, `ask_id` for a draft's ask."""
+    return hide_text(conn, idea_uuid, text, by=by, source=HIDE_SOURCE, source_id=source_id)
+
+
+def own_words(conn: Conn, idea_uuid: str, source_id: str) -> str | None:
+    """The typer's own words for one team-up text (lane C's `own_words`), or None when none were sealed (a request
+    sent before BLD-F097, or seeded). Only ever handed to the person who typed it."""
+    return hide_core.own_words(conn, HIDE_SOURCE, source_id, idea_uuid=idea_uuid)
+
+
+def write_masked(conn: Conn, source_id: str, masked: str) -> int:
+    """Lane F's writer for lane C's re-check (`hide/recheck.py`, BLD-F097): put a team-up text masked again in the
+    copy others read. `source_id` names the text: "<request id>" a team-up note (`teamup_requests.note_encrypted`),
+    "<request id>:decline" the lead's reason (`lead_reason_encrypted` on the table that holds the request), and
+    "<merge request id>:ask" a draft's ask (`merge_requests.note_encrypted`). A note or an ask a merge has carried
+    on (`merges.note_encrypted`) is written again too. Runs in the re-check's transaction, under lane C's lock on
+    the idea. Returns how many copies were written; the log carries the request id and counts only."""
+    rid, _, part = str(source_id).partition(":")
+    if not hide_core.is_uuid(rid) or part not in _TEXT_TABLES:
+        log.info("teamup.rewrite.unknown_source")
+        return 0
+    column = "lead_reason_encrypted" if part == "decline" else "note_encrypted"
+    tables = _TEXT_TABLES[part]
+    copies = 0
+    for table in tables:
+        sql = f"UPDATE {table} SET {column} = %s WHERE id = %s AND {column} IS NOT NULL"  # noqa: S608
+        copies += conn.execute(sql, (seal_text(table, column, rid, masked), rid)).rowcount
+    if copies and part != "decline":
+        link = "merge_request_id" if part == "ask" else "teamup_request_id"
+        sql = f"SELECT id FROM merges WHERE {link} = %s AND note_encrypted IS NOT NULL"  # noqa: S608
+        for m in conn.execute(sql, (rid,)).fetchall():
+            conn.execute(
+                "UPDATE merges SET note_encrypted = %s WHERE id = %s",
+                (seal_text("merges", "note_encrypted", str(m["id"]), masked), m["id"]),
+            )
+            copies += 1
+    log.info("teamup.text_rewritten", request_id=rid, copies=copies)
+    return copies
+
+
+def lock_hide(conn: Conn, *idea_uuids: object) -> None:
+    """Lane C's lock on each idea, in uuid order (the order `store.lock_ideas` locks their rows in), held until the
+    caller's transaction ends and re-entrant in one session (BLD-B247, BLD-F096). Take it as the first lock of any
+    transaction that can reach lane C's hide or `forget` on these ideas, before any row lock: a reviewer's "Hide this"
+    takes it first too, and lane B's desk merge takes both ideas' locks first (`desk.adapters.lock_refs`, then
+    `lock_pair`), so a team-up answer and a desk action on the same two ideas always queue in one order."""
+    for idea_uuid in sorted({str(u) for u in idea_uuids if u}):
+        hide_core.lock(conn, idea_uuid)
+
+
+def drop_queued(conn: Conn, idea_uuid: str) -> list[str]:
+    """Lane B's `desk.asking.drop_queued` (BLD-B272): every reviewer's queued question set on the idea goes with its
+    questions, and first, for each question, what lane C's hide kept for it (`forget`): a reviewer's "Hide this"
+    writes a `hidden_details` row keyed by every question's id, and the sharer's page lists every row of the idea.
+    Lane C's lock on the idea must be held already (`lock_hide`, taken first). Returns the deleted sets' ids."""
+    from desk.asking import drop_queued as desk_drop_queued  # lane B's module, loaded when a merge needs it
+
+    return desk_drop_queued(conn, idea_uuid)
 
 
 def note_min() -> int:

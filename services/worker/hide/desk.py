@@ -715,6 +715,8 @@ def _hide_plain(
 
 def _owner_of(conn: Conn, idea: dict[str, Any], detail: dict[str, Any]) -> str | None:
     source = str(detail["source"])
+    if source == "teamup":  # a team-up text: no one shows or hides it here; its typer reads it (BLD-F097)
+        return None
     if source in ("answer", "conversation"):
         found = load_sealed(conn, str(idea["id"]), source, str(detail["source_id"]))
         return found[0].owner_user if found else None

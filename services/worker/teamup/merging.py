@@ -127,6 +127,9 @@ def apply_lead_merge(
     Refuses (409) when either idea is no longer open to merge, so no route can merge without this check."""
     t = at or clock_now()
     with conn.transaction():
+        # lane C's lock on both ideas first, in uuid order, then their rows in the same order (BLD-B247, BLD-F096):
+        # the merged idea's queued questions are forgotten below. Re-entrant: `requests.answer` already holds them.
+        adapters.lock_hide(conn, lead_uuid, merged_uuid)
         locked = lock_ideas(conn, lead_uuid, merged_uuid)
         leader, joiner = locked.get(str(lead_uuid)), locked.get(str(merged_uuid))
         if leader is None or joiner is None or leader["id"] == joiner["id"]:
@@ -147,11 +150,13 @@ def apply_lead_merge(
             (merge_id, leader["id"], joiner["id"], by_code, seal(note_masked, "merges", "note_encrypted", merge_id),
              joiner["status"], t, teamup_request_id, merge_request_id),
         )  # fmt: skip
-        # L-MERGE.effects/1, /5: the merged idea points to the lead; its open question sets close
+        # L-MERGE.effects/1, /5: the merged idea points to the lead; its open question sets close, and its queued
+        # ones (every reviewer's) are dropped with what lane C's hide kept for their questions (lane B's
+        # `drop_queued`, BLD-B272, BLD-F096; lane C's lock on the idea is held, above)
         conn.execute(
             "UPDATE ideas SET status = 'merged', merged_into = %s WHERE id = %s", (leader["id"], joiner["id"])
         )
-        conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (joiner["id"],))
+        adapters.drop_queued(conn, str(joiner["id"]))
         conn.execute(
             "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed'",
             (t, joiner["id"]),
