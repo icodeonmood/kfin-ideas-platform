@@ -147,17 +147,17 @@ export function OnesFan({
   // The fly-out and the side panel's exit end on the board's timings; nothing is left running after them
   useEffect(() => {
     if (!sideOut) return;
-    const t = window.setTimeout(() => setSideOut(false), FAN_MOTION.sideMs);
-    return () => window.clearTimeout(t);
+    const t = setTimeout(() => setSideOut(false), FAN_MOTION.sideMs);
+    return () => clearTimeout(t);
   }, [sideOut]);
 
   useEffect(() => {
     if (!fly) return;
-    const t = window.setTimeout(
+    const t = setTimeout(
       () => setFly(false),
       FAN_MOTION.flyMs + Math.max(count - 1, 0) * FAN_MOTION.staggerMs + 50,
     );
-    return () => window.clearTimeout(t);
+    return () => clearTimeout(t);
   }, [fly, count]);
 
   // On a phone the position line follows the card the row snapped to, however it got there (a swipe, a fling,

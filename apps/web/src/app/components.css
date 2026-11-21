@@ -2186,7 +2186,8 @@ button.opost-cheer[aria-pressed="true"] {
   color: #ff9a6e;
 }
 
-/* Pressed is more than a tint: the heart fills in, as on the boards (F-A11Y.rules/4); static, no pop (DEC-109) */
+/* Pressed is more than a tint: the heart fills in, as on the boards (F-A11Y.rules/4). The fill is the pressed state's own;
+   the one pop on the person's own press is in motion.css (.on, BLD-D026) */
 button.opost-cheer[aria-pressed="true"] svg {
   fill: currentColor;
 }

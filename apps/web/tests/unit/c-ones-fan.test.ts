@@ -5,16 +5,18 @@
  * tiers 6 and 7 follows), the board's greys measured on the slab (F-COLOR.contrast), 44px targets named by their
  * visible words (F-A11Y), and a still pose with a flat offset under reduced motion (F-MOTION.reduced). The moving
  * parts (Previous and Next, ← →, the wheel) keep their own tests in vacc-teamup.test.ts and s03-home.test.ts.
+ * BLD-D026 adds the motion between those poses (motion.css: the fly-out, the edge straightening, the hover, the side
+ * panel's exit, cheerPop) and the phone row's native snap; components.css keeps the look at rest and no animation.
  * Synthetic people only.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { act, createElement as h, type ReactNode } from "react";
+import { act, createElement as h, useState, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { applied, cssRules, SRC } from "./helpers/css-rules";
+import { applied, cssRules, keyframes, SRC, type CssRule } from "./helpers/css-rules";
 
 vi.mock("next/link", async () => {
   const { createElement } = await import("react");
@@ -24,7 +26,8 @@ vi.mock("next/link", async () => {
   };
 });
 
-const { OnesEmpty, OnesFan, OnesNext, OnesPost, ONES_FAN_COPY } = await import("@/components/ui/ones-fan");
+const { FAN_FINE, FAN_FLY, FAN_MOTION, FAN_PHONE, OnesEmpty, OnesFan, OnesNext, OnesPost, ONES_FAN_COPY } =
+  await import("@/components/ui/ones-fan");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -509,5 +512,419 @@ describe("F-MOTION.reduced: a still pose in this slot, the flat offset under red
     expect(moving.flatMap((r) => r.selectors).sort()).toEqual([".fan-card > *", ".fan-track"]);
     for (const sel of [".fan-track", ".fan-card > *"])
       expect(decl(components, sel, "transition", "@media (prefers-reduced-motion: reduce)")).toBe("none");
+  });
+});
+
+// =================================================================================================================
+// BLD-D026: the motion between the poses (motion.css) and the phone row's native snap
+// =================================================================================================================
+const motion = cssRules("app/motion.css");
+/** Both sheets in the order layout.tsx loads them, so the last matching rule is the one a browser applies. */
+const sheets = [...components, ...motion];
+const NO_PREF = "prefers-reduced-motion: no-preference";
+const REDUCE = "(prefers-reduced-motion: reduce)";
+const MOVES = "@media (min-width: 641px) and (prefers-reduced-motion: no-preference)";
+const onFan = (selector: string) => /\.(fan|opost)\b/.test(selector);
+const moves = (r: CssRule) => [...r.decls.keys()].some((k) => /^(transition|animation)(-|$)/.test(k));
+/** The transform functions in a pose, in order (calc and var are values, not moves). */
+const functions = (pose: string) =>
+  [...pose.matchAll(/([a-zA-Z]+)\(/g)].map((m) => m[1]).filter((f) => f !== "calc" && f !== "var");
+
+/** jsdom has no matchMedia: answer true for the queries given and false for any other. */
+function mediaHolds(...queries: string[]) {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: (media: string) => ({
+      matches: queries.includes(media),
+      media,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
+/** jsdom has no IntersectionObserver: this one records what it watches and lets a test say where the row snapped. */
+class FakeObserver {
+  static made: FakeObserver[] = [];
+  cb: IntersectionObserverCallback;
+  opts: IntersectionObserverInit;
+  targets: Element[] = [];
+  constructor(cb: IntersectionObserverCallback, opts: IntersectionObserverInit = {}) {
+    this.cb = cb;
+    this.opts = opts;
+    FakeObserver.made.push(this);
+  }
+  observe(el: Element) {
+    this.targets.push(el);
+  }
+  unobserve() {}
+  disconnect() {
+    this.targets = [];
+  }
+  takeRecords() {
+    return [];
+  }
+  /** The row came to rest with card `i` showing at `ratio` of its width. */
+  snap(i: number, ratio = 1) {
+    const entry = { target: this.targets[i]!, isIntersecting: ratio > 0, intersectionRatio: ratio };
+    act(() =>
+      this.cb([entry as unknown as IntersectionObserverEntry], this as unknown as IntersectionObserver),
+    );
+  }
+}
+
+const box = (left: number) =>
+  ({
+    left,
+    top: 0,
+    width: 300,
+    height: 450,
+    right: left + 300,
+    bottom: 450,
+    x: left,
+    y: 0,
+    toJSON: () => ({}),
+  }) as DOMRect;
+
+/** A post whose Cheer the person can press on and off, as Home keeps it. */
+function Cheerable({ start }: { start: boolean }) {
+  const [on, setOn] = useState(start);
+  return post(POSTS[0]!, { cheered: on, onCheer: () => setOn((v) => !v) });
+}
+
+const button = (name: string) => host.querySelector<HTMLButtonElement>(`button[aria-label="${name}"]`)!;
+const seeDetails = () => host.querySelector<HTMLButtonElement>(".fan-side button")!;
+
+afterEach(() => {
+  delete (window as { matchMedia?: unknown }).matchMedia;
+  FakeObserver.made = [];
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+describe("C-ONES-FAN.behaviour/2, BLD-D026: the stack flies out into the row, 0.8s a card on the board's curve, 45ms apart", () => {
+  it("C-ONES-FAN.behaviour/2: each card carries its place as --i; the fly-out staggers by it and arcs on the way (oFly)", () => {
+    fan(5);
+    expect(cards().map((c) => c.style.getPropertyValue("--i"))).toEqual(["0", "1", "2", "3", "4"]);
+    expect(decl(motion, ".fan.several", "--fan-fly", MOVES)).toBe("0.8s");
+    expect(decl(motion, ".fan.several", "--fan-ease", MOVES)).toBe("cubic-bezier(0.2, 0.85, 0.25, 1)");
+    expect(decl(motion, ".fan.several", "--fan-stagger", MOVES)).toBe("45ms");
+    expect(FAN_MOTION).toEqual({ flyMs: 800, staggerMs: 45, sideMs: 400 });
+    // Every card glides between its poses: transform on the board's curve, filter and opacity as the board has them
+    expect(decl(motion, ".fan.several .fan-card", "transition", MOVES)).toMatch(
+      /^transform var\(--fan-fly\) var\(--fan-ease\),\s*filter 0\.5s ease,\s*opacity 0\.45s ease$/,
+    );
+    const flying = '.fan.several[data-fly="open"] .fan-card';
+    expect(decl(motion, flying, "transition-delay", MOVES)).toBe("calc(var(--i) * var(--fan-stagger))");
+    expect(decl(motion, flying, "animation", MOVES)).toBe(
+      "oFly var(--fan-fly) var(--fan-ease) calc(var(--i) * var(--fan-stagger)) both",
+    );
+    // will-change only while the cards fly, nowhere else on the fan
+    const promoted = sheets.filter((r) => r.decls.has("will-change") && r.selectors.some(onFan));
+    expect(promoted.flatMap((r) => r.selectors)).toEqual([flying]);
+    expect(decl(motion, flying, "will-change", MOVES)).toBe("transform, filter");
+    // The arc: up 26px and turned 1.5deg at 40% of the way, from the individual properties so it adds to the glide
+    const arc = keyframes(motion, "oFly");
+    expect(arc.map((k) => [k.at, k.decls.get("translate"), k.decls.get("rotate")])).toEqual([
+      [40, "0 -26px", "-1.5deg"],
+    ]);
+    // The cards the stack hides (the fifth on) fade in as they fly
+    expect(decl(motion, `${flying}:nth-child(n + 5)`, "animation", MOVES)).toMatch(
+      /oFly .*,\s*oShow 0\.45s ease /,
+    );
+    expect(keyframes(motion, "oShow").map((k) => [k.at, k.decls.get("opacity")])).toEqual([[0, "0"]]);
+  });
+
+  it("C-ONES-FAN.behaviour/2: spread, the card coming up sits angled in (.edge), the ones after it further back (.far), in the stack's own list of functions", () => {
+    const region = fan(5)!;
+    act(() => seeDetails().click());
+    const [front, , edge, far] = cards();
+    expect(applied(components, edge!, "transform", 1280)).toBe(
+      "translateX(0) perspective(1400px) translateX(0) translateZ(-60px) rotateY(-16deg)",
+    );
+    expect(applied(components, edge!, "filter", 1280)).toBe("brightness(0.8)");
+    expect(applied(components, far!, "transform", 1280)).toBe(
+      "translateX(0) perspective(1400px) translateX(0) translateZ(-90px) rotateY(-24deg)",
+    );
+    expect(applied(components, far!, "filter", 1280)).toBe("brightness(0.66)");
+    expect(applied(components, front!, "transform", 1280)).toBeUndefined(); // the current card faces you
+    expect(region.className).toBe("fan several spread");
+    // The stack, its hover and the row's two angled poses share one list of functions, so a card glides from one
+    // to the next function by function (the edge straightening as it comes up), never through a matrix
+    const stacked = decl(
+      components,
+      ".fan.several:not(.spread) .fan-card:not(:first-child)",
+      "transform",
+      MOVES,
+    )!;
+    const hover = motion.find((r) => r.selectors[0]!.endsWith(":hover .fan-card:not(:first-child)"))!;
+    const poses = [
+      stacked,
+      hover.decls.get("transform")!,
+      ...[edge!, far!].map((c) => applied(components, c, "transform", 1280)!),
+    ];
+    for (const pose of poses)
+      expect(functions(pose)).toEqual(["translateX", "perspective", "translateX", "translateZ", "rotateY"]);
+  });
+
+  it("C-ONES-FAN.behaviour/2, WCAG 2.4.3: with motion allowed, See details flies the cards out; the side panel leaves the reading order at once and the page after its exit", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    mediaHolds(FAN_FLY);
+    const region = fan(5)!;
+    expect(region.hasAttribute("data-fly")).toBe(false);
+    act(() => seeDetails().click());
+    expect(region.className).toBe("fan several spread");
+    expect(region.getAttribute("data-fly")).toBe("open");
+    const side = region.querySelector(".fan-side")!;
+    expect(side.hasAttribute("data-leaving")).toBe(true);
+    expect(side.getAttribute("aria-hidden")).toBe("true");
+    expect(side.hasAttribute("inert")).toBe(true);
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Next post");
+    expect(position()).toBe("Post 1 of 5");
+    act(() => vi.advanceTimersByTime(FAN_MOTION.sideMs));
+    expect(region.querySelector(".fan-side")).toBeNull();
+    expect(region.getAttribute("data-fly")).toBe("open"); // the last card is still on its way
+    act(() => vi.advanceTimersByTime(FAN_MOTION.flyMs + 4 * FAN_MOTION.staggerMs + 50 - FAN_MOTION.sideMs));
+    expect(region.hasAttribute("data-fly")).toBe(false);
+    // The row then moves card by card; nothing flies again
+    act(() => button("Next post").click());
+    expect(region.hasAttribute("data-fly")).toBe(false);
+    expect(position()).toBe("Post 2 of 5");
+  });
+
+  it("C-ONES-FAN.behaviour/2: the panel's exit takes the board's values; it keeps its column over the cards, and stays in place where it sat under the stack", () => {
+    const leaving = (prop: string) => decl(motion, ".fan-side[data-leaving]", prop, MOVES);
+    expect(leaving("opacity")).toBe("0");
+    expect(leaving("visibility")).toBe("hidden");
+    expect(leaving("translate")).toBe("32px 0");
+    expect(leaving("pointer-events")).toBe("none");
+    expect(leaving("transition")).toMatch(
+      /^opacity 0\.25s ease,\s*translate 0\.4s ease,\s*visibility 0s linear 0\.4s$/,
+    );
+    expect(leaving("width")).toBe("min(28%, 280px)"); // the stack's column, as the grid gave it
+    expect(decl(components, ".fan.several:not(.spread) .fan-stage", "grid-template-columns")).toBe(
+      "minmax(0, 1fr) min(28%, 280px)",
+    );
+    expect(
+      decl(motion, ".fan-side[data-leaving]", "position", `${MOVES} @container fan (max-width: 860px)`),
+    ).toBe("static");
+  });
+});
+
+describe("F-MOTION.reduced, BLD-D026: under reduced motion the fan has no transition and no animation at all", () => {
+  it("F-MOTION.reduced/1: every fan rule that moves sits under no-preference, or a reduced-motion rule sets it to none", () => {
+    const moving = sheets.filter(
+      (r) =>
+        !r.at.startsWith("@keyframes") && !r.at.includes("reduce") && r.selectors.some(onFan) && moves(r),
+    );
+    expect(moving.length).toBeGreaterThanOrEqual(6);
+    const reduce = sheets.filter((r) => r.at.includes(REDUCE));
+    for (const r of moving) {
+      if (r.at.includes(NO_PREF)) continue;
+      for (const selector of r.selectors.filter(onFan)) {
+        const off = reduce.find((x) => x.selectors.includes(selector));
+        expect(off, `${selector}: a reduced-motion rule`).toBeDefined();
+        for (const k of r.decls.keys())
+          if (/^(transition|animation)/.test(k)) expect(off!.decls.get(k), `${selector} ${k}`).toBe("none");
+      }
+    }
+  });
+
+  it("F-MOTION.reduced/1: on the rendered fan, stacked, flying or cheered, no element takes a transition, animation or will-change", () => {
+    const still = (root: Element, what: string) => {
+      for (const width of [1280, 390])
+        for (const el of [root, ...root.querySelectorAll("*")])
+          for (const prop of ["transition", "transition-delay", "animation", "will-change"]) {
+            const v = applied(sheets, el, prop, width, true);
+            expect(
+              v === undefined || v === "none",
+              `${what}, ${el.tagName}.${String(el.getAttribute("class"))} ${prop} at ${width}: ${v}`,
+            ).toBe(true);
+          }
+    };
+    const stacked = fan(5)!;
+    // With motion allowed the same cards do glide, so the check below is not empty by accident
+    expect(applied(sheets, cards()[1]!, "transition", 1280, false)).toMatch(/^transform /);
+    still(stacked, "stacked");
+    const region = fan(5)!;
+    act(() => button("Next post").click());
+    region.setAttribute("data-fly", "open");
+    still(region, "flying");
+    show(h(Cheerable, { start: false }));
+    act(() => host.querySelector<HTMLButtonElement>("button.opost-cheer")!.click());
+    expect(host.querySelector("button.opost-cheer.on")).not.toBeNull();
+    still(host, "cheered");
+  });
+
+  it("F-MOTION.reduced/1: under reduced motion nothing flies; the panel goes at once and focus still moves on to Next", () => {
+    mediaHolds(REDUCE);
+    const region = fan(4)!;
+    act(() => seeDetails().click());
+    expect(region.className).toBe("fan several spread");
+    expect(region.hasAttribute("data-fly")).toBe(false);
+    expect(region.querySelector(".fan-side")).toBeNull();
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("Next post");
+  });
+});
+
+describe("C-ONES-FAN.behaviour/6, BLD-D026: the hover lean and the tilt, only with a pointer that hovers and is fine", () => {
+  it("C-ONES-FAN.behaviour/6: every fan hover that moves a card sits under (hover: hover) and (pointer: fine), with motion allowed, and takes the board's values", () => {
+    const lean = sheets.filter(
+      (r) => r.decls.has("transform") && r.selectors.some((s) => onFan(s) && s.includes(":hover")),
+    );
+    expect(lean).toHaveLength(2);
+    for (const r of lean) {
+      expect(r.at).toContain("(hover: hover) and (pointer: fine)");
+      expect(r.at).toContain(NO_PREF);
+      expect(r.at).toContain("(min-width: 641px)");
+      expect(r.selectors.every((s) => s.startsWith(".fan.several:not(.spread) .fan-stage:hover "))).toBe(
+        true,
+      );
+    }
+    // The fan opens a little: 52px to 68px a card, -24deg to -16deg
+    const behind = lean.find((r) => r.selectors[0]!.endsWith(":not(:first-child)"))!.decls.get("transform")!;
+    expect(behind).toContain("68px * (var(--i) - 1)");
+    expect(behind).toContain("rotateY(-16deg)");
+    expect(
+      decl(components, ".fan.several:not(.spread) .fan-card:not(:first-child)", "transform", MOVES),
+    ).toContain("52px * (var(--i) - 1)");
+    // The top card leans out toward the pointer
+    const top = lean.find((r) => r.selectors[0]!.endsWith(".fan-card:first-child"))!.decls.get("transform");
+    expect(top).toBe("perspective(1400px) translateZ(24px) rotateY(4deg)");
+    // Where no fine pointer hovers (touch), nothing applies: the front card faces you at rest
+    fan(4);
+    expect(applied(sheets, cards()[0]!, "transform", 1280)).toBeUndefined();
+  });
+
+  it("C-ONES-FAN.behaviour/6: the pointer tilt follows a mouse only where the pointer hovers and is fine; never a finger, never under reduced motion", () => {
+    fan(4);
+    const front = cards()[0]!;
+    front.getBoundingClientRect = () =>
+      ({ ...box(0), width: 200, right: 200, height: 300, bottom: 300 }) as DOMRect;
+    const point = (pointerType: string) =>
+      act(() => {
+        front.style.removeProperty("--tx");
+        front.style.removeProperty("--ty");
+        front.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType }));
+        front.dispatchEvent(
+          new PointerEvent("pointermove", { bubbles: true, pointerType, clientX: 150, clientY: 75 }),
+        );
+      });
+    point("mouse"); // no fine pointer known
+    expect(front.style.getPropertyValue("--ty")).toBe("");
+    mediaHolds(FAN_FINE);
+    point("touch");
+    expect(front.style.getPropertyValue("--ty")).toBe("");
+    point("mouse");
+    expect(front.style.getPropertyValue("--ty")).toBe("1.25deg");
+    expect(front.style.getPropertyValue("--tx")).toBe("1.00deg");
+    mediaHolds(FAN_FINE, REDUCE);
+    point("mouse");
+    expect(front.style.getPropertyValue("--ty")).toBe("");
+  });
+});
+
+describe("C-ONES-FAN.card, BLD-D026: Cheer's heart fills and pops once, on the person's own press only", () => {
+  it("C-ONES-FAN.card: cheerPop runs only on .on, with motion allowed, 0.42s on the board's spring", () => {
+    const users = sheets.filter((r) => [...r.decls.values()].some((v) => /\bcheerPop\b/.test(v)));
+    expect(users.map((r) => [r.at, r.selectors])).toEqual([
+      ["@media (prefers-reduced-motion: no-preference)", ["button.opost-cheer.on svg"]],
+    ]);
+    expect(users[0]!.decls.get("animation")).toBe("cheerPop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1)");
+    expect(keyframes(motion, "cheerPop").map((k) => [k.at, k.decls.get("transform")])).toEqual([
+      [40, "scale(1.35)"],
+    ]);
+    // The fill stays the pressed state's own, with or without motion
+    expect(decl(components, 'button.opost-cheer[aria-pressed="true"] svg', "fill")).toBe("currentColor");
+  });
+
+  it("C-ONES-FAN.card: a cheer already there on load never pops; the person's press that turns it on adds .on, turning it off takes .on away", () => {
+    show(h(Cheerable, { start: true }));
+    const cheer = () => host.querySelector<HTMLButtonElement>("button.opost-cheer")!;
+    expect(cheer().getAttribute("aria-pressed")).toBe("true");
+    expect(cheer().classList.contains("on")).toBe(false);
+    act(() => cheer().click());
+    expect(cheer().getAttribute("aria-pressed")).toBe("false");
+    expect(cheer().classList.contains("on")).toBe(false);
+    act(() => cheer().click());
+    expect(cheer().getAttribute("aria-pressed")).toBe("true");
+    expect(cheer().classList.contains("on")).toBe(true);
+    expect(words(cheer())).toBe("Cheer Asha Shetty’s fix, 214 cheers"); // the name is unchanged
+  });
+});
+
+describe("C-ONES-FAN.behaviour/7, BLD-D026: on a phone several posts scroll by swipe with native snap, and the position line follows", () => {
+  it("C-ONES-FAN.behaviour/7: at phone width the row is the view's own scroll, x mandatory, a card a snap; the track no longer moves", () => {
+    const region = fan(4)!;
+    const view = region.querySelector(".fan-view")!;
+    const track = region.querySelector(".fan-track")!;
+    expect(applied(components, view, "overflow-x", 390)).toBe("auto");
+    expect(applied(components, view, "scroll-snap-type", 390)).toBe("x mandatory");
+    expect(applied(components, view, "overscroll-behavior-x", 390)).toBe("contain");
+    expect(applied(components, view, "touch-action", 390)).toBe("auto");
+    expect(applied(components, cards()[2]!, "scroll-snap-align", 390)).toBe("start");
+    // Wider than a phone it stays the track the controls move
+    expect(applied(components, view, "overflow-x", 1280)).toBe("clip");
+    expect(applied(components, view, "scroll-snap-type", 1280)).toBeUndefined();
+    act(() => button("Next post").click());
+    expect(applied(components, track, "transform", 1280)).toContain("var(--at)");
+    expect(applied(components, track, "transform", 390)).toBeUndefined();
+    // Under reduced motion it still snaps, and moves without a glide
+    expect(applied(components, view, "scroll-snap-type", 390, true)).toBe("x mandatory");
+    expect(applied(components, view, "scroll-behavior", 390, true)).toBe("auto");
+  });
+
+  it("C-ONES-FAN.behaviour/5, /7: the position line, the reading order and Previous and Next follow the card the row snaps to; Next scrolls to the next snap", () => {
+    mediaHolds(FAN_PHONE);
+    vi.stubGlobal("IntersectionObserver", FakeObserver);
+    const region = fan(4)!;
+    const view = region.querySelector<HTMLElement>(".fan-view")!;
+    const io = FakeObserver.made.at(-1)!;
+    expect(io.opts.root).toBe(view);
+    expect(io.opts.threshold).toBe(0.6);
+    expect(io.targets).toEqual(cards());
+    expect(position()).toBe("Post 1 of 4");
+    // A swipe lands on the third card
+    io.snap(2);
+    expect(position()).toBe("Post 3 of 4");
+    expect(cards().map((c) => c.hasAttribute("inert"))).toEqual([true, true, false, true]);
+    expect(button("Previous post").hasAttribute("aria-disabled")).toBe(false);
+    // A card only partly in view while the row moves changes nothing
+    io.snap(1, 0.4);
+    expect(position()).toBe("Post 3 of 4");
+    // Next scrolls the row so the fourth card sits at its snap point, with a glide
+    const scrollTo = vi.fn();
+    view.scrollTo = scrollTo as unknown as typeof view.scrollTo;
+    view.getBoundingClientRect = () => box(10);
+    cards()[3]!.getBoundingClientRect = () => box(310);
+    act(() => button("Next post").click());
+    expect(scrollTo).toHaveBeenCalledWith({ left: 300, behavior: "smooth" });
+    expect(position()).toBe("Post 4 of 4");
+    expect(button("Next post").getAttribute("aria-disabled")).toBe("true");
+    io.snap(3);
+    expect(position()).toBe("Post 4 of 4");
+    // Never a fly-out on a phone: there is no stack
+    expect(region.hasAttribute("data-fly")).toBe(false);
+  });
+
+  it("C-ONES-FAN.behaviour/4, F-MOTION.reduced/5: on a phone the first wheel step already moves a card (no stack to open), and under reduced motion it jumps", () => {
+    mediaHolds(FAN_PHONE, REDUCE);
+    vi.stubGlobal("IntersectionObserver", FakeObserver);
+    const region = fan(3)!;
+    const view = region.querySelector<HTMLElement>(".fan-view")!;
+    const scrollTo = vi.fn();
+    view.scrollTo = scrollTo as unknown as typeof view.scrollTo;
+    const step = new WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true });
+    act(() => {
+      region.querySelector("article")!.dispatchEvent(step);
+    });
+    expect(step.defaultPrevented).toBe(true);
+    expect(position()).toBe("Post 2 of 3");
+    expect(scrollTo).toHaveBeenCalledWith({ left: expect.any(Number), behavior: "auto" });
   });
 });
