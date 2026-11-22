@@ -768,10 +768,12 @@ def test_L_HIDE_files_1_DEC_103_a_file_never_skips_the_gatekeeper_whoever_switch
     db: Conn, cast: dict[str, Any]
 ) -> None:
     """Non-negotiable 4 (lane E's check, 18 Nov): with `ai.all` switched off by a person, or the gatekeeper held off
-    by the gateway's own switch-off, a file waits in `checking` (the job retries); it is never `checked` on the
-    patterns alone, so the crew never opens it without the gatekeeper."""
+    by the gateway's own switch-off, a file waits in `checking` (`JobWaits` since BLD-C225: the job runs again
+    without using a try); it is never `checked` on the patterns alone, so the crew never opens it without the
+    gatekeeper."""
     from core import killswitch
     from gateway.core import ACTOR as GATEWAY
+    from jobs.runner import JobWaits
 
     idea, kavya = cast["idea"], cast["kavya"]
 
@@ -781,7 +783,7 @@ def test_L_HIDE_files_1_DEC_103_a_file_never_skips_the_gatekeeper_whoever_switch
     )
     killswitch.clear_cache()
     try:
-        with pytest.raises(F.CheckWaits):
+        with pytest.raises(JobWaits):
             F.check(db, by_person)
     finally:
         killswitch.set_switch(db, "ai.all", "on", reason="Testing files: assistant back on", actor="REV-0001")
@@ -794,7 +796,7 @@ def test_L_HIDE_files_1_DEC_103_a_file_never_skips_the_gatekeeper_whoever_switch
     killswitch.set_switch(db, "agent.gatekeeper", "off", reason="Error rate over the limit", actor=GATEWAY)
     killswitch.clear_cache()
     try:
-        with pytest.raises(F.CheckWaits):
+        with pytest.raises(JobWaits):
             F.check(db, waits)
     finally:
         killswitch.set_switch(
@@ -807,15 +809,16 @@ def test_L_HIDE_files_1_DEC_103_a_file_never_skips_the_gatekeeper_whoever_switch
 def test_L_HIDE_files_1_BLD_C107_switched_off_the_check_waits_and_switched_on_it_checks_the_same_file(
     db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The 18 Nov rule (BLD-C107): `check` raises `CheckWaits` while `ai.all` is off, then, switched back on, checks
-    the same stored file (no new upload) and records that the gatekeeper ran. A switch-off while the file is read
-    (between two pieces, the second `held()`) waits the same way. A person's switch-off through the job runner
-    leaves the job queued with `CheckWaits` and the file checking, then the next run checks it."""
+    """The 18 Nov rule (BLD-C107, amended by BLD-C225): `check` waits (`JobWaits`) while `ai.all` is off, then,
+    switched back on, checks the same stored file (no new upload) and records that the gatekeeper ran. A switch-off
+    while the file is read (between two pieces, the second `held()`) waits the same way. A person's switch-off
+    through the job runner leaves the job queued with `waiting_gatekeeper` and the file checking, then the next run
+    checks it."""
     from core import killswitch
     from gateway.routes import FAKE_SCRIPT
     from hide import detect
     from jobs import handlers  # noqa: F401 (registers the job types)
-    from jobs.runner import run_one
+    from jobs.runner import JobWaits, run_one
 
     idea, kavya = cast["idea"], cast["kavya"]
 
@@ -829,7 +832,7 @@ def test_L_HIDE_files_1_BLD_C107_switched_off_the_check_waits_and_switched_on_it
     key = _row(db, att)["store_key"]
     switch("off")
     try:
-        with pytest.raises(F.CheckWaits):
+        with pytest.raises(JobWaits):
             F.check(db, att)
     finally:
         switch("on")
@@ -853,7 +856,7 @@ def test_L_HIDE_files_1_BLD_C107_switched_off_the_check_waits_and_switched_on_it
     monkeypatch.setattr(detect, "gatekeeper_finds", then_off)
     FAKE_SCRIPT.append(_gatekeeper_says())
     try:
-        with pytest.raises(F.CheckWaits):
+        with pytest.raises(JobWaits):
             F.check(db, long)
     finally:
         monkeypatch.setattr(detect, "gatekeeper_finds", real)
@@ -872,7 +875,7 @@ def test_L_HIDE_files_1_BLD_C107_switched_off_the_check_waits_and_switched_on_it
     finally:
         switch("on")
     job = _job(db, queued)
-    assert (job["state"], job["last_error"]) == ("queued", "CheckWaits")
+    assert (job["state"], job["last_error"]) == ("queued", "waiting_gatekeeper")
     assert _row(db, queued)["file_state"] == "checking"
     _first_due(db, queued)
     assert run_one(db, "test-files")
