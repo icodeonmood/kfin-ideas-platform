@@ -225,6 +225,9 @@ export interface RowView {
   actions: Array<"view" | "retry" | "hide" | "remove">;
   size?: string;
   kind: string;
+  /** The check waits for the gatekeeper (the assistant is off): the row shows the worker's waiting line and no
+   * spinner, since nothing moves for hours (WCAG 2.2.2; C-FILE.row, BLD-C237). */
+  waiting?: true;
 }
 
 export function sizeLabel(bytes: number | undefined): string | undefined {
@@ -275,7 +278,17 @@ function rowBase(p: ProofItem, limitMb: number): RowView {
     case "uploading":
       return { status: "uploading", statusText: "", actions: ["remove"], size, kind };
     case "checking":
-      return { status: "checking", statusText: C.proof.checking, actions: ["remove"], size, kind };
+      // While the assistant is off the check waits for the gatekeeper: the worker's line says so (BLD-C225),
+      // "Waiting for the personal details check. It runs when the assistant is back." The worker fills `problem`
+      // on a checking file only for that wait, so the row drops its spinner then (BLD-C237).
+      return {
+        status: "checking",
+        statusText: item?.problem || C.proof.checking,
+        actions: ["remove"],
+        size,
+        kind,
+        ...(item?.problem ? { waiting: true as const } : {}),
+      };
     case "checked":
       return { status: "checked", statusText: C.proof.checked, actions: [...view, "remove"], size, kind };
     case "hidden_checked":

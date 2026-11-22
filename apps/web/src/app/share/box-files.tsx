@@ -174,6 +174,7 @@ function Rows({
               status={v.status}
               statusText={v.statusText}
               message={v.message}
+              waiting={v.waiting}
             >
               {v.actions.includes("retry") ? (
                 <Button variant="text-blue" onClick={() => onRetry(p.key)}>

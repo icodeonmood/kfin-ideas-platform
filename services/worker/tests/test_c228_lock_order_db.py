@@ -275,6 +275,11 @@ def test_l_hide_bld_c228_l_hide_files_the_file_checks_finish_takes_hides_lock_be
         data=make.pdf([WORDS]),
         idea_id=str(idea["idea_id"]),
     )["id"]
+    # BLD-C225: with the assistant off the check waits before the scan, so it is on here (the gatekeeper is stood in).
+    from core import killswitch
+
+    db.execute("UPDATE kill_switches SET state = 'on' WHERE name IN ('ai.all', 'agent.gatekeeper')")
+    killswitch.clear_cache()
     locks.clear()
     assert F.check(db, att) == "checked"
     _hide_first(list(locks), idea["id"])

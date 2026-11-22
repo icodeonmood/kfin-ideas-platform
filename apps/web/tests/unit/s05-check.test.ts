@@ -514,6 +514,51 @@ describe("S-05 rules (model.ts, BLD-C130)", () => {
     expect(JSON.stringify(link)).not.toMatch(/couldn/);
   });
 
+  it("BLD-C225 L-HIDE.files: a check waiting for the gatekeeper reads the worker's waiting line, still checking with Remove", () => {
+    const waiting = "Waiting for the personal details check. It runs when the assistant is back.";
+    const row = model.rowView(
+      {
+        key: "k",
+        name: "branch-call-log-nov.pdf",
+        item: {
+          id: "f1",
+          kind: "file",
+          name: "branch-call-log-nov.pdf",
+          type: "application/pdf",
+          size: 140 * 1024,
+          state: "checking",
+          added_by: KAVYA,
+          added_at: "",
+          problem: waiting,
+        },
+      },
+      25,
+    );
+    expect(row).toMatchObject({ status: "checking", statusText: waiting, actions: ["remove"] });
+    expect(row.message).toBeUndefined();
+    // C-FILE.row BLD-C237 (WCAG 2.2.2): the waiting row asks for no spinner; a check that runs still has one.
+    expect(row.waiting).toBe(true);
+    const running = model.rowView(
+      {
+        key: "k2",
+        name: "branch-call-log-nov.pdf",
+        item: {
+          id: "f2",
+          kind: "file",
+          name: "branch-call-log-nov.pdf",
+          type: "application/pdf",
+          size: 140 * 1024,
+          state: "checking",
+          added_by: KAVYA,
+          added_at: "",
+        },
+      },
+      25,
+    );
+    expect(running.status).toBe("checking");
+    expect(running.waiting).toBeUndefined();
+  });
+
   it("C-FILE.row BLD-C139: infected and locked rows say the server's words when sent, else the drawn line, with Remove only", () => {
     const item = (state: FileItem["state"], problem?: string) => ({
       key: "k",

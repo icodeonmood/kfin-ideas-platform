@@ -487,6 +487,23 @@ describe("C-FILE.row in S-08's box: upload, Remove, a found file (DEC-107, BLD-F
     expect(textbox().value).toBe("The call log for week 47."); // the words stay
     expect(rows()!.textContent).toContain("still-checking.md");
   });
+
+  it("C-FILE.row BLD-C237 (WCAG 2.2.2): a file whose check waits for the assistant shows the worker's line and no spinner; a running check keeps its spinner", async () => {
+    const WAITING = "Waiting for the personal details check. It runs when the assistant is back.";
+    nextFile = { state: "checking", problem: WAITING };
+    await show(sharerView());
+    await openPicker();
+    await choose([md("week-47-calls.md")]);
+    expect(rows()!.textContent).toContain(WAITING);
+    expect(rows()!.querySelector(".spin")).toBeNull();
+    nextFile = { state: "checking" };
+    await openPicker();
+    await choose([md("still-checking.md")]);
+    const [waits, runs] = Array.from(rows()!.querySelectorAll("li"));
+    expect(waits!.querySelector(".spin")).toBeNull();
+    expect(runs!.textContent).toContain("Checking for personal details");
+    expect(runs!.querySelector(".spin")).not.toBeNull();
+  });
 });
 
 // --- Sending -----------------------------------------------------------------------------------------------------

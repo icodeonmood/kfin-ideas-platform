@@ -1,6 +1,11 @@
 """Claim and run jobs. Handlers register by type; failures retry with backoff, then go `dead`.
 
 Payloads hold IDs only, and `last_error` holds an error code (the column enforces it).
+
+A handler that cannot run yet for a reason that is not a failure raises `JobWaits` (BLD-C225): the job goes back to
+the queue after `seconds`, with `last_error` set to the wait's `code`, and the claim's try is given back, so a wait
+never uses a try, never makes the job `dead` and never runs the dead handler. Today only the file check waits this
+way, while the gatekeeper is switched off (`attachments.files`, BLD-C107 amended).
 """
 
 from __future__ import annotations
@@ -21,6 +26,15 @@ Handler = Callable[[Conn, dict[str, Any]], None]
 HANDLERS: dict[str, Handler] = {}
 DEAD_HANDLERS: dict[str, Handler] = {}  # run once when a job of that type goes dead, to tell people
 BACKOFF_MINUTES = (1, 5, 15, 60)
+
+
+class JobWaits(Exception):
+    """The job cannot run yet and has not failed (BLD-C225): it runs again after `seconds`, and the try it was
+    claimed with is given back. `code` is a reason code (it goes to `last_error` and the log), never text."""
+
+    def __init__(self, seconds: int, code: str) -> None:
+        super().__init__(code)
+        self.seconds, self.code = int(seconds), code
 
 
 def handler(job_type: str) -> Callable[[Handler], Handler]:
@@ -69,6 +83,15 @@ def run_one(conn: Conn, worker_id: str) -> bool:
         if fn is None:
             raise LookupError("no_handler")
         fn(conn, job["payload"])
+    except JobWaits as wait:
+        # Not a try: the claim's +1 is undone, so `attempts` is back where it was before the claim (BLD-C225).
+        conn.execute(
+            "UPDATE jobs SET state = 'queued', attempts = attempts - 1, run_at = now() + make_interval(secs => %s), "
+            "last_error = %s, locked_by = NULL WHERE id = %s",
+            (wait.seconds, wait.code[:120], job["id"]),
+        )
+        log.info("jobs.waiting", job_id=job["id"], job_type=job["type"], code=wait.code[:120])
+        return True
     except Exception as exc:
         attempts = job["attempts"] + 1
         dead = attempts >= job["max_attempts"]

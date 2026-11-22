@@ -219,6 +219,7 @@ export function ProofBody({
                 status={v.status}
                 statusText={v.statusText}
                 message={v.message}
+                waiting={v.waiting}
               >
                 {v.actions.includes("view") && p.item?.view_url ? (
                   <a
