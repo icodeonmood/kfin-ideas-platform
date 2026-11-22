@@ -554,7 +554,9 @@ def test_a235_env_example_keeps_the_dev_defaults_the_journeys_depend_on() -> Non
 
 def test_a235_uat_runbook_hr_import_step_in_lane_as_order_with_one_command_form() -> None:
     doc = UAT_DOC.read_text("utf-8")
-    after = doc.split("## After the deploy", 1)[1].split("## Rehearsal", 1)[0]
+    # Only "After the deploy": the sections after it have their own tests (full mode's restart needs the compose
+    # wrapper, BLD-A245, test_a245_mode_a.py).
+    after = doc.split("## After the deploy", 1)[1].split("\n## ", 1)[0]
     assert f"`{','.join(HEADER)}`" in after
     hr = "docker exec -i kfin-ideas-uat-worker-1 python -m identity.hr_import - < /secure/hr/<file>.csv"
     grant = (
