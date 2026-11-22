@@ -58,10 +58,11 @@ def cast(db: Conn, repo: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any
 def _file_only_answers(
     db: Conn, cast: dict[str, Any], states: tuple[str, ...]
 ) -> tuple[dict[str, Any], list[str]]:
-    """The set sent at 9 am, and each question answered at 10 am with no words and one file in `states`' order."""
+    """A set of one question per state, sent at 9 am, each answered at 10 am with no words and one file in that
+    state."""
     idea, kavya = cast["idea"], cast["kavya"]
-    sent = asking.send_set(db, idea["idea_id"], cast["meera"]["id"], {"questions": QS, "time_to_answer": "3d"},
-                           f.at(16, 9))  # fmt: skip
+    body = {"questions": QS[: len(states)], "time_to_answer": "3d"}
+    sent = asking.send_set(db, idea["idea_id"], cast["meera"]["id"], body, f.at(16, 9))
     answer_ids = []
     for q, state in zip(sent["questions"], states, strict=True):
         att = fx.attachment(db, idea, kavya, file_state=state, name=f"call-log-{state}.xlsx", purpose="idea")

@@ -214,7 +214,9 @@ def _counts(files: Sequence[dict[str, Any]]) -> bool:
     """An answer's files count towards answering only when the review desk will see one (DEC-132): checked, hidden,
     or holding a customer detail (`DESK_SEES`, DEC-107). A file still checking counts once its check ends; one that
     is infected, locked or failed never does, so an answer whose only file is one of those is not sent and the desk
-    never receives an empty answer. The same states as `_only(..., DESK_SEES)`, the desk's own read."""
+    never receives an empty answer. The same states as `_only(..., DESK_SEES)` (`_set_json`, `answers_by_part`): a
+    file from before the cut-over, with no `file_state`, does not count, stricter than S-R2's `reads._questions`,
+    which still shows one the old pipeline marked clean."""
     return bool(_only(list(files), DESK_SEES))
 
 

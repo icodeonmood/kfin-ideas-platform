@@ -327,7 +327,7 @@ describe("S-R3, C-FILE.row, L-QUESTIONS.answer, BLD-B275: files on an answer", (
     const check = buttons().find((b) => b.textContent === "Check your answers and send")!;
     await act(async () => check.click());
     expect(host.textContent).not.toContain("attached.");
-    const send = buttons().find((b) => b.textContent === "Answer at least one question");
+    const send = buttons().find((b) => b.textContent?.startsWith("Answer at least one question")); // and its busy label
     expect(send).toBeDefined();
     expect(send!.disabled || send!.getAttribute("aria-disabled") === "true").toBe(true);
   });

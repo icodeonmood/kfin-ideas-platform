@@ -8,8 +8,8 @@
  *
  * The "+" under each answer box (BLD-B275; DEC-124, C-PROMPT.anatomy/2; named as the Answer board names it, "Attach
  * files to this answer") adds files to that answer: each is one of the
- * idea's own files (BLD-B274), checked as DEC-107 says, and an answer with a file and no words counts as answered, as
- * the worker counts it. Files only: no folder or link on S-R3 yet.
+ * idea's own files (BLD-B274), checked as DEC-107 says, and an answer with no words counts as answered with a file the
+ * review desk sees (DEC-132), as the worker counts it. Files only: no folder or link on S-R3 yet.
  */
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
