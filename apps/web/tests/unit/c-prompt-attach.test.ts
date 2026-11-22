@@ -631,8 +631,9 @@ describe('The "+" and the Capture first layout in CSS (WCAG 2.1 AA; BLD-C212, C2
     expect(rule(".cz .cfile-x")).toMatch(/width: 32px;[\s\S]*height: 32px;/);
   });
 
-  it("DEC-125/2: Capture first on a desk is one column, the conversation and the box at full width", () => {
-    expect(rule(".cz.capture .cmain")).toContain("grid-template-columns: minmax(0, 1fr);");
+  it("DEC-125/2, DEC-130, BLD-D032: Capture first on a desk is one column up to 960px, centred; the conversation and the box fill it", () => {
+    expect(rule(".cz.capture .cmain")).toContain("grid-template-columns: minmax(0, 960px);");
+    expect(rule(".cz.capture .cmain")).toContain("justify-content: center;");
     expect(rule(".cz.capture.has .tin,\n.cz.capture.has .cdock > *")).toContain("max-width: none;");
     expect(rule(".cz .cmove-l")).toContain("color: var(--mute);");
   });
