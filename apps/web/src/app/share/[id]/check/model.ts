@@ -275,7 +275,15 @@ function rowBase(p: ProofItem, limitMb: number): RowView {
     case "uploading":
       return { status: "uploading", statusText: "", actions: ["remove"], size, kind };
     case "checking":
-      return { status: "checking", statusText: C.proof.checking, actions: ["remove"], size, kind };
+      // While the assistant is off the check waits for the gatekeeper: the worker's line says so (BLD-C225),
+      // "Waiting for the personal details check. It runs when the assistant is back."
+      return {
+        status: "checking",
+        statusText: item?.problem || C.proof.checking,
+        actions: ["remove"],
+        size,
+        kind,
+      };
     case "checked":
       return { status: "checked", statusText: C.proof.checked, actions: [...view, "remove"], size, kind };
     case "hidden_checked":
