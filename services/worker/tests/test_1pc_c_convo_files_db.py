@@ -334,7 +334,23 @@ def test_attachment_purpose_migration_backfills_conversation_for_files_already_o
     with db.transaction(force_rollback=True):
         on_entry = _row(db, idea, kavya, purpose="conversation", entry=_entry(db, idea, kavya))
         own = _row(db, idea, kavya)
+        unsent = _row(db, idea, cast["meera"], purpose="conversation", state="checking")
+        for source_id in (unsent, f"{unsent}:name", own):
+            _detail(db, idea, source_id, "Folio ••••41")
+        db.execute(
+            "INSERT INTO jobs (type, payload) VALUES (%s, %s)", (F.JOB, Jsonb({"attachment_id": unsent}))
+        )
         db.execute(down)
+        # BLD-C223: a down never turns an unsent conversation file into one of the idea's own files.
+        assert db.execute("SELECT 1 FROM attachments WHERE id = %s", (unsent,)).fetchone() is None
+        assert [r["source_id"] for r in db.execute(
+            "SELECT source_id FROM hidden_details WHERE idea_uuid = %s AND source = 'file'", (idea["id"],))] == [own]  # fmt: skip
+        assert (
+            db.execute(
+                "SELECT 1 FROM jobs WHERE type = %s AND payload->>'attachment_id' = %s", (F.JOB, unsent)
+            ).fetchone()
+            is None
+        )
         assert (
             db.execute(
                 "SELECT 1 FROM information_schema.columns WHERE table_name = 'attachments' AND column_name = 'purpose'"
@@ -354,6 +370,7 @@ def test_every_reader_of_an_ideas_own_files_leaves_conversation_files_out(
 ) -> None:
     from draft import store as draft_store
     from ideapage import read as ideapage
+    from scan import pipeline
     from submit import edit, ready
 
     idea, kavya, meera = cast["idea"], cast["kavya"], cast["meera"]
@@ -372,6 +389,51 @@ def test_every_reader_of_an_ideas_own_files_leaves_conversation_files_out(
     assert [i["id"] for i in F.items_for(db, uid, kavya["id"])] == [own, waiting]
     owner = cast_owner(kavya)
     assert [i["id"] for i in draft_store._files(db, uid, owner)] == [own, waiting]
+    # BLD-C223: canvas assist's research files (`scan.pipeline._attachments`) are the idea's own files only.
+    assert [r["id"] for r in pipeline._attachments(db, uid)] == [own, waiting]
+
+
+def _detail(db: Conn, idea: dict[str, Any], source_id: str, masked: str, *, shown: bool = False) -> None:
+    """A file's hidden detail as hide leaves it (`source` "file", the file's id or `<id>:name`), hidden or shown."""
+    db.execute(
+        "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked, state, reason, shown_at) "
+        "VALUES (%s, 'file', %s, 'folio', %s, %s, %s, CASE WHEN %s THEN now() END)",
+        (idea["id"], source_id, masked, "shown" if shown else "hidden", "internal_reference" if shown else None,
+         shown),
+    )  # fmt: skip
+
+
+def test_BLD_C223_the_idea_page_lists_no_hidden_detail_of_a_conversation_file(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """`ideapage.read.hidden`: the details of the idea's own files, and none of a file added for the conversation,
+    sent or not, nor of its name (`<id>:name`); the other sources are as before (lane F's `teamup` stays out)."""
+    from ideapage import read as ideapage
+
+    idea, kavya, meera = cast["idea"], cast["kavya"], cast["meera"]
+    entry = _entry(db, idea, meera)
+    own = _row(db, idea, kavya)
+    unsent = _row(db, idea, meera, purpose="conversation")
+    sent = _row(db, idea, kavya, purpose="conversation", entry=entry)
+    half = _row(db, idea, kavya, purpose="idea", entry=entry)  # half one, half the other: not the idea's
+    shown = {"Folio ••••11", "Folio ••••12", "Folio ••••13"}
+    _detail(db, idea, own, "Folio ••••11")
+    _detail(db, idea, f"{own}:name", "Folio ••••12")
+    _detail(db, idea, own, "Folio ••••13", shown=True)
+    for n, att in enumerate((unsent, sent, half)):
+        _detail(db, idea, att, f"Folio ••••2{n}")
+        _detail(db, idea, f"{att}:name", f"Folio ••••3{n}")
+        _detail(db, idea, att, f"Folio ••••4{n}", shown=True)
+    db.execute(
+        "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked) "
+        "VALUES (%s, 'message', 'MSG-1', 'pan', 'PAN ••••4F'), (%s, 'teamup', 'REQ-1', 'phone', 'Phone ••••10')",
+        (idea["id"], idea["id"]),
+    )
+    got = ideapage.hidden(db, str(idea["id"]))
+    assert {r["masked"] for r in got} == {*shown, "PAN ••••4F"}
+    assert {r["file_name"] for r in got if r["source"] == "file" and r["masked"] != "Folio ••••12"} == {
+        "notes.pdf"
+    }
 
 
 def test_the_sweep_removes_only_unsent_conversation_files_older_than_a_day(
@@ -398,6 +460,34 @@ def test_the_sweep_removes_only_unsent_conversation_files_older_than_a_day(
         ("system:files", {"file_id": old, "purpose": "conversation"})
     ]
     assert F.sweep_unsent_conversation(db) == 0
+
+
+def test_BLD_C223_the_sweep_goes_on_when_the_store_fails_for_one_file(
+    db: Conn, cast: dict[str, Any], objects: dict[Any, bytes], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The object store failing for one unsent conversation file rolls back that file only: its row stays for the
+    next sweep, the sweep removes the others, and the draft purge that runs it does not fail (BLD-C223)."""
+    idea, meera = cast["idea"], cast["meera"]
+    s = get_settings()
+    stuck = _row(db, idea, meera, purpose="conversation", hours_ago=30)
+    gone = _row(db, idea, meera, purpose="conversation", hours_ago=26)
+    stuck_key = str(_one(db, "SELECT store_key FROM attachments WHERE id = %s", stuck)["store_key"])
+    for att in (stuck, gone):
+        _copy(db, objects, att)
+
+    def delete(bucket: str, key: str) -> None:
+        if key == stuck_key:
+            raise OSError("the store is not answering")
+        objects.pop((bucket, key), None)
+
+    monkeypatch.setattr(store, "delete", delete)
+    assert F.sweep_unsent_conversation(db) == 1
+    left = {r["id"] for r in db.execute("SELECT id FROM attachments WHERE idea_uuid = %s", (idea["id"],))}
+    assert stuck in left and gone not in left
+    assert (s.s3_bucket_clean, stuck_key) in objects
+    monkeypatch.setattr(store, "delete", lambda bucket, key: objects.pop((bucket, key), None))
+    assert F.sweep_unsent_conversation(db) == 1  # the next sweep takes it
+    assert db.execute("SELECT 1 FROM attachments WHERE id = %s", (stuck,)).fetchone() is None
 
 
 def _co_sharer(db: Conn, idea: dict[str, Any]) -> dict[str, str]:

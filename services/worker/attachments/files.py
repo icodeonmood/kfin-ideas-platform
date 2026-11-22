@@ -1015,27 +1015,36 @@ def sweep_failed_copies(conn: Conn) -> int:
 def sweep_unsent_conversation(conn: Conn, hours: int = UNSENT_CONVERSATION_HOURS) -> int:
     """Conversation files (`purpose` "conversation") still not on an entry `hours` after they were added: each is
     locked, checked again and dropped (`drop`: every stored copy, its hidden details, its queued checks, its row).
-    Logs and the audit carry IDs only. Returns how many."""
+    Never an answer's file (`answer_id` set: lane B's own rule keeps those). One file failing (the object store
+    not answering) rolls back that file only, is logged by its ID and the error's type, and the sweep goes on, so
+    the draft purge that runs it never fails after its drafts are gone (BLD-C223). Logs and the audit carry IDs
+    only. Returns how many."""
     due = conn.execute(
         "SELECT id FROM attachments WHERE purpose = 'conversation' AND conversation_entry_id IS NULL "
-        "AND created_at < now() - make_interval(hours => %s) ORDER BY created_at",
+        "AND answer_id IS NULL AND created_at < now() - make_interval(hours => %s) ORDER BY created_at",
         (hours,),
     ).fetchall()
     removed = 0
     for d in due:
-        with conn.transaction():
-            row = conn.execute(
-                "SELECT * FROM attachments WHERE id = %s AND purpose = 'conversation' "
-                "AND conversation_entry_id IS NULL AND created_at < now() - make_interval(hours => %s) "
-                "FOR UPDATE SKIP LOCKED",
-                (d["id"], hours),
-            ).fetchone()
-            if row is None:
-                continue  # sent on an entry meanwhile, or another sweep has it
-            drop(conn, dict(row))
-            _audit(conn, "system:files", "file.swept", str(row["idea_uuid"]),
-                   {"file_id": str(row["id"]), "purpose": CONVERSATION})  # fmt: skip
-            removed += 1
+        try:
+            with conn.transaction():
+                row = conn.execute(
+                    "SELECT * FROM attachments WHERE id = %s AND purpose = 'conversation' "
+                    "AND conversation_entry_id IS NULL AND answer_id IS NULL "
+                    "AND created_at < now() - make_interval(hours => %s) FOR UPDATE SKIP LOCKED",
+                    (d["id"], hours),
+                ).fetchone()
+                if row is None:
+                    continue  # sent on an entry meanwhile, or another sweep has it
+                drop(conn, dict(row))
+                _audit(conn, "system:files", "file.swept", str(row["idea_uuid"]),
+                       {"file_id": str(row["id"]), "purpose": CONVERSATION})  # fmt: skip
+        except Exception as exc:  # the next sweep tries it again; a deleted copy stays deleted
+            log.warning(
+                "files.sweep_unsent_failed", attachment_id=str(d["id"]), error_type=type(exc).__name__
+            )
+            continue
+        removed += 1
         log.info("files.swept_unsent", attachment_id=str(d["id"]))
     return removed
 

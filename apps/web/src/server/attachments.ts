@@ -22,11 +22,15 @@ export type AttachmentView = {
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // rules/thresholds.md; the worker enforces the rule's value too
 
+/** The idea's own files only (the worker's `IDEA_OWN`): never one added for the conversation, sent or not, which is
+ * its uploader's until sent and never one of the idea's files (DEC-124, DEC-127; BLD-C223). */
 export async function listFor(ideaUuid: string): Promise<AttachmentView[]> {
   const rows = await getDb()
     .selectFrom("attachments")
     .select(["id", "name", "bytes", "state", "rejection"])
     .where("idea_uuid", "=", ideaUuid)
+    .where("purpose", "=", "idea")
+    .where("conversation_entry_id", "is", null)
     .orderBy("created_at")
     .execute();
   return rows.map((r) => ({

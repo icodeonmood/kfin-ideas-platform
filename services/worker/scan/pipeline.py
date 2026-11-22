@@ -106,13 +106,15 @@ def load_result(row: dict[str, Any]) -> dict[str, Any]:
 
 def _attachments(conn: Conn, idea_uuid: str) -> list[dict[str, Any]]:
     """Research files for canvas assist, with any digest that is ready. Digests are stored tagged under the
-    idea's scope; they are restored here so the gateway tags them again consistently (§3.2 step 1)."""
+    idea's scope; they are restored here so the gateway tags them again consistently (§3.2 step 1). Only the
+    idea's own files (`IDEA_OWN_A`): never one added for the conversation, sent or not (DEC-124; BLD-C223)."""
+    from desk.store import IDEA_OWN_A
     from pii import vault
     from pii.restore import restore
 
     rows = conn.execute(
-        "SELECT a.id, a.name, a.state, a.digest, i.idea_id FROM attachments a JOIN ideas i ON i.id = a.idea_uuid "
-        "WHERE a.idea_uuid = %s AND a.state <> 'rejected' ORDER BY a.created_at",
+        "SELECT a.id, a.name, a.state, a.digest, i.idea_id FROM attachments a JOIN ideas i ON i.id = a.idea_uuid "  # noqa: S608 (IDEA_OWN_A is fixed text)
+        f"WHERE a.idea_uuid = %s AND a.state <> 'rejected' AND {IDEA_OWN_A} ORDER BY a.created_at",
         (idea_uuid,),
     ).fetchall()
     mapping = vault.mapping(conn, rows[0]["idea_id"]) if rows and rows[0]["idea_id"] else {}

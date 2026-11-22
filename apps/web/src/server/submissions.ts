@@ -207,6 +207,8 @@ export async function submit(me: CurrentUser, id: string, input: unknown) {
     .select(sql<number>`count(*)::int`.as("n"))
     .where("idea_uuid", "=", row.id)
     .where("state", "=", "clean")
+    .where("purpose", "=", "idea") // the idea's own files only, never the conversation's (BLD-C223)
+    .where("conversation_entry_id", "is", null)
     .executeTakeFirst();
   const score = strength(canvas, config.canvas_strength, clean?.n ?? 0);
 

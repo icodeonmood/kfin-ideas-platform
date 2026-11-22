@@ -3,13 +3,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // The database is mocked: these tests are about which rows the old route (/api/attachments/:id and its status)
 // still describes and serves (lane C review fix 3, A-API.files, DEC-107).
 const row = vi.fn();
+const wheres: unknown[][] = [];
 const chain: Record<string, unknown> = {};
-for (const step of ["selectFrom", "innerJoin", "select", "where"]) chain[step] = () => chain;
+for (const step of ["selectFrom", "innerJoin", "select", "orderBy"]) chain[step] = () => chain;
+chain.where = (...args: unknown[]) => {
+  wheres.push(args);
+  return chain;
+};
 chain.executeTakeFirst = () => Promise.resolve(row());
+chain.execute = () => Promise.resolve([]);
 vi.mock("@/server/db", () => ({ getDb: () => chain }));
 vi.mock("@/server/worker", () => ({ workerFetch: vi.fn() }));
 
-const { accessible } = await import("@/server/attachments");
+const { accessible, listFor } = await import("@/server/attachments");
 
 import type { CurrentUser } from "@/server/auth/current";
 
@@ -42,7 +48,10 @@ const base = {
   checks: { patterns: true, ocr: false, gatekeeper: true },
 };
 
-afterEach(() => row.mockReset());
+afterEach(() => {
+  row.mockReset();
+  wheres.length = 0;
+});
 
 describe("A-API.files: the old /api/attachments route and the files pipeline", () => {
   it("still serves the old pipeline's clean file to its owner and the desk", async () => {
@@ -89,5 +98,18 @@ describe("A-API.files: the old /api/attachments route and the files pipeline", (
   it("refuses a link row of the files pipeline", async () => {
     row.mockReturnValue({ ...base, name: "example.org/report", mime: null, file_state: "ok" });
     expect(await accessible(owner, base.id)).toBeNull();
+  });
+});
+
+describe("BLD-C223: the old draft read lists the idea's own files only", () => {
+  it("never lists a file added for the conversation, sent or not (IDEA_OWN)", async () => {
+    await listFor("7d3f0c2a-1b2c-4d5e-8f90-123456789abc");
+    expect(wheres).toEqual(
+      expect.arrayContaining([
+        ["idea_uuid", "=", "7d3f0c2a-1b2c-4d5e-8f90-123456789abc"],
+        ["purpose", "=", "idea"],
+        ["conversation_entry_id", "is", null],
+      ]),
+    );
   });
 });
