@@ -526,6 +526,7 @@ def test_v_eval_c229_mac_run_throwaway_database_and_the_key_for_the_golden_sets_
         "SARVAM_API_KEY": "synthetic-sarvam-key-never-passed",
         "PYTHONPATH": "/nowhere",
         "EVAL_LIVE_PYTHON": str(stubs / "python"),
+        "LLM_REASONING_MODEL": "claude-sonnet-5-5",  # the terminal's model setting is kept (fix 3)
     }
     done = run_live(stubs, env=env)
     assert done.returncode == 0, done.stdout + done.stderr
@@ -555,6 +556,8 @@ def test_v_eval_c229_mac_run_throwaway_database_and_the_key_for_the_golden_sets_
         "LC_CTYPE",
         "__CF_USER_TEXT_ENCODING",
     } | STEP_ENV
+    allowed |= {"LLM_FAST_MODEL", "LLM_REASONING_MODEL", "LLM_REFUSAL_FALLBACK"}
+    assert "LLM_REASONING_MODEL" in golden["env_names"]
     for c in py:
         extra = set(c["env_names"]) - allowed - ({"ANTHROPIC_API_KEY"} if c is golden else set())
         assert not extra, (c["argv"], extra)
@@ -603,7 +606,13 @@ INSTALL_VALUES = {
 def app_env(tmp_path: Path) -> Path:
     (tmp_path / "srv").mkdir()
     path = tmp_path / "app.env"
-    lines = ["APP_ENV=prod", "LLM_MODE=fake", f'ANTHROPIC_API_KEY="{KEY}"   # from the vault']
+    lines = [
+        "APP_ENV=prod",
+        "LLM_MODE=fake",
+        f'ANTHROPIC_API_KEY="{KEY}"   # from the vault',
+        'LLM_FAST_MODEL="claude-haiku-5-5"   # the install\'s own model setting',
+        "LLM_REFUSAL_FALLBACK=false",
+    ]
     path.write_text("\n".join(lines + [f"{k}={v}" for k, v in INSTALL_VALUES.items()]) + "\n")
     return path
 
@@ -663,8 +672,13 @@ def test_at_b4_03_c229_server_run_reads_the_install_only_and_passes_only_the_key
             argv[argv.index("--network") + 1] == "kfin-ideas-eval_default"
         )  # the eval project's network only
         golden = "evalrunner" in argv and "--only" in argv
+        measured = golden or "evalrunner.paste" in argv  # the golden sets and the paste block's model line
         names = set(s["named"])
-        assert names == STEP_ENV | ({"ANTHROPIC_API_KEY"} if golden else set())
+        models = {"LLM_FAST_MODEL", "LLM_REFUSAL_FALLBACK"} if measured else set()  # the file's, when set
+        assert names == STEP_ENV | ({"ANTHROPIC_API_KEY"} if golden else set()) | models
+        if measured:
+            assert s["named"]["LLM_FAST_MODEL"] == "claude-haiku-5-5"
+            assert s["named"]["LLM_REFUSAL_FALLBACK"] == "false"
         assert s["named"].get("ANTHROPIC_API_KEY") == (KEY if golden else None)
         assert s["named"]["DATABASE_URL"].startswith("postgres://ideas:")
         assert s["named"]["DATABASE_URL"].endswith("@postgres:5432/ideas?sslmode=disable")
