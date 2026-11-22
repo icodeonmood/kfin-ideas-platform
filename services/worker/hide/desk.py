@@ -4,13 +4,14 @@
 units when the browser sends them). It is masked at once in that text and, as whole words in any case, in every
 other copy of the idea (`_sweep`): messages (and their English copy), answers, conversation messages, the title,
 summary, how-often line and helper line, the parts, the fix, the desk's questions, the saved versions, the
-similar-idea reasons and the draft's receipts. Each changed copy gets a `hidden_details` row, the value is stored
-sealed, the action is audited and the sharer is told (`detail_hidden_by_desk`). A selection must be at least three
-characters with a letter or digit in it, and at most 300 (`selection_too_long` above that). When the page sends the
-words it selected (`selected`, the masked words as the desk sees them) and the stored text no longer has them at
-those offsets, the hide is refused with `stale` (409), so a range never lands on words the reviewer did not select.
-A reviewer never hides on their own idea or on one their contribution was merged into (`forbidden`, as lane B's
-`refuse_own`; the attempt is audited).
+similar-idea reasons, the draft's receipts and the team-up texts others read about the idea (a team-up note on it,
+its lead's decline reason and a draft's ask to it, BLD-C235). Each changed copy gets a `hidden_details` row, the
+value is stored sealed, the action is audited and the sharer is told (`detail_hidden_by_desk`). A selection must be
+at least three characters with a letter or digit in it, and at most 300 (`selection_too_long` above that). When the
+page sends the words it selected (`selected`, the masked words as the desk sees them) and the stored text no longer
+has them at those offsets, the hide is refused with `stale` (409), so a range never lands on words the reviewer did
+not select. A reviewer never hides on their own idea or on one their contribution was merged into (`forbidden`, as
+lane B's `refuse_own`; the attempt is audited).
 
 "Show it" needs one of the three reasons and puts the value back in the copy others read; "Hide it" masks it again.
 Both are the owner's alone and are audited; the desk reads "Shown, because …" from `hidden_details`. A detail the
@@ -20,6 +21,7 @@ review desk hid, or any detail holding a value the desk hid, cannot be shown: th
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -380,10 +382,73 @@ def _sweep_sealed(
     return 0
 
 
+# ---- team-up texts: a note, the lead's reason, a draft's ask (lane F's, BLD-F097) -----------------------------
+
+TEAMUP = "teamup"  # their sealed source (E-ENUMS sealed_source)
+
+
+def load_teamup(conn: Conn, idea_uuid: str) -> list[tuple[str, str]]:
+    """The team-up texts others read about this idea (BLD-F097), as (the idea their words are kept under,
+    `source_id`): each kept under the idea (a team-up note on it, "<request id>"; its lead's decline reason,
+    "<request id>:decline"; an ask it sent while it was a draft, "<merge request id>:ask"), then each ask a draft
+    sent to it, kept under that draft. Lane C's `load_sealed` maps only its own three tables, so these have their
+    own loader. A text with no sealed words (sent before BLD-F097, or seeded) is skipped by its caller."""
+    from teamup.adapters import ask_id  # lane F's module, loaded when the sweep needs it
+
+    prefix = f"{uuid.UUID(idea_uuid)}:"  # `sealed_key` keeps a source_id that is not a row id under the idea's uuid
+    texts = [
+        (str(r["idea_uuid"]), str(r["source_id"]).removeprefix(prefix))
+        for r in conn.execute(
+            "SELECT idea_uuid, source_id FROM idea_words_sealed WHERE idea_uuid = %s AND source = %s ORDER BY id",
+            (idea_uuid, TEAMUP),
+        ).fetchall()
+    ]
+    texts += [
+        (str(r["draft_uuid"]), ask_id(str(r["id"])))
+        for r in conn.execute(
+            "SELECT id, draft_uuid FROM merge_requests WHERE other_idea_uuid = %s ORDER BY sent_at, id",
+            (idea_uuid,),
+        ).fetchall()
+    ]
+    return list(dict.fromkeys(texts))
+
+
+def _sweep_teamup(conn: Conn, idea_uuid: str, value: str, kind: str, found_by: str) -> int:
+    """Each team-up text with its typer's sealed words: a `hidden_details` row (source `teamup`, under the idea the
+    words are kept under) per new place of `value`, and the masked copy others read rebuilt from the words and all
+    its details, written through lane F's writer, which also rewrites a copy a merge carried on (`merges`). The
+    typer's words are never changed. No one shows a team-up detail (`_owner_of`), so there is no "Show it" to undo.
+    Returns how many texts changed. Runs under hide's lock on the idea (`desk_hide`, the re-check), taken first."""
+    # lane F's writer, as in hide/recheck.py's `teamup` branch (BLD-F097)
+    from teamup.adapters import write_masked
+
+    changed = 0
+    for kept_under, source_id in load_teamup(conn, idea_uuid):
+        words = own_words(conn, TEAMUP, source_id, idea_uuid=kept_under)
+        if words is None:
+            continue
+        details = details_for(conn, kept_under, TEAMUP, source_id)
+        taken = [
+            (int(d["span_start"]), int(d["span_end"])) for d in details if d.get("span_start") is not None
+        ]
+        new = [
+            (s, e) for s, e in detect.value_places(words, value) if all(e <= a or s >= b for a, b in taken)
+        ]
+        if not new:
+            continue
+        for s, e in new:
+            details.append(_new_detail(conn, kept_under, TEAMUP, source_id, s, e, kind, words[s:e], found_by))
+        masked, _ = layout(words, details)
+        if write_masked(conn, source_id, masked):
+            changed += 1
+    return changed
+
+
 def _sweep(conn: Conn, idea_uuid: str, value: str, kind: str, *, found_by: str = "reviewer") -> Swept:
-    """Mask `value`, as whole words in any case, in every copy of this idea (L-HIDE.rules/7). Texts with the owner's
-    words get a detail per place (their masked copy is rebuilt from them); the other copies are masked in place and
-    get one row each. When the desk hid it, a detail the owner chose to show with the same value is hidden again."""
+    """Mask `value`, as whole words in any case, in every copy of this idea (L-HIDE.rules/7), the team-up texts others
+    read about it included (BLD-C235). Texts with the owner's words get a detail per place (their masked copy is
+    rebuilt from them); the other copies are masked in place and get one row each. When the desk hid it, a detail the
+    owner chose to show with the same value is hidden again."""
     out = Swept()
     masked = detect.mask(kind, value)
 
@@ -521,6 +586,9 @@ def _sweep(conn: Conn, idea_uuid: str, value: str, kind: str, *, found_by: str =
                 (_jsonb(receipt), _jsonb(suggestions), run["id"]),
             )
             plain("run", str(run["id"]))
+
+    # 9. The team-up texts the other party reads: a note on the idea, its lead's reason, a draft's ask (BLD-C235).
+    out.copies += _sweep_teamup(conn, idea_uuid, value, kind, found_by)
     return out
 
 
