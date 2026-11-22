@@ -47,6 +47,7 @@ export function FileRow({
   statusText,
   message,
   progress,
+  waiting,
   children,
 }: {
   name: string;
@@ -60,6 +61,8 @@ export function FileRow({
   message?: { kind: "error" | "warn"; text: ReactNode };
   /** 0 to 1 while uploading. */
   progress?: number;
+  /** The check waits (the assistant is off): no spinner; the words say it (WCAG 2.2.2, BLD-C237). */
+  waiting?: boolean;
   /** The row's actions: View, Remove, Try again, Hide it for me. */
   children?: ReactNode;
 }) {
@@ -75,7 +78,7 @@ export function FileRow({
           <span className="frow-s">
             {size ? <span>{size}</span> : null}
             <span className={ok ? "frow-st ok" : "frow-st"}>
-              {status === "checking" ? <span className="spin" aria-hidden="true" /> : null}
+              {status === "checking" && !waiting ? <span className="spin" aria-hidden="true" /> : null}
               {ok ? <IconTick size={14} /> : null}
               {statusText}
             </span>
