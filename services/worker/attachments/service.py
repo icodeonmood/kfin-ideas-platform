@@ -139,9 +139,9 @@ def accept(conn: Conn, *, idea_uuid: str, uploaded_by_code: str, name: str, data
         ).fetchone()  # serialise uploads per idea; files can only change while it is a draft
         if idea is None or idea["stage"] != "draft":
             raise AttachmentRefused(409, "not_a_draft")
-        used = conn.execute(
+        used = conn.execute(  # the idea's own files only, never the conversation's (IDEA_OWN; BLD-C223)
             "SELECT count(*) AS n, coalesce(sum(bytes), 0) AS total FROM attachments "
-            "WHERE idea_uuid = %s AND state <> 'rejected'",
+            "WHERE idea_uuid = %s AND state <> 'rejected' AND purpose = 'idea' AND conversation_entry_id IS NULL",
             (idea_uuid,),
         ).fetchone()
         assert used is not None

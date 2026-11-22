@@ -69,10 +69,13 @@ def test_bld_b270_dec_107_a_committee_only_reader_sees_and_adds_the_conversation
     assert len(messages(crew)) == 2 and all(e["files"] == [] for e in messages(crew))
     assert crew["composer"]["can_attach"] is False
 
-    # DEC-107, the files route: a file holding a customer detail opens for the Ones Committee, never for the crew.
-    # This half pins `attachments.files.get_item` (`GET /api/files/:id`), which decides on `desk.store.READERS`, so
-    # it holds with or without BLD-B270's FILE_ROLES; the halves above (the message's files, `can_attach`) pin those.
-    detail = fx.attachment(db, idea, kavya, file_state="personal_data_found", name="calls-with-a-name.xlsx")
+    # DEC-107, the files route: an idea's file holding a customer detail opens for the Ones Committee, never for the
+    # crew. This half pins `attachments.files.get_item` (`GET /api/files/:id`), which decides on `desk.store.READERS`,
+    # so it holds with or without BLD-B270's FILE_ROLES; the halves above (the message's files, `can_attach`) pin
+    # those. An idea's file, since a conversation file not yet sent opens for its uploader only (DEC-127 (2)).
+    detail = fx.attachment(
+        db, idea, kavya, purpose="idea", file_state="personal_data_found", name="calls-with-a-name.xlsx"
+    )
     db.execute("UPDATE attachments SET state = 'quarantine' WHERE id = %s", (detail,))  # never marked clean
     seen = F.get_item(db, detail, rohan["id"])
     assert seen["customer_detail"] is True and seen["view_url"] == f"/api/files/{detail}/view"

@@ -10,4 +10,13 @@ ALTER TABLE attachments
 UPDATE attachments SET purpose = 'conversation' WHERE conversation_entry_id IS NOT NULL;
 
 -- migrate:down
+-- BLD-C223: a conversation file not yet on an entry is its uploader's alone (DEC-127, BLD-C222). Without `purpose` it
+-- would read as one of the idea's own files, so a down removes those rows first, with their hidden details (the
+-- file's and its name's, `<id>:name`) and their queued checks. Their stored copies are left in the store, where no row
+-- reaches them. Conversation files already on an entry stay: `conversation_entry_id` keeps them out of the idea's.
+DELETE FROM jobs WHERE type = 'file.check' AND state = 'queued' AND payload->>'attachment_id' IN
+  (SELECT id FROM attachments WHERE purpose = 'conversation' AND conversation_entry_id IS NULL);
+DELETE FROM hidden_details WHERE source = 'file' AND split_part(source_id, ':', 1) IN
+  (SELECT id FROM attachments WHERE purpose = 'conversation' AND conversation_entry_id IS NULL);
+DELETE FROM attachments WHERE purpose = 'conversation' AND conversation_entry_id IS NULL;
 ALTER TABLE attachments DROP COLUMN IF EXISTS purpose;

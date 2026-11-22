@@ -35,10 +35,14 @@ path as the boards show it ("kfintech.sharepoint.com/ops/R07").
 Who sees and opens what (DEC-107, P-PRODUCT.privacy; the coordinator's rule of 17 Nov), in `rights`:
 - the person who added it: the row in every state; opens it once checked or found;
 - checked, hidden_checked and ok: the idea's sharers, its crew, the review desk and the Ones Committee;
-- personal_data_found: the review desk and the Ones Committee as well, never the crew or a co-sharer;
-- a conversation file (`purpose = 'conversation'`, the "+" in S-08's box, DEC-124) with a customer detail found also
-  opens for the idea's own sharer, so it opens for the sharer, the desk and the committee (DEC-107; BLD-C216);
-- a draft's files, and a draft answer's: only the person who added them;
+- personal_data_found: the review desk and the Ones Committee as well, never the crew or a sharer who did not add it;
+- a conversation file (`purpose = 'conversation'`, the "+" in S-08's box, DEC-124) with a customer detail found:
+  only the person who uploaded it, the review desk and the Ones Committee, never the idea's lead or sharer who did
+  not upload it, the crew, previews or anyone else (DEC-127, decided; `opens_found_conversation_file`, BLD-C222);
+- a draft's files, a draft answer's, and a conversation file not yet on an entry: only the person who added them
+  (BLD-C222);
+- before both checks have finished (the virus scan and the gatekeeper; `checking` until then, never on the pattern
+  check alone) nobody but the person who added it sees the row, and nobody opens it (DEC-127);
 - everyone else: not found.
 
 A file's `purpose` is `idea` (Proof, the edit page, an answer) or `conversation` (BLD-C216). Every reader of an idea's
@@ -202,16 +206,37 @@ class Viewer:
     lead: bool = False  # the idea's own sharer (its contributor), not a co-sharer from a merge
 
 
+def opens_found_conversation_file(viewer: Viewer) -> bool:
+    """DEC-127 (decided by the product lead, 22 Nov), kept in this one place: a conversation file in which our checks
+    find a customer detail opens only for the person who uploaded it, the review desk and the Ones Committee
+    (`desk`, `desk.store.READERS`). Never for the idea's lead or sharer who did not upload it, the crew, previews or
+    anyone else. `rights` reads it, so `_rights` and every route here do too (`GET /files/:id`, `/view`); a change
+    to DEC-127 is a change to this line only (BLD-C222)."""
+    return viewer.uploader or viewer.desk
+
+
 def rights(
-    state: str, kind: str, *, draft: bool, answer_unsent: bool, viewer: Viewer, conversation: bool = False
+    state: str,
+    kind: str,
+    *,
+    draft: bool,
+    answer_unsent: bool,
+    viewer: Viewer,
+    conversation: bool = False,
+    unsent: bool = False,
+    gatekeeper_ran: bool = True,
 ) -> tuple[bool, bool]:
-    """(sees the row, opens the file). Pure, so every row of the rule has its own unit test. A conversation file
-    with a customer detail found opens for the idea's own sharer as it does for the desk (DEC-107, BLD-C216)."""
+    """(sees the row, opens the file). Pure, so every row of the rule has its own unit test. `conversation` is a file
+    added for the conversation (BLD-C216) and `unsent` one of those still on no entry: it is the uploader's alone,
+    like a draft's file (DEC-127, BLD-C222). A found conversation file follows `opens_found_conversation_file`.
+    With `gatekeeper_ran` false (the function of that name) only its uploader sees it (DEC-127: never on patterns)."""
     if viewer.uploader:
         see = True
-    elif draft or answer_unsent:
-        see = False  # a draft's files, and a draft answer's, stay with the person who added them
-    elif viewer.desk or (conversation and viewer.lead):
+    elif draft or answer_unsent or (conversation and unsent) or not gatekeeper_ran:
+        see = False  # a draft's files, a draft answer's and an unsent conversation file stay with their uploader
+    elif conversation and state == CUSTOMER_DETAIL:
+        see = opens_found_conversation_file(viewer)  # DEC-127: never the idea's lead or sharer, nor the crew
+    elif viewer.desk:
         see = state in DESK_SEES
     elif viewer.sharer or viewer.crew:
         see = state in FILES_CHECKED
@@ -278,12 +303,27 @@ def _viewer(conn: Conn, row: dict[str, Any], user_id: str) -> Viewer:
     )
 
 
+def gatekeeper_ran(row: dict[str, Any]) -> bool:
+    """Whether the gatekeeper has run on this file (DEC-127: never opened on the pattern check alone). A 1% Club file
+    (`file_state` set) is never checked or found without it (BLD-C107), so its state already says so. A file from the
+    old pipeline (no `file_state`) could be marked clean on the patterns alone (`checks.gatekeeper` false while
+    `attachments.deep_check` was off): it counts only with `checks.gatekeeper` true (BLD-C222)."""
+    if row.get("file_state"):
+        return True
+    return (row.get("checks") or {}).get("gatekeeper") is True
+
+
 def _rights(conn: Conn, row: dict[str, Any], user_id: str) -> tuple[Viewer, bool, bool]:
+    """`rights` for a loaded row (`_ROW`, every column): every route here decides through this. A conversation file
+    on no entry yet (`conversation_entry_id` NULL) is unsent: a non-uploader gets not found for its row and its
+    copy, exactly as for an id that does not exist (BLD-C222)."""
     v = _viewer(conn, row, user_id)
+    conversation = row.get("purpose") == CONVERSATION
     see, opens = rights(
         effective_state(row), str(row.get("kind") or "file"), draft=row["idea_status"] == "draft",
         answer_unsent=row.get("answer_id") is not None and row.get("answer_sent_at") is None, viewer=v,
-        conversation=row.get("purpose") == CONVERSATION,
+        conversation=conversation, unsent=conversation and row.get("conversation_entry_id") is None,
+        gatekeeper_ran=gatekeeper_ran(row),
     )  # fmt: skip
     return v, see, opens
 
@@ -1193,27 +1233,36 @@ def sweep_failed_copies(conn: Conn) -> int:
 def sweep_unsent_conversation(conn: Conn, hours: int = UNSENT_CONVERSATION_HOURS) -> int:
     """Conversation files (`purpose` "conversation") still not on an entry `hours` after they were added: each is
     locked, checked again and dropped (`drop`: every stored copy, its hidden details, its queued checks, its row).
-    Logs and the audit carry IDs only. Returns how many."""
+    Never an answer's file (`answer_id` set: lane B's own rule keeps those). One file failing (the object store
+    not answering) rolls back that file only, is logged by its ID and the error's type, and the sweep goes on, so
+    the draft purge that runs it never fails after its drafts are gone (BLD-C223). Logs and the audit carry IDs
+    only. Returns how many."""
     due = conn.execute(
         "SELECT id FROM attachments WHERE purpose = 'conversation' AND conversation_entry_id IS NULL "
-        "AND created_at < now() - make_interval(hours => %s) ORDER BY created_at",
+        "AND answer_id IS NULL AND created_at < now() - make_interval(hours => %s) ORDER BY created_at",
         (hours,),
     ).fetchall()
     removed = 0
     for d in due:
-        with conn.transaction():
-            row = conn.execute(
-                "SELECT * FROM attachments WHERE id = %s AND purpose = 'conversation' "
-                "AND conversation_entry_id IS NULL AND created_at < now() - make_interval(hours => %s) "
-                "FOR UPDATE SKIP LOCKED",
-                (d["id"], hours),
-            ).fetchone()
-            if row is None:
-                continue  # sent on an entry meanwhile, or another sweep has it
-            drop(conn, dict(row))
-            _audit(conn, "system:files", "file.swept", str(row["idea_uuid"]),
-                   {"file_id": str(row["id"]), "purpose": CONVERSATION})  # fmt: skip
-            removed += 1
+        try:
+            with conn.transaction():
+                row = conn.execute(
+                    "SELECT * FROM attachments WHERE id = %s AND purpose = 'conversation' "
+                    "AND conversation_entry_id IS NULL AND answer_id IS NULL "
+                    "AND created_at < now() - make_interval(hours => %s) FOR UPDATE SKIP LOCKED",
+                    (d["id"], hours),
+                ).fetchone()
+                if row is None:
+                    continue  # sent on an entry meanwhile, or another sweep has it
+                drop(conn, dict(row))
+                _audit(conn, "system:files", "file.swept", str(row["idea_uuid"]),
+                       {"file_id": str(row["id"]), "purpose": CONVERSATION})  # fmt: skip
+        except Exception as exc:  # the next sweep tries it again; a deleted copy stays deleted
+            log.warning(
+                "files.sweep_unsent_failed", attachment_id=str(d["id"]), error_type=type(exc).__name__
+            )
+            continue
+        removed += 1
         log.info("files.swept_unsent", attachment_id=str(d["id"]))
     return removed
 
