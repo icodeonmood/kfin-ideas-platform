@@ -432,7 +432,7 @@ describe('S-08, C-PROMPT, WCAG 2.4.3: focus stays on the "+" and in its picker w
     expect(document.activeElement).toBe(plus());
   });
 
-  it("S-08, C-PROMPT, WCAG 2.4.3, BLD-F098: with focus inside the open picker, the picker is still open after the crossing and focus is inside it, on its first control", async () => {
+  it("S-08, C-PROMPT, WCAG 2.4.3, BLD-F098, BLD-F102: with focus inside the open picker, the picker is still open after the crossing and focus is on the same control", async () => {
     const cross = crossing(false);
     await show(sharerView());
     const picker = await openPicker();
@@ -441,13 +441,59 @@ describe('S-08, C-PROMPT, WCAG 2.4.3: focus stays on the "+" and in its picker w
     const onPhone = pickerNow()!;
     expect(onPhone).not.toBe(picker); // a new copy, drawn with its "+" before the words
     expect(plus()!.getAttribute("aria-expanded")).toBe("true");
-    expect(onPhone.contains(document.activeElement)).toBe(true);
-    expect(document.activeElement).toBe(onPhone.querySelector(".cv-pick-folder"));
+    expect(document.activeElement).toBe(onPhone.querySelector("input[type=url]"));
+    await act(async () => onPhone.querySelector<HTMLElement>(".cv-pick-folder")!.focus());
     await cross(false);
     const wider = pickerNow()!;
     expect(wider).not.toBe(onPhone);
     expect(plus()!.getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(wider.querySelector(".cv-pick-folder"));
+    await act(async () => named(BOX_FILES_COPY.addLink)!.focus());
+    await cross(true);
+    expect(document.activeElement).toBe(named(BOX_FILES_COPY.addLink)); // the new picker's Add link
+    expect(pickerNow()!.contains(document.activeElement)).toBe(true);
+  });
+
+  it("S-08, C-PROMPT, BLD-F102: a link being typed, and its not-a-link line, stay when the width crosses 640px", async () => {
+    const cross = crossing(false);
+    await show(sharerView());
+    const picker = await openPicker();
+    const link = picker.querySelector<HTMLInputElement>("input[type=url]")!;
+    await typeLink(link, "call me");
+    await act(async () => named(BOX_FILES_COPY.addLink)!.click());
+    await act(async () => link.focus());
+    await cross(true);
+    const now = pickerNow()!.querySelector<HTMLInputElement>("input[type=url]")!;
+    expect(now).not.toBe(link);
+    expect(now.value).toBe("call me");
+    expect(now.getAttribute("aria-invalid")).toBe("true");
+    expect(alerts()).toEqual([
+      "That doesn’t look like a link. A link looks like intranet.kfintech.com/page.",
+    ]);
+    expect(document.activeElement).toBe(now);
+    await typeLink(now, "intranet.kfintech.com/ops/R07");
+    await cross(false);
+    const wider = pickerNow()!.querySelector<HTMLInputElement>("input[type=url]")!;
+    expect(wider.value).toBe("intranet.kfintech.com/ops/R07");
+    expect(wider.getAttribute("aria-invalid")).toBeNull(); // typing again took the line away
+    expect(alerts()).toEqual([]);
+  });
+
+  it("S-08, C-PROMPT, BLD-F102: closing the picker drops what was typed in its link field, as before", async () => {
+    await show(sharerView());
+    const picker = await openPicker();
+    await typeLink(picker.querySelector<HTMLInputElement>("input[type=url]")!, "intranet.kfintech.com/ops");
+    await act(async () => {
+      pickerNow()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await frame();
+    expect(pickerNow()).toBeNull();
+    const again = await openPicker();
+    expect(again.querySelector<HTMLInputElement>("input[type=url]")!.value).toBe("");
+    await typeLink(again.querySelector<HTMLInputElement>("input[type=url]")!, "intranet.kfintech.com/x");
+    await act(async () => plus()!.click()); // the "+" closes it too
+    const third = await openPicker();
+    expect(third.querySelector<HTMLInputElement>("input[type=url]")!.value).toBe("");
   });
 
   it("S-08, C-PROMPT, WCAG 2.4.3, BLD-F098: focus in the words box, or on Send, stays there across 640px, with the picker open or not", async () => {
