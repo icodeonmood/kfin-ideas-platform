@@ -611,7 +611,10 @@ def test_v_eval_c229_mac_run_throwaway_database_and_the_key_for_the_golden_sets_
     )  # the eval's cap beats a low .env budget
     assert "LLM_REASONING_MODEL" in golden["env_names"]
     for c in py:
-        extra = set(c["env_names"]) - allowed - ({"ANTHROPIC_API_KEY"} if c is golden else set())
+        # The key and the terminal's proxy reach the golden sets only (lane A's decision; checked again below).
+        extra = (
+            set(c["env_names"]) - allowed - ({"ANTHROPIC_API_KEY", "HTTPS_PROXY"} if c is golden else set())
+        )
         assert not extra, (c["argv"], extra)
         assert c["named"]["DATABASE_URL"].startswith("postgres://ideas:")
         assert c["named"]["DATABASE_URL"].endswith("@127.0.0.1:55447/ideas?sslmode=disable")
