@@ -447,6 +447,11 @@ def variables(
     base = get_settings().app_base_url.rstrip("/") if absolute else ""
     actions = resolved_actions(row, idea, item_id=item_id)
     forward = next((a for a in reversed(actions) if a.get("to")), None)
+    action = forward["to"] if forward else route("idea", idea, None)
+    if absolute and _answered_in_app(row):
+        # BLD-F099: an email's button opens the in-app item its answers are on (S-H2B), never the conversation the
+        # item only links to. No in-app item: the Inbox.
+        action = route("inbox", idea, row.get("id") if item_id is OWN_ROW else item_id)
 
     def link(path: str | None) -> str:
         return f"{base}{path}" if path else f"{base}/inbox"
@@ -458,7 +463,7 @@ def variables(
         "due": due(kind, row.get("due_at"), now) or {"any": False},
         "decide_by": {"long": (idea or {}).get("decide_by", ""), "any": bool((idea or {}).get("decide_by"))},
         "links": {
-            "action": link(forward["to"] if forward else route("idea", idea, None)),
+            "action": link(action),
             "idea": link(route("idea", idea, None)),
             "inbox": link("/inbox"),
         },
@@ -466,6 +471,14 @@ def variables(
     }
     data["line"] = render_text(tpl.inbox.get("line", ""), data).strip()
     return tpl, data
+
+
+def _answered_in_app(row: dict[str, Any]) -> bool:
+    """The item's own buttons, as posted, are all answers made in the app (each an `op`, none a `to`), as a team-up
+    request's Decline, Team up only and Merge it are (BLD-F099). "Open the conversation", added when it is read,
+    does not count."""
+    given = list(row.get("actions") or [])
+    return bool(given) and all(a.get("op") and not a.get("to") for a in given)
 
 
 def _path_of(to: str) -> str:
