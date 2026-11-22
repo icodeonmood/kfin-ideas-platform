@@ -1,6 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154
-# Shared by scripts/uat/upgrade.sh and scripts/uat/rollback.sh (BLD-A234). Sourced, never run on its own.
+# Shared by scripts/uat/upgrade.sh and scripts/uat/rollback.sh (BLD-A234), and by scripts/uat/rehearse-upgrade.sh
+# for its verdict and the start-sweep check (BLD-A239, BLD-A240). Sourced, never run on its own.
 # The caller sets APP_ENV_FILE and DB_ENV_FILE (absolute paths) first and reads SPEECH_BUILD after uat_env_checks
 # (hence SC2154 and SC2034 off). Bash 3.2 or later: macOS runs the rehearsal.
 
@@ -69,4 +70,39 @@ write_installed() {  # <sha> <tag or ""> <file>
 }
 installed_sha() {  # <file>: the sha, or nothing
   sed -nE 's/.*"sha": *"([0-9a-f]{40})".*/\1/p' "$1" | head -1
+}
+
+# BLD-A239: whether the tree at <sha> has lane C's start sweep (A2): its audit action in attachments/files.py. Read
+# from git, so upgrade.sh and the rehearsal decide it alike, from the build being started (TO), never from FROM.
+has_start_sweep() {  # <sha>
+  local text
+  text="$(git show "$1:services/worker/attachments/files.py" 2>/dev/null)" || return 1
+  grep -qE "[\"']file\\.start_sweep[\"']" <<< "$text"
+}
+
+# BLD-A240: the upgrade rehearsal's last line, and whether it passed. A pass is earned only when the script ended with
+# 0, no signal stopped it, and the summary has exactly one row for each expected phase and no other, each PASS
+# (SKIPPED only for <skippable>). An empty summary is never a pass. Prints the line; returns 0 only on a pass.
+rehearsal_verdict() {  # <status> <signal or ""> <last phase> <expected phases> <rows: "name status" lines> <skippable>
+  local status="$1" signal="$2" last="$3" expected="$4" rows="$5" skippable="$6" name got ok=1 n=0
+  if [[ -n "$signal" ]]; then
+    echo "rehearsal: STOPPED ($signal) after $last"
+    return 1
+  fi
+  for name in $expected; do
+    n=$(( n + 1 ))
+    got="$(printf '%s\n' "$rows" | awk -v n="$name" '$1 == n { print $2 }')"
+    case "$got" in
+      PASS) ;;
+      SKIPPED) [[ -n "$skippable" && "$name" == "$skippable" ]] || ok=0 ;;
+      *) ok=0 ;;   # no row, FAIL, STOPPED, or more than one row
+    esac
+  done
+  [[ $n -gt 0 && "$(printf '%s\n' "$rows" | grep -c .)" -eq $n ]] || ok=0
+  if [[ $status -eq 0 && $ok -eq 1 ]]; then
+    echo "rehearsal: upgrade, rollback and upgrade again all passed"
+    return 0
+  fi
+  echo "rehearsal: FAILED (exit $(( status == 0 ? 1 : status )))"
+  return 1
 }
