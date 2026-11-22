@@ -67,7 +67,7 @@ describe("C-CHIP.states: the filter row's tick", () => {
 
   it("the tick is hidden on a filter row only above 640px; the phone keeps it", () => {
     expect(CSS).toMatch(
-      /@media \(min-width: 641px\) \{\s*\.chips\.filter \.chip \.chip-tick \{\s*display: none;\s*\}\s*\}/,
+      /@media \(width > 640px\) \{\s*\.chips\.filter \.chip \.chip-tick \{\s*display: none;\s*\}\s*\}/,
     );
     expect(CSS.match(/\.chips\.filter/g)).toHaveLength(1);
   });

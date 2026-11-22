@@ -533,7 +533,7 @@ const motion = cssRules("app/motion.css");
 const sheets = [...components, ...motion];
 const NO_PREF = "prefers-reduced-motion: no-preference";
 const REDUCE = "(prefers-reduced-motion: reduce)";
-const MOVES = "@media (min-width: 641px) and (prefers-reduced-motion: no-preference)";
+const MOVES = "@media (width > 640px) and (prefers-reduced-motion: no-preference)";
 const onFan = (selector: string) => /\.(fan|opost)\b/.test(selector);
 const moves = (r: CssRule) => [...r.decls.keys()].some((k) => /^(transition|animation)(-|$)/.test(k));
 /** The transform functions in a pose, in order (calc and var are values, not moves). */
@@ -828,7 +828,7 @@ describe("C-ONES-FAN.behaviour/6, BLD-D026: the hover lean and the tilt, only wi
     for (const r of lean) {
       expect(r.at).toContain("(hover: hover) and (pointer: fine)");
       expect(r.at).toContain(NO_PREF);
-      expect(r.at).toContain("(min-width: 641px)");
+      expect(r.at).toContain("(width > 640px)");
       expect(r.selectors.every((s) => s.startsWith(".fan.several:not(.spread) .fan-stage:hover "))).toBe(
         true,
       );
@@ -1109,6 +1109,59 @@ describe("C-ONES-FAN.behaviour/7, BLD-D026: crossing the phone breakpoint keeps 
     expect(position()).toBe("Post 2 of 3");
     act(() => button("Previous post").click());
     expect(position()).toBe("Post 1 of 3");
+  });
+
+  it("C-ONES-FAN.behaviour/7, BLD-D027 (frame-cancel): the width crossing twice before a frame runs cancels the first frame, so the row snaps once; unmounting cancels a frame still waiting", () => {
+    const frames = framesHeld();
+    const ask = vi.spyOn(globalThis, "requestAnimationFrame");
+    const cancel = vi.spyOn(globalThis, "cancelAnimationFrame");
+    mediaHolds(FAN_MOVES);
+    const region = fan(3)!;
+    act(() => button("Next post").click());
+    act(() => button("Next post").click());
+    const view = region.querySelector<HTMLElement>(".fan-view")!;
+    const scrollTo = lands(view);
+    view.scrollTo = scrollTo as unknown as typeof view.scrollTo;
+    rowAt(view, 0);
+    mediaChange(FAN_PHONE, FAN_MOVES); // narrowed: a frame is asked for
+    const first = ask.mock.results[0]!.value as number;
+    mediaChange(FAN_MOVES); // widened again before it ran
+    mediaChange(FAN_PHONE, FAN_MOVES); // and narrowed again
+    expect(cancel).toHaveBeenCalledWith(first);
+    expect(ask).toHaveBeenCalledTimes(2);
+    expect(frames.pending()).toBe(1);
+    frames.run();
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+    expect(scrollTo).toHaveBeenCalledWith({ left: 624, behavior: "auto" });
+    expect(position()).toBe("Post 3 of 3");
+    // A frame still waiting when the fan goes is cancelled with it
+    mediaChange(FAN_MOVES);
+    mediaChange(FAN_PHONE, FAN_MOVES);
+    const last = ask.mock.results.at(-1)!.value as number;
+    expect(frames.pending()).toBe(1);
+    show(null);
+    expect(cancel).toHaveBeenLastCalledWith(last);
+    expect(frames.pending()).toBe(0);
+    expect(scrollTo).toHaveBeenCalledTimes(1);
+  });
+
+  it("C-ONES-FAN.behaviour/7, /3, BLD-D027 (pending-guard): a Next heading somewhere on a phone is dropped when the screen turns wide; back on a phone, Next steps from the card the row rests on", () => {
+    const frames = framesHeld();
+    const { view, scrollTo } = phoneRow(3, FAN_MOVES);
+    act(() => button("Next post").click()); // heading for card 1, still gliding
+    expect(scrollTo).toHaveBeenNthCalledWith(1, { left: 312, behavior: "smooth" });
+    expect(position()).toBe("Post 1 of 3");
+    mediaChange(FAN_MOVES); // turned wide before it settled
+    mediaChange(FAN_PHONE, FAN_MOVES); // and back to a phone
+    frames.run();
+    expect(position()).toBe("Post 1 of 3"); // the row still rests on card 0
+    act(() => button("Next post").click());
+    // One card on from where the row rests (card 1), never two on from the target that was dropped (card 2)
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+    expect(scrollTo).toHaveBeenNthCalledWith(2, { left: 312, behavior: "smooth" });
+    rowAt(view, 1);
+    settles(view);
+    expect(position()).toBe("Post 2 of 3");
   });
 
   it("C-ONES-FAN.behaviour/7: where a browser has no scrollend, the row settles once it has been still for 120ms; a scroll restarts the wait", () => {

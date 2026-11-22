@@ -494,7 +494,7 @@ textarea:is(.fld, .textarea) {
 }
 
 /* Filter chips take the tick on a phone only; above it the ring and wash say which is on (C-CHIP.states) */
-@media (min-width: 641px) {
+@media (width > 640px) {
   .chips.filter .chip .chip-tick {
     display: none;
   }
@@ -845,7 +845,7 @@ textarea:is(.fld, .textarea) {
   }
 }
 
-@media (min-width: 641px) {
+@media (width > 640px) {
   .vtrk.auto {
     display: none;
   }
@@ -1733,7 +1733,7 @@ textarea:is(.fld, .textarea) {
 }
 
 /* Wider than a phone the row is a track the controls move; on a phone it is the view's own scroll (below) */
-@media (min-width: 641px) {
+@media (width > 640px) {
   .fan.spread .fan-track {
     transform: translateX(calc(var(--at) * -1 * (var(--fan-w) + var(--fan-gap))));
   }
@@ -1798,7 +1798,7 @@ textarea:is(.fld, .textarea) {
 
 /* Stacked (several posts at rest, wider than a phone): the first card faces you and up to three sit behind it,
    offset to the right and darker. This flat offset is the pose under reduced motion (F-MOTION.reduced) */
-@media (min-width: 641px) {
+@media (width > 640px) {
   .fan.several:not(.spread) .fan-card {
     z-index: calc(20 - var(--i));
   }
@@ -1839,7 +1839,7 @@ textarea:is(.fld, .textarea) {
 /* With motion allowed, the board's pose: the cards behind angled into the page, and the card at the row's edge
    angled in. The edge and far poses repeat the stack's list of functions (translateX(0) is no move), so a card
    glides from one pose to the next function by function rather than through a matrix */
-@media (min-width: 641px) and (prefers-reduced-motion: no-preference) {
+@media (width > 640px) and (prefers-reduced-motion: no-preference) {
   .fan.several:not(.spread) .fan-card:not(:first-child) {
     transform: translateX(calc(var(--i) * -1 * (var(--fan-w) + var(--fan-gap)))) perspective(1400px)
       translateX(calc(var(--fan-w) * 0.6 + 52px * (var(--i) - 1))) translateZ(calc(var(--i) * -70px))

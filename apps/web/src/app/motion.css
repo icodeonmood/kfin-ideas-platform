@@ -306,7 +306,7 @@
    components.css; these rules only move between them, and only with motion allowed, so under reduced motion the
    cards take each pose at once and nothing flies, tilts or pops (F-MOTION.reduced). Only transform (and translate,
    rotate), opacity and filter move (F-MOTION.rules/6). --- */
-@media (min-width: 641px) and (prefers-reduced-motion: no-preference) {
+@media (width > 640px) and (prefers-reduced-motion: no-preference) {
   .fan.several {
     --fan-fly: 0.8s;
     --fan-ease: cubic-bezier(0.2, 0.85, 0.25, 1);
@@ -369,7 +369,7 @@
 
 /* Hover on the stack, with a pointer that hovers and is fine only (never on touch): the fan opens a little (52px to
    68px a card, -24deg to -16deg) and the top card leans out toward the pointer (C-ONES-FAN.behaviour/6) */
-@media (min-width: 641px) and (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+@media (width > 640px) and (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
   .fan.several:not(.spread) .fan-stage:hover .fan-card:not(:first-child) {
     transform: translateX(calc(var(--i) * -1 * (var(--fan-w) + var(--fan-gap)))) perspective(1400px)
       translateX(calc(var(--fan-w) * 0.6 + 68px * (var(--i) - 1))) translateZ(calc(var(--i) * -70px))

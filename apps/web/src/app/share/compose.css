@@ -1624,9 +1624,11 @@
   }
 }
 
-/* Capture first on a desk (DEC-125): no draft panel, so the conversation and the box take the full width */
+/* Capture first on a desk (DEC-125, DEC-130): no draft panel, so the conversation and the box take the column's
+   width up to 960px, centred (BLD-D032, lane C's file, changed with lane C's OK) */
 .cz.capture .cmain {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 960px);
+  justify-content: center;
 }
 
 .cz.capture.has .tin,

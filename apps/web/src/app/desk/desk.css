@@ -10,7 +10,7 @@
 }
 /* S-R1 and S-R4 (this sheet serves /committee too): the boards start the page 48px down (main.wrap) where the shell's
    main gives 32px. Desktop boards only; the phone keeps the shell's top. */
-@media (min-width: 641px) {
+@media (width > 640px) {
   .rd {
     padding-top: 16px;
   }

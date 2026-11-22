@@ -70,7 +70,7 @@ describe("S-03 Home grid (BLD-D017): Your ideas and Find your crew start level",
   it("cancels the old section + section margin in two columns only", () => {
     const rules = blocks(".hm-grid > section");
     const zeroed = rules.filter((b) => /margin-top:\s*0\b/.test(b.body));
-    expect(zeroed.map((b) => b.media)).toEqual(["@media (min-width: 1101px)"]);
+    expect(zeroed.map((b) => b.media)).toEqual(["@media (width > 1100px)"]);
     expect(rules.filter((b) => b.media === "").every((b) => !/margin-top/.test(b.body))).toBe(true);
   });
 

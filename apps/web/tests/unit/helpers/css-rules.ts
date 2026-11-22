@@ -54,10 +54,19 @@ export function matches(el: Element, selector: string): boolean {
   }
 }
 
-/** Whether every media condition in `at` holds at a viewport `width` px wide (min-width, max-width and
- * prefers-reduced-motion only; anything else is taken not to hold). An empty `at` always holds. */
+/** Whether every media condition in `at` holds at a viewport `width` px wide (min-width, max-width, the range form
+ * `(width > 640px)` with >, >=, < or <=, and prefers-reduced-motion only; anything else is taken not to hold). An
+ * empty `at` always holds. */
 export function holdsAt(at: string, width: number, reducedMotion = false): boolean {
   for (const media of at.match(/@media [^@]*/g) ?? []) {
+    // The range form (BLD-D027): no colon, so the feature pass below never sees it.
+    for (const [, op, value] of media.matchAll(/\(\s*width\s*(<=|>=|<|>)\s*([\d.]+)px\s*\)/g)) {
+      const px = parseFloat(value!);
+      if (op === ">" && !(width > px)) return false;
+      if (op === ">=" && !(width >= px)) return false;
+      if (op === "<" && !(width < px)) return false;
+      if (op === "<=" && !(width <= px)) return false;
+    }
     for (const [, feature, value] of media.matchAll(/\(\s*([\w-]+)\s*:\s*([^)]+)\)/g)) {
       const px = parseFloat(value!);
       if (feature === "min-width" && !(width >= px)) return false;

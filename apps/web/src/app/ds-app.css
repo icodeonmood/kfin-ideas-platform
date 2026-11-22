@@ -51,7 +51,8 @@ main:focus {
 /* With focus it takes its own row at the top of the page, in the flow, and the page moves down under it, so it covers
    no other target, the brand included (F-SPACE.targets, WCAG 2.5.8; the GOV.UK Design System's skip link). Laid over
    the page at the top left, it left S-02's 1% Club mark 8 px clear. In the signed-in shell the row starts after the
-   sidebar, which is fixed and does not move. */
+   sidebar, which is fixed and does not move. Its ring is the global one in --focus (F-A11Y.rules/2, BLD-D033): a
+   white ring drawn outside the Zed pill vanished on a white page. */
 .skip-link:focus {
   position: relative;
   top: auto;
@@ -59,7 +60,6 @@ main:focus {
   display: block;
   width: fit-content;
   margin: var(--space-3) var(--space-4);
-  outline-color: var(--link-on-zed);
 }
 
 .skip-link:focus:has(~ .shell:not(.shell-public)) {
