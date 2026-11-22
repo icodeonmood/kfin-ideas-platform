@@ -5,12 +5,16 @@ Lane A rehearses the scripts on real Docker (`make uat-rehearsal-upgrade FROM=<r
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -38,6 +42,35 @@ case "$a" in
   "image tag "*) set -- $a; touch "$FAKE_STATE/tag-$(key "$4")" ;;
   "image ls "*) for f in "$FAKE_STATE"/tag-*@rollback-*; do [[ -e "$f" ]] && basename "$f" | sed 's/^tag-//; s/@/:/'; done ;;
   "image rm "*) set -- $a; rm -f "$FAKE_STATE/tag-$(key "$3")" ;;
+  *"extract(epoch FROM now())"*) echo 1763800000.25 ;;
+  *"action = 'file.start_sweep'"*)
+    # As Postgres answers it: the row exists once the new worker has started (after dbmate up here), and `->>`
+    # of a missing key is NULL, so the line is empty. A query for the whole `after` gets the whole JSON.
+    if [[ -f "$FAKE_STATE/migrated" && -n "${FAKE_SWEEP_AFTER:-}" ]]; then
+      case "$a" in
+        *"after->>'count'"*) "$FAKE_PY" -I -c 'import json, sys
+d = json.loads(sys.argv[1]); c = d.get(sys.argv[2]); k = d.get(sys.argv[3])
+if c is not None and k is not None: print(c, json.dumps(k))' "$FAKE_SWEEP_AFTER" count complete ;;
+        *) printf '%s\n' "$FAKE_SWEEP_AFTER" ;;
+      esac
+    fi ;;
+  *" python - plant"*)
+    cat > "$FAKE_STATE/driver.py"
+    [[ -n "${FAKE_PLANT_FAIL:-}" ]] && { echo "STOPPED: files-from: D ATT-2026-000001: still checking after 180 s"; exit 1; }
+    printf 'files: D ATT-2026-000001 on draft 00000000-0000-4000-8000-000000000001 of SYN-00010\n'
+    printf 'files: W ATT-2026-000002 on draft 00000000-0000-4000-8000-000000000002 of SYN-00011\n'
+    printf 'files: V ATT-2026-000003 on draft 00000000-0000-4000-8000-000000000003 of SYN-00012\n'
+    printf 'files: D ATT-2026-000001 upload_failed (check_failed, no gatekeeper key, quarantine copy kept)\n' ;;
+  *"pg_get_constraintdef"*)
+    t=""; [[ -f "$FAKE_STATE/migrated" ]] && t=", 'teamup'"
+    printf "hidden_details_source_check: CHECK (source IN ('file'%s))\nidea_words_sealed_source_check: CHECK (source IN ('edit'%s))\n" "$t" "$t" ;;
+  *"WITH due AS (UPDATE jobs SET run_at = now()"*) echo t ;;
+  *"SELECT EXISTS"*)
+    # D waits on TO (the sweep's job) and is upload_failed on FROM's schema; everything else holds.
+    if [[ -n "${FAKE_CHECK_FAIL:-}" && "$a" == *"$FAKE_CHECK_FAIL"* ]]; then echo f
+    elif [[ "$a" == *"'ATT-2026-000001' AND state = 'queued' AND attempts = 0"* ]]; then [[ -f "$FAKE_STATE/migrated" ]] && echo t || echo f
+    elif [[ "$a" == *"id = 'ATT-2026-000001' AND file_state = 'upload_failed'"* ]]; then [[ -f "$FAKE_STATE/migrated" ]] && echo f || echo t
+    else echo t; fi ;;
   *"to_regclass"*) echo "${FAKE_REGCLASS:-t}" ;;
   *"FROM kill_switches"*) printf 'ai.all off\nsubmissions on\n' ;;
   *"pg_database_size"*) echo 1048576 ;;
@@ -69,14 +102,21 @@ case "$*" in
   "rev-parse HEAD") echo "$FAKE_TO" ;;
   "rev-parse --verify --quiet "*) echo "$FAKE_FROM" ;;
   "cat-file -e "*) : ;;
+  "ls-tree --name-only $FAKE_TO "*) printf 'db/migrations/20261101000000_a.sql\ndb/migrations/20261102000000_b.sql\ndb/migrations/20261120000100_c.sql\n' ;;
   "ls-tree --name-only "*) printf 'db/migrations/20261101000000_a.sql\ndb/migrations/20261102000000_b.sql\n' ;;
   "describe --tags --exact-match HEAD") echo launch-2026-11-20-r3 ;;
   "describe --tags --exact-match "*) echo launch-2026-11-20-r2 ;;
   "show "*":apps/web/src/content/privacy-notice.ts") echo "  version: \"$FAKE_NOTICE\"," ;;
+  "show $FAKE_TO:services/worker/attachments/files.py") [[ -n "${FAKE_SWEEP:-}" ]] && echo '    "file.start_sweep",' || echo 'JOB = "file.check"' ;;
+  "show "*":services/worker/attachments/files.py") [[ -n "${FAKE_SWEEP_FROM:-}" ]] && echo '    "file.start_sweep",' || echo 'JOB = "file.check"' ;;
   "show "*) echo "services: {}" ;;
   "worktree add --detach "*)
     set -- $*; mkdir -p "$4/scripts/uat"
-    printf '#!/usr/bin/env bash\nmkdir -p "$UAT_DATA_DIR/kfin-ideas"\necho "smoke: all checks passed"\n' > "$4/scripts/uat/deploy.sh" ;;
+    {
+      printf '#!/usr/bin/env bash\nmkdir -p "$UAT_DATA_DIR/kfin-ideas"\n'
+      printf '%s\n' '[[ -z "${FAKE_DEPLOY_SLEEP:-}" ]] || { echo $$ > "$FAKE_STATE/deploy.pid"; sleep "$FAKE_DEPLOY_SLEEP"; }'
+      printf 'echo "smoke: all checks passed"\n'
+    } > "$4/scripts/uat/deploy.sh" ;;
   "worktree remove "*) set -- $*; rm -rf "$3" ;;
   *) : ;;
 esac
@@ -132,6 +172,7 @@ def _env(tmp_path: Path, **extra: str) -> dict[str, str]:
         FAKE_FROM=FROM_SHA,
         FAKE_TO=TO_SHA,
         FAKE_NOTICE=_notice(),
+        FAKE_PY=sys.executable,
         UAT_DATA_DIR=str(data),
     )
     env.update(extra)
@@ -540,6 +581,8 @@ def test_a237_rehearsal_in_prod_imports_synthetic_people_and_grants_before_the_u
     for phase in ("install-from", "people-prod", "upgrade", "rollback", "upgrade-again"):
         assert re.search(rf"^{phase}\s+PASS\s+smoke: all checks passed", out, re.M), out
     assert "APP_ENV=prod\n" in (work / "app.env").read_text()
+    # BLD-A239: this checkout (main without lane C's A2) has no start sweep, so no file is planted.
+    assert re.search(r"^files-from\s+SKIPPED\s+TO has no start sweep$", out, re.M), out
     calls = _calls(tmp_path)
     worker = "kfin-ideas-uat-rehearsal-worker-1"
     gen = _first(calls, "bootstrap.synthetic_hr --count 20")
@@ -598,6 +641,381 @@ def test_a237_rehearsal_in_prod_stops_before_the_upgrade_when_a_step_fails_and_t
     )
     assert f"git worktree remove {work}/from" in calls and not work.exists()
     _only_rehearsal_targets(calls, work)
+
+
+# ---- BLD-A239: the start sweep's count in the upgrade's output ----------------------------------------------------
+
+COUNT_LINE = "file checks: {} files back to waiting for the personal-data check (none opened)"
+PART_WAY = (
+    "file checks: the worker's start sweep stopped part-way after {} files; nothing was opened. "
+    "Send this output to lane A."
+)
+NOT_REPORTED = (
+    "file checks: the worker did not report its start sweep within {} s; nothing was opened. "
+    "Send this output to lane A."
+)
+
+
+def _sweep_reads(calls: list[str]) -> list[str]:
+    return [c for c in calls if "file.start_sweep" in c and c.startswith("docker ")]
+
+
+def test_a239_upgrade_prints_the_start_sweep_count_from_its_audit_row_after_the_restart(
+    tmp_path: Path,
+) -> None:
+    run = _upgrade(
+        tmp_path,
+        FROM="launch-2026-11-20-r2",
+        FAKE_SWEEP="1",
+        FAKE_SWEEP_AFTER='{"count": 3, "complete": true}',
+    )
+    assert run.returncode == 0, run.stdout + run.stderr
+    out = run.stdout
+    assert out.index("== 6/8") < out.index(COUNT_LINE.format(3) + "\n") < out.index("== 7/8")
+    calls = _calls(tmp_path)
+    restart = _first(calls, "up -d --wait")
+    clock = _first(calls, "extract(epoch FROM now())")
+    (read,) = _sweep_reads(calls)
+    assert (
+        _first(calls, "dbmate status")
+        < clock
+        < restart
+        < calls.index(read)
+        < _first(calls, "bootstrap.smoke")
+    )
+    # The database's clock from before the restart bounds the row; only count and complete leave the database.
+    assert "exec -T postgres psql" in read and "at >= to_timestamp(1763800000.25)" in read
+    assert "after->>'count'" in read and "after->>'complete'" in read and "SELECT after " not in read
+    assert "ORDER BY id DESC LIMIT 1" in read
+    assert not any(w in read for w in ("INSERT", "UPDATE", "DELETE")), read
+    assert f"git show {TO_SHA}:services/worker/attachments/files.py" in calls
+
+
+def test_a239_upgrade_says_when_the_sweep_stopped_part_way_and_still_finishes(tmp_path: Path) -> None:
+    run = _upgrade(
+        tmp_path,
+        FROM="launch-2026-11-20-r2",
+        FAKE_SWEEP="1",
+        FAKE_SWEEP_AFTER='{"count": 2, "complete": false}',
+    )
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert PART_WAY.format(2) + "\n" in run.stdout and "files back to waiting" not in run.stdout
+    assert "smoke: all checks passed" in run.stdout and "upgrade: " in run.stdout
+    assert json.loads((tmp_path / "data" / "ops" / "installed.json").read_text())["sha"] == TO_SHA
+
+
+def test_a239_upgrade_says_when_the_worker_did_not_report_and_still_finishes(tmp_path: Path) -> None:
+    run = _upgrade(tmp_path, FROM="launch-2026-11-20-r2", FAKE_SWEEP="1", UAT_SWEEP_WAIT_S="0")
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert NOT_REPORTED.format(0) + "\n" in run.stdout
+    assert run.stdout.rstrip().splitlines()[-1].startswith("upgrade: ")
+    assert (tmp_path / "data" / "ops" / "installed.json").exists()
+    assert "STOPPED" not in run.stderr and "uat-rollback" not in run.stderr
+    # IT's runs wait the brief's 120 s: the knob is for these tests only.
+    assert 'wait_s="${UAT_SWEEP_WAIT_S:-120}"' in UPGRADE.read_text("utf-8")
+
+
+def test_a239_upgrade_to_a_build_without_the_sweep_prints_nothing_for_file_checks(tmp_path: Path) -> None:
+    """Decided from TO's tree, never FROM's: FROM has the sweep here, TO does not."""
+    run = _upgrade(
+        tmp_path,
+        FROM="launch-2026-11-20-r2",
+        FAKE_SWEEP_FROM="1",
+        FAKE_SWEEP_AFTER='{"count": 3, "complete": true}',
+    )
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert "file checks:" not in run.stdout
+    calls = _calls(tmp_path)
+    assert f"git show {TO_SHA}:services/worker/attachments/files.py" in calls
+    assert f"git show {FROM_SHA}:services/worker/attachments/files.py" not in calls
+    assert not _sweep_reads(calls) and not any("extract(epoch" in c for c in calls)
+
+
+def test_a239_upgrade_prints_the_count_only_never_another_key_of_the_row(tmp_path: Path) -> None:
+    decoy = "SYN-DECOY-7731"
+    run = _upgrade(
+        tmp_path,
+        FROM="launch-2026-11-20-r2",
+        FAKE_SWEEP="1",
+        FAKE_SWEEP_AFTER=json.dumps(
+            {"count": 1, "complete": True, "note": decoy, "file_id": "ATT-2026-000099"}
+        ),
+    )
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert COUNT_LINE.format(1) + "\n" in run.stdout
+    both = run.stdout + run.stderr
+    assert decoy not in both and "ATT-2026-000099" not in both and '"note"' not in both
+
+
+# ---- BLD-A239: the rehearsal plants files on FROM and checks them after each later phase ---------------------------
+
+FILE_PHASES = (
+    "install-from",
+    "people-prod",
+    "files-from",
+    "upgrade",
+    "files-upgrade",
+    "rollback",
+    "files-rollback",
+    "upgrade-again",
+    "files-again",
+)
+
+
+def _summary(out: str) -> str:
+    return out.split("== Summary", 1)[1]
+
+
+def _rehearse_prod(tmp_path: Path, **extra: str) -> tuple[subprocess.CompletedProcess[str], Path]:
+    work = tmp_path / "w"
+    env = _env(
+        tmp_path,
+        FROM="launch-2026-11-20-r3",
+        REHEARSE_APP_ENV="prod",
+        UPGRADE_REHEARSAL_WORK=str(work),
+        **extra,
+    )
+    shutil.rmtree(tmp_path / "data")
+    return _run(["bash", str(REHEARSE)], env), work
+
+
+def test_a239_rehearsal_plants_three_files_on_from_and_checks_them_after_each_later_phase(
+    tmp_path: Path,
+) -> None:
+    run, work = _rehearse_prod(tmp_path, FAKE_SWEEP="1", FAKE_SWEEP_AFTER='{"count": 1, "complete": true}')
+    out = run.stdout
+    assert run.returncode == 0, out + run.stderr
+    summary = _summary(out)
+    rows = [m.group(1) for m in re.finditer(r"^([a-z-]+)\s+PASS\b", summary, re.M)]
+    assert rows == list(FILE_PHASES), summary
+    assert "rehearsal: upgrade, rollback and upgrade again all passed" in out
+    calls = _calls(tmp_path)
+    worker = "kfin-ideas-uat-rehearsal-worker-1"
+    # files-from: r3's own code in FROM's running worker, fed the driver on stdin, after people-prod.
+    plant = _first(calls, f"docker exec -i {worker} python - plant")
+    core = _first(calls, "--role core_committee")
+    assert core < plant < _first(calls, "dbmate up")
+    assert (tmp_path / "state" / "driver.py").read_text() == (UAT / "rehearse_files.py").read_text()
+    # The switch is read before each file phase, never set.
+    reads = [i for i, c in enumerate(calls) if c == f"docker exec {worker} python -m core.killswitch list"]
+    assert len(reads) == 4 and reads[0] < plant
+    assert not any("killswitch set" in c for c in calls)
+    # The checks read Postgres; the only write is W's poke, once after each upgrade, never into ideas or attachments.
+    psql = [c for c in calls if c.startswith("docker exec kfin-ideas-uat-rehearsal-postgres-1 psql ")]
+    writes = [c for c in psql if re.search(r"\b(INSERT|UPDATE|DELETE)\b", c)]
+    poke = "WITH due AS (UPDATE jobs SET run_at = now() WHERE type = 'file.check'"
+    assert len(writes) == 2, writes
+    assert all(poke in c and "'ATT-2026-000002'" in c for c in writes), writes
+    assert not any("INSERT" in c or "attachments SET" in c or "ideas SET" in c for c in calls)
+    ups = [i for i, c in enumerate(calls) if "up -d --wait" in c]
+    pokes = [i for i, c in enumerate(calls) if poke in c]
+    assert (
+        len(ups) == 3 and ups[0] < pokes[0] < ups[1] < ups[2] < pokes[1]
+    )  # upgrade, rollback, upgrade-again
+    for line in (
+        "files: D ATT-2026-000001 on draft",
+        "ok: migrations applied now: 1 (TO's migration files that FROM lacks)",
+        "ok: file checks: 1 files back to waiting (D)",
+        "ok: D ATT-2026-000001 checking, waiting for the gatekeeper; its job queued at 0 tries",
+        "ok: W ATT-2026-000002 claimed after that and back to waiting for the gatekeeper",
+        "ok: D ATT-2026-000001 upload_failed again (check_failed), as in the backup",
+        "ok: hidden_details_source_check and idea_words_sealed_source_check as on launch-2026-11-20-r3 (no teamup)",
+    ):
+        assert line in out, line
+    d_waits = [c for c in psql if "'ATT-2026-000001' AND state = 'queued' AND attempts = 0" in c]
+    assert len(d_waits) == 2 and all(
+        "last_error = 'waiting_gatekeeper' AND run_at > now()" in c
+        and "checks->>'waiting_for' = 'gatekeeper'" in c
+        for c in d_waits
+    )
+    w_claims = [c for c in psql if "locked_at >= to_timestamp(1763800000.25)" in c]
+    assert len(w_claims) == 2 and all(
+        "attempts < max_attempts AND last_error = 'waiting_gatekeeper'" in c and "state = 'dead'" in c
+        for c in w_claims
+    )
+    assert not work.exists()
+    _only_rehearsal_targets(calls, work)
+
+
+def test_a239_rehearsal_skips_files_from_when_to_has_no_start_sweep_and_can_still_pass(
+    tmp_path: Path,
+) -> None:
+    run, _ = _rehearse_prod(tmp_path, FAKE_SWEEP_FROM="1")
+    out = run.stdout
+    assert run.returncode == 0, out + run.stderr
+    summary = _summary(out)
+    assert re.search(r"^files-from\s+SKIPPED\s+TO has no start sweep$", summary, re.M), summary
+    for phase in ("files-upgrade", "files-rollback", "files-again"):
+        assert phase not in summary
+    assert "rehearsal: upgrade, rollback and upgrade again all passed" in out
+    calls = _calls(tmp_path)
+    assert not any(" python - plant" in c or "postgres-1 psql" in c for c in calls)
+    assert f"git show {TO_SHA}:services/worker/attachments/files.py" in calls
+
+
+@pytest.mark.parametrize(
+    ("extra", "row", "stopped"),
+    [
+        (
+            {"FAKE_PLANT_FAIL": "1"},
+            "files-from",
+            "STOPPED: files-from: D ATT-2026-000001: still checking after 180 s",
+        ),
+        ({"FAKE_AI_ALL": "on", "FAKE_ROUTE_EXIT": "0"}, "files-from", "STOPPED: ai.all is on, not off"),
+        (
+            {"FAKE_SWEEP_AFTER": '{"count": 2, "complete": true}'},
+            "files-upgrade",
+            'STOPPED: upgrade did not print "file checks: 1 files back to waiting …"',
+        ),
+        (
+            {"FAKE_CHECK_FAIL": "id = 'ATT-2026-000003' AND file_state = 'infected'"},
+            "files-upgrade",
+            "STOPPED: expected: V ATT-2026-000003 still infected",
+        ),
+    ],
+)
+def test_a239_rehearsal_stops_on_a_failed_file_check_and_tears_down(
+    tmp_path: Path, extra: dict[str, str], row: str, stopped: str
+) -> None:
+    run, work = _rehearse_prod(
+        tmp_path, FAKE_SWEEP="1", **{"FAKE_SWEEP_AFTER": '{"count": 1, "complete": true}', **extra}
+    )
+    out = run.stdout
+    assert run.returncode == 1, out + run.stderr
+    assert stopped in out
+    assert re.search(rf"^{row}\s+FAIL\b", _summary(out), re.M), out
+    assert "rehearsal: FAILED (exit 1)" in out and "all passed" not in out
+    assert "rollback " not in _summary(out)
+    assert not work.exists()
+    _only_rehearsal_targets(_calls(tmp_path), work)
+
+
+def test_a239_the_rehearsal_driver_uses_r3s_own_code_and_prints_no_file_text_or_name() -> None:
+    driver = UAT / "rehearse_files.py"
+    tree = ast.parse(driver.read_text("utf-8"))
+    imported = {(n.module, a.name) for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) for a in n.names}
+    assert {("draft.store", "create"), ("attachments", "files"), ("attachments", "store")} <= imported
+    text = driver.read_text("utf-8")
+    assert "files.accept(" in text and "INSERT" not in text and "UPDATE attachments" not in text
+    assert text.count("UPDATE jobs SET attempts = max_attempts - 1") == 1
+    secret = {"TEXT", "NAMES", "EICAR_HALVES", "_data"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and getattr(node.func, "id", None) in ("print", "Stop"):
+            names = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+            assert not names & secret, ast.unparse(node)
+    # The antivirus test string is assembled at run time: no file holds it whole.
+    halves = next(
+        ast.literal_eval(n.value)
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", None) == "EICAR_HALVES"
+    )
+    whole = "".join(halves)
+    assert len(whole) == 68 and whole.startswith("X5O!P%@AP")
+    for path in (driver, REHEARSE, UPGRADE, LIB, Path(__file__)):
+        assert whole not in path.read_text("utf-8"), path
+
+
+# ---- BLD-A240: the rehearsal never reports a pass it did not earn ---------------------------------------------------
+
+
+def test_a240_rehearsal_stopped_by_term_mid_phase_stops_its_own_run_says_so_and_tears_down(
+    tmp_path: Path,
+) -> None:
+    work = tmp_path / "w"
+    env = _env(
+        tmp_path, FROM="launch-2026-11-20-r2", UPGRADE_REHEARSAL_WORK=str(work), FAKE_DEPLOY_SLEEP="60"
+    )
+    shutil.rmtree(tmp_path / "data")
+    pid_file = tmp_path / "state" / "deploy.pid"
+    proc = subprocess.Popen(
+        ["bash", str(REHEARSE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
+    )
+    try:
+        deadline = time.monotonic() + 30
+        while not (pid_file.exists() and pid_file.read_text().strip()):
+            assert proc.poll() is None and time.monotonic() < deadline, "the held deploy never started"
+            time.sleep(0.1)
+        deploy = int(pid_file.read_text())
+        proc.send_signal(signal.SIGTERM)
+        out, err = proc.communicate(timeout=60)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+    assert proc.returncode == 143, out + err
+    assert "rehearsal: STOPPED (TERM) after install-from" in out
+    assert "all passed" not in out and "rehearsal: FAILED" not in out
+    assert re.search(r"^install-from\s+STOPPED\s+stopped by TERM", _summary(out), re.M), out
+    assert "stopping the install-from run this rehearsal started" in out
+    # The deploy it started is gone (not left running, as on 21 Nov 17:13).
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            os.kill(deploy, 0)
+        except ProcessLookupError:
+            break
+        assert time.monotonic() < deadline, "the deploy the rehearsal started is still running"
+        time.sleep(0.1)
+    calls = _calls(tmp_path)
+    assert any(
+        "-p kfin-ideas-uat-rehearsal" in c and "down -v --rmi local --remove-orphans" in c for c in calls
+    )
+    assert f"git worktree remove {work}/from" in calls and not work.exists()
+    assert not any("dbmate up" in c for c in calls)
+    assert out.rstrip().endswith("start the dev stack again from the main checkout: make up")
+
+
+PASS_LINE = "rehearsal: upgrade, rollback and upgrade again all passed"
+
+
+@pytest.mark.parametrize(
+    ("status", "sig", "expected", "rows", "skippable", "line"),
+    [
+        (0, "", "install-from upgrade", "install-from PASS\nupgrade PASS\n", "", PASS_LINE),
+        (0, "", "install-from upgrade", "install-from PASS\n", "", "rehearsal: FAILED (exit 1)"),
+        (0, "", "install-from upgrade", "", "", "rehearsal: FAILED (exit 1)"),
+        (0, "", "", "", "", "rehearsal: FAILED (exit 1)"),
+        (
+            0,
+            "",
+            "install-from upgrade",
+            "install-from PASS\nupgrade FAIL\n",
+            "",
+            "rehearsal: FAILED (exit 1)",
+        ),
+        (
+            2,
+            "",
+            "install-from upgrade",
+            "install-from PASS\nupgrade PASS\n",
+            "",
+            "rehearsal: FAILED (exit 2)",
+        ),
+        (0, "", "a files-from b", "a PASS\nfiles-from SKIPPED\nb PASS\n", "files-from", PASS_LINE),
+        (0, "", "a files-from b", "a PASS\nfiles-from SKIPPED\nb PASS\n", "", "rehearsal: FAILED (exit 1)"),
+        (0, "", "a upgrade", "a PASS\nupgrade SKIPPED\n", "files-from", "rehearsal: FAILED (exit 1)"),
+        (0, "", "a upgrade", "a PASS\nupgrade PASS\nupgrade PASS\n", "", "rehearsal: FAILED (exit 1)"),
+        (0, "", "a upgrade", "a PASS\nupgrade PASS\nextra PASS\n", "", "rehearsal: FAILED (exit 1)"),
+        (
+            143,
+            "TERM",
+            "a upgrade",
+            "a PASS\nupgrade STOPPED\n",
+            "",
+            "rehearsal: STOPPED (TERM) after upgrade",
+        ),
+    ],
+)
+def test_a240_the_pass_line_needs_one_pass_row_for_every_expected_phase(
+    status: int, sig: str, expected: str, rows: str, skippable: str, line: str
+) -> None:
+    run = subprocess.run(
+        ["bash", "-c", '. "$1"; shift; rehearsal_verdict "$@"', "_", str(LIB), str(status), sig, "upgrade",
+         expected, rows, skippable],
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    assert run.stdout == line + "\n", run.stdout + run.stderr
+    assert run.returncode == (0 if line == PASS_LINE else 1)
 
 
 # ---- the scripts themselves ----------------------------------------------------------------------------------------

@@ -73,7 +73,9 @@ def _add(conn: Any, which: str) -> tuple[str, str]:
     owner = _person(conn, PEOPLE[which])
     draft_id, _ = create(conn, owner, DEVICE, channel="web")
     try:
-        item = files.accept(conn, user_id=owner.user_id, name=NAMES[which], data=_data(which), draft_id=draft_id)
+        item = files.accept(
+            conn, user_id=owner.user_id, name=NAMES[which], data=_data(which), draft_id=draft_id
+        )
     except files.FileRefused as exc:
         raise Stop(f"{which}: r3 refused the file ({exc.status} {exc.code})") from None
     return draft_id, str(item["id"])
@@ -129,12 +131,17 @@ def plant() -> None:
         d = _ended(conn, "D", att, 180)
         checks = d["checks"] or {}
         if d["file_state"] != "upload_failed" or checks.get("result") != "check_failed":
-            raise Stop(f"D {att}: {d['file_state']} ({checks.get('result')}), not upload_failed (check_failed)")
+            raise Stop(
+                f"D {att}: {d['file_state']} ({checks.get('result')}), not upload_failed (check_failed)"
+            )
         if "gatekeeper" in checks:
             raise Stop(f"D {att}: its checks have a gatekeeper key")
         if not d["store_key"] or not store.exists(quarantine, d["store_key"]):
             raise Stop(f"D {att}: no quarantine copy")
-        print(f"files: D {att} upload_failed (check_failed, no gatekeeper key, quarantine copy kept)", flush=True)
+        print(
+            f"files: D {att} upload_failed (check_failed, no gatekeeper key, quarantine copy kept)",
+            flush=True,
+        )
 
         att = made["W"][1]
         w = _row(conn, att)
