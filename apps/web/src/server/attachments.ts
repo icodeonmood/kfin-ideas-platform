@@ -79,7 +79,12 @@ export async function remove(me: CurrentUser, ideaUuid: string, attId: string) {
   if (!res.ok) throw new SubmissionError(502, "delete_failed");
 }
 
-/** Who may see a file's status or open it: the owner, or the review roles once the idea is submitted. */
+/**
+ * Who may see a file's status or open it: the owner, or the review roles once the idea is submitted and the
+ * gatekeeper has read the file. The old pipeline could mark a file clean on the pattern check alone
+ * (`checks.gatekeeper` false while `attachments.deep_check` was off); such a file is its owner's only (DEC-127:
+ * never opened on the pattern check alone; BLD-C222, as `gatekeeper_ran` in the worker's attachments/files.py).
+ */
 export async function accessible(me: CurrentUser, attId: string) {
   if (!/^ATT-[0-9]{4}-[0-9]{6}$/.test(attId)) return null;
   const row = await getDb()
@@ -94,6 +99,7 @@ export async function accessible(me: CurrentUser, attId: string) {
       "a.mime",
       "a.file_state",
       "a.answer_id",
+      "a.checks",
       "i.contributor_code",
       "i.stage",
     ])
@@ -104,6 +110,7 @@ export async function accessible(me: CurrentUser, attId: string) {
   // through /api/files/:id/view under DEC-107's rule, never through this older route, whatever its state.
   if (row.file_state !== null || row.answer_id !== null) return null;
   const owner = row.contributor_code === me.contributorCode;
-  const reviewer = can(me.roles, "view_review_queue") && row.stage !== "draft";
+  const gatekeeper = (row.checks as { gatekeeper?: unknown } | null)?.gatekeeper === true;
+  const reviewer = can(me.roles, "view_review_queue") && row.stage !== "draft" && gatekeeper;
   return owner || reviewer ? row : null;
 }

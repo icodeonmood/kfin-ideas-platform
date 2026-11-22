@@ -204,13 +204,15 @@ def rights(
     viewer: Viewer,
     conversation: bool = False,
     unsent: bool = False,
+    gatekeeper_ran: bool = True,
 ) -> tuple[bool, bool]:
     """(sees the row, opens the file). Pure, so every row of the rule has its own unit test. `conversation` is a file
     added for the conversation (BLD-C216) and `unsent` one of those still on no entry: it is the uploader's alone,
-    like a draft's file (DEC-127, BLD-C222). A found conversation file follows `opens_found_conversation_file`."""
+    like a draft's file (DEC-127, BLD-C222). A found conversation file follows `opens_found_conversation_file`.
+    With `gatekeeper_ran` false (the function of that name) only its uploader sees it (DEC-127: never on patterns)."""
     if viewer.uploader:
         see = True
-    elif draft or answer_unsent or (conversation and unsent):
+    elif draft or answer_unsent or (conversation and unsent) or not gatekeeper_ran:
         see = False  # a draft's files, a draft answer's and an unsent conversation file stay with their uploader
     elif conversation and state == CUSTOMER_DETAIL:
         see = opens_found_conversation_file(viewer)  # DEC-127: never the idea's lead or sharer, nor the crew
@@ -281,6 +283,16 @@ def _viewer(conn: Conn, row: dict[str, Any], user_id: str) -> Viewer:
     )
 
 
+def gatekeeper_ran(row: dict[str, Any]) -> bool:
+    """Whether the gatekeeper has run on this file (DEC-127: never opened on the pattern check alone). A 1% Club file
+    (`file_state` set) is never checked or found without it (BLD-C107), so its state already says so. A file from the
+    old pipeline (no `file_state`) could be marked clean on the patterns alone (`checks.gatekeeper` false while
+    `attachments.deep_check` was off): it counts only with `checks.gatekeeper` true (BLD-C222)."""
+    if row.get("file_state"):
+        return True
+    return (row.get("checks") or {}).get("gatekeeper") is True
+
+
 def _rights(conn: Conn, row: dict[str, Any], user_id: str) -> tuple[Viewer, bool, bool]:
     """`rights` for a loaded row (`_ROW`, every column): every route here decides through this. A conversation file
     on no entry yet (`conversation_entry_id` NULL) is unsent: a non-uploader gets not found for its row and its
@@ -291,6 +303,7 @@ def _rights(conn: Conn, row: dict[str, Any], user_id: str) -> tuple[Viewer, bool
         effective_state(row), str(row.get("kind") or "file"), draft=row["idea_status"] == "draft",
         answer_unsent=row.get("answer_id") is not None and row.get("answer_sent_at") is None, viewer=v,
         conversation=conversation, unsent=conversation and row.get("conversation_entry_id") is None,
+        gatekeeper_ran=gatekeeper_ran(row),
     )  # fmt: skip
     return v, see, opens
 

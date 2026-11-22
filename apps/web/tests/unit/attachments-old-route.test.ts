@@ -39,6 +39,7 @@ const base = {
   stage: "scanned",
   file_state: null,
   answer_id: null,
+  checks: { patterns: true, ocr: false, gatekeeper: true },
 };
 
 afterEach(() => row.mockReset());
@@ -48,6 +49,20 @@ describe("A-API.files: the old /api/attachments route and the files pipeline", (
     row.mockReturnValue({ ...base });
     expect(await accessible(owner, base.id)).not.toBeNull();
     expect(await accessible(desk, base.id)).not.toBeNull();
+  });
+
+  it("DEC-127, BLD-C222: a file clean on the pattern check alone opens for its owner only, never the desk", async () => {
+    for (const checks of [
+      { patterns: true, ocr: false, gatekeeper: false },
+      { patterns: true, gatekeeper: false, gatekeeper_skipped: true },
+      { patterns: true },
+      null,
+    ]) {
+      row.mockReturnValue({ ...base, checks });
+      expect(await accessible(owner, base.id)).not.toBeNull();
+      expect(await accessible(desk, base.id)).toBeNull();
+      expect(await accessible(admin, base.id)).toBeNull();
+    }
   });
 
   it("refuses a checked file of the files pipeline, to everyone (it opens only through /api/files/:id/view)", async () => {

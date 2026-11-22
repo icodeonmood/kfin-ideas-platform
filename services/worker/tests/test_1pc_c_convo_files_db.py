@@ -140,6 +140,22 @@ def test_DEC_127_no_one_but_the_uploader_opens_a_file_before_both_checks_are_don
             assert got == ((name in UPLOADERS), False), (state, shape, name)
 
 
+def test_DEC_127_BLD_C222_a_file_the_gatekeeper_never_read_is_its_uploaders_alone() -> None:
+    """An old-pipeline row marked clean on the pattern check alone (`gatekeeper_ran` false): only its uploader sees
+    and opens it; nobody else, an idea's own file or not. With the gatekeeper run, the rule is as before."""
+    for name, v in VIEWERS.items():
+        for conversation in (False, True):
+            got = F.rights(
+                "checked", "file", draft=False, answer_unsent=False, viewer=v, conversation=conversation,
+                gatekeeper_ran=False,
+            )  # fmt: skip
+            assert got == ((name in UPLOADERS), (name in UPLOADERS)), (name, conversation)
+    assert F.gatekeeper_ran({"file_state": "checked", "checks": {"type": "pdf"}}) is True  # the 1% Club's own
+    assert F.gatekeeper_ran({"file_state": None, "state": "clean", "checks": {"gatekeeper": True}}) is True
+    for checks in ({"patterns": True, "gatekeeper": False}, {"gatekeeper_skipped": True}, {}, None):
+        assert F.gatekeeper_ran({"file_state": None, "state": "clean", "checks": checks}) is False, checks
+
+
 # ---- the database, with the object store faked -------------------------------------------------------------------
 
 
@@ -445,8 +461,8 @@ def test_BLD_C222_DEC_127_an_unsent_conversation_file_is_404_for_everyone_but_it
         "UPDATE attachments SET file_state = 'checked', state = 'clean', conversation_entry_id = %s WHERE id = %s",
         (_entry(db, idea, meera), theirs),
     )
-    for who in (kavya, cast["arjun"], nisha, cast["rohan"]):
-        assert F.get_item(db, theirs, who["id"])["view_url"] == f"/api/files/{theirs}/view", who["name"]
+    for reader in (kavya, cast["arjun"], nisha, cast["rohan"]):
+        assert F.get_item(db, theirs, reader["id"])["view_url"] == f"/api/files/{theirs}/view", reader["name"]
     _not_found_anywhere(db, theirs, cast["sam"])
 
 
@@ -538,6 +554,33 @@ def test_DEC_127_a_file_still_checking_opens_for_no_one_and_shows_only_to_its_up
         item = F.get_item(db, att, uploader["id"])
         assert item["state"] == "checking" and "view_url" not in item
         assert _refused(F.content, db, att, uploader["id"]).status == 403
+
+
+def test_DEC_127_BLD_C222_an_old_pipeline_file_clean_on_patterns_alone_opens_for_its_uploader_only(
+    db: Conn, cast: dict[str, Any], objects: dict[Any, bytes]
+) -> None:
+    """A file from before the cut-over (no `file_state`) that the old pipeline marked clean on the pattern check
+    alone (`checks.gatekeeper` false): the routes treat it as never checked by the gatekeeper, so the desk, the
+    committee, the idea's lead and the crew get not found; its uploader sees and opens it as before. Once
+    `checks.gatekeeper` is true it is read as a checked file again."""
+    idea, arjun = cast["idea"], cast["arjun"]
+    old = _row(db, idea, arjun)  # Arjun added it to the idea's files under the old pipeline
+    db.execute(
+        "UPDATE attachments SET file_state = NULL, state = 'clean', "
+        'checks = \'{"patterns": true, "ocr": false, "gatekeeper": false}\'::jsonb WHERE id = %s',
+        (old,),
+    )
+    _copy(db, objects, old)
+    for who in ("meera", "rohan", "dev", "kavya", "sam"):
+        _not_found_anywhere(db, old, cast[who])
+    assert F.get_item(db, old, arjun["id"])["view_url"] == f"/api/files/{old}/view"
+    assert F.content(db, old, arjun["id"])[0] == b"%PDF-1.4 synthetic"
+    db.execute(
+        "UPDATE attachments SET checks = checks || '{\"gatekeeper\": true}'::jsonb WHERE id = %s", (old,)
+    )
+    for who in ("meera", "rohan", "kavya"):
+        assert F.get_item(db, old, cast[who]["id"])["view_url"] == f"/api/files/{old}/view", who
+    _not_found_anywhere(db, old, cast["sam"])
 
 
 def test_attachment_purpose_the_new_column_defaults_to_idea_for_every_existing_writer(
