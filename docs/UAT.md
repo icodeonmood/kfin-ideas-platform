@@ -15,13 +15,13 @@ For: KFin IT and the product team, installing 1% Club with `make uat-deploy`, on
 | Three database passwords of at least 20 random letters and digits (no symbols: they go into connection URLs): `POSTGRES_PASSWORD`, `DB_WEB_PASSWORD`, `DB_WORKER_PASSWORD` | InfoSec (vault) | database env file |
 | The worker-only pseudonym vault key: `PSEUDONYM_VAULT_KEY`, at least 32 random letters and digits, different from `VAULT_ENCRYPTION_KEY`. It must never be in the app env file, which the web app also reads | InfoSec (vault) | database env file |
 | KFin's file store and scanner: `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `CLAMAV_HOST`, `CLAMAV_PORT` (required; the deploy refuses to fall back to the local stand-ins), and the Graph service mailbox or `SMTP_URL`. If KFin's scanner is not on 3310, set `WORKER_CLAMAV_PORT` in the app env file (`CLAMAV_PORT` alone is ignored) | IT | app env file |
-| Model route decision (D1). Without it the deploy starts in Mode B: `ai.all` off. Files wait for the personal-data check, seen only by the person who added them and opened by no one; they are checked as soon as `ai.all` is switched on, and files that waited out their tries on earlier builds go back to waiting when the worker starts and are checked then too. At launch, `LLM_MODE=fake` whatever D1 says (see the bold line below this table) | InfoSec | app env file |
+| Model route decision (D1). With or without it the deploy starts in Mode B: `ai.all` off (BLD-A245). Files wait for the personal-data check, seen only by the person who added them and opened by no one; they are checked as soon as `ai.all` is switched on, and files that waited out their tries on earlier builds go back to waiting when the worker starts and are checked then too. At launch, `LLM_MODE=fake` whatever D1 says (see the bold line below this table); the route is set later, in **Switching to full mode (mode A)** | InfoSec | app env file |
 | Not at launch: BGE-M3 (AT-B5-01). The deploy builds the worker without it (the compose files pass no `WITH_BGE` build argument and mount no model folder), so set `EMBEDDINGS_MODE=hash`; the preflight warns that matching quality is not representative. Adding BGE-M3 is an install change after launch: the build argument, the model files mounted at `EMBEDDINGS_MODEL_PATH`, then `EMBEDDINGS_MODE=bge-m3` and a re-index | Product team | app env file |
 | Voice through Sarvam (DEC-108, on at launch): in the **database** env file (worker only), `SARVAM_API_KEY`; the deploy refuses it in the app env file, which the web app also reads, and the web container's copy is blanked. In the app env file, `SPEECH_MODE=sarvam` and `SPEECH_HOSTED_APPROVAL=DEC-108` (the deploy refuses `sarvam` without both). Outbound HTTPS and WSS from the worker to `api.sarvam.ai` only. The speech container and model below are now an optional fallback, not needed for launch | InfoSec (key in the vault), IT (outbound rule) | database env file, app env file |
 | Optional fallback, not needed for launch (DEC-108): voice notes on the isolated speech service (DEC-096, BLD-C012, BLD-C015): its own container (`speech`, compose profile `speech`, built from `services/worker/speech_service/Dockerfile`), started by the deploy when the app env file sets `SPEECH_ENGINE_URL=http://speech:8300`. It runs as uid 10002 with a read-only root filesystem, a 64 MB tmpfs `/tmp`, no capabilities and no published port, on an internal network only the worker shares (no route to Postgres, S3, mail or the internet). On the host: the speech model (faster-whisper, multilingual, CTranslate2 int8) in `SPEECH_MODEL_DIR`, mounted read-only; about 2–3 GB of memory for it (`SPEECH_MEM_LIMIT`, default 3g). In the **database** env file: `SPEECH_SERVICE_TOKEN`, 32 or more random letters and digits, never the same as `INTERNAL_API_TOKEN` (the deploy refuses it in the app env file, which the web app also reads, refuses `INTERNAL_API_TOKEN` in the database env file, and refuses the two if equal). In the app env file: `SPEECH_ENGINE_URL=http://speech:8300` exactly (the deploy and the worker refuse any other host or scheme outside dev and test). The image is pinned by digest and hashes; it needs PyPI and Docker Hub only at build time | IT (host, memory, model folder), InfoSec (token in the vault) | database env file, host folder |
 | Voice notes, KFin's S3 (DEC-096, BLD-C006): on the **quarantine** bucket, a lifecycle rule `voice-notes-expire-1-day` that expires the prefix `voice/` after 1 day, and **no versioning** on that bucket (a kept version would outlive a delete). The worker tries to set the rule itself at start; where the store refuses, IT sets it. The smoke check fails if the quarantine bucket is versioned | IT | the file store |
 
-**At launch (Capture first), the app env file must say `LLM_MODE=fake`, even when the model key is already in it.** With `LLM_MODE=anthropic` and a key, or `LLM_MODE=bedrock`, step 7 runs the golden sets on the launch database and leaves `ai.all` on, switching off only the agents whose golden set fails. AI is switched on later, only when the product lead says so after the golden sets pass on the real route: follow step 4 under After the deploy (set `LLM_MODE` and the key, restart the worker, run the golden sets on the route), then switch `ai.all` on from the Admin page with a reason. **Never switch `ai.all` on while `LLM_MODE=fake`: the fake route would answer people with canned text.**
+**At launch (Capture first), the app env file must say `LLM_MODE=fake`, even when the model key is already in it.** Step 7 of the deploy switches `ai.all` off whatever the model route (Mode B, audited) and never runs the golden sets on the server's database, in any `APP_ENV` (BLD-A245): with a route configured it only prints that they are not run there. The golden sets on the real route run only through `scripts/eval/live.sh`, on a throwaway database of its own. AI is switched on later, only when the product lead says so after that passes: follow **Switching to full mode (mode A)** below. **Never switch `ai.all` on while `LLM_MODE=fake`: the fake route would answer people with canned text.**
 
 ## Env files
 
@@ -47,7 +47,7 @@ The script stops at the first problem and says which. Its eight steps:
 | 4 Service logins | Creates `ideas_web` and `ideas_worker` with their own passwords | — |
 | 5 Seed | Company repo from `seed/company-repo/` (no dev overlay outside dev), OKF check, rules, index; 200 synthetic people, none with `APP_ENV=prod` (the line reads `people: none loaded in production; …`) | the repo is not valid OKF or a rule file fails |
 | 6 Start | Every service up and healthy | a service does not become healthy in 4 minutes |
-| 7 Model route | Leaves `ai.all` on if a route is configured, else switches it off (Mode B), audited | — |
+| 7 Model route | Switches `ai.all` off (Mode B), audited, whatever the route. With a route configured it prints `model route configured: golden sets are not run on this database; …`: golden sets never run here (BLD-A245) | — |
 | 8 Smoke tests | Thirteen checks, listed below | any check fails |
 
 Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answer; the sign-in page loads; the API refuses requests without a session; pages send signed-out people to sign in; the web app's own token reaches the worker and a wrong token is refused; the virus scanner answers (the report names the scanner and file store in use); all kill switches exist; the company repo is valid OKF with no dev-only files; the rules load; the index is at the repo's head; only synthetic people exist and nobody has a role yet (with `APP_ENV=prod`, nobody at all: the line reads `no people or roles yet (production)  0 people, 0 role grants`); voice notes are off, or on through Sarvam with `speech.hosted` on, its approval reference and the Sarvam key (DEC-108), or on the engine on KFin's own server, never the fake speech route, and the quarantine bucket is not versioned (DEC-096).
@@ -87,7 +87,7 @@ Smoke checks (`python -m bootstrap.smoke --fresh`): the worker and web app answe
 
    Pass: `people loaded (production)` with `<N> people, <n> role grants`, and `smoke: all checks passed`.
 3. Voice is on at launch (`capture.voice` and `speech.hosted`, DEC-108, migration `20261122300530`). Check the smoke line "capture.voice on; speech.hosted on; SPEECH_MODE sarvam; Sarvam key set" (no call is made to Sarvam) and the go/no-go voice rows say "met". If the watch has switched them off with "Sarvam key missing (automatic)", put `SARVAM_API_KEY` in the database env file, restart the worker and switch both on from the Admin page with a reason. Then record one synthetic voice note on a draft and check that the words appear as you speak, the English copy is labelled "Typed up in English", and nothing is written to the quarantine bucket. Before the gates, the product lead runs `make sarvam-live` from a checkout with the local stack up, with `SARVAM_API_KEY` loaded in their own terminal (never in an env file of this repo), and every line reads PASS (BLD-C177).
-4. When the model route is approved: set `LLM_MODE` and the key in the app env file, restart the worker, run `make eval` against the route, then switch `ai.all` on from the Admin page with a reason.
+4. Full mode (the assistant on, similar ideas, email) is never part of the deploy. When the model route is approved and the product lead says so, follow **Switching to full mode (mode A)** below.
 5. Point KFin's reverse proxy (TLS) at the web app's port (`UAT_WEB_PORT`, default 3100). Only the web app is published.
 
 ## Updating the live server (upgrade and rollback)
@@ -194,6 +194,94 @@ Before step 5/8 (Migrations) a failure changes nothing: the old version keeps se
 **The backup holds personal data:** the whole database, the sharers' own words and the encrypted vault included. It stays on this server under the database's controls (file mode 600, folder 700, owned by the deploy account). It is never copied off the server. Keep at least the latest backup; remove older ones only when the product lead says so.
 
 **Rehearse first:** before each upgrade of the server, lane A runs `make uat-rehearsal-upgrade FROM=<the installed tag> REHEARSE_APP_ENV=prod` on a developer machine, at the new tag. It installs FROM with FROM's own deploy in production mode (no people), then does what IT did after the install, on synthetic people only (`@kfintech.example`): a synthetic HR file of 20 through stdin, `admin` for one of them, `core_committee` for another, and the smoke checks without `--fresh`. With a checkout that has the start sweep, it then adds three synthetic files on FROM through FROM's own code (one that reads "Didn't upload" after its waits, one still waiting on its last try, and the antivirus test file), and checks them by ID after each later phase (`files-upgrade`, `files-rollback`, `files-again`); without the sweep the summary says `files-from SKIPPED`. Then it upgrades to the checkout, rolls back, upgrades again, prints a summary (`== Summary (upgrade rehearsal, APP_ENV=prod)`, one PASS line per phase) and tears it all down (`KEEP=1` keeps it). Its last line is `rehearsal: upgrade, rollback and upgrade again all passed` only when every phase has its PASS line; otherwise `rehearsal: FAILED (exit N)`, or `rehearsal: STOPPED (TERM) after <phase>` when it was stopped, which also stops the runs it started. Ones Committee, which only the Admin page gives, is not rehearsed: nobody can sign in there. Without `REHEARSE_APP_ENV=prod` it rehearses a UAT host (`APP_ENV=uat`, with synthetic people loaded at install). It refuses while the dev stack runs and never starts or stops it: run `make down` from the main checkout first and `make up` there after.
+
+## Switching to full mode (mode A)
+
+Full mode turns on the assistant, similar ideas and email (DEC-131: go/no-go Wed 25 Nov 2026 at 16:00, switch Thu 26 Nov 2026 at 10:00). It is a hand step on the running server, never part of a deploy or an upgrade: neither of them runs the golden sets on the server's database, in any `APP_ENV` (BLD-A245). The golden sets on the real route run only in `scripts/eval/live.sh`, in a throwaway compose project with its own database. live.sh only reads the install's database, to count its model calls in `llm_calls` before and after.
+
+Do the steps in order. After each one, paste to lane A the lines its **Paste back** names, as for an upgrade, and go on only when they match its pass line. Never paste an env file, a key or any line of HR's file. Nothing below prints a secret: the commands print tags, commits, counts, switch names and setting names.
+
+Run every command from the release checkout, the one the server was deployed or last upgraded from.
+
+1. **Check the build.** The build on the server must carry lane C's file wait (A2, BLD-C225 to BLD-C227), `scripts/eval/live.sh` (BLD-C229) and this change (BLD-A245). Lane A sends IT the tag that has all three. If the server runs an older one, install the new tag first with **Updating the live server** above.
+
+   ```bash
+   git describe --tags --exact-match
+   git rev-parse HEAD
+   cat /srv/kfin-ideas-uat/ops/installed.json
+   ls scripts/eval/live.sh
+   ```
+
+   Paste back: all of it. Pass: the tag and commit lane A sent for full mode, the same commit in `installed.json`, and `scripts/eval/live.sh`.
+
+2. **Put the route's credentials in the app env file.** InfoSec or IT adds `ANTHROPIC_API_KEY` for the Anthropic route, or `AWS_REGION` and the AWS credentials for Bedrock (D1 says which route). On Bedrock, an instance role needs no key lines: `AWS_REGION` alone is enough. `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` go together or not at all. If the server reaches the internet through a proxy, its `HTTPS_PROXY` (and `NO_PROXY`) lines go in the same file. If InfoSec or lane A names model IDs, `LLM_FAST_MODEL` and `LLM_REASONING_MODEL` go in now too: step 3 measures the models this file names. `LLM_MODE` stays `fake` for now. The running worker reads its settings only when it starts, so it does not use the key yet. The web app never gets the key (BLD-A246). Check without printing a secret:
+
+   ```bash
+   sed -nE '/^LLM_(MODE|FAST_MODEL|REASONING_MODEL|REFUSAL_FALLBACK)=/p; s/^(ANTHROPIC_API_KEY|AWS_[A-Z_]+|(HTTPS|HTTP|NO|ALL)_PROXY|(https|http|no|all)_proxy)=.+$/\1 set/p' /secure/.env.uat
+   ```
+
+   It prints the model settings as they are (they are not secret) and, for a key or a proxy, only its name and `set`. Paste back: the lines it prints. Pass: `LLM_MODE=fake`, and either `ANTHROPIC_API_KEY set` (Anthropic) or `AWS_REGION set`, plus a `set` line for each AWS credential InfoSec issued (Bedrock; none for an instance role).
+
+3. **Run the golden sets on the real route, on a throwaway database.** Run it with `sudo`, as below. `<release checkout>` is this folder (`pwd` prints it). For Bedrock, use `--route bedrock`.
+
+   ```bash
+   sudo scripts/eval/live.sh --server --checkout <release checkout> --project kfin-ideas-uat --app-env /secure/.env.uat --route anthropic
+   ```
+
+   It starts its own Postgres in a separate compose project (`kfin-ideas-eval`), with throwaway secrets, and runs the golden sets in throwaway containers from the installed worker image. From the app env file it takes only the route's credentials and proxy lines, for the golden sets' container alone, and the model settings, for that container and the one that prints the paste block. Its data folder is `/srv/kfin-ideas-eval` (it must not exist yet) and it goes at the end, with the project and its volume. It changes nothing on the install: no switch, no data, no container. It only reads the install's model calls, by `docker exec` into the install's own Postgres, before and after. Calls the install refused while `ai.all` is off are left out of that count, so people can keep using 1% Club during the run.
+
+   While it runs, the key is in the golden sets' container's environment, so anyone in the server's `docker` group can read it with `docker inspect` until the run ends. The install's own worker holds the same key from step 5 on, the same way. The `docker` group is as good as root: keep it to IT's trusted admins, and run this from an account trusted with the key.
+
+   Paste back: the block from `=== PASTE FROM HERE ===` to `=== PASTE TO HERE ===` (names and numbers only). Pass: `install database: llm_calls unchanged (N)`, and the line before the end `EVAL-LIVE: PASS`. The `model calls:` line is for information. On `EVAL-LIVE: FAIL (gates)` (the gates are named in the brackets), a `STOP: <error> at <step>` line or an `eval-live refused: …` line, stop here and send that block or line to lane A. Nothing has changed on the server, and `ai.all` stays off. Never paste the details file it names (`details, for your eyes only and never to paste: …`, mode 600): it is for IT's eyes only, and IT deletes it when done. If it is refused because `another eval-live run holds /srv/kfin-ideas-eval.lock` and none is running (a run that was cut off), remove that folder, and `/srv/kfin-ideas-eval` if it is still there, then run it again.
+
+4. **The product lead says go.** The product lead reads the paste and says go, or names an agent to keep off. Agents propose; people decide (non-negotiable 5). For each agent the lead names, an admin switches that agent's switch off on the Admin page (for example `agent.judge`), with a reason, before step 6.
+
+   Paste back: the product lead's go, and the switches switched off, if any.
+
+5. **Set the route and restart the worker and the web app.** IT sets `LLM_MODE=anthropic` (or `LLM_MODE=bedrock`) in `/secure/.env.uat`, then restarts both in the install's compose project, with the same compose wrapper as the BGE-M3 section below. `ai.all` is still off. The web app reads neither `LLM_MODE` nor a model key (BLD-A246 blanks the key for it); its restart keeps its container in step with the env file.
+
+   ```bash
+   grep -E '^LLM_MODE=' /secure/.env.uat
+   export UAT_APP_ENV_FILE=/secure/.env.uat UAT_DATA_DIR=/srv/kfin-ideas-uat
+   compose() { docker compose -p kfin-ideas-uat -f infra/docker-compose.yml -f infra/uat/compose.uat.yml --project-directory . \
+     --env-file /secure/.env.uat --env-file /secure/.env.uat.db "$@"; }
+   compose up -d --wait worker web
+   ```
+
+   Paste back: the `LLM_MODE` line and the `Healthy` lines. Pass: `LLM_MODE=anthropic` (or `bedrock`), and `Healthy` for `kfin-ideas-uat-worker-1` and for `kfin-ideas-uat-web-1`.
+
+6. **Switch `ai.all` on.** An admin switches `ai.all` on from the Admin page, with a reason (for example "Full mode, the product lead's go of 26 Nov"). The change is audited.
+
+   ```bash
+   docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list
+   ```
+
+   Paste back: the switch list. Pass: `ai.all on`, and every other switch as before, apart from any agent switched off in step 4.
+
+7. **Check the files waiting for the personal-data check.** They go back into the queue on their own (A2's ticker, about a minute) and are checked now that the assistant is on. Both commands only read, and print counts only: no file name and no text.
+
+   ```bash
+   docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT file_state, count(*) FROM attachments GROUP BY 1 ORDER BY 1"
+   docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT state, last_error, count(*) FROM jobs WHERE type = 'file.check' GROUP BY 1, 2 ORDER BY 1, 2"
+   ```
+
+   Run both straight after step 6, then every 2 minutes. Paste back: the counts each time. Pass: within 10 minutes of step 6, no `file.check` row with `waiting_gatekeeper` is left (its count falls to 0). If one is still there after 10 minutes, send the counts to lane A.
+
+8. **Turn on similar ideas.** Follow **Moving a server from hash to BGE-M3 vectors (BLD-C211)** below first, with its own checks. Then, on the product lead's word, an admin switches `matching.show` on from the Admin page, with a reason.
+
+   Paste back: that section's checks, then `docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list`. Pass: as that section says, then `matching.show on`.
+
+9. **Turn on email.** Follow **Email through Graph (BLD-A243)**, its own section of this runbook, with its own paste-backs and pass lines.
+
+10. **Run the smoke checks**, without `--fresh`:
+
+    ```bash
+    docker exec kfin-ideas-uat-worker-1 python -m bootstrap.smoke --web-url http://web:3000
+    ```
+
+    Paste back: the whole output. Pass: `smoke: all checks passed`.
+
+**Back to Capture first** (at any time): an admin switches `ai.all` off on the Admin page, with a reason. That is instant: the assistant stops for everyone. Then IT sets `LLM_MODE=fake` in the app env file and restarts the worker and the web app (`compose up -d --wait worker web`, with the wrapper from step 5). Always in this order, so `ai.all` is never on while `LLM_MODE=fake`. An upgrade stops if it finds `ai.all` on while `LLM_MODE=fake`.
 
 ## Rehearsal
 

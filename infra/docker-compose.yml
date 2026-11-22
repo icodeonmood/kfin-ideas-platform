@@ -126,6 +126,13 @@ services:
       WORKER_URL: http://worker:8000
       SPEECH_SERVICE_TOKEN: ""   # never the web app's, even if someone puts it in .env (BLD-C031)
       SARVAM_API_KEY: ""   # never the web app's, even if someone puts it in .env (DEC-108, BLD-C115)
+      # The model route's credentials are never the web app's, even if someone puts them in .env: model calls are the
+      # worker's gateway (non-negotiable 1, BLD-A246).
+      ANTHROPIC_API_KEY: ""
+      AWS_ACCESS_KEY_ID: ""
+      AWS_SECRET_ACCESS_KEY: ""
+      AWS_SESSION_TOKEN: ""
+      AWS_BEARER_TOKEN_BEDROCK: ""
       # Dev only: the server reaches the mock IdP inside Docker; the browser uses OIDC_ISSUER (BLD-042).
       OIDC_INTERNAL_BASE: http://mock-oidc:8080
       PORT: "3000"

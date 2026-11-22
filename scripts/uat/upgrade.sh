@@ -10,7 +10,7 @@
 # worker on the new images (Postgres keeps running), then, on a build with the start sweep, the count of files back
 # to waiting (BLD-A239) → the 13 smoke checks → record. Stops at the first failure.
 # Nothing is changed before the backup is taken and checked. After it, a failure prints the rollback command and
-# stops; it never rolls back by itself. It never changes a kill switch.
+# stops; it never rolls back by itself. It never changes a kill switch, and never runs golden sets (BLD-A245).
 # Optional, as for deploy.sh: UAT_DATA_DIR (default ./.data-uat), UAT_WEB_PORT (3100), UAT_PROJECT (kfin-ideas-uat).
 set -euo pipefail
 umask 077

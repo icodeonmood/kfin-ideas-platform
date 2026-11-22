@@ -8,8 +8,8 @@
 # PSEUDONYM_VAULT_KEY; it builds each service's own settings and is never handed to a container as a whole.
 #
 # Steps: preflight → build → empty database check → migrations → service logins → company repo seed (no dev
-# overlay outside dev) → start → golden sets on the model route (failing agents switch off), or Mode B if no route
-# is approved → smoke tests. Stops at the first failure.
+# overlay outside dev) → start → Mode B (ai.all off, whatever the model route: golden sets never run in a deployed
+# database, BLD-A245) → smoke tests. Stops at the first failure.
 # Optional: UAT_DATA_DIR (default ./.data-uat), UAT_WEB_PORT (3100), UAT_PROJECT (kfin-ideas-uat).
 set -euo pipefail
 
@@ -126,14 +126,15 @@ step "6/8 Start the stack"
 compose up -d --wait --wait-timeout 240
 
 step "7/8 Model route"
+# BLD-A245 (the product lead's rule): golden sets never run in a deployed database, in any APP_ENV; real-model calls
+# happen only on a throwaway database. So the deploy starts in Mode B whatever the route: ai.all off, audited. Full
+# mode is a hand step after scripts/eval/live.sh passes (docs/UAT.md, "Switching to full mode (mode A)").
+mode_b_reason="Mode B until InfoSec approves the model route (D1)"
 if compose exec -T worker python -m bootstrap.preflight ai-route-ready; then
-  echo "model route configured: golden sets run on it; an agent that fails switches itself off (§7.6)"
-  compose run --rm -T -v "$ROOT/eval/golden:/app/eval/golden:ro" worker python -m evalrunner --switch-off-failing \
-    || echo "golden sets: at least one agent failed or could not run; any switched off is listed above"
-else
-  compose exec -T worker python -m core.killswitch set ai.all off \
-    --reason "Mode B until InfoSec approves the model route (D1)" --actor ops:uat-deploy
+  echo "model route configured: golden sets are not run on this database; run scripts/eval/live.sh --server (UAT.md, Switching to full mode), then an admin switches ai.all on"
+  mode_b_reason="Mode B until scripts/eval/live.sh passes and the product lead says go (BLD-A245)"
 fi
+compose exec -T worker python -m core.killswitch set ai.all off --reason "$mode_b_reason" --actor ops:uat-deploy
 
 step "8/8 Smoke tests"
 compose exec -T worker python -m bootstrap.smoke --web-url http://web:3000 --fresh

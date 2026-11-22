@@ -60,6 +60,13 @@ services:
       OIDC_INTERNAL_BASE: ""   # dev only; the web app refuses it outside dev
       SPEECH_SERVICE_TOKEN: ""   # never the web app's (BLD-C031)
       SARVAM_API_KEY: ""   # never the web app's (DEC-108, BLD-C115)
+      # The model route's credentials are never the web app's: model calls are the worker's gateway (non-negotiable 1,
+      # BLD-A246). The app env file holds them for the worker; the web app reads none of them.
+      ANTHROPIC_API_KEY: ""
+      AWS_ACCESS_KEY_ID: ""
+      AWS_SECRET_ACCESS_KEY: ""
+      AWS_SESSION_TOKEN: ""
+      AWS_BEARER_TOKEN_BEDROCK: ""
     ports: !override ["${UAT_WEB_PORT:-3100}:3000"]
 
   # The isolated speech service (BLD-C015), started only when SPEECH_ENGINE_URL is set (deploy.sh adds the profile).
