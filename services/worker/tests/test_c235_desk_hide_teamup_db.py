@@ -118,9 +118,9 @@ def _world(db: Conn, c: dict[str, Any], name: str) -> dict[str, str]:
     requests.answer(db, rid, c["ravi"]["id"], {"answer": "decline", "reason": reason})
     draft = f.draft(db, c["asha"])
     ask = f"{name} wrote to our Pune desk about the same SMS and the code it gives."
-    mrid = drafts.ask(db, str(draft["id"]), c["asha"]["id"], {"other_idea_id": c["lead"]["idea_id"], "note": ask})[
-        "id"
-    ]
+    mrid = drafts.ask(
+        db, str(draft["id"]), c["asha"]["id"], {"other_idea_id": c["lead"]["idea_id"], "note": ask}
+    )["id"]
     requests.answer(db, mrid, c["ravi"]["id"], {"answer": "merge"})
     merge = db.execute("SELECT id FROM merges WHERE merge_request_id = %s", (mrid,)).fetchone()
     assert merge is not None
