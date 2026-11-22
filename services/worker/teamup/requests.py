@@ -262,17 +262,21 @@ def _lead_typed_it(conn: Conn, req: Req) -> bool:
     return by is not None and lead_code(conn, req.idea) == by
 
 
-def request_json(conn: Conn, req: Req, *, full: bool = False) -> dict[str, Any]:
+def request_json(conn: Conn, req: Req, *, viewer: str | None, full: bool = False) -> dict[str, Any]:
     """E-ENTITIES TeamUpRequest, plus `request` ('teamup' or 'merge'). A draft merge request reads with team-up
     states. Only its two parties ever get one (the requester and the lead); `full` is the lead's view. Each reads
-    their own words back and the other's masked copy (`words`): the requester their note, the lead their reason."""
+    their own words back and the other's masked copy (`words`): the requester their note, the lead their reason.
+    `viewer` is the reader's contributor code: the note is the requester's own words only when the reader is the
+    requester (`from_code`), never because of who the caller is; the lead and anyone else read it masked (DEC-103,
+    DEC-104, BLD-F098)."""
     t = clock_now()
+    typed_it = viewer is not None and viewer == str(req.row["from_code"])
     out: dict[str, Any] = {
         "id": req.id,
         "request": req.kind,
         "idea_id": req.idea.get("idea_id"),
         "from": person_by_code(conn, req.row["from_code"]).as_json(),
-        "note": words(conn, req, "note", mine=not full) or "",
+        "note": words(conn, req, "note", mine=typed_it) or "",
         "brought": [_brought_ref(conn, req, b, t, full) for b in req.brought],
         "state": req.teamup_state,
         "sent_at": req.row["sent_at"].isoformat(),
@@ -442,7 +446,7 @@ def my_state(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
         "crew_count": len(crew_codes(conn, idea["id"])),
         "can_request": why is None and code is not None,
         "why_not": why,
-        "request": request_json(conn, mine) if mine else None,
+        "request": request_json(conn, mine, viewer=code) if mine else None,
         "after": after_for(conn, mine, role, user_id) if mine else None,
     }
 
@@ -475,11 +479,11 @@ def send(
     `draft_id` marks "Keep mine separate" from Check it on that draft's similar ideas (V-ACC.similar/7)."""
     note = str(body.get("note") or "")
     asked = {"ref": ref, **body}
+    me = code_of(conn, user_id)
     made = remembered(conn, user_id, idempotency_key, ROUTE_SEND, asked)
     if made is not None:
         req = load_request(conn, made)
-        return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
-    me = code_of(conn, user_id)
+        return {**request_json(conn, req, viewer=me), "after": after_for(conn, req, None, user_id)}
     idea = load_idea_for(conn, ref, me)
     _settled_mine(conn, idea, me)  # an ended request of theirs no longer counts as waiting
     raw_draft = body.get("draft_id")
@@ -499,7 +503,7 @@ def send(
         made = remembered(conn, user_id, idempotency_key, ROUTE_SEND, asked)
         if made is not None:
             req = load_request(conn, made)
-            return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
+            return {**request_json(conn, req, viewer=code), "after": after_for(conn, req, None, user_id)}
         # BLD-F029: "Waiting for the lead" when the lead is not named to them
         lead = lead_seen_by(conn, idea, user_id, code)
         # L-TEAMUP.rules/1, the rule the similar read shows too (BLD-C187)
@@ -547,7 +551,7 @@ def send(
               after={"request_id": rid, "brought": len(brought), "from_draft": bool(draft_id)})  # fmt: skip
         remember(conn, user_id, idempotency_key, ROUTE_SEND, asked, rid)
         req = load_request(conn, rid)
-        return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
+        return {**request_json(conn, req, viewer=code), "after": after_for(conn, req, None, user_id)}
 
 
 def read(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
@@ -563,7 +567,7 @@ def read(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
     if ended(req):  # its idea closed, or its draft was sent or archived: read in its closed state (BLD-F024)
         settle(conn, req.idea)
         req = load_request(conn, request_id)
-    out = request_json(conn, req, full=is_lead)
+    out = request_json(conn, req, viewer=code, full=is_lead)
     if is_lead:
         who = person_by_code(conn, req.row["from_code"])
         out["reader"] = rules.reader_words(who.name, who.first_name, len(req.brought))
@@ -608,7 +612,7 @@ def withdraw(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
                   entity_of(req.brought[0] if req.kind == "merge" else req.idea),
                   after={"request_id": req.id})  # fmt: skip
         req = load_request(conn, request_id)
-        return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
+        return {**request_json(conn, req, viewer=code), "after": after_for(conn, req, None, user_id)}
 
 
 def _not_waiting(req: Req, who: Person) -> Refused:
@@ -740,7 +744,7 @@ def _answer(
                  "has_reason": bool(masked_reason)})  # fmt: skip
     done = load_request(conn, req.id)
     return {
-        "request": request_json(conn, done, full=True),
+        "request": request_json(conn, done, viewer=code, full=True),
         "result": rules.lead_result(ans, who.first_name, len(req.brought), masked_reason),
         "say_hello": None if ans == "decline" else rules.say_hello(who.first_name, str(req.idea["idea_id"])),
     }

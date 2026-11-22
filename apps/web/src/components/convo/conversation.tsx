@@ -636,6 +636,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
     composer.can_attach === true && !composer.closed ? (
       <>
         <span
+          id={ids.attach}
           className="cv-attach"
           onKeyDown={(e) => {
             if (e.key !== "Escape" || !picking) return;

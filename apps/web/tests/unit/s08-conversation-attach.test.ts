@@ -6,7 +6,8 @@
  * each file through `POST /api/files` with the idea's reference and `for: "conversation"`; its row with "Checked" and
  * "Remove {name}" (DELETE); a file with a customer detail says it can't be sent in the conversation, never Check it's
  * line about who opens it; Send carries the files' ids and the worker's refusal shows under the box; a typed link goes
- * into the words; a sent file's View opens where the server says. Synthetic people, words and files only.
+ * into the words; a sent file's View opens where the server says. Across 640px, focus on the "+" or in its picker
+ * stays there (WCAG 2.4.3, BLD-F098). Synthetic people, words and files only.
  */
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -20,6 +21,7 @@ vi.mock("next/link", () => ({
 const { Conversation } = await import("@/components/convo/conversation");
 const { S08_COPY, putLink } = await import("@/components/convo/compose");
 const { convoRowView, sendable } = await import("@/components/convo/attach");
+const { PHONE } = await import("@/components/convo/pin");
 const { ATTACH_NAME } = await import("@/components/ui/attach-button");
 const { BOX_FILES_COPY } = await import("@/app/share/box-files");
 type View = import("@/lib/contracts").ConversationView;
@@ -376,6 +378,114 @@ describe('C-FILE.uploader in S-08\'s box: the picker the "+" opens (BLD-F095)', 
     await act(async () => {
       plus()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
+    await frame();
+    expect(host.querySelector(".cv-pick")).toBeNull();
+    expect(document.activeElement).toBe(plus());
+  });
+});
+
+// --- Across 640px -------------------------------------------------------------------------------------------------
+/** A width that crosses 640px: it starts a phone or wider, and `cross(phone)` changes it as the browser would. */
+function crossing(phone: boolean): (next: boolean) => Promise<void> {
+  const changed = new Set<() => void>();
+  let matches = phone;
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((q: string) => ({
+      get matches() {
+        return q === PHONE ? matches : false;
+      },
+      media: q,
+      addEventListener: (_: string, cb: () => void) => changed.add(cb),
+      removeEventListener: (_: string, cb: () => void) => changed.delete(cb),
+    })),
+  );
+  return async (next: boolean) => {
+    matches = next;
+    await act(async () => changed.forEach((cb) => cb()));
+  };
+}
+
+/** Whether the "+" comes before the words (a phone) or after them (wider), as lane D QA'd the two orders. */
+function plusFirst(): boolean {
+  const field = host.querySelector("form.cv-box .cv-field")!;
+  return Boolean(plus()!.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING);
+}
+
+const pickerNow = () => document.getElementById(plus()!.getAttribute("aria-controls") ?? "");
+
+describe('S-08, C-PROMPT, WCAG 2.4.3: focus stays on the "+" and in its picker when the width crosses 640px (BLD-F098)', () => {
+  it('S-08, C-PROMPT, WCAG 2.4.3, BLD-F098: focus on the "+" is on the new "+", phone to wide and wide to phone', async () => {
+    const cross = crossing(true);
+    await show(sharerView());
+    expect(plusFirst()).toBe(true);
+    await act(async () => plus()!.focus());
+    const phoneCopy = plus();
+    await cross(false);
+    expect(plusFirst()).toBe(false); // wider: a new "+", after the words
+    expect(plus()).not.toBe(phoneCopy);
+    expect(document.activeElement).toBe(plus());
+    const wideCopy = plus();
+    await cross(true);
+    expect(plusFirst()).toBe(true);
+    expect(plus()).not.toBe(wideCopy);
+    expect(document.activeElement).toBe(plus());
+  });
+
+  it("S-08, C-PROMPT, WCAG 2.4.3, BLD-F098: with focus inside the open picker, the picker is still open after the crossing and focus is inside it, on its first control", async () => {
+    const cross = crossing(false);
+    await show(sharerView());
+    const picker = await openPicker();
+    await act(async () => picker.querySelector<HTMLInputElement>("input[type=url]")!.focus());
+    await cross(true);
+    const onPhone = pickerNow()!;
+    expect(onPhone).not.toBe(picker); // a new copy, drawn with its "+" before the words
+    expect(plus()!.getAttribute("aria-expanded")).toBe("true");
+    expect(onPhone.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(onPhone.querySelector(".cv-pick-folder"));
+    await cross(false);
+    const wider = pickerNow()!;
+    expect(wider).not.toBe(onPhone);
+    expect(plus()!.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(wider.querySelector(".cv-pick-folder"));
+  });
+
+  it("S-08, C-PROMPT, WCAG 2.4.3, BLD-F098: focus in the words box, or on Send, stays there across 640px, with the picker open or not", async () => {
+    const cross = crossing(true);
+    await show(sharerView());
+    await type("Calls about R07");
+    await act(async () => textbox().focus());
+    await cross(false);
+    expect(document.activeElement).toBe(textbox());
+    await cross(true);
+    expect(document.activeElement).toBe(textbox());
+    await openPicker();
+    await act(async () => textbox().focus());
+    await cross(false);
+    expect(pickerNow()).toBeTruthy(); // still open, and it takes no focus
+    expect(document.activeElement).toBe(textbox());
+    await act(async () => named(S08_COPY.send)!.focus());
+    await cross(true);
+    expect(document.activeElement).toBe(named(S08_COPY.send));
+  });
+
+  it('S-08, C-PROMPT, WCAG 2.4.3, BLD-F098: after a crossing, Escape in the picker and files chosen still put focus back on the "+"', async () => {
+    const cross = crossing(false);
+    await show(sharerView());
+    const picker = await openPicker();
+    await act(async () => picker.querySelector<HTMLInputElement>("input[type=url]")!.focus());
+    await cross(true);
+    await act(async () => {
+      document.activeElement!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await frame();
+    expect(host.querySelector(".cv-pick")).toBeNull();
+    expect(plus()!.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(plus());
+    await openPicker();
+    await cross(false);
+    expect(document.activeElement).toBe(plus()); // it was on the "+" that opened the picker
+    await choose([md("branch-call-log.md")]);
     await frame();
     expect(host.querySelector(".cv-pick")).toBeNull();
     expect(document.activeElement).toBe(plus());

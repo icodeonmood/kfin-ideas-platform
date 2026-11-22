@@ -225,6 +225,66 @@ def test_l_hide_l_teamup_dec_103_dec_104_bld_f097_the_note_is_masked_before_the_
     _nowhere_in_clear(db, customer, folio, pan, phone)
 
 
+@pytest.mark.parametrize(
+    ("viewer", "full", "as_typed"),
+    [
+        pytest.param("kavya", False, True, id="the-requester"),
+        pytest.param("ravi", True, False, id="the-lead"),
+        pytest.param("ravi", False, False, id="the-lead-without-full"),
+        pytest.param("asha", False, False, id="a-third-viewer"),
+        pytest.param("asha", True, False, id="a-third-viewer-with-full"),
+        pytest.param(None, False, False, id="no-code"),
+    ],
+)
+def test_l_teamup_dec_103_dec_104_bld_f098_the_note_reads_as_typed_only_for_its_requester(
+    db: Conn,
+    cast: dict[str, Any],
+    inbox: f.Inbox,
+    customer: str,
+    viewer: str | None,
+    full: bool,
+    as_typed: bool,
+) -> None:
+    """`request_json` takes the reader's contributor code (BLD-F098), and the note's `mine` follows who reads, not
+    who calls: Kavya, who sent it, reads her own note back; Ravi, the lead, reads the masked note, with the lead's
+    view or without; a third person's code (Asha), or none, reads the masked note too, whatever `full` says."""
+    folio, pan, phone = made_up()
+    note = f"{customer} rang our Hyderabad branch twice about this. Folio {folio}, PAN {pan}, call {phone} after 6."
+    sent = requests.send(
+        db, cast["lead"]["idea_id"], cast["kavya"]["id"], {"note": note, "brought_idea_ids": []}
+    )
+    req = requests.load_request(db, sent["id"])
+    code = cast[viewer]["code"] if viewer else None
+    got = requests.request_json(db, req, viewer=code, full=full)["note"]
+    if as_typed:
+        assert got == note
+    else:
+        _masked_only(got, customer, folio, pan, phone)
+        assert "Folio ••••89" in got and "Name ••••" in got
+        assert got == _stored(db, "teamup_requests", "note_encrypted", sent["id"])
+
+
+def test_l_teamup_l_merge_request_dec_103_dec_104_bld_f098_the_ask_reads_as_typed_only_for_its_owner(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, customer: str
+) -> None:
+    """`drafts.merge_request_json` reads whether its reader typed the ask from `user_id` against the request's
+    `from_code` (BLD-F098), never assumed: Asha, who asked from her draft, reads her own words back; the lead's
+    user id (Ravi) and a third person's (Kavya) read the masked ask, the stored copy."""
+    folio, pan, phone = made_up()
+    draft = f.draft(db, cast["asha"])
+    ask = f"{customer} wrote to our Pune desk about the same SMS. Folio {folio}, PAN {pan}, call {phone} after 6."
+    got = drafts.ask(
+        db, str(draft["id"]), cast["asha"]["id"], {"other_idea_id": cast["lead"]["idea_id"], "note": ask}
+    )
+    req = requests.load_request(db, got["id"])
+    assert drafts.merge_request_json(db, req, cast["asha"]["id"])["note"] == ask
+    stored = _stored(db, "merge_requests", "note_encrypted", got["id"])
+    for who in ("ravi", "kavya"):
+        masked = drafts.merge_request_json(db, req, cast[who]["id"])["note"]
+        _masked_only(masked, customer, folio, pan, phone)
+        assert masked == stored
+
+
 def test_l_hide_l_teamup_dec_103_bld_f097_the_decline_reason_is_masked_before_the_requester_reads_it(
     db: Conn, cast: dict[str, Any], inbox: f.Inbox, customer: str
 ) -> None:
