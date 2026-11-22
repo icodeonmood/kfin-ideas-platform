@@ -239,10 +239,17 @@ def test_dec_129_bld_f062_the_crew_reads_and_opens_the_conversations_checked_fil
     fx.build_team(db, idea, arjun)
     att = fx.attachment(db, idea, kavya, name="branch-call-log.pdf")
     old = fx.attachment(db, idea, kavya, name="old-call-log.xlsx")
+    later = fx.attachment(db, idea, kavya, name="week-48-calls.pdf")
     db.execute("UPDATE attachments SET file_state = NULL WHERE id = %s", (old,))  # before the cut-over: clean
     send(
-        db, idea["idea_id"], kavya["id"], {"text": "The call log.", "file_ids": [att, old]}, at=fx.at(21, 10)
+        db,
+        idea["idea_id"],
+        kavya["id"],
+        {"text": "The call log.", "file_ids": [att, old, later]},
+        at=fx.at(21, 10),
     )
+    # A later check finds a customer detail in a file already sent (DEC-127 (1)): it leaves every reader's message.
+    db.execute("UPDATE attachments SET file_state = 'personal_data_found' WHERE id = %s", (later,))
     set_id = fx.question_set(db, idea, meera, ("evidence",), fx.at(21, 9))
     fx.answer_all(db, set_id, kavya, fx.at(21, 9, 30))
     answer = db.execute(
@@ -266,9 +273,10 @@ def test_dec_129_bld_f062_the_crew_reads_and_opens_the_conversations_checked_fil
         assert F.get_item(db, fid, meghna["id"])["view_url"] == f"/api/files/{fid}/view"
         data, _, _ = F.content(db, fid, meghna["id"])
         assert data == b"synthetic copy"
-    for fn in (F.get_item, F.content):  # a found file never opens for the crew (DEC-127)
-        err = refused(fn, db, found, meghna["id"])
-        assert (err.status, err.code) == (404, "not_found"), fn.__name__
+    for fid in (found, later):  # a found file, on an answer or a message, never opens for the crew (DEC-127)
+        for fn in (F.get_item, F.content):
+            err = refused(fn, db, fid, meghna["id"])
+            assert (err.status, err.code) == (404, "not_found"), (fn.__name__, fid)
 
     # The sharer still gets the file from before the cut-over; the build team gets no file at all.
     [mine] = [
