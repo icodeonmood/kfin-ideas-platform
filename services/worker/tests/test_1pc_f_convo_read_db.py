@@ -283,6 +283,48 @@ def test_l_convo_3_event_lines_render_at_read_time_with_names_and_you(db: Any, c
     assert "You reversed the decision. It’s now Not now. Today, 9:00 am" in as_rohan
 
 
+def test_l_convo_3_dec_127_bld_c223_checked_counts_only_the_ideas_own_files_never_a_conversation_file(
+    db: Any, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L-CONVO/3, DEC-127 (2), BLD-C223: "Checked and matched. N … hidden" counts what the check hid in what was shared,
+    the idea's own files included. A file added for the conversation, sent or not, found or not, and its name's
+    detail never change the line the lead, the crew or anyone else reads (lane C's finding, 22 Nov)."""
+    from convo.messages import send
+
+    monkeypatch.setattr("convo.adapters.notify_post", lambda conn, kind, to, **kw: None)
+    kavya, meera, ravi = cast["kavya"], cast["meera"], cast["ravi"]
+    idea = fx.idea(db, kavya, status="picked")
+    fx.join_crew(db, idea, ravi)
+    db.execute(
+        "INSERT INTO idea_status_history (idea_uuid, from_status, to_status, at) VALUES (%s, 'checking', "
+        "'with_review_desk', %s)",
+        (idea["id"], fx.at(14, 10, 6)),
+    )
+    own = fx.attachment(db, idea, kavya, purpose="idea", name="proof-screenshot.png")
+    unsent = fx.attachment(db, idea, meera, file_state="personal_data_found", name="calls-week-47.xlsx")
+    sent = fx.attachment(db, idea, kavya, name="branch-call-log.pdf")
+    send(db, idea["idea_id"], kavya["id"], {"text": "Here it is.", "file_ids": [sent]}, at=fx.at(17, 10, 6))
+    for source, source_id in (("message", "m1"), ("file", own)):  # what was shared: 2 folio numbers
+        db.execute(
+            "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked) VALUES (%s, %s, %s, 'folio', "
+            "'Folio ••••89')",
+            (idea["id"], source, source_id),
+        )
+    for source_id in (unsent, f"{unsent}:name", sent, f"{sent}:name"):  # conversation files: never counted
+        db.execute(
+            "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked) VALUES (%s, 'file', %s, "
+            "'folio', 'Folio ••••89')",
+            (idea["id"], source_id),
+        )
+    for who in (kavya, meera, ravi):  # the sharer, the desk and the crew read the same line
+        [line] = [
+            t for t in texts(conversation(db, idea["idea_id"], who["id"], at=NOW)) if t.startswith("Checked")
+        ]
+        assert line.startswith("Checked and matched. 2 folio numbers hidden, no similar ideas found."), who[
+            "name"
+        ]
+
+
 def test_l_convo_3_a_desk_merge_closes_the_merged_ideas_conversation_with_a_link(
     db: Any, cast: dict[str, Any]
 ) -> None:
