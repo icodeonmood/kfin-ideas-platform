@@ -99,6 +99,28 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+      # BLD-G005: the same terms as ci.yml's container-logs step (BLD-A171). The web and worker logs are checked for
+      # idea text and personal data (non-negotiable 3) on every run, and kept for a week only when the journeys
+      # failed, so a stall like J-BROWSE/4's on 21 Nov can be read after the run. Never a log the check refused:
+      # artifacts are readable by anyone who can read the repo. The name differs from ci.yml's, as ci.yml calls this
+      # workflow in the same run.
+      - name: Journeys container logs carry no idea text or personal data
+        id: journeys_logcheck
+        if: always()
+        run: |
+          docker compose -f infra/docker-compose.yml --project-directory . --env-file .env \
+            logs --no-color --no-log-prefix web worker > journeys-container.log
+          cd services/worker && uv run --frozen python ../../scripts/ci/check_logs.py ../../journeys-container.log
+
+      - name: Keep the container logs of failed journeys
+        if: failure() && steps.journeys_logcheck.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: journeys-container-logs
+          path: journeys-container.log
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Upload the report and board
         if: always()
         uses: actions/upload-artifact@v4
