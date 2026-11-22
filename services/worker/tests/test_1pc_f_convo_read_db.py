@@ -325,6 +325,54 @@ def test_l_convo_3_dec_127_bld_c223_checked_counts_only_the_ideas_own_files_neve
         ]
 
 
+def test_l_convo_3_bld_f103_checked_never_counts_an_answers_file_sent_or_not(
+    db: Any, cast: dict[str, Any]
+) -> None:
+    """L-CONVO/3, BLD-F103 (lane C's note after r4): a file added with an answer to the review desk is the idea's
+    (`purpose` 'idea', no conversation entry) but was never shared at the check, so its details, sent or not, never
+    change the "Checked and matched" line the sharer, the desk and the crew read (as lane B's BLD-B247 leaves an
+    unsent answer's files out at the desk)."""
+    kavya, meera, ravi = cast["kavya"], cast["meera"], cast["ravi"]
+    idea = fx.idea(db, kavya, status="picked")
+    fx.join_crew(db, idea, ravi)
+    db.execute(
+        "INSERT INTO idea_status_history (idea_uuid, from_status, to_status, at) VALUES (%s, 'checking', "
+        "'with_review_desk', %s)",
+        (idea["id"], fx.at(14, 10, 6)),
+    )
+    set_id = fx.question_set(db, idea, meera, ("evidence", "often"), fx.at(16, 9))
+    fx.answer_all(db, set_id, kavya, fx.at(16, 9, 30))
+    answers = [
+        str(r["id"])
+        for r in db.execute(
+            "SELECT a.id FROM answers a JOIN questions q ON q.id = a.question_id WHERE q.set_id = %s ORDER BY q.seq",
+            (set_id,),
+        ).fetchall()
+    ]
+    db.execute("UPDATE answers SET sent_at = NULL WHERE id = %s", (answers[1],))  # one answer not yet sent
+    db.execute(
+        "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked) VALUES (%s, 'message', 'm1', "
+        "'folio', 'Folio ••••89')",
+        (idea["id"],),
+    )
+    for answer in answers:  # each answer's file, and its name's detail: never counted
+        shot = fx.attachment(db, idea, kavya, purpose="idea", name="sms-screenshot.png")
+        db.execute("UPDATE attachments SET answer_id = %s WHERE id = %s", (answer, shot))
+        for source_id in (shot, f"{shot}:name"):
+            db.execute(
+                "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked) VALUES (%s, 'file', %s, "
+                "'folio', 'Folio ••••89')",
+                (idea["id"], source_id),
+            )
+    for who in (kavya, meera, ravi):
+        [line] = [
+            t for t in texts(conversation(db, idea["idea_id"], who["id"], at=NOW)) if t.startswith("Checked")
+        ]
+        assert line.startswith("Checked and matched. 1 folio number hidden, no similar ideas found."), who[
+            "name"
+        ]
+
+
 def test_l_convo_3_a_desk_merge_closes_the_merged_ideas_conversation_with_a_link(
     db: Any, cast: dict[str, Any]
 ) -> None:
