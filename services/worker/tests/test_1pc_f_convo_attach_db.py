@@ -154,9 +154,10 @@ def test_l_convo_3_bld_f095_files_on_messages_and_answers_open_through_the_files
 def test_dec_107_bld_f062_bld_f095_the_crew_never_opens_a_conversation_file_with_a_customer_detail(
     db: Any, told: list[dict[str, Any]]
 ) -> None:
-    """DEC-107, BLD-F062, BLD-F095: lane C's `rights()` lets the crew open a checked file by its address
-    (non-negotiable 7); a conversation file with a customer detail found never opens for them, whoever added it,
-    while the sharer and the desk open it."""
+    """DEC-107, BLD-F062, BLD-F095, DEC-127 (2): lane C's `rights()` lets the crew open a checked file by its address
+    (non-negotiable 7); a conversation file with a customer detail found never opens for them, whoever added it.
+    These files are not yet sent, and a conversation file not yet sent opens for its uploader only (DEC-127 (2),
+    BLD-C222): the other of the sharer and the desk gets the same 404 as a missing id."""
     kavya = fx.person(db, "Kavya Menon")
     meera = fx.person(db, "Meera Iyer", roles=(("reviewer", None),))
     meghna = fx.person(db, "Meghna Das")
@@ -169,12 +170,13 @@ def test_dec_107_bld_f062_bld_f095_the_crew_never_opens_a_conversation_file_with
         db.execute(
             "UPDATE attachments SET state = 'quarantine' WHERE id = %s", (found,)
         )  # never marked clean
-        for see in (kavya, meera):  # the sharer (the idea's own) and the desk
-            item = F.get_item(db, found, see["id"])
-            assert item["customer_detail"] is True and item["view_url"] == f"/api/files/{found}/view"
-        for fn in (F.get_item, F.content):  # the row, and the stored copy (`GET /api/files/:id/view`)
-            err = refused(fn, db, found, meghna["id"])
-            assert (err.status, err.code) == (404, "not_found"), (fn.__name__, by["name"])
+        item = F.get_item(db, found, by["id"])  # its uploader opens it
+        assert item["customer_detail"] is True and item["view_url"] == f"/api/files/{found}/view"
+        other = meera if by["id"] == kavya["id"] else kavya  # the other of the sharer and the desk
+        for who in (other, meghna):  # ... and the crew
+            for fn in (F.get_item, F.content):  # the row, and the stored copy (`GET /api/files/:id/view`)
+                err = refused(fn, db, found, who["id"])
+                assert (err.status, err.code) == (404, "not_found"), (fn.__name__, by["name"], who["name"])
     assert conversation(db, idea["idea_id"], meghna["id"], at=NOW)["composer"]["can_attach"] is False
 
 
