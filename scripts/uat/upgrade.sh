@@ -7,7 +7,8 @@
 # FROM is read from $UAT_DATA_DIR/ops/installed.json; an install without one (launch-2026-11-20-r3) needs FROM.
 # Steps: checks → keep the running images for rollback → build the new images and run preflight on them (the old
 # containers keep serving) → fresh backup of the database and company repo, or stop → dbmate up → restart web and
-# worker on the new images (Postgres keeps running) → the 13 smoke checks → record. Stops at the first failure.
+# worker on the new images (Postgres keeps running), then, on a build with the start sweep, the count of files back
+# to waiting (BLD-A239) → the 13 smoke checks → record. Stops at the first failure.
 # Nothing is changed before the backup is taken and checked. After it, a failure prints the rollback command and
 # stops; it never rolls back by itself. It never changes a kill switch.
 # Optional, as for deploy.sh: UAT_DATA_DIR (default ./.data-uat), UAT_WEB_PORT (3100), UAT_PROJECT (kfin-ideas-uat).
@@ -30,6 +31,29 @@ compose() {
     --env-file "$APP_ENV_FILE" --env-file "$DB_ENV_FILE" "$@"
 }
 sql() { compose exec -T postgres psql -v ON_ERROR_STOP=1 -U ideas -d ideas -tAq -c "$1"; }
+# BLD-A239, end of step 6: the new worker's start sweep, from its audit row (actor system:files, one per start, written
+# after its last batch, N = 0 included), read-only. Only `count` and `complete` leave the database: no other key of
+# `after`, and nothing from a log line. Never stops the upgrade: by now it has finished. <since> is the database's
+# epoch before the restart ("unread" if it could not be read). UAT_SWEEP_WAIT_S (default 120) is for the tests.
+report_start_sweep() {
+  local since="$1" wait_s="${UAT_SWEEP_WAIT_S:-120}" row deadline re='^([0-9]+) (true|false)$'
+  [[ "$wait_s" =~ ^[0-9]+$ ]] || wait_s=120
+  deadline=$(( SECONDS + wait_s ))
+  while [[ "$since" != "unread" ]]; do
+    row="$(sql "SELECT (after->>'count') || ' ' || (after->>'complete') FROM audit_log WHERE action = 'file.start_sweep' AND at >= to_timestamp($since) ORDER BY id DESC LIMIT 1" 2>/dev/null || true)"
+    if [[ "$row" =~ $re ]]; then
+      if [[ "${BASH_REMATCH[2]}" == "true" ]]; then
+        echo "file checks: ${BASH_REMATCH[1]} files back to waiting for the personal-data check (none opened)"
+      else
+        echo "file checks: the worker's start sweep stopped part-way after ${BASH_REMATCH[1]} files; nothing was opened. Send this output to lane A."
+      fi
+      return 0
+    fi
+    (( SECONDS < deadline )) || break
+    sleep 2
+  done
+  echo "file checks: the worker did not report its start sweep within $wait_s s; nothing was opened. Send this output to lane A."
+}
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 STARTED=$SECONDS
@@ -221,7 +245,16 @@ echo "migrations applied now: $(printf '%s' "$APPLIED" | grep -c . || true)"
 
 PHASE=restart
 step "6/8 Restart $SERVICES on the new images (Postgres keeps running)"
+# BLD-A239: a build with lane C's start sweep (A2) moves the files that read "Didn't upload" because AI was off back
+# to waiting, once, at worker start, and writes one audit row when it ends. Its time bound is the database's clock
+# before the restart; a build without the sweep prints nothing here (decided from this checkout, never from FROM).
+sweep_since=""
+if has_start_sweep "$TO_SHA"; then
+  sweep_since="$(sql "SELECT extract(epoch FROM now())" 2>/dev/null || true)"
+  [[ "$sweep_since" =~ ^[0-9]+(\.[0-9]+)?$ ]] || sweep_since="unread"
+fi
 compose up -d --wait --wait-timeout 240 --no-deps --no-build $SERVICES
+[[ -z "$sweep_since" ]] || report_start_sweep "$sweep_since"
 
 PHASE=smoke
 step "7/8 Smoke tests (13 checks; real people and their roles are expected now)"
