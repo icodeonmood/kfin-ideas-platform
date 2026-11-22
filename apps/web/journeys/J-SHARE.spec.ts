@@ -15,7 +15,9 @@
  * v7 is Home's mic (WF-02, BLD-C220): a tone for a microphone, which CI's fake speech route hears as its sample.
  * Walk items of 20 Nov: v4 and v5 are the "+" in the prompt box (DEC-124, WF-01) on Home, Share a problem and the
  * draft page; v6 is the Capture first draft page (DEC-125, WF-04), which switches `ai.all` off on the admin page and
- * always back on. Each has its own new person, so the main path's draft is not touched.
+ * always back on. v8 is a file while the assistant is off (BLD-C225 to BLD-C227): it waits for the personal details
+ * check, says so, and is checked once `ai.all` is back on. Each has its own new person, so the main path's draft is
+ * not touched.
  */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Locator, type Page } from "@playwright/test";
@@ -69,6 +71,7 @@ const HOME_FILES = fresh(600, "Homefiles");
 const BOX_FILES = fresh(800, "Boxfiles");
 const CAPTURE = fresh(1600, "Capturefirst");
 const HOME_VOICE = fresh(1800, "Homevoice");
+const FILE_WAIT = fresh(1900, "Filewait");
 
 async function signInAsFresh(page: Page, who: Fresh): Promise<void> {
   await signIn(page, who.emp, { email: who.email, name: who.name });
@@ -911,5 +914,83 @@ step(
     await expect(page.getByText(HEARD).first()).toBeVisible();
     expect(made, "Home makes one draft").toHaveLength(1);
     await expectNoSeriousAxeIssues(page);
+  },
+);
+
+// --- A2: a file while the assistant is off (BLD-C225 to BLD-C227) -----------------------------------------------------
+
+/** BLD-C227: a checking file's line while its personal details check waits for the assistant (check/model.ts
+ * `rowView`, from the FileItem's `problem` while `checks.waiting_for` is "gatekeeper"), in the box and on Proof. */
+const WAIT_LINE = "Waiting for the personal details check. It runs when the assistant is back.";
+
+step(
+  "J-SHARE/v8",
+  "S-04B",
+  "Capture first: a file waits for the personal details check, says so on the draft page and in Proof, never fails, and is checked once the assistant is back",
+  { needs: ["S-04", "S-04B", "S-05", "C-PROMPT.attach", "C-FILE", "L-HIDE", "BLD-C225"] },
+  async ({ page, browser }, info) => {
+    // Two admin visits, the waits while off, the 11 s below and up to 80 s for the switch-on re-queue (the watch's
+    // 60 s gate on a 20 s poll, BLD-C226), then the check itself. A step that times out must still put the switch back.
+    info.setTimeout(300_000);
+    const words =
+      "Branch staff scan the same change of bank form twice because the first scan is too faint to read at the desk.";
+    const name = `bank-form-scan-notes-${runSeconds().toString(36)}.pdf`;
+    const waiting = boxRow(page, name).getByText(WAIT_LINE, { exact: true });
+    const checked = boxRow(page, name).getByText("Checked", { exact: true });
+    let draft = "";
+
+    // DEC-125 (1): Capture first is `ai.all` off, switched on the admin page and always put back (BLD-G004).
+    await withSwitchLock("ai.all", async () => {
+      let before: SwitchState = "on";
+      try {
+        before = await setSwitch(browser, "ai.all", "off");
+        await signInAsFresh(page, FILE_WAIT);
+        // The web reads switches through a 10-second cache, which a change clears (server/killswitch.ts).
+        await expect(async () => {
+          await emptyShare(page);
+          await expect(page.locator(".cz")).toHaveClass(/\bcapture\b/, { timeout: 2_000 });
+        }).toPass({ timeout: 30_000 });
+
+        // A file with no customer detail (synthetic words only). Its check waits for the gatekeeper without using
+        // a try (BLD-C225; non-negotiable 4 keeps it closed to everyone else), and the row says why (BLD-C227).
+        await addFile(page, name, "Scan settings for the branch copier: grey scale, one page per form.");
+        await expect(waiting).toBeVisible({ timeout: 45_000 });
+        await expect(checked).toHaveCount(0);
+        await expectNoSeriousAxeIssues(page);
+
+        // The draft page reads the same line from the server: the reason is kept with the file's checks.
+        await composeBox(page).fill(words);
+        await page.getByRole("button", { name: "Start my draft" }).click();
+        await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
+        draft = new URL(page.url()).pathname;
+        await expect(page.getByText(words).first()).toBeVisible();
+        await expect(waiting).toBeVisible();
+        await expect(page.getByText(/^Didn.t upload\./)).toHaveCount(0);
+
+        // Check it, part 4: Proof shows the file with the same line.
+        await page.goto(`${draft}/check`);
+        await page.getByRole("button", { name: /^(?:\d )?Proof\b/ }).click();
+        await expect(page.getByRole("heading", { level: 1, name: "Anything that shows it?" })).toBeVisible();
+        await expect(page.getByText(name).first()).toBeVisible();
+        await expect(page.getByText(WAIT_LINE, { exact: true }).first()).toBeVisible();
+        await expect(page.getByText(/^Didn.t upload\./)).toHaveCount(0);
+        await expectNoSeriousAxeIssues(page);
+      } finally {
+        await restoreSwitches(browser, [["ai.all", before]]);
+        // The worker reads switches through its own 10-second cache (core/killswitch.py): wait it out, pass or
+        // fail, so the steps after this one meet the assistant on.
+        await new Promise((resolve) => setTimeout(resolve, 11_000));
+      }
+    });
+
+    // Back on: the watch queues the waiting check again (BLD-C226) and the file is checked. The draft page is
+    // loaded again while it waits, so the row is read from the server each time.
+    expect(draft, "the draft page was reached while the assistant was off").toBeTruthy();
+    await expect(async () => {
+      await page.goto(draft);
+      await expect(checked).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 150_000, intervals: [10_000] });
+    await expect(waiting).toHaveCount(0);
+    await expect(page.getByText(/^Didn.t upload\./)).toHaveCount(0);
   },
 );
