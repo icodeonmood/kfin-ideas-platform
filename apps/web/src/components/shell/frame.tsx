@@ -125,6 +125,8 @@ export function ShellFrame({
   const main = (
     <main id="main" tabIndex={-1}>
       {children}
+      {/* C-PHONE-TABS.dock (BLD-D028): a phone's dock renders here, last in main, outside every panel */}
+      <div className="dock-root mo-skip" />
     </main>
   );
 
