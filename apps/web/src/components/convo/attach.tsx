@@ -332,26 +332,41 @@ export function ConvoFileRows({
 }
 
 /**
+ * The link field's words, and whether "Add link" found they are not a link. The screen keeps them, so a picker drawn
+ * again (the width crossing 640px moves it, BLD-F098) still holds what was typed (BLD-F102).
+ */
+export interface LinkDraft {
+  text: string;
+  bad: boolean;
+}
+
+export const NO_LINK: LinkDraft = { text: "", bad: false };
+
+/**
  * The picker the "+" opens (C-FILE.uploader, the Home board's `attachments=Picker open`): the drop area with "browse",
  * "Choose a folder", and the link field with "Add link". Escape closes it (the screen puts focus back on the "+").
  */
 export function ConvoPicker({
   id,
   help,
+  link,
+  onLinkDraft,
   onFiles,
   onLink,
   onClose,
 }: {
   id: string;
   help: string | null;
+  /** The link field as the screen keeps it (BLD-F102). */
+  link: LinkDraft;
+  onLinkDraft(next: LinkDraft): void;
   onFiles(files: File[]): void;
   /** A link as typed, to go into the words. */
   onLink(link: string): void;
   onClose(): void;
 }) {
   const [dragging, setDragging] = useState(false);
-  const [text, setText] = useState("");
-  const [bad, setBad] = useState(false);
+  const { text, bad } = link;
   const files = useRef<HTMLInputElement>(null);
   const folder = useRef<HTMLInputElement>(null);
   const ids = useId();
@@ -364,11 +379,10 @@ export function ConvoPicker({
   const addLink = () => {
     const typed = text.trim();
     if (splitLinks(typed).bad) {
-      setBad(true);
+      onLinkDraft({ text, bad: true });
       return;
     }
-    setBad(false);
-    setText("");
+    onLinkDraft(NO_LINK);
     onLink(typed);
   };
 
@@ -442,10 +456,7 @@ export function ConvoPicker({
           aria-describedby={bad ? `${ids}-m` : undefined}
           aria-invalid={bad ? true : undefined}
           value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            if (bad) setBad(false);
-          }}
+          onChange={(e) => onLinkDraft({ text: e.target.value, bad: false })}
           onKeyDown={(e) => {
             if (e.key !== "Enter") return;
             e.preventDefault(); // never the conversation's own Send

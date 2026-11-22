@@ -21,6 +21,7 @@ from teamup.store import (
     actor,
     audit,
     audited,
+    code_of,
     hidden_from,
     is_closed,
     lead_code,
@@ -59,16 +60,19 @@ def merge_request_json(conn: Conn, req: Req | None, user_id: str) -> dict[str, A
     """E-ENTITIES Draft.merge_request `{other_idea_id, state, note, lead_reason?}`, plus the request id, the lead
     and what Check it shows (`after`, L-MERGE.request/4–8). `{state: 'none'}` when there has been none. Only the
     draft's owner (`user_id`) reads it; the lead is named to them only as DEC-104 allows (BLD-F029). The owner
-    typed the ask, so `note` is their own words (lane C's sealed copy, BLD-F097); the lead's reason is masked."""
+    typed the ask, so `note` is their own words (lane C's sealed copy, BLD-F097); the lead's reason is masked.
+    Whether the reader typed the ask is read from `user_id` against the request's `from_code`, never assumed, so
+    anyone else reads it masked (DEC-103, BLD-F098)."""
     if req is None:
         return {"state": "none", "after": None}
     lead = lead_seen_by(conn, req.idea, user_id, str(req.row["from_code"]))
     reason = unseal(req.row["lead_reason_encrypted"], "merge_requests", "lead_reason_encrypted", req.id)
+    typed_it = code_of(conn, user_id) == str(req.row["from_code"])
     out: dict[str, Any] = {
         "id": req.id,
         "other_idea_id": req.idea["idea_id"],
         "state": req.state,
-        "note": words(conn, req, "note", mine=True) or "",
+        "note": words(conn, req, "note", mine=typed_it) or "",
         "lead": lead.ref,
         "after": rules.draft_after(
             req.state, lead_first=lead.first, lead_ref=str(req.idea["idea_id"]), reason=reason

@@ -56,7 +56,7 @@ import { IDEA_STATUS, Pill } from "@/components/ui/pill";
 import type { ConversationEntryView, ConversationView, FileItem, PersonRef } from "@/lib/contracts";
 import { ONES_COMMITTEE, ONES_COMMITTEE_START, REVIEW_DESK, REVIEW_DESK_START } from "@/lib/review-desk";
 
-import { ConvoFileRows, ConvoPicker, useConvoFiles } from "./attach";
+import { ConvoFileRows, ConvoPicker, NO_LINK, useConvoFiles, type LinkDraft } from "./attach";
 import {
   S08_COPY as C,
   errorText,
@@ -182,6 +182,30 @@ function Files({ files, label }: { files: FileItem[]; label: string }) {
   );
 }
 
+/**
+ * Where focus is in the box's attach group (BLD-F098): on the "+", on the picker's `index`-th control (BLD-F102: the
+ * same control comes back, the link field included), or elsewhere.
+ */
+type AttachFocus = { at: "plus" } | { at: "picker"; index: number } | null;
+
+const CONTROLS = "button:not([disabled]), input:not([hidden]):not([disabled])";
+
+/** The picker's controls in the order the keyboard reaches them: the folder button, browse, the link field, Add link
+ * (the file inputs are hidden). */
+function controls(el: HTMLElement | null): HTMLElement[] {
+  return el ? Array.from(el.querySelectorAll<HTMLElement>(CONTROLS)) : [];
+}
+
+function attachFocus(plusId: string, pickerId: string): AttachFocus {
+  if (typeof document === "undefined") return null;
+  const at = document.activeElement;
+  if (!at || at === document.body) return null;
+  if (document.getElementById(plusId)?.contains(at)) return { at: "plus" };
+  const picker = document.getElementById(pickerId);
+  if (!picker?.contains(at)) return null;
+  return { at: "picker", index: Math.max(0, controls(picker).indexOf(at as HTMLElement)) };
+}
+
 export interface ConversationProps {
   /** The conversation as the server read it for this person. */
   initial: ConversationView;
@@ -206,6 +230,8 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
   const [removeError, setRemoveError] = useState<{ id: string; text: string } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [picking, setPicking] = useState(false);
+  // The picker's link field, kept here so a picker drawn again across 640px holds it; cleared when it closes (BLD-F102).
+  const [linkDraft, setLinkDraft] = useState<LinkDraft>(NO_LINK);
   // The phone's layout (640px and narrower, as conversation.css): where who-sees-it is drawn (BLD-F078)
   const phone = usePhone();
 
@@ -231,8 +257,25 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
     error: `${uid}-err`,
     who: `${uid}-who`,
     picker: `${uid}-pick`,
+    attach: `${uid}-attach`,
     option: (i: number) => `${uid}-opt-${i}`,
   };
+
+  // WCAG 2.4.3 (BLD-F098): the "+" and an open picker come before the words on a phone and after them wider, so
+  // crossing 640px takes one copy away and draws the other, and focus on it would fall to the page. Where focus is
+  // gets read while the old copy is still on screen; once the new one is drawn, focus goes back to the "+", or to the
+  // same control in the picker (BLD-F102), whose link field keeps what was typed (`linkDraft`). Focus anywhere else
+  // (the words, Send, the timeline) is left where it is.
+  const [laidOut, setLaidOut] = useState<{ phone: boolean; focus: AttachFocus }>({ phone, focus: null });
+  if (laidOut.phone !== phone) setLaidOut({ phone, focus: attachFocus(ids.attach, ids.picker) });
+  useLayoutEffect(() => {
+    const was = laidOut.focus;
+    if (was?.at === "plus") plus.current?.focus();
+    else if (was?.at === "picker") {
+      const all = controls(document.getElementById(ids.picker));
+      (all[was.index] ?? all[0])?.focus();
+    }
+  }, [laidOut, ids.picker]);
 
   const base = `/api/ideas/${enc(ideaId)}/conversation`;
   const ideaHref = `/ideas/${enc(view.idea.id)}`;
@@ -316,6 +359,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
   /** The picker closes; with `focus`, focus goes back to the "+" (Escape, or files chosen). */
   function closePicker(focus: boolean) {
     setPicking(false);
+    setLinkDraft(NO_LINK);
     if (focus) requestAnimationFrame(() => plus.current?.focus());
   }
 
@@ -605,6 +649,7 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
     composer.can_attach === true && !composer.closed ? (
       <>
         <span
+          id={ids.attach}
           className="cv-attach"
           onKeyDown={(e) => {
             if (e.key !== "Escape" || !picking) return;
@@ -619,7 +664,8 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
             aria-controls={picking ? ids.picker : undefined}
             onClick={() => {
               if (!picking) files.loadConfig();
-              setPicking((o) => !o);
+              else setLinkDraft(NO_LINK); // the "+" closes it: what was typed goes, as on Escape
+              setPicking(!picking);
             }}
           />
         </span>
@@ -627,6 +673,8 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
           <ConvoPicker
             id={ids.picker}
             help={files.help}
+            link={linkDraft}
+            onLinkDraft={setLinkDraft}
             onFiles={(chosen) => {
               keyRef.current = null; // other files, another message: a new key (A-API.conventions/3)
               files.addFiles(chosen);
