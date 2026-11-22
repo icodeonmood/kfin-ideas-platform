@@ -126,11 +126,14 @@ describe("F-SPACE.targets, F-A11Y.rules/2: the skip link, with focus, covers no 
     expect(signedIn.get("margin-inline-start")).toBe("calc(var(--sbw) + var(--space-4))");
   });
 
-  it("BLD-D033, F-A11Y.rules/2: with focus it sets no ring of its own, so it takes the global blue one (a white ring outside the Zed pill vanished on a white page)", () => {
+  it("BLD-D033, F-A11Y.rules/2: with focus it sets no ring of its own, so it takes the global blue one, 2px and 3px off the edge (a white ring outside the Zed pill vanished on a white page)", () => {
     const focus = cascade(".skip-link:focus");
-    for (const prop of ["outline", "outline-color", "outline-style", "outline-width"])
+    for (const prop of ["outline", "outline-color", "outline-style", "outline-width", "outline-offset"])
       expect(focus.has(prop), prop).toBe(false);
-    expect(cascade(":focus-visible").get("outline")).toMatch(/ solid var\(--(focus|blue)\)$/);
+    // The last global :focus-visible in the built order is offer.css's
+    const ring = cascade(":focus-visible");
+    expect(ring.get("outline")).toBe("2px solid var(--focus)");
+    expect(ring.get("outline-offset")).toBe("3px");
   });
 });
 
