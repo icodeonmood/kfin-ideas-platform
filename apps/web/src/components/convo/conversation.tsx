@@ -182,6 +182,25 @@ function Files({ files, label }: { files: FileItem[]; label: string }) {
   );
 }
 
+/** Where focus is in the box's attach group: on the "+", inside the picker it opened, or elsewhere (BLD-F098). */
+type AttachFocus = "plus" | "picker" | null;
+
+function attachFocus(plusId: string, pickerId: string): AttachFocus {
+  if (typeof document === "undefined") return null;
+  const at = document.activeElement;
+  if (!at || at === document.body) return null;
+  if (document.getElementById(plusId)?.contains(at)) return "plus";
+  if (document.getElementById(pickerId)?.contains(at)) return "picker";
+  return null;
+}
+
+const CONTROLS = "button:not([disabled]), input:not([hidden]):not([disabled])";
+
+/** The picker's first control the keyboard reaches: its folder button (the file inputs are hidden). */
+function firstControl(el: HTMLElement | null): HTMLElement | null {
+  return el?.querySelector<HTMLElement>(CONTROLS) ?? null;
+}
+
 export interface ConversationProps {
   /** The conversation as the server read it for this person. */
   initial: ConversationView;
@@ -231,8 +250,20 @@ export function Conversation({ initial, ideaId, now = Date.now, paused = false }
     error: `${uid}-err`,
     who: `${uid}-who`,
     picker: `${uid}-pick`,
+    attach: `${uid}-attach`,
     option: (i: number) => `${uid}-opt-${i}`,
   };
+
+  // WCAG 2.4.3 (BLD-F098): the "+" and an open picker come before the words on a phone and after them wider, so
+  // crossing 640px takes one copy away and draws the other, and focus on it would fall to the page. Where focus is
+  // gets read while the old copy is still on screen; once the new one is drawn, focus goes back to the "+", or to the
+  // picker's first control. Focus anywhere else (the words, Send, the timeline) is left where it is.
+  const [laidOut, setLaidOut] = useState<{ phone: boolean; focus: AttachFocus }>({ phone, focus: null });
+  if (laidOut.phone !== phone) setLaidOut({ phone, focus: attachFocus(ids.attach, ids.picker) });
+  useLayoutEffect(() => {
+    if (laidOut.focus === "plus") plus.current?.focus();
+    else if (laidOut.focus === "picker") firstControl(document.getElementById(ids.picker))?.focus();
+  }, [laidOut, ids.picker]);
 
   const base = `/api/ideas/${enc(ideaId)}/conversation`;
   const ideaHref = `/ideas/${enc(view.idea.id)}`;
