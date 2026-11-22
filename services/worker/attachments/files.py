@@ -964,10 +964,13 @@ def requeue_waiting(conn: Conn, batch: int = BATCH) -> int:
     moved = 0
     while gatekeeper_on(conn):
         with conn.transaction():
+            # The batch is picked once (a MATERIALIZED CTE), so a commit moves at most `batch` jobs. An
+            # `IN (SELECT … LIMIT n FOR UPDATE SKIP LOCKED)` can be rescanned per row, and a rescan skips the rows this
+            # same UPDATE has just changed and takes the next ones (BLD-C238).
             n = conn.execute(
-                "UPDATE jobs SET run_at = now() WHERE id IN (SELECT id FROM jobs WHERE type = %s "
-                "AND state = 'queued' AND last_error = %s AND run_at > now() ORDER BY id LIMIT %s "
-                "FOR UPDATE SKIP LOCKED)",
+                "WITH due AS MATERIALIZED (SELECT id FROM jobs WHERE type = %s AND state = 'queued' "
+                "AND last_error = %s AND run_at > now() ORDER BY id LIMIT %s FOR UPDATE SKIP LOCKED) "
+                "UPDATE jobs SET run_at = now() FROM due WHERE jobs.id = due.id",
                 (JOB, WAITING_GATEKEEPER, batch),
             ).rowcount
         moved += n
@@ -985,10 +988,11 @@ def reset_r3_waits(conn: Conn) -> int:
     n = 0
     while True:
         with conn.transaction():
-            done = conn.execute(
-                "UPDATE jobs SET attempts = 0, last_error = %s WHERE id IN (SELECT id FROM jobs WHERE type = %s "
-                "AND state = 'queued' AND last_error = 'CheckWaits' ORDER BY id LIMIT %s FOR UPDATE SKIP LOCKED)",
-                (WAITING_GATEKEEPER, JOB, BATCH),
+            done = conn.execute(  # the batch picked once, as `requeue_waiting` does (BLD-C238)
+                "WITH due AS MATERIALIZED (SELECT id FROM jobs WHERE type = %s AND state = 'queued' "
+                "AND last_error = 'CheckWaits' ORDER BY id LIMIT %s FOR UPDATE SKIP LOCKED) "
+                "UPDATE jobs SET attempts = 0, last_error = %s FROM due WHERE jobs.id = due.id",
+                (JOB, BATCH, WAITING_GATEKEEPER),
             ).rowcount
         n += done
         if done < BATCH:
