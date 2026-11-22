@@ -104,7 +104,7 @@ stop() {  # <error type> <step>: the one line to paste; the details are in the e
   say "STOP: $1 at $2"
   exit 1
 }
-usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; }  # the header above
 # One value from an env file without running it as shell code, on stdout for a command substitution only: never printed.
 # The last `NAME=` or `export NAME=` line wins; a Windows line end (\r) goes; a value in double or single quotes is the
 # text between them, a ` #` inside included; an unquoted value loses a trailing ` # comment` and trailing spaces.
