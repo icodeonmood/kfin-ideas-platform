@@ -386,7 +386,8 @@ def render_answer(a: dict[str, Any]) -> str:
 
 # ---------------------------------------------------------------------------------------------------------------
 # Files: only checked ones, by ID, never opened here (non-negotiable 8), and only to readers the attachment route
-# lets open them (BLD-F062): other readers get the entry without its files
+# lets open them (BLD-F062): the crew since DEC-129, and only files the files route serves them; other readers get
+# the entry without its files
 # ---------------------------------------------------------------------------------------------------------------
 _FILE_SQL = (
     "SELECT id, kind, name, mime, bytes, pages, item_count, file_state, hidden_note, uploaded_by_code, created_at, "
@@ -420,23 +421,32 @@ def _file_item(ctx: Ctx, f: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+def _listed(ctx: Ctx, f: dict[str, Any]) -> bool:
+    """A file the reader gets. The crew (DEC-129) open a file only through lane C's files route, so they never get
+    one from before the cut-over (no `file_state`), which opens only on the old route (`/api/attachments/:id`, the
+    sharer and the desk)."""
+    return ctx.reader.files or f["file_state"] is not None
+
+
 def _files(conn: Conn, ctx: Ctx, entry_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
     out: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    if not entry_ids or not ctx.reader.files:
+    if not entry_ids or not ctx.reader.checked_files:
         return out
     sql = _FILE_SQL.format(key="conversation_entry_id")
     for f in conn.execute(sql, (entry_ids, list(CLEAN_FILE_STATES))).fetchall():
-        out[str(f["owner"])].append(_file_item(ctx, dict(f)))
+        if _listed(ctx, dict(f)):
+            out[str(f["owner"])].append(_file_item(ctx, dict(f)))
     return out
 
 
 def _answer_files(ctx: Ctx, answer_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
     out: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    if not answer_ids or not ctx.reader.files:
+    if not answer_ids or not ctx.reader.checked_files:
         return out
     sql = _FILE_SQL.format(key="answer_id")
     for f in ctx.conn.execute(sql, (answer_ids, list(CLEAN_FILE_STATES))).fetchall():
-        out[str(f["owner"])].append(_file_item(ctx, dict(f)))
+        if _listed(ctx, dict(f)):
+            out[str(f["owner"])].append(_file_item(ctx, dict(f)))
     return out
 
 

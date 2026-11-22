@@ -222,3 +222,71 @@ def test_l_merge_bld_f095_a_co_sharer_from_a_merge_has_no_plus_and_never_opens_a
             err = refused(fn, db, found, co["id"])
             assert (err.status, err.code) == (404, "not_found"), (fn.__name__, co["name"])
     assert F.get_item(db, found, ravi["id"])["customer_detail"] is True  # the lead's own sharer opens it
+
+
+def test_dec_129_bld_f062_the_crew_reads_and_opens_the_conversations_checked_files(
+    db: Any, told: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DEC-129 (the product lead, 22 Nov), BLD-F062, P-PRODUCT.privacy: the crew's conversation read carries the files
+    that passed the checks, on messages and on answers, each with its View link, and lane C's files route opens
+    them for the crew. A file from before the cut-over (the old route opens it for the sharer and the desk only) and
+    a found file never reach the crew; the crew still adds none (BLD-F063); the build team gets none."""
+    monkeypatch.setattr(store, "get", lambda bucket, key: b"synthetic copy")  # no object store here
+    kavya = fx.person(db, "Kavya Menon")
+    meera = fx.person(db, "Meera Iyer", roles=(("reviewer", None),))
+    meghna = fx.person(db, "Meghna Das")
+    arjun = fx.person(db, "Arjun Rao")
+    idea = fx.idea(db, kavya, status="being_built")
+    fx.join_crew(db, idea, meghna)
+    fx.build_team(db, idea, arjun)
+    att = fx.attachment(db, idea, kavya, name="branch-call-log.pdf")
+    old = fx.attachment(db, idea, kavya, name="old-call-log.xlsx")
+    later = fx.attachment(db, idea, kavya, name="week-48-calls.pdf")
+    db.execute("UPDATE attachments SET file_state = NULL WHERE id = %s", (old,))  # before the cut-over: clean
+    send(
+        db,
+        idea["idea_id"],
+        kavya["id"],
+        {"text": "The call log.", "file_ids": [att, old, later]},
+        at=fx.at(21, 10),
+    )
+    # A later check finds a customer detail in a file already sent (DEC-127 (1)): it leaves every reader's message.
+    db.execute("UPDATE attachments SET file_state = 'personal_data_found' WHERE id = %s", (later,))
+    set_id = fx.question_set(db, idea, meera, ("evidence",), fx.at(21, 9))
+    fx.answer_all(db, set_id, kavya, fx.at(21, 9, 30))
+    answer = db.execute(
+        "SELECT a.id FROM answers a JOIN questions q ON q.id = a.question_id WHERE q.set_id = %s", (set_id,)
+    ).fetchone()["id"]
+    shot = fx.attachment(db, idea, kavya, name="sms-screenshot.png", purpose="idea")
+    found = fx.attachment(
+        db, idea, kavya, file_state="personal_data_found", name="calls-with-a-name.xlsx", purpose="idea"
+    )
+    db.execute("UPDATE attachments SET answer_id = %s WHERE id = ANY(%s)", (answer, [shot, found]))
+    post(db, str(idea["id"]), "sharer.answered", author_code=kavya["code"], payload={"set_id": set_id, "count": 1},
+         question_set_id=set_id, entry_type="answers", at=fx.at(21, 9, 30))  # fmt: skip
+
+    view = conversation(db, idea["idea_id"], meghna["id"], at=NOW)
+    [m] = [e for e in view["entries"] if e["type"] == "message"]
+    assert [(f["id"], f["view_url"]) for f in m["files"]] == [(att, f"/api/files/{att}/view")]
+    [a] = [e for e in view["entries"] if e["type"] == "answers"]
+    assert [f["id"] for x in a["answers"] for f in x["files"]] == [shot]
+    assert view["composer"]["can_attach"] is False  # BLD-F063: the crew writes without files
+    for fid in (att, shot):  # the route behind the link serves it to the crew
+        assert F.get_item(db, fid, meghna["id"])["view_url"] == f"/api/files/{fid}/view"
+        data, _, _ = F.content(db, fid, meghna["id"])
+        assert data == b"synthetic copy"
+    for fid in (found, later):  # a found file, on an answer or a message, never opens for the crew (DEC-127)
+        for fn in (F.get_item, F.content):
+            err = refused(fn, db, fid, meghna["id"])
+            assert (err.status, err.code) == (404, "not_found"), (fn.__name__, fid)
+
+    # The sharer still gets the file from before the cut-over; the build team gets no file at all.
+    [mine] = [
+        e for e in conversation(db, idea["idea_id"], kavya["id"], at=NOW)["entries"] if e["type"] == "message"
+    ]
+    assert [f["id"] for f in mine["files"]] == [att, old]
+    built = conversation(db, idea["idea_id"], arjun["id"], at=NOW)
+    assert all(e.get("files", []) == [] for e in built["entries"] if e["type"] == "message")
+    for e in built["entries"]:
+        if e["type"] == "answers":
+            assert all(x["files"] == [] for x in e["answers"])

@@ -7,7 +7,8 @@ else gets 404, never 403, so the answer never says that the conversation exists.
 
 Files on messages and answers go only to readers the attachment route lets open them (BLD-F062, DEC-107): the
 sharer, and the roles `view_review_queue` names in `policy/rbac.yaml` (`apps/web/src/server/attachments.ts`,
-`accessible()`).
+`accessible()`), and since DEC-129 the crew too, who open the checked ones through lane C's files route (`rights()`
+lets the sharer and the crew open a checked file; a file with a customer detail never reaches the conversation).
 """
 
 from __future__ import annotations
@@ -42,6 +43,14 @@ class Reader:
     def full(self) -> bool:
         """Reads every entry. A mention-only reader reads only their messages (BLD-F052)."""
         return self.sharer or self.crew or self.desk or self.committee or self.build
+
+    @property
+    def checked_files(self) -> bool:
+        """Gets the checked files on messages and answers: the readers who open every file (`files`) and, since the
+        product lead's DEC-129, the crew, the lead included. The crew still adds none (`may_attach`); the build team
+        and a mentioned person get none (P-PRODUCT.privacy: checked files are for the sharer, crew, desk and
+        committee)."""
+        return self.files or self.crew
 
     @property
     def may_attach(self) -> bool:

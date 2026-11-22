@@ -339,7 +339,7 @@ def test_bld_f062_j_teamup_5_6_files_go_only_to_readers_the_attachment_route_let
     db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
 ) -> None:
     """The sharer, the desk and the Ones Committee get the file with its link (BLD-B270: a committee-only member
-    too); the crew, the build team and a mentioned person get the message without it (DEC-107)."""
+    too), and since DEC-129 the crew too; the build team and a mentioned person get the message without it."""
     kavya, meera, meghna, tara = cast["kavya"], cast["meera"], cast["meghna"], cast["colleague"]
     core = fx.person(db, "Rohan Mehta", roles=(("core_committee", None),))
     plain = fx.person(db, "Nisha Rao", roles=(("committee", None),))
@@ -352,10 +352,10 @@ def test_bld_f062_j_teamup_5_6_files_go_only_to_readers_the_attachment_route_let
                 {"text": "The rejection list, for Tara too.", "file_ids": [att], "mentions": [tara["id"]]},
                 at=fx.at(17, 10))  # fmt: skip
     assert [f["view_url"] for f in sent["entry"]["files"]] == [f"/api/files/{att}/view"]  # the sharer's own
-    for who in (kavya, meera, core, plain):
+    for who in (kavya, meera, core, plain, meghna):
         [m] = messages(conversation(db, idea["idea_id"], who["id"], at=NOW))
         assert [f["id"] for f in m["files"]] == [att], who["name"]
-    for who in (meghna, arjun, tara):
+    for who in (arjun, tara):
         [m] = messages(conversation(db, idea["idea_id"], who["id"], at=NOW))
         assert m["files"] == [] and m["text"] == "The rejection list, for Tara too.", who["name"]
 

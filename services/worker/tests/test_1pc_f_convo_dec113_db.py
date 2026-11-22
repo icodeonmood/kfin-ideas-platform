@@ -175,8 +175,8 @@ def test_dec_113_l_convo_8_a_members_message_its_files_and_in_this_conversation(
     assert m["mentions"][1] == DESK_MENTION
     s = _message(view, "Adding the committee’s notes.")
     assert (s["from"], s["from_label"]) == (COMMITTEE_REF, "The Ones Committee")
-    # Only readers who may open files get them (BLD-F062): the sharer here; added by the committee, not a person.
-    assert len(s["files"]) == (1 if who == "kavya" else 0)
+    # Only readers who may open files get them (BLD-F062): the sharer and, since DEC-129, the crew here; added by the committee, not a person.
+    assert len(s["files"]) == (1 if who in ("kavya", "ravi") else 0)
     assert all(f["added_by"] == COMMITTEE_REF for f in s["files"])
 
     # One row for the committee, however many members took part; no face, so the @mention picker leaves it out.

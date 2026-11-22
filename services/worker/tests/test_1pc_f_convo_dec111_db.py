@@ -96,8 +96,8 @@ def test_dec_111_l_convo_the_sharer_the_crew_and_the_build_team_read_the_review_
         "first_name": "the review desk",
         "initials": "",
     }
-    # Only readers who may open files get them (BLD-F062): the sharer here; added by the desk, not a person.
-    assert len(m["files"]) == (1 if who == "kavya" else 0)
+    # Only readers who may open files get them (BLD-F062): the sharer and, since DEC-129, the crew here; added by the desk, not a person.
+    assert len(m["files"]) == (1 if who in ("kavya", "ravi") else 0)
     assert all(f["added_by"] == DESK_REF for f in m["files"])
     # The committee reads as itself too (DEC-113, BLD-F091; it kept its name under DEC-111 alone, BLD-F082).
     assert _message(view, "The committee is following")["from_label"] == "The Ones Committee"
