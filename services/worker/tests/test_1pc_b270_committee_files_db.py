@@ -64,9 +64,9 @@ def test_bld_b270_dec_107_a_committee_only_reader_sees_and_adds_the_conversation
     sent = send(db, idea["idea_id"], rohan["id"], {"file_ids": [own]}, at=fx.at(20, 9, 5))
     assert [f["id"] for f in sent["entry"]["files"]] == [own]
 
-    # The crew reads both messages without their files and cannot attach (BLD-F062, BLD-F063, unchanged).
+    # The crew reads both messages with their checked files (DEC-129, BLD-F062) and cannot attach (BLD-F063).
     crew = conversation(db, idea["idea_id"], meghna["id"], at=NOW)
-    assert len(messages(crew)) == 2 and all(e["files"] == [] for e in messages(crew))
+    assert [[f["id"] for f in e["files"]] for e in messages(crew)] == [[att], [own]]
     assert crew["composer"]["can_attach"] is False
 
     # DEC-107, the files route: a file holding a customer detail opens for the Ones Committee, never for the crew.
