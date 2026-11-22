@@ -197,7 +197,7 @@ Before step 5/8 (Migrations) a failure changes nothing: the old version keeps se
 
 ## Switching to full mode (mode A)
 
-Full mode turns on the assistant, similar ideas and email (DEC-131: go/no-go Wed 25 Nov 2026 at 16:00, switch Thu 26 Nov 2026 at 10:00). It is a hand step on the running server, never part of a deploy or an upgrade: neither of them runs the golden sets on the server's database, in any `APP_ENV` (BLD-A245). The golden sets on the real route run only in `scripts/eval/live.sh`, in a throwaway compose project with its own database. live.sh only reads the install's database, to count `llm_calls` before and after.
+Full mode turns on the assistant, similar ideas and email (DEC-131: go/no-go Wed 25 Nov 2026 at 16:00, switch Thu 26 Nov 2026 at 10:00). It is a hand step on the running server, never part of a deploy or an upgrade: neither of them runs the golden sets on the server's database, in any `APP_ENV` (BLD-A245). The golden sets on the real route run only in `scripts/eval/live.sh`, in a throwaway compose project with its own database. live.sh only reads the install's database, to count its model calls in `llm_calls` before and after.
 
 Do the steps in order. After each one, paste to lane A the lines its **Paste back** names, as for an upgrade, and go on only when they match its pass line. Never paste an env file, a key or any line of HR's file. Nothing below prints a secret: the commands print tags, commits, counts, switch names and setting names.
 
@@ -214,13 +214,13 @@ Run every command from the release checkout, the one the server was deployed or 
 
    Paste back: all of it. Pass: the tag and commit lane A sent for full mode, the same commit in `installed.json`, and `scripts/eval/live.sh`.
 
-2. **Put the route's credentials in the app env file.** InfoSec or IT adds `ANTHROPIC_API_KEY` for the Anthropic route, or the AWS credentials and `AWS_REGION` for Bedrock (D1 says which route). `LLM_MODE` stays `fake` for now. The running worker and web app read their settings only when they start, so they do not use the key yet. Check without printing a value:
+2. **Put the route's credentials in the app env file.** InfoSec or IT adds `ANTHROPIC_API_KEY` for the Anthropic route, or `AWS_REGION` and the AWS credentials for Bedrock (D1 says which route). On Bedrock, an instance role needs no key lines: `AWS_REGION` alone is enough. `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` go together or not at all. If the server reaches the internet through a proxy, its `HTTPS_PROXY` (and `NO_PROXY`) lines go in the same file. If InfoSec or lane A names model IDs, `LLM_FAST_MODEL` and `LLM_REASONING_MODEL` go in now too: step 3 measures the models this file names. `LLM_MODE` stays `fake` for now. The running worker reads its settings only when it starts, so it does not use the key yet. The web app never gets the key (BLD-A246). Check without printing a secret:
 
    ```bash
-   sed -nE '/^LLM_MODE=/p; s/^(ANTHROPIC_API_KEY|AWS_[A-Z_]+)=.+$/\1 set/p' /secure/.env.uat
+   sed -nE '/^LLM_(MODE|FAST_MODEL|REASONING_MODEL|REFUSAL_FALLBACK)=/p; s/^(ANTHROPIC_API_KEY|AWS_[A-Z_]+|(HTTPS|HTTP|NO|ALL)_PROXY|(https|http|no|all)_proxy)=.+$/\1 set/p' /secure/.env.uat
    ```
 
-   Paste back: the lines it prints (setting names only, never a value). Pass: `LLM_MODE=fake`, and either `ANTHROPIC_API_KEY set` (Anthropic) or `AWS_REGION set` with a `set` line for each AWS credential InfoSec issued (Bedrock).
+   It prints the model settings as they are (they are not secret) and, for a key or a proxy, only its name and `set`. Paste back: the lines it prints. Pass: `LLM_MODE=fake`, and either `ANTHROPIC_API_KEY set` (Anthropic) or `AWS_REGION set`, plus a `set` line for each AWS credential InfoSec issued (Bedrock; none for an instance role).
 
 3. **Run the golden sets on the real route, on a throwaway database.** Run it with `sudo`, as below. `<release checkout>` is this folder (`pwd` prints it). For Bedrock, use `--route bedrock`.
 
@@ -228,15 +228,17 @@ Run every command from the release checkout, the one the server was deployed or 
    sudo scripts/eval/live.sh --server --checkout <release checkout> --project kfin-ideas-uat --app-env /secure/.env.uat --route anthropic
    ```
 
-   It starts its own Postgres in a separate compose project, with throwaway secrets. It passes only the route's credential lines from the app env file into its one container and runs the golden sets there. It reads the install's `llm_calls` count before and after, and changes nothing on the install: no switch, no data, no container.
+   It starts its own Postgres in a separate compose project (`kfin-ideas-eval`), with throwaway secrets, and runs the golden sets in throwaway containers from the installed worker image. From the app env file it takes only the route's credentials and proxy lines, for the golden sets' container alone, and the model settings, for that container and the one that prints the paste block. Its data folder is `/srv/kfin-ideas-eval` (it must not exist yet) and it goes at the end, with the project and its volume. It changes nothing on the install: no switch, no data, no container. It only reads the install's model calls, by `docker exec` into the install's own Postgres, before and after. Calls the install refused while `ai.all` is off are left out of that count, so people can keep using 1% Club during the run.
 
-   Paste back: the block from `=== PASTE FROM HERE ===` to the end (numbers only). Pass: `install database: llm_calls unchanged (N)`, and the last line `EVAL-LIVE: PASS`. On `EVAL-LIVE: FAIL (gates)`, or any other ending, stop here and send the block to lane A. Nothing has changed on the server, and `ai.all` stays off.
+   While it runs, the key is in the golden sets' container's environment, so anyone in the server's `docker` group can read it with `docker inspect` until the run ends. The install's own worker holds the same key from step 5 on, the same way. The `docker` group is as good as root: keep it to IT's trusted admins, and run this from an account trusted with the key.
+
+   Paste back: the block from `=== PASTE FROM HERE ===` to `=== PASTE TO HERE ===` (names and numbers only). Pass: `install database: llm_calls unchanged (N)`, and the line before the end `EVAL-LIVE: PASS`. The `model calls:` line is for information. On `EVAL-LIVE: FAIL (gates)` (the gates are named in the brackets), a `STOP: <error> at <step>` line or an `eval-live refused: …` line, stop here and send that block or line to lane A. Nothing has changed on the server, and `ai.all` stays off. Never paste the details file it names (`details, for your eyes only and never to paste: …`, mode 600): it is for IT's eyes only, and IT deletes it when done. If it is refused because `another eval-live run holds /srv/kfin-ideas-eval.lock` and none is running (a run that was cut off), remove that folder, and `/srv/kfin-ideas-eval` if it is still there, then run it again.
 
 4. **The product lead says go.** The product lead reads the paste and says go, or names an agent to keep off. Agents propose; people decide (non-negotiable 5). For each agent the lead names, an admin switches that agent's switch off on the Admin page (for example `agent.judge`), with a reason, before step 6.
 
    Paste back: the product lead's go, and the switches switched off, if any.
 
-5. **Set the route and restart the worker and the web app.** IT sets `LLM_MODE=anthropic` (or `LLM_MODE=bedrock`) in `/secure/.env.uat`, then restarts both in the install's compose project, with the same compose wrapper as the BGE-M3 section below. `ai.all` is still off.
+5. **Set the route and restart the worker and the web app.** IT sets `LLM_MODE=anthropic` (or `LLM_MODE=bedrock`) in `/secure/.env.uat`, then restarts both in the install's compose project, with the same compose wrapper as the BGE-M3 section below. `ai.all` is still off. The web app reads neither `LLM_MODE` nor a model key (BLD-A246 blanks the key for it); its restart keeps its container in step with the env file.
 
    ```bash
    grep -E '^LLM_MODE=' /secure/.env.uat
