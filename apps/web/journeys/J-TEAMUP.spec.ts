@@ -374,10 +374,10 @@ const REASONS_LINK = "https://synthetic.sharepoint.com/sites/branch-ops/sip-debi
 const HAS_DETAIL =
   "This file has a customer detail in it, so it can’t be sent in the conversation. Remove it to send your message.";
 /**
- * BLD-F062 (docs/DECISIONS.md): the crew reads a conversation without its files until DEC-107's black-out lands, though
- * P-PRODUCT.privacy gives the crew checked files. Lane F has asked the product lead (21 Nov); flip this with the answer.
+ * DEC-129 (the product lead, 22 Nov): the crew opens the idea's checked conversation files, as P-PRODUCT.privacy says
+ * (BLD-F062 lifted). A file with a customer detail found never reaches the crew (DEC-127), and the crew has no "+".
  */
-const CREW_SEES_FILES = false;
+const CREW_SEES_FILES = true;
 
 /** A file's row in S-08's box (C-FILE.row): the list "Your files" (a link goes into the words, so no link rows). */
 function convoRow(page: Page, name: string) {
@@ -387,7 +387,7 @@ function convoRow(page: Page, name: string) {
 step(
   "J-TEAMUP/6b",
   "S-08",
-  'Rekha\'s "+" in the conversation: a checked file and a link go with her message, a file with a customer detail stays out, and the crew reads the message',
+  'Rekha\'s "+" in the conversation: a checked file and a link go with her message, a file with a customer detail stays out, and the crew reads the message and opens the checked file',
   {
     needs: ["S-08", "C-PROMPT.attach", "C-FILE", "L-CONVO", "BLD-F095"],
     changes: ["R1"],
@@ -455,7 +455,7 @@ step(
     await expect(page.getByText(found)).toHaveCount(0);
     await expectNoSeriousAxeIssues(page);
 
-    // The crew: the message, no "+" (BLD-F063), and the file as BLD-F062 or the lead's answer says.
+    // The crew: the message, no "+" (BLD-F063), and the checked file (DEC-129).
     const context = await browser.newContext();
     const crew = await context.newPage();
     try {
@@ -464,7 +464,13 @@ step(
       await expect(crew.getByText(WITH_FILE).last()).toBeVisible();
       await expect(crew.getByRole("button", { name: PLUS })).toHaveCount(0);
       if (CREW_SEES_FILES) {
-        await expect(crew.getByRole("link", { name: `View ${name}` })).toBeVisible();
+        const view = crew.getByRole("link", { name: `View ${name}` });
+        await expect(view).toBeVisible();
+        const href = (await view.getAttribute("href")) ?? "";
+        expect(href, "the crew's View names the file").toMatch(/^\/api\/files\/ATT-\d{4}-\d{6}\/view$/);
+        expect((await crew.request.get(href)).status(), "the crew opens a checked file").toBe(200);
+        // DEC-127: the file with a customer detail never reaches the crew (it can't be sent, BLD-F095).
+        await expect(crew.getByText(found)).toHaveCount(0);
       } else {
         await expect(crew.getByText(name)).toHaveCount(0);
       }
