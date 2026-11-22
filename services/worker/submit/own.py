@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from core.db import Conn
+from hide import core as hide_core
 from submit.errors import NotFound
 
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
@@ -23,17 +24,33 @@ def code_of(conn: Conn, user_id: str) -> str | None:
 
 
 def find(conn: Conn, key: str, *, lock: bool = False) -> dict[str, Any] | None:
+    """The idea by row id or reference. `lock`: L-HIDE's lock on the idea first, then the row (BLD-C067, BLD-C228),
+    since a locked load is followed by hide (an edit's words, a fix's or the helpers' words) and lane F's team-up
+    takes hide's lock before the idea's row. A reference is read to its uuid with no lock first; an idea gone by the
+    row lock answers as before."""
     if UUID.match(key or ""):
         where = "id = %s"
     elif REF.match(key or ""):
         where = "idea_id = %s"
     else:
         return None
+    if lock:
+        _lock_hide(conn, key, where)
     row = conn.execute(
         f"SELECT * FROM ideas WHERE {where}{' FOR UPDATE' if lock else ''}",  # noqa: S608 - fixed fragments
         (key,),
     ).fetchone()
     return dict(row) if row else None
+
+
+def _lock_hide(conn: Conn, key: str, where: str) -> None:
+    """Hide's lock on the idea `key` names, keyed by its lower-case uuid as hide's own lock is."""
+    if where == "id = %s":
+        hide_core.lock(conn, key)  # `UUID` allows the lower-case form only
+        return
+    row = conn.execute("SELECT id FROM ideas WHERE idea_id = %s", (key,)).fetchone()
+    if row is not None:
+        hide_core.lock(conn, str(row["id"]))
 
 
 def load_own(conn: Conn, key: str, user_id: str, *, lock: bool = False) -> tuple[dict[str, Any], str]:

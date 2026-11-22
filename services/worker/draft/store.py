@@ -27,6 +27,7 @@ from core.db import Conn
 from core.logging import get_logger
 from draft import adapters, labels, parts, runs
 from draft.config import rules
+from hide import core as hide_core
 from onepc import enums
 from onepc.context import open_text, seal_text
 from pii import vault
@@ -108,8 +109,14 @@ _DRAFT_SELECT = (
 
 
 def _load(conn: Conn, owner: Owner, idea_uuid: str, *, lock: bool = False) -> dict[str, Any]:
+    """The owner's open draft, or 404. `lock`: L-HIDE's lock on the idea first, then the row (BLD-C067, BLD-C228).
+    Every locked load starts its transaction and may reach hide (a message, an edit, a part's words, `forget`), and
+    lane F's team-up takes hide's lock before the idea's row, so the order is the same everywhere. The id is the
+    lower-case form `UUID_RE` allows, the key hide's own lock uses."""
     if not UUID_RE.match(idea_uuid):
         raise DraftError(404, "not_found")
+    if lock:
+        hide_core.lock(conn, idea_uuid)
     row = conn.execute(_DRAFT_SELECT + " FOR UPDATE" if lock else _DRAFT_SELECT, (idea_uuid,)).fetchone()
     if row is None or row["contributor_code"] != owner.code or row["status"] != "draft":
         raise DraftError(404, "not_found")
@@ -197,6 +204,8 @@ def create(
         raise DraftError(400, "idempotency_key_invalid")
     idea_uuid = _new_id()
     with conn.transaction():
+        # Hide's lock before any row, as in every draft write (BLD-C228): the first message is hidden below.
+        hide_core.lock(conn, idea_uuid)
         if idempotency_key:
             got = conn.execute(
                 "INSERT INTO idempotency_keys (key, user_id, route, request_hash, status, response_json) "

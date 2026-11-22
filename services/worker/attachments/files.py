@@ -62,6 +62,7 @@ from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
 from desk.store import CUSTOMER_DETAIL, DESK_SEES, FILES_CHECKED, READERS, code_of, has_role, own_codes
+from hide import core as hide_core
 from hide import files as hide_files
 from onepc.context import open_text, seal_text
 
@@ -405,6 +406,23 @@ def purpose_of(given: str | None, *, idea_id: str | None) -> str:
     return CONVERSATION
 
 
+_IDEA_BY = {
+    "id": "SELECT id AS idea_uuid FROM ideas WHERE id = %s",
+    "idea_id": "SELECT id AS idea_uuid FROM ideas WHERE idea_id = %s",
+    "answer": "SELECT s.idea_uuid FROM answers an JOIN questions q ON q.id = an.question_id "
+    "JOIN question_sets s ON s.id = q.set_id WHERE an.id = %s",
+}
+
+
+def _hide_lock_first(conn: Conn, by: str, value: str) -> None:
+    """L-HIDE's lock on the file's idea before any row lock (BLD-C067, BLD-C228): `accept` and `accept_link` reach
+    hide (`hide_name`) after `_owner`'s row locks, and lane F's team-up and lane B's desk take hide's lock before the
+    idea's or the answer's row. The idea's uuid is read with no lock; a row gone by the row lock answers as before."""
+    row = conn.execute(_IDEA_BY[by], (value,)).fetchone()
+    if row is not None:
+        hide_core.lock(conn, str(row["idea_uuid"]))
+
+
 def _conversation_owner(conn: Conn, user_id: str, code: str, idea_id: str) -> Owner:
     """A file for the conversation of a shared idea: only a reader lane F lets attach (`convo.access.reader`'s
     `may_attach`: the sharer, the review desk and the Ones Committee). Anyone who may not read the conversation, or
@@ -416,6 +434,7 @@ def _conversation_owner(conn: Conn, user_id: str, code: str, idea_id: str) -> Ow
     column = "idea_id" if str(idea_id).startswith("IDEA-") else "id"
     if column == "id" and not _is_uuid(idea_id):
         raise _not_found()
+    _hide_lock_first(conn, column, idea_id)
     row = conn.execute(
         f"SELECT id, idea_id, contributor_code, status FROM ideas WHERE {column} = %s FOR UPDATE",  # noqa: S608 (fixed)
         (idea_id,),
@@ -463,6 +482,8 @@ def _owner(
     if draft_id:
         if not _is_uuid(draft_id):
             raise _not_found()
+        # Hide's lock first, keyed by the lower-case uuid as hide's own lock is (BLD-C228).
+        hide_core.lock(conn, str(uuid.UUID(str(draft_id))))
         row = conn.execute(
             "SELECT id, contributor_code, status FROM ideas WHERE id = %s FOR UPDATE", (draft_id,)
         ).fetchone()
@@ -473,6 +494,7 @@ def _owner(
         column = "idea_id" if str(idea_id).startswith("IDEA-") else "id"
         if column == "id" and not _is_uuid(idea_id):
             raise _not_found()
+        _hide_lock_first(conn, column, idea_id)
         row = conn.execute(
             f"SELECT id, contributor_code, status FROM ideas WHERE {column} = %s FOR UPDATE",  # noqa: S608 (fixed)
             (idea_id,),
@@ -492,6 +514,7 @@ def _owner(
 
     if not _is_uuid(answer_id):
         raise _not_found()
+    _hide_lock_first(conn, "answer", str(answer_id))
     row = conn.execute(
         "SELECT an.id, an.by_code, an.sent_at, s.idea_uuid, s.state, i.contributor_code, i.status "
         "FROM answers an JOIN questions q ON q.id = an.question_id JOIN question_sets s ON s.id = q.set_id "
@@ -819,6 +842,9 @@ def check(conn: Conn, att_id: str) -> str:
     except hide_files.GatekeeperWaits:
         raise CheckWaits("gatekeeper") from None
     with conn.transaction():
+        # L-HIDE's lock before the file's row (BLD-C067, BLD-C228): `hide_file` takes it next. The gatekeeper has
+        # already run above, so nothing waits on a model under it.
+        hide_core.lock(conn, str(row["idea_uuid"]))
         live = conn.execute(
             "SELECT file_state FROM attachments WHERE id = %s FOR UPDATE", (att_id,)
         ).fetchone()
