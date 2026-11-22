@@ -31,6 +31,9 @@ ROOT: Path = REPO_ROOT
 SCRIPT = ROOT / "scripts" / "eval" / "live.sh"
 BASH = shutil.which("bash") or "/bin/bash"
 KEY = "synthetic-model-key-c229-not-a-real-key-0000"  # a stand-in: no key exists in any test or session
+PROXY = (
+    "http://eval:synthetic-proxy-pass@proxy.example:3128"  # a proxy URL can carry a password: never printed
+)
 SENTENCE = "The branch team keeps typing every SIP mandate in again by hand"  # synthetic case text
 INSTALL = "kfin-ideas-uat"
 STEP_ENV = {
@@ -527,6 +530,7 @@ def test_v_eval_c229_mac_run_throwaway_database_and_the_key_for_the_golden_sets_
         "PYTHONPATH": "/nowhere",
         "EVAL_LIVE_PYTHON": str(stubs / "python"),
         "LLM_REASONING_MODEL": "claude-sonnet-5-5",  # the terminal's model setting is kept (fix 3)
+        "HTTPS_PROXY": PROXY,  # the golden sets only (lane A's decision)
     }
     done = run_live(stubs, env=env)
     assert done.returncode == 0, done.stdout + done.stderr
@@ -569,6 +573,9 @@ def test_v_eval_c229_mac_run_throwaway_database_and_the_key_for_the_golden_sets_
         assert c["key"] == (KEY if c is golden else None)
     docker = [c for c in recorded if c["tool"] == "docker"]
     assert docker and all(c["key"] is None for c in docker)  # docker never holds the key
+    assert all("HTTPS_PROXY" not in c["env_names"] for c in docker)  # nor the proxy
+    assert [c["argv"][:2] for c in py if "HTTPS_PROXY" in c["env_names"]] == [["-m", "evalrunner"]]
+    assert PROXY not in done.stdout + done.stderr
     compose = [c for c in docker if c["argv"][:1] == ["compose"] and "-p" in c["argv"]]
     assert {c["argv"][c["argv"].index("-p") + 1] for c in compose} == {"kfin-eval-live"}
     assert any(c["argv"][-3:] == ["down", "-v", "--remove-orphans"] for c in compose)
@@ -612,6 +619,8 @@ def app_env(tmp_path: Path) -> Path:
         f'ANTHROPIC_API_KEY="{KEY}"   # from the vault',
         'LLM_FAST_MODEL="claude-haiku-5-5"   # the install\'s own model setting',
         "LLM_REFUSAL_FALLBACK=false",
+        f"HTTPS_PROXY={PROXY}",
+        "no_proxy=localhost,127.0.0.1",
     ]
     path.write_text("\n".join(lines + [f"{k}={v}" for k, v in INSTALL_VALUES.items()]) + "\n")
     return path
@@ -675,7 +684,10 @@ def test_at_b4_03_c229_server_run_reads_the_install_only_and_passes_only_the_key
         measured = golden or "evalrunner.paste" in argv  # the golden sets and the paste block's model line
         names = set(s["named"])
         models = {"LLM_FAST_MODEL", "LLM_REFUSAL_FALLBACK"} if measured else set()  # the file's, when set
-        assert names == STEP_ENV | ({"ANTHROPIC_API_KEY"} if golden else set()) | models
+        proxies = {"HTTPS_PROXY", "no_proxy"} if golden else set()  # the file's proxies, golden sets only
+        assert names == STEP_ENV | ({"ANTHROPIC_API_KEY"} if golden else set()) | models | proxies
+        if golden:
+            assert s["named"]["HTTPS_PROXY"] == PROXY and s["named"]["no_proxy"] == "localhost,127.0.0.1"
         if measured:
             assert s["named"]["LLM_FAST_MODEL"] == "claude-haiku-5-5"
             assert s["named"]["LLM_REFUSAL_FALLBACK"] == "false"
@@ -688,8 +700,13 @@ def test_at_b4_03_c229_server_run_reads_the_install_only_and_passes_only_the_key
         assert "SARVAM_API_KEY" not in names
     for c in recorded:
         dumped = json.dumps(c["argv"])
-        assert KEY not in dumped and not any(v in json.dumps(c["named"]) for v in INSTALL_VALUES.values())
+        assert KEY not in dumped and PROXY not in dumped
+        assert not any(v in json.dumps(c["named"]) for v in INSTALL_VALUES.values())
     assert not [c for c in recorded if c["tool"] == "docker" and c["key"] and c not in steps]
+    assert [c for c in recorded if "HTTPS_PROXY" in c["env_names"]] == [
+        s for s in steps if "--only" in s["argv"]
+    ]
+    assert PROXY not in done.stdout + done.stderr
     paste_argv = steps[-1]["argv"]
     assert paste_argv[paste_argv.index("--install-before") + 1] == "7"
     assert paste_argv[paste_argv.index("--install-after") + 1] == "7"

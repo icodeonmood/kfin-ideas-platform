@@ -52,7 +52,7 @@ unset EL_MODE EL_ROUTE EL_CHECKOUT EL_PROJECT EL_APP_ENV_FILE EL_DATA_DIR EL_WOR
   EL_GEN_VAULT EL_GEN_PSEUDO EL_GEN_HMAC EL_GEN_INTERNAL EL_GEN_SESSION EL_RUNS EL_CREATED_PROJECT EL_CREATED_DATA \
   EL_REPO EL_REPORTS EL_EVAL_PROJECT EL_SHA EL_TAG EL_BEFORE EL_AFTER EL_PASSED EL_CREDS \
   ROOT AGENTS MAC_PROJECT MAC_PORT SERVER_PROJECT SERVER_DATA_DIR WORKER_UID EMAIL_DOMAINS SWITCH_REASON \
-  BASE_URL_NAMES CREDS_ANTHROPIC CREDS_BEDROCK MODEL_NAMES SECRET_NAMES STEP_ENV_NAMES MAC_KEEP_NAMES NAME_START NL \
+  BASE_URL_NAMES CREDS_ANTHROPIC CREDS_BEDROCK MODEL_NAMES PROXY_NAMES SECRET_NAMES STEP_ENV_NAMES MAC_KEEP_NAMES NAME_START NL \
   where have_aws running pg ports changes bound block eval_exit paste_exit paste_args status_out sw g p name v
 unset COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_ENV_FILES COMPOSE_PATH_SEPARATOR
 
@@ -73,12 +73,17 @@ CREDS_BEDROCK="AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_BEA
 # The model settings the gateway reads (gateway/spec.py the tier's model ID, routes.py the refusal fallback): what is
 # measured. Server: from the app env file when set, by name, to the golden sets' and the paste block's containers only.
 MODEL_NAMES="LLM_FAST_MODEL LLM_REASONING_MODEL LLM_REFUSAL_FALLBACK"
-# Every name that can carry or point to a model credential: none reaches any step but the golden sets'.
-SECRET_NAMES="$CREDS_ANTHROPIC $CREDS_BEDROCK ANTHROPIC_AUTH_TOKEN ANTHROPIC_AWS_API_KEY ANTHROPIC_PROFILE AWS_PROFILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE"
+# The proxy settings the golden sets may need to reach the model (lane A's decision): when set, to that step only, by
+# name, and never printed (a proxy URL can carry a password). Mac: from the terminal; server: from the app env file.
+PROXY_NAMES="HTTPS_PROXY https_proxy HTTP_PROXY http_proxy NO_PROXY no_proxy ALL_PROXY all_proxy"
+# Every name that can carry or point to a model credential, and the proxies: none reaches any step, docker call or
+# compose call but the golden sets'.
+SECRET_NAMES="$CREDS_ANTHROPIC $CREDS_BEDROCK ANTHROPIC_AUTH_TOKEN ANTHROPIC_AWS_API_KEY ANTHROPIC_PROFILE AWS_PROFILE AWS_SHARED_CREDENTIALS_FILE AWS_CONFIG_FILE $PROXY_NAMES"
 # What a step's process or container is given, besides the route's credentials for the golden sets.
 STEP_ENV_NAMES="APP_ENV DATABASE_URL COMPANY_REPO_PATH EVAL_REPORTS_DIR LLM_MODE EMBEDDINGS_MODE SPEECH_MODE KFIN_EMAIL_DOMAINS VAULT_ENCRYPTION_KEY PSEUDONYM_VAULT_KEY CONTRIBUTOR_HMAC_SECRET INTERNAL_API_TOKEN SESSION_SECRET PYTHONDONTWRITEBYTECODE"
-# Mac only: what the Python steps keep from the terminal (a proxy and CA bundle the lead's network may need).
-MAC_KEEP_NAMES="PATH HOME USER LOGNAME TMPDIR LANG LC_ALL LC_CTYPE TERM $MODEL_NAMES HTTPS_PROXY https_proxy HTTP_PROXY http_proxy NO_PROXY no_proxy ALL_PROXY all_proxy SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE"
+# Mac only: what every Python step keeps from the terminal (the model settings and a CA bundle the lead's network may
+# need); the golden sets also keep the route's credentials and the proxies.
+MAC_KEEP_NAMES="PATH HOME USER LOGNAME TMPDIR LANG LC_ALL LC_CTYPE TERM $MODEL_NAMES SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE"
 NAME_START="abcdefghijklmnopqrstuvwxyz0123456789" # spelled out: a range would follow the locale
 NL=$'\n'
 
@@ -187,6 +192,10 @@ done
 if [ "$EL_MODE" = server ]; then
   for name in $SECRET_NAMES; do unset "$name"; done
   for name in $EL_CREDS; do
+    v="$(value "$name" "$EL_APP_ENV_FILE")"
+    [ -z "$v" ] || printf -v "$name" '%s' "$v"
+  done
+  for name in $PROXY_NAMES; do # the install's proxy, if it has one, for the golden sets only (never printed)
     v="$(value "$name" "$EL_APP_ENV_FILE")"
     [ -z "$v" ] || printf -v "$name" '%s' "$v"
   done
@@ -372,11 +381,12 @@ fi
 } >"$EL_WORK/override.yml"
 
 # The Mac's Python steps: the terminal's basics, the throwaway settings and, for the golden sets only, the route's
-# credentials; everything else in the terminal's environment is left out. $1 is the route for the golden sets, or none.
+# credentials and the proxies; everything else in the terminal's environment is left out. $1 is the route for the golden
+# sets, or none.
 py() {
   local creds="" mode=fake
   if [ "$1" != none ]; then
-    creds="$EL_CREDS"
+    creds="$EL_CREDS $PROXY_NAMES"
     mode="$1"
   fi
   shift
@@ -397,15 +407,16 @@ py() {
 
 # The server's steps: one throwaway container each, from the installed worker image, on the eval project's network
 # only, given only the throwaway settings by name and, for the golden sets only, the route's credentials by name (their
-# values reach docker through its environment, never argv); the golden sets and the paste block also get the app env
-# file's model settings that are set, by name. $1 is the step's name, $2 the route or none, $3 rw or ro for the data
+# values reach docker through its environment, never argv) and the app env file's proxies that are set; the golden sets
+# and the paste block also get the app env file's model settings that are set, by name. $1 is the step's name, $2 the route or none, $3 rw or ro for the data
 # folder; then the command.
 worker_run() {
-  local step="$1" route="$2" data="$3" creds="" mode=fake models="" name n
+  local step="$1" route="$2" data="$3" creds="" proxies="" mode=fake models="" name n
   shift 3
   case "$step" in golden-sets | paste) models="$MODEL_NAMES" ;; esac
   if [ "$route" != none ]; then
     creds="$EL_CREDS"
+    proxies="$PROXY_NAMES"
     mode="$route"
   fi
   name="$SERVER_PROJECT-$step"
@@ -416,11 +427,11 @@ worker_run() {
     --security-opt no-new-privileges -v "$EL_DATA_DIR:/data:$data" -v "$EL_CHECKOUT/seed:/seed:ro"
     -v "$EL_CHECKOUT/eval/golden:/app/eval/golden:ro")
   for n in $STEP_ENV_NAMES $creds; do args+=(-e "$n"); done
-  for n in $models; do [ -z "${!n:-}" ] || args+=(-e "$n"); done
+  for n in $models $proxies; do [ -z "${!n:-}" ] || args+=(-e "$n"); done
   (
     for n in $models; do [ -z "${!n:-}" ] || export "${n?}"; done
     for n in $SECRET_NAMES; do
-      case " $creds " in *" $n "*) [ -z "${!n:-}" ] || export "${n?}" ;; *) unset "$n" ;; esac
+      case " $creds $proxies " in *" $n "*) [ -z "${!n:-}" ] || export "${n?}" ;; *) unset "$n" ;; esac
     done
     export APP_ENV=test DATABASE_URL="$EL_DB_URL" COMPANY_REPO_PATH="$EL_REPO" EVAL_REPORTS_DIR="$EL_REPORTS" \
       LLM_MODE="$mode" EMBEDDINGS_MODE=hash SPEECH_MODE=fake KFIN_EMAIL_DOMAINS="$EMAIL_DOMAINS" \
