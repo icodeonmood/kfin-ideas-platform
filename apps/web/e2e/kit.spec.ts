@@ -247,7 +247,11 @@ test("C-ONES-FAN.behaviour: the fan spreads and moves by Next and ← →; 'Post
   await expect(fan.getByRole("article")).toContainText("One No. 17");
   const cheer = fan.getByRole("button", { name: /^Cheer One No\. 17’s fix, 24 cheers/ });
   await expect(cheer).toHaveAttribute("aria-pressed", "false");
-  await cheer.click();
+  // On a phone the posts are a snap row. A click's retry scrolls the row sideways with its own inline alignment, the
+  // snap lands back on post 1 and post 2 turns inert, so the click never lands (run 44912206769). Bring it into
+  // view once, then click without scrolling (BLD-D027).
+  await cheer.scrollIntoViewIfNeeded();
+  await cheer.click({ scroll: "none" });
   await expect(fan.getByRole("button", { name: /^Cheer One No\. 17’s fix, 25 cheers/ })).toHaveAttribute(
     "aria-pressed",
     "true",

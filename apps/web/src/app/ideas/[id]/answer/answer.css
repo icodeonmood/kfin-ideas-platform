@@ -6,7 +6,7 @@
 }
 /* S-R3: the Answer board starts the page 40px down (main.wrap) where the shell's main gives 32px. The phone board
    (PhoneAnswer) keeps the shell's top */
-@media (min-width: 641px) {
+@media (width > 640px) {
   .ans {
     padding-top: 8px;
   }
@@ -36,7 +36,7 @@
   flex-wrap: wrap;
 }
 /* C-PILL.rules/3: the Answer board's clock is the larger countdown (.clock .due); the phone board keeps the base */
-@media (min-width: 641px) {
+@media (width > 640px) {
   .ans-due .due {
     min-height: 34px;
     padding: 0 14px 0 12px;

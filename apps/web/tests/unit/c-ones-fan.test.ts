@@ -533,7 +533,7 @@ const motion = cssRules("app/motion.css");
 const sheets = [...components, ...motion];
 const NO_PREF = "prefers-reduced-motion: no-preference";
 const REDUCE = "(prefers-reduced-motion: reduce)";
-const MOVES = "@media (min-width: 641px) and (prefers-reduced-motion: no-preference)";
+const MOVES = "@media (width > 640px) and (prefers-reduced-motion: no-preference)";
 const onFan = (selector: string) => /\.(fan|opost)\b/.test(selector);
 const moves = (r: CssRule) => [...r.decls.keys()].some((k) => /^(transition|animation)(-|$)/.test(k));
 /** The transform functions in a pose, in order (calc and var are values, not moves). */
@@ -828,7 +828,7 @@ describe("C-ONES-FAN.behaviour/6, BLD-D026: the hover lean and the tilt, only wi
     for (const r of lean) {
       expect(r.at).toContain("(hover: hover) and (pointer: fine)");
       expect(r.at).toContain(NO_PREF);
-      expect(r.at).toContain("(min-width: 641px)");
+      expect(r.at).toContain("(width > 640px)");
       expect(r.selectors.every((s) => s.startsWith(".fan.several:not(.spread) .fan-stage:hover "))).toBe(
         true,
       );

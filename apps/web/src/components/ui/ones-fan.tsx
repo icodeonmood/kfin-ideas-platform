@@ -29,7 +29,7 @@ export const ONES_FAN_COPY = {
 /** PhoneHome's row: the cards scroll natively with snap (the same width as the CSS's phone rules). */
 export const FAN_PHONE = "(max-width: 640px)";
 /** The fly-out plays only where there is a stack to fly out of and motion is allowed (F-MOTION.reduced). */
-export const FAN_FLY = "(min-width: 641px) and (prefers-reduced-motion: no-preference)";
+export const FAN_FLY = "(width > 640px) and (prefers-reduced-motion: no-preference)";
 /** JS moves (the phone row's glide, the tilt) only where motion is allowed outright, as the CSS does (F-MOTION.reduced):
  * a browser that matches neither this nor "reduce" stays still too. */
 export const FAN_MOVES = "(prefers-reduced-motion: no-preference)";
