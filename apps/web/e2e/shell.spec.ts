@@ -139,10 +139,15 @@ test.describe("C-SIDEBAR and C-PHONE-TABS: the shell by role (AT-B2-06)", () => 
           room: parseFloat(getComputedStyle(document.querySelector("main#main")!).paddingBottom),
         };
       });
+    // The dock's own measure can follow a late font or layout by a frame: wait until --dock-h names its height
+    await expect
+      .poll(async () => {
+        const now = await read();
+        return now.dockH === `${Math.ceil(now.height)}px` && now.flagged;
+      })
+      .toBe(true);
     const at = await read();
     expect(Math.abs(at.bottom - at.screen), "the dock sits on the screen's foot").toBeLessThanOrEqual(1);
-    expect(at.flagged).toBe(true);
-    expect(at.dockH).toBe(`${Math.ceil(at.height)}px`);
     expect(at.room, "main keeps the dock's height and 24px under the page").toBeGreaterThanOrEqual(
       Math.ceil(at.height) + 23,
     );
