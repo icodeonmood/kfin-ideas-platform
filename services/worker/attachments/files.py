@@ -16,8 +16,15 @@ A file's life (`attachments.file_state`, E-ENUMS.file):
    A checked or found file moves to the clean bucket; the scan's verdict, not the bucket, decides who opens it.
    When the scanner, OCR, the store or the gatekeeper does not answer, the file stays `checking` and the job tries
    again; after its last try the file is `upload_failed`, with Try again. It is never `checked` without the
-   gatekeeper: while `ai.all` or `agent.gatekeeper` is switched off, by a person or a process, it waits the same
-   way (non-negotiable 4, DEC-103; BLD-C107).
+   gatekeeper (non-negotiable 4, DEC-103; BLD-C107). While `ai.all` or `agent.gatekeeper` is switched off, by a
+   person or a process, or the day's budget is spent, the check waits without using a try (`JobWaits`, BLD-C225):
+   before the virus scan, so no scan is repeated while it is off, the file stays `checking` with
+   `checks.waiting_for` "gatekeeper", and its row reads `WAITING_LINE`. The ticker's watch runs waiting checks
+   within a tick of the switches coming back on (`requeue_waiting`, BLD-C226); the 300-second step is only the
+   fallback. Each other wait (`CheckWaits`: the scanner, the store, OCR, the gateway failing) is still a try, and
+   its reason is kept in `checks.waiting_for`, so a file that gives up says which wait it died of.
+   At worker start, files that an earlier build (r3) let die of those waits are put back to waiting
+   (`start_sweep`, BLD-C227): nothing is checked or opened by it.
 4. The old `state` column is kept in step only for the checked states, which are its `clean`; nothing else is ever
    marked clean, so the old `/api/attachments/:id` route never serves a file DEC-107 keeps from people.
 
@@ -64,6 +71,8 @@ from core.logging import get_logger
 from desk.store import CUSTOMER_DETAIL, DESK_SEES, FILES_CHECKED, READERS, code_of, has_role, own_codes
 from hide import core as hide_core
 from hide import files as hide_files
+from jobs.runner import JobWaits
+from jobs.runner import log as jobs_log
 from onepc.context import open_text, seal_text
 
 log = get_logger("files")
@@ -78,6 +87,17 @@ IDEA, CONVERSATION = "idea", "conversation"  # attachments.purpose (BLD-C216)
 # one and half the other is never shown as the idea's). Callers prefix the columns when they join.
 IDEA_OWN = "purpose = 'idea' AND conversation_entry_id IS NULL"
 UNSENT_CONVERSATION_HOURS = 24  # a conversation file not on an entry after this long is removed (BLD-C216)
+# Waiting for the gatekeeper (BLD-C225 to BLD-C227). The names are pinned by lane A's upgrade and its rehearsal.
+GATEKEEPER = "gatekeeper"  # `checks.waiting_for` while the check waits for it
+WAITING_GATEKEEPER = "waiting_gatekeeper"  # the job's `last_error` while it waits (a reason, not a failure)
+WAIT_STEP_S = 300  # the fallback step: the watch runs waiting checks within a tick of the switch-on
+# The gateway's codes for an assistant that is off (switched off, or the day's budget spent), not failing.
+ASSISTANT_OFF = ("switched_off", "daily_budget")
+NO_WAIT = "none"  # `checks.waiting_for` of a file that gave up on an error that was not a wait
+BATCH = 50  # rows per commit in the switch-on re-queue and the start sweep
+SYSTEM = "system:files"
+# To confirm later (HR, DEC-123): the line a file's row shows while it waits for the gatekeeper.
+WAITING_LINE = "Waiting for the personal details check. It runs when the assistant is back."
 
 MIME = {
     "pdf": "application/pdf",
@@ -334,6 +354,8 @@ def problem_line(row: dict[str, Any], state: str, *, uploader: bool) -> str | No
         if not uploader:
             return None
         return hide_files.found_line(hide_files.FileFinds.from_codes((row.get("checks") or {}).get("found")))
+    if state == CHECKING and (row.get("checks") or {}).get("waiting_for") == GATEKEEPER:
+        return WAITING_LINE  # in place of an endless "Checking for personal details" (BLD-C225)
     if state == "upload_failed":
         return UPLOAD_FAILED
     if state == "too_big":
@@ -738,7 +760,8 @@ def accept_link(
 
 class CheckWaits(Exception):
     """The check cannot run yet (the scanner, OCR, the store or the gatekeeper is not answering): the job retries;
-    after its last try the file is `upload_failed`, with Try again. The message is a reason code only."""
+    after its last try the file is `upload_failed`, with Try again. The message is a reason code only, and `check`
+    keeps it in `checks.waiting_for`. A gatekeeper that is switched off is not this: it is `JobWaits` (BLD-C225)."""
 
 
 ENDS_COPY = ("not_checkable",)  # a failure Try again cannot change: the quarantine copy goes at once
@@ -766,11 +789,14 @@ def _finish(conn: Conn, row: dict[str, Any], state: str, code: str) -> str:
             return str(live["file_state"]) if live else "missing"
         if (state != "upload_failed" or code in ENDS_COPY) and row.get("store_key"):
             store.delete(s.s3_bucket_quarantine, row["store_key"])
+        # A file that gave up (`check_failed`) keeps the wait it died of, or "none": so every such row from this
+        # build has `waiting_for`, and only r3's rows lack it (`start_sweep`, BLD-C227). Any other end drops it.
         conn.execute(
             "UPDATE attachments SET file_state = %s, state = %s, updated_at = now(), "
-            "checks = coalesce(checks, '{}'::jsonb) || jsonb_build_object('result', %s::text, 'ended_at', now()) "
-            "WHERE id = %s",
-            (state, old_state(state), code, row["id"]),
+            "checks = (CASE WHEN %s THEN coalesce(checks, '{}'::jsonb) || jsonb_build_object('waiting_for', "
+            "coalesce(checks->>'waiting_for', %s::text)) ELSE coalesce(checks, '{}'::jsonb) - 'waiting_for' END) "
+            "|| jsonb_build_object('result', %s::text, 'ended_at', now()) WHERE id = %s",
+            (state, old_state(state), code == "check_failed", NO_WAIT, code, row["id"]),
         )
         _audit(conn, "system:files", "file.checked", str(row["idea_uuid"]),
                {"file_id": row["id"], "state": state, "result": code})  # fmt: skip
@@ -794,10 +820,45 @@ def _extract(kind: str, data: bytes, types: tuple[str, ...]) -> Extracted:
     return got
 
 
+def gatekeeper_on(conn: Conn) -> bool:
+    """`ai.all` and `agent.gatekeeper` both on, read from the table past the 10-second cache, so a switch-on is
+    seen at once here and by the gateway after it (the cache is refilled from this read)."""
+    from core import killswitch
+
+    killswitch.clear_cache()
+    return all(killswitch.is_on(name, conn) for name in hide_files.GATEKEEPER_SWITCHES)
+
+
+def _note_wait(conn: Conn, att_id: str, reason: str) -> None:
+    """Keep why the check waits (`checks.waiting_for`) on a file still checking. Its own statement on the runner's
+    autocommit connection: no transaction here reaches hide, so hide's lock order is untouched (BLD-C228)."""
+    conn.execute(
+        "UPDATE attachments SET checks = coalesce(checks, '{}'::jsonb) || jsonb_build_object('waiting_for', %s::text) "
+        "WHERE id = %s AND file_state = %s",
+        (reason, att_id, CHECKING),
+    )
+
+
+def _gatekeeper_wait(conn: Conn, att_id: str) -> JobWaits:
+    """The file waits for the gatekeeper (BLD-C225): it stays checking, its row reads `WAITING_LINE`, and the job
+    runs again after the step without using a try. Never a skip of the gatekeeper (non-negotiable 4)."""
+    _note_wait(conn, att_id, GATEKEEPER)
+    return JobWaits(WAIT_STEP_S, WAITING_GATEKEEPER)
+
+
 def check(conn: Conn, att_id: str) -> str:
     """Virus scan, then the file's structure and text layer in the sandbox, then the gatekeeper and hide's
-    detection (L-HIDE.files/1, /6). Returns the new state. Raises `CheckWaits` while a service it needs is down.
+    detection (L-HIDE.files/1, /6). Returns the new state. Raises `JobWaits` while the gatekeeper is switched off
+    (BLD-C225) and `CheckWaits` while a service it needs is down, its reason kept in `checks.waiting_for`.
     A job for a file that is gone, or no longer checking, changes nothing."""
+    try:
+        return _check(conn, att_id)
+    except CheckWaits as wait:
+        _note_wait(conn, att_id, str(wait))
+        raise
+
+
+def _check(conn: Conn, att_id: str) -> str:
     s = get_settings()
     found = conn.execute(
         "SELECT id, idea_uuid, store_key, file_state, uploaded_by_user, uploaded_by_code, checks "
@@ -807,6 +868,14 @@ def check(conn: Conn, att_id: str) -> str:
     if found is None or found["file_state"] != CHECKING:
         return str(found["file_state"]) if found else "missing"
     row = dict(found)
+    # First, before the virus scan: while the gatekeeper is switched off the file waits, and no scan is repeated.
+    if not gatekeeper_on(conn):
+        raise _gatekeeper_wait(conn, att_id)
+    if (row.get("checks") or {}).get("waiting_for"):  # it runs now: the row no longer says it waits
+        conn.execute(
+            "UPDATE attachments SET checks = checks - 'waiting_for' WHERE id = %s AND file_state = %s",
+            (att_id, CHECKING),
+        )
     if not row.get("store_key"):
         return _finish(conn, row, "upload_failed", "no_copy")
     try:
@@ -836,11 +905,14 @@ def check(conn: Conn, att_id: str) -> str:
 
         by = user_of(conn, row["uploaded_by_code"]) or "system:files"
     # The gatekeeper reads the text before the file's row is locked, so Remove and Try again never wait on a model
-    # (BLD-C107). It cannot run: the file stays checking and the job tries again (non-negotiable 4, DEC-103).
+    # (BLD-C107). It cannot run: the file stays checking (non-negotiable 4, DEC-103). Switched off meanwhile, or the
+    # day's budget spent: it waits without using a try (BLD-C225). The gateway failing: a try, as before.
     try:
         gate = hide_files.gate_for(conn, str(row["idea_uuid"]), hide_files.text_of(got.pieces))
-    except hide_files.GatekeeperWaits:
-        raise CheckWaits("gatekeeper") from None
+    except hide_files.GatekeeperWaits as exc:
+        if str(exc) in ASSISTANT_OFF:
+            raise _gatekeeper_wait(conn, att_id) from None
+        raise CheckWaits(GATEKEEPER) from None
     with conn.transaction():
         # L-HIDE's lock before the file's row (BLD-C067, BLD-C228): `hide_file` takes it next. The gatekeeper has
         # already run above, so nothing waits on a model under it.
@@ -857,7 +929,7 @@ def check(conn: Conn, att_id: str) -> str:
         # No hidden note: nothing is blacked out until "Hide it for me" (DEC-107); the found line is the problem.
         conn.execute(
             "UPDATE attachments SET file_state = %s, state = %s, pages = %s, mime = %s, hidden_note = NULL, "
-            "checks = coalesce(checks, '{}'::jsonb) || %s, updated_at = now() WHERE id = %s",
+            "checks = (coalesce(checks, '{}'::jsonb) - 'waiting_for') || %s, updated_at = now() WHERE id = %s",
             (state, old_state(state), got.pages, MIME.get(real, "application/octet-stream"),
              Jsonb({"type": real, "result": "found" if finds.count else "clean", "found": finds.codes(),
                     "gatekeeper": "ran",  # always: a file never skips it (BLD-C107)
@@ -878,6 +950,148 @@ def gave_up(conn: Conn, att_id: str) -> None:
     ).fetchone()
     if row is not None and row["file_state"] == CHECKING:
         _finish(conn, dict(row), "upload_failed", "check_failed")
+
+
+# ---- waiting for the gatekeeper: the switch-on re-queue and the worker-start sweep (BLD-C226, BLD-C227) ----------
+
+
+def requeue_waiting(conn: Conn, batch: int = BATCH) -> int:
+    """On every tick of the ticker's watch (about every 60 s) while `ai.all` and `agent.gatekeeper` are both on:
+    the file checks waiting for the gatekeeper are made due now, `batch` jobs per commit, the switches read again
+    before each batch, stopping if they go off (BLD-C226). It covers a switch-on from the Admin page, which the
+    worker's own set path never sees, and a worker started with the assistant on. Nothing is checked here: the job
+    runner runs each check, from the virus scan. Logs carry a count only. Returns how many."""
+    moved = 0
+    while gatekeeper_on(conn):
+        with conn.transaction():
+            n = conn.execute(
+                "UPDATE jobs SET run_at = now() WHERE id IN (SELECT id FROM jobs WHERE type = %s "
+                "AND state = 'queued' AND last_error = %s AND run_at > now() ORDER BY id LIMIT %s "
+                "FOR UPDATE SKIP LOCKED)",
+                (JOB, WAITING_GATEKEEPER, batch),
+            ).rowcount
+        moved += n
+        if n < batch:
+            break
+    if moved:
+        log.info("files.waiting_requeued", job_count=moved)
+    return moved
+
+
+def reset_r3_waits(conn: Conn) -> int:
+    """r3 counted each wait as a try: its file checks still queued after a wait (`last_error` "CheckWaits") get
+    their tries back and wait for the gatekeeper (BLD-C227). Run by `start_sweep`, not in its count. Returns how
+    many; logs `jobs.waits_reset` with the count only."""
+    n = 0
+    while True:
+        with conn.transaction():
+            done = conn.execute(
+                "UPDATE jobs SET attempts = 0, last_error = %s WHERE id IN (SELECT id FROM jobs WHERE type = %s "
+                "AND state = 'queued' AND last_error = 'CheckWaits' ORDER BY id LIMIT %s FOR UPDATE SKIP LOCKED)",
+                (WAITING_GATEKEEPER, JOB, BATCH),
+            ).rowcount
+        n += done
+        if done < BATCH:
+            break
+    jobs_log.info("jobs.waits_reset", job_count=n)
+    return n
+
+
+# THE EXACT RULE (lane A, from r3's `check`, `gave_up` and `_finish`): a row r3 let die of its waits. r3 never kept
+# the scan's verdict on a waiting row, so none is asked for: the whole check runs again, from the virus scan, and
+# nothing opens until it passes (non-negotiable 8). A row from this build always has `waiting_for` once it gave up,
+# so it is never moved: real failures are not retried on every restart.
+_R3_DEAD = (
+    "SELECT a.id, a.idea_uuid, a.store_key FROM attachments a JOIN ideas i ON i.id = a.idea_uuid "
+    "WHERE a.kind = 'file' AND a.id > %s "
+    "AND i.status NOT IN ('withdrawn', 'merged') AND i.merged_into IS NULL "  # a
+    "AND a.file_state = 'upload_failed' "  # b
+    "AND a.checks->>'result' = 'check_failed' AND NOT a.checks ? 'gatekeeper' "  # c
+    "AND NOT a.checks ? 'waiting_for' "  # c: never a row from this build
+    "AND a.masked_store_key IS NULL "  # d
+    "AND NOT EXISTS (SELECT 1 FROM hidden_details h WHERE h.source = 'file' AND h.source_id = a.id) "  # d
+    "AND a.store_key IS NOT NULL AND coalesce(a.checks->>'copy', '') <> 'gone' "  # e
+    "ORDER BY a.id LIMIT %s FOR UPDATE OF a SKIP LOCKED"
+)
+
+
+def _in_store(s3: Any, bucket: str, key: str) -> bool:
+    """Whether the object is there. Only a clear "not there" is False; any other error stops the sweep."""
+    try:
+        s3.head_object(Bucket=bucket, Key=key)
+        return True
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound"):
+            return False
+        raise
+
+
+def _bring_back(conn: Conn, s3: Any, after_id: str) -> tuple[int, str | None]:
+    """One batch of `_R3_DEAD`, in one transaction: each row whose quarantine copy is there (e) and that was never
+    moved to the clean bucket (d) goes back to checking, waiting for the gatekeeper, with its result cleared, a
+    fresh check job at 0 tries and one `file.check_requeued` audit row. Returns (moved, the last id read)."""
+    s = get_settings()
+    moved, last = 0, None
+    with conn.transaction():
+        rows = conn.execute(_R3_DEAD, (after_id, BATCH)).fetchall()
+        for r in rows:
+            last = str(r["id"])
+            key = str(r["store_key"])
+            if not _in_store(s3, s.s3_bucket_quarantine, key) or _in_store(s3, s.s3_bucket_clean, key):
+                continue
+            conn.execute(
+                "UPDATE attachments SET file_state = %s, state = %s, updated_at = now(), "
+                "checks = (checks - 'result' - 'ended_at') || jsonb_build_object('waiting_for', %s::text) "
+                "WHERE id = %s",
+                (CHECKING, old_state(CHECKING), GATEKEEPER, last),
+            )
+            conn.execute(
+                "INSERT INTO jobs (type, payload, attempts, run_at, last_error) "
+                "SELECT %s, %s, 0, now() + make_interval(secs => %s), %s WHERE NOT EXISTS (SELECT 1 FROM jobs "
+                "WHERE type = %s AND state IN ('queued', 'running') AND payload->>'attachment_id' = %s)",
+                (JOB, Jsonb({"attachment_id": last}), WAIT_STEP_S, WAITING_GATEKEEPER, JOB, last),
+            )
+            _audit(conn, SYSTEM, "file.check_requeued", str(r["idea_uuid"]),
+                   {"file_id": last, "from": "upload_failed", "to": CHECKING})  # fmt: skip
+            moved += 1
+    return moved, last
+
+
+def start_sweep(conn: Conn) -> int:
+    """At worker start, whatever the switches say, before any job is taken (BLD-C227): r3's file checks still
+    queued get their tries back (`reset_r3_waits`), and every row that fits THE EXACT RULE goes back to waiting for
+    the gatekeeper, `BATCH` rows per commit. It checks nothing and opens nothing to anyone, so non-negotiable 4 is
+    unchanged, and it is idempotent: a row moved is checking, so it is never read again. Then one `files.start_sweep`
+    line (its only field `count`) and one `file.start_sweep` audit row, `after` {"count", "complete"}, which lane A's
+    upgrade reads to print "file checks: N files back to waiting for the personal-data check (none opened)". A
+    failure part-way logs `files.start_sweep_failed` (`count`, `error_type`) and still writes the audit row, with
+    `complete` false. Returns the count. A separate step: if the lead picks "leave them failed", only this goes."""
+    count, complete = 0, True
+    try:
+        reset_r3_waits(conn)
+        s3 = store.client()
+        after = ""
+        while True:
+            moved, last = _bring_back(conn, s3, after)
+            count += moved
+            if last is None:
+                break
+            after = last
+    except Exception as exc:
+        complete = False
+        log.error("files.start_sweep_failed", count=count, error_type=type(exc).__name__)
+    try:
+        with conn.transaction():
+            conn.execute(
+                "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'file.start_sweep', %s, %s)",
+                (SYSTEM, "files:start_sweep", Jsonb({"count": count, "complete": complete})),
+            )
+    except Exception as exc:
+        complete = False
+        log.error("files.start_sweep_failed", count=count, error_type=type(exc).__name__)
+    if complete:
+        log.info("files.start_sweep", count=count)
+    return count
 
 
 # ---- opening, retrying, removing --------------------------------------------------------------------------------
