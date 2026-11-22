@@ -9,6 +9,10 @@ Then each agent's golden set runs through the production pipeline (`evalrunner/g
 `evalrunner/canvas_assist.py`) and writes `eval/reports/<agent>-<version>-<time>.json`. Harness gates always
 apply; the agents' pass gates and the regression check apply on a real route (UAT), because fake mode cannot
 measure a model (BLD-076). Exit 0 = everything that applies passed.
+
+`--only gatekeeper,judge` runs just the named agents' golden sets, in the usual order (BLD-C229: `make eval-live`); the
+harness checks above still run first, a name that is not an agent here stops the run before anything else, and the
+speech set (DEC-096) is left out. Without `--only` nothing changes.
 """
 
 from __future__ import annotations
@@ -30,6 +34,36 @@ sys.path.insert(0, str(ROOT / "eval" / "golden"))
 generators = importlib.import_module("generators")
 GOLDEN = ROOT / "eval" / "golden"
 AGENTS = ROOT / "agents"
+# The golden sets in the order `run_agents` runs them; `--only` picks from these names (BLD-C229).
+AGENT_ORDER = (
+    "gatekeeper",
+    "canvas-assist",
+    "draft-part",
+    "judge",
+    "cluster-summary",
+    "attachment-digest",
+    "handover-draft",
+    "role-themes",
+    "prescore",
+    "pitch-prep",
+    "collation",
+    "reason-writer",
+)
+
+
+def select_agents(only: str | None) -> tuple[str, ...]:
+    """The agents to run: every one without `--only`; otherwise the comma list's names in the usual order. A name
+    that is not in AGENT_ORDER, or an empty list, is a ValueError naming what was given and what is known."""
+    if only is None:
+        return AGENT_ORDER
+    names = [n.strip() for n in only.split(",") if n.strip()]
+    unknown = sorted(set(names) - set(AGENT_ORDER))
+    if not names or unknown:
+        raise ValueError(
+            f"--only takes agent names from this list: {', '.join(AGENT_ORDER)}"
+            + (f" (not agents here: {', '.join(unknown)})" if unknown else " (none given)")
+        )
+    return tuple(a for a in AGENT_ORDER if a in names)
 
 
 def check_golden() -> list[str]:
@@ -114,7 +148,7 @@ def switch_off_failing(conn: Any, results: list[dict[str, Any]], route: str) -> 
     return names
 
 
-def run_agents(seed: int, switch_off: bool = False) -> int:
+def run_agents(seed: int, switch_off: bool = False, only: tuple[str, ...] = AGENT_ORDER) -> int:
     from types import SimpleNamespace
 
     from core.db import connect
@@ -135,23 +169,27 @@ def run_agents(seed: int, switch_off: bool = False) -> int:
     route = route_name()
     status = 0
     results: list[dict[str, Any]] = []
+    runners: tuple[tuple[Any, str], ...] = (
+        (gatekeeper, "gatekeeper"),
+        (canvas_assist, "canvas-assist"),
+        (draft_part, "draft-part"),
+        (judge, "judge"),
+        (cluster_summary, "cluster-summary"),
+        (attachment_digest, "attachment-digest"),
+        (handover_draft, "handover-draft"),
+        (role_themes, "role-themes"),
+        (prescore, "prescore"),
+        (SimpleNamespace(run=committee.run_pitch_prep), "pitch-prep"),
+        (SimpleNamespace(run=committee.run_collation), "collation"),
+        (SimpleNamespace(run=committee.run_reason_writer), "reason-writer"),
+    )
+    assert tuple(agent for _, agent in runners) == AGENT_ORDER  # `--only` names stay the runners' names
     with connect(autocommit=True) as conn:
         ctx = context(conn, seed)
         try:
-            for runner, agent in (
-                (gatekeeper, "gatekeeper"),
-                (canvas_assist, "canvas-assist"),
-                (draft_part, "draft-part"),
-                (judge, "judge"),
-                (cluster_summary, "cluster-summary"),
-                (attachment_digest, "attachment-digest"),
-                (handover_draft, "handover-draft"),
-                (role_themes, "role-themes"),
-                (prescore, "prescore"),
-                (SimpleNamespace(run=committee.run_pitch_prep), "pitch-prep"),
-                (SimpleNamespace(run=committee.run_collation), "collation"),
-                (SimpleNamespace(run=committee.run_reason_writer), "reason-writer"),
-            ):
+            for runner, agent in runners:
+                if agent not in only:
+                    continue
                 try:
                     result = runner.run(ctx)
                 except (
@@ -215,7 +253,16 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="on deploy: switch off agents that fail (real route only)",
     )
+    parser.add_argument(
+        "--only",
+        metavar="AGENTS",
+        help="comma list of agents to run, for example gatekeeper,judge (the harness checks still run; BLD-C229)",
+    )
     args = parser.parse_args(argv)
+    try:
+        only = select_agents(args.only)
+    except ValueError as exc:
+        parser.error(str(exc))  # exits 2 before the harness checks or any database
     problems = check_golden() + check_agents()
     for p in problems:
         print(f"EVAL HARNESS  {p}")
@@ -226,7 +273,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     if args.harness_only:
         return 0
-    status = run_agents(args.seed, switch_off=args.switch_off_failing)
+    status = run_agents(args.seed, switch_off=args.switch_off_failing, only=only)
+    if args.only is not None:
+        return status  # the named agents only: the speech set is not an agent (BLD-C229)
     from evalrunner import speech  # voice notes (DEC-096): runs only with SPEECH_MODE=local
 
     return status or speech.run()
