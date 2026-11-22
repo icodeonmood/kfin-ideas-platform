@@ -15,7 +15,26 @@ describe("S-R3 putAnswer", () => {
     expect(await putAnswer("Q-1", "Our Hyderabad branch alone. ")).toEqual({
       ok: true,
       text: "Our Hyderabad branch alone.",
+      id: "A-1",
     });
+  });
+
+  it("BLD-B275: a save also gives the answer's id and files, for S-R3's \"+\"", async () => {
+    const files = [
+      {
+        id: "F-1",
+        kind: "file",
+        name: "sms-screenshot.png",
+        type: "image/png",
+        size: 2048,
+        pages: null,
+        state: "checking",
+        hidden_note: null,
+        customer_detail: false,
+      },
+    ];
+    vi.stubGlobal("fetch", reply(200, { id: "A-2", text: "", files, sent: false }));
+    expect(await putAnswer("Q-2", "")).toEqual({ ok: true, text: "", id: "A-2", files });
   });
 
   it("a dropped network shows Couldn’t save that. Try again., and is tried again", async () => {

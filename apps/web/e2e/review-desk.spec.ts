@@ -298,6 +298,65 @@ test("S-R3: the sharer answers the desk's questions one at a time and sends (V-A
   await expect(reviewer.page.getByText("Our Hyderabad branch alone.")).toBeVisible();
 });
 
+test('S-R3, C-FILE.row, L-QUESTIONS.answer, BLD-B275: a file-only answer through the "+" is checked, listed and sent', async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const NAME = "branch-call-log.md"; // a small synthetic text file (.md: .txt is not an allowed type)
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `Rejection SMS gives a code only (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(sharer.code, title);
+  const sent = await reviewer.page.request.post(`/api/desk/ideas/${ideaId}/question-sets`, {
+    data: {
+      questions: [{ part: "evidence", text: "Can you add the branch call log for last week?" }],
+      time_to_answer: "3d",
+    },
+  });
+  expect(sent.status()).toBe(201);
+
+  const s = sharer.page;
+  await s.goto(`/ideas/${ideaId}/answer`);
+  // C-PROMPT.anatomy/2, DEC-124: the "+" in the box's tool row, with the Answer board's name and tooltip (it opens
+  // files only, BLD-B275)
+  const plus = s.getByRole("button", { name: "Attach files to this answer" });
+  await expect(plus).toBeVisible();
+  await expect(plus).toHaveAttribute("title", "Attach files");
+  await expect(s.getByRole("button", { name: "Skip for now" })).toBeVisible();
+  // The upload makes the answer's row first (an empty save), then carries its id and never `for` (BLD-B274). The
+  // browser does not hand the test a multipart body with a file in it, so the form's fields are pinned by the unit
+  // test (`answerUploadForm`) and the stored row by the query at the end (the answer's id, purpose "idea")
+  const upload = s.waitForRequest((r) => r.url().endsWith("/api/files") && r.method() === "POST");
+  const chooser = s.waitForEvent("filechooser");
+  await plus.click();
+  await (
+    await chooser
+  ).setFiles({ name: NAME, mimeType: "text/markdown", buffer: Buffer.from("The call log for week 47.") });
+  expect((await upload).headers()["content-type"] ?? "").toContain("multipart/form-data");
+  await expect(plus).toBeFocused(); // focus stays on the "+" after picking
+  // C-FILE.row: the row, named by its file, reaches Checked as the screen asks again
+  const row = s.getByRole("list", { name: "Your files" }).getByRole("listitem").filter({ hasText: NAME });
+  await expect(row.getByText("Checked", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(row.getByRole("button", { name: `Remove ${NAME}` })).toBeVisible();
+  // A file and no words is answered (the worker's _has_content)
+  await expect(s.getByRole("button", { name: "Question 1, answered" })).toBeVisible();
+  await expectNoSeriousAxeIssues(s);
+  await s.getByRole("button", { name: "Next" }).click();
+  await expect(s.getByRole("heading", { name: "Check your answers" })).toBeVisible();
+  await expect(s.getByText("One file attached.", { exact: true })).toBeVisible();
+  await s.getByRole("button", { name: /Send 1 answer to / }).click();
+  await expect(s.getByRole("heading", { name: "Your answers are with the review desk" })).toBeVisible();
+  await expect(s.getByText("One file attached.", { exact: true })).toBeVisible();
+  const held = await db((c) =>
+    c.query<{ purpose: string; sent: boolean }>(
+      "SELECT a.purpose, an.sent_at IS NOT NULL AS sent FROM attachments a JOIN answers an ON an.id = a.answer_id " +
+        "JOIN ideas i ON i.id = a.idea_uuid WHERE i.idea_id = $1",
+      [ideaId],
+    ),
+  );
+  expect(held.rows).toEqual([{ purpose: "idea", sent: true }]);
+});
+
 test("V-ACC.review/14: a reviewer opening their own idea cannot act on it", async ({ browser }, testInfo) => {
   const reviewer = await person(browser, PERSONAS.reviewer);
   const title = `A reviewer's own idea (${testInfo.project.name} ${Date.now()})`;

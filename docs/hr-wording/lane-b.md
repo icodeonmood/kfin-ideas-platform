@@ -161,3 +161,11 @@ DEC-113 extends DEC-111 to the Ones Committee: a sharer, and the crew, never see
 |---|---|---|
 | The idea page, Reversed by the Ones Committee, the first line of the committee's card (the avatar "RM" goes too) | Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm | The Ones Committee, Tuesday 24 November, 5:40 pm |
 | The decision as sent to the sharer and the crew, the line under "Now: Not now" (the committee page's words; the idea page does not show this line today) | by Rohan Mehta, Tuesday 24 November | by the Ones Committee, Tuesday 24 November |
+
+## 12. Files on an answer (21 Nov, BLD-B275)
+
+S-R3's "+" adds files to an answer (DEC-124). S-R3's "+" uses the Answer board's own name, "Attach files to this answer", and its tooltip "Attach files", through lane D's button's `label` and `tooltip`: it opens the file chooser only, so the name says what it does (WCAG 2.4.6). Lane D approved it on 21 Nov as an exception to the one name every other prompt box keeps, "Add files, a folder or a link". The rows use Check it's words and lane F's list name "Your files". The one new line is the count of an answer's files in "Check your answers" and in the sent list, built on the Answer board's own "Two screenshots attached, folio hidden.". Recommended text under DEC-123; HR would normally sign it off.
+
+| Where | Board copy | On screen |
+|---|---|---|
+| S-R3, "Check your answers" and the sent list, an answer with files | Two screenshots attached, folio hidden. | The same pattern for any count and type: "One file attached.", "Two files attached.", "One screenshot attached.", "Three screenshots attached, folio hidden." ("screenshot" when every file is an image; the count in words up to ten, then figures; what was hidden from each file's own note) |

@@ -5,16 +5,31 @@
  * it is typed; "Check and send" lists them all; sending needs at least one answer and the rest stay open until the
  * deadline. Words about other people use their names, never a pronoun (BLD-E008). The reviewer is never named: the
  * sharer reads "the review desk" wherever the board names the person who asked (DEC-111).
+ *
+ * The "+" under each answer box (BLD-B275; DEC-124, C-PROMPT.anatomy/2; named as the Answer board names it, "Attach
+ * files to this answer") adds files to that answer: each is one of the
+ * idea's own files (BLD-B274), checked as DEC-107 says, and an answer with no words counts as answered with a file the
+ * review desk sees (DEC-132), as the worker counts it. Files only: no folder or link on S-R3 yet.
  */
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { Dock, PhoneBar } from "@/components/shell/phone";
+import { AttachButton } from "@/components/ui/attach-button";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Empty } from "@/components/ui/empty";
 import { Field, FieldMsg } from "@/components/ui/field";
 import { Pill } from "@/components/ui/pill";
 import type { SendAnswersResponse, SharerQuestionSetResponse, SetQuestion } from "@/lib/contracts";
+import {
+  ANSWER_FILES_COPY,
+  attachedOf,
+  counts,
+  filesLine,
+  isAnswered,
+  seedRows,
+  sentFiles,
+} from "@/lib/desk/answer-files";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import {
   MAX_ANSWER,
@@ -23,10 +38,13 @@ import {
   RETRY_MS,
   SAVE_AFTER_MS,
   tellInboxCounts,
+  type SaveResult,
 } from "@/lib/desk/answers";
 import { call } from "@/lib/desk/reply";
 import { clockLabel, dayLabel } from "@/lib/desk/when";
 import { REVIEW_DESK, REVIEW_DESK_START } from "@/lib/review-desk";
+
+import { AnswerFileRows, useAnswerFiles, type AnswerTarget } from "./answer-files";
 
 type SetView = NonNullable<SharerQuestionSetResponse>;
 
@@ -67,7 +85,28 @@ function said(at: string | null, now: Date): string {
   return today ? `today ${clockLabel(at)}` : `${dayLabel(at, now)}, ${clockLabel(at)}`;
 }
 
-export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetView | null }) {
+/** An answer's words, then the line for its files ("Two screenshots attached, folio hidden.", Answer.md), or the
+ * board's line for a question not answered. */
+function AnswerLines({ words, files }: { words: string; files: string }) {
+  if (!words && !files) return <p className="body">Not answered. It stays open until the deadline.</p>;
+  return (
+    <>
+      {words ? <p className="body">{words}</p> : null}
+      {files ? <p className="body">{files}</p> : null}
+    </>
+  );
+}
+
+export function AnswerView({
+  ideaId,
+  initial,
+  blackout = false,
+}: {
+  ideaId: string;
+  initial: SetView | null;
+  /** `files.blackout` (DEC-107): "Hide it for me" on a file is offered only while it is on, as on Check it. */
+  blackout?: boolean;
+}) {
   const [set] = useState(initial);
   const [step, setStep] = useState(0); // 0..n-1 a question, n = Check and send
   const [texts, setTexts] = useState<Record<string, string>>(() =>
@@ -91,6 +130,99 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
   const [now, setNow] = useState(() => new Date());
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const heading = useRef<HTMLHeadingElement>(null);
+  // Each unsent answer's row id, once the server has one: a file goes to it (BLD-B275)
+  const answerIds = useRef<Record<string, string>>(
+    Object.fromEntries(
+      (initial?.questions ?? []).flatMap((q) =>
+        q.answer && !q.answer.sent ? [[q.id, q.answer.id] as const] : [],
+      ),
+    ),
+  );
+  // Each question's save while it is on its way, from the autosave or for a file, so a file waits for it (BLD-B275)
+  const saving$ = useRef<Record<string, Promise<SaveResult>>>({});
+  // The one save that makes an answer's row, while it is on its way, so two quick picks never make two
+  const creating = useRef<Record<string, Promise<AnswerTarget>>>({});
+
+  /** One PUT of an answer, registered for its question while it is on its way. */
+  function put(id: string, text: string): Promise<SaveResult> {
+    const p = putAnswer(id, text);
+    saving$.current[id] = p;
+    void p.then(() => {
+      if (saving$.current[id] === p) delete saving$.current[id];
+    });
+    return p;
+  }
+
+  /** What a save's reply means on screen. A failed save shows the failure line and is tried again after a pause,
+   * unless the person has typed since (that typing saves it). With `quiet`, the worker's refusal is left to the file
+   * row that asked for the save, so it shows once. */
+  function saved(id: string, text: string, r: SaveResult, quiet = false): void {
+    if (r.ok) {
+      if (r.id) answerIds.current[id] = r.id;
+      setStored((m) => ({ ...m, [id]: r.text }));
+      setSaving("saved");
+      setError(null);
+      return;
+    }
+    if (quiet && !r.retry) {
+      setSaving("idle");
+      return;
+    }
+    setSaving("failed");
+    setError(r.message);
+    if (r.retry) {
+      timers.current[id] = setTimeout(() => {
+        delete timers.current[id];
+        if (latest.current[id] === text) void store(id, text);
+      }, RETRY_MS);
+    }
+  }
+
+  /** Saves one answer now; the reply's text is what the server holds. */
+  async function store(id: string, text: string): Promise<boolean> {
+    setSaving("saving");
+    const r = await put(id, text);
+    saved(id, text, r);
+    return r.ok;
+  }
+
+  /** Where a file for this question goes (BLD-B275): the answer's row id, after any save already on its way; when
+   * there is still none, the answer is saved as it stands (an empty answer saves too, and makes the row). One save
+   * per question at a time. A refusal from the worker (the set closed, the answer sent or held by a co-sharer) comes
+   * back as its words, for the row; a failure that may pass is null (the box's line shows, as for typing). */
+  async function answerIdOf(qid: string): Promise<AnswerTarget> {
+    const have = answerIds.current[qid];
+    if (have) return { id: have };
+    const making = creating.current[qid];
+    if (making) return making;
+    const made = (async (): Promise<AnswerTarget> => {
+      const onWay = saving$.current[qid];
+      if (onWay) {
+        await onWay;
+        const id = answerIds.current[qid];
+        if (id) return { id };
+      }
+      clearTimeout(timers.current[qid]); // this save takes the words as they stand
+      delete timers.current[qid];
+      const text = latest.current[qid] ?? "";
+      setSaving("saving");
+      const r = await put(qid, text);
+      saved(qid, text, r, true);
+      if (r.ok) return r.id ? { id: r.id } : null;
+      return r.retry ? null : { refused: r.message };
+    })();
+    creating.current[qid] = made;
+    try {
+      return await made;
+    } finally {
+      delete creating.current[qid];
+    }
+  }
+
+  const [seed] = useState(() => seedRows(initial?.questions ?? []));
+  const files = useAnswerFiles(seed, answerIdOf);
+  const plus = useRef<HTMLButtonElement>(null);
+  const chooser = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let t: ReturnType<typeof setTimeout>;
@@ -138,30 +270,8 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
   const answeredBefore = set.questions.filter((q) => q.answer?.sent);
   const n = questions.length;
   const live = set.due_at ? countdown(set.due_at, now) : null;
-  const ready = questions.filter((q) => (texts[q.id] ?? "").trim()).length;
+  const ready = questions.filter((q) => isAnswered(texts[q.id], files.rows[q.id])).length;
   const answeredCount = answeredBefore.length + ready;
-
-  /** Saves one answer now; the reply's text is what the server holds. A failed save shows the failure line and is
-   * tried again after a pause, unless the person has typed since (that typing saves it). */
-  async function store(id: string, text: string): Promise<boolean> {
-    setSaving("saving");
-    const r = await putAnswer(id, text);
-    if (r.ok) {
-      setStored((m) => ({ ...m, [id]: r.text }));
-      setSaving("saved");
-      setError(null);
-      return true;
-    }
-    setSaving("failed");
-    setError(r.message);
-    if (r.retry) {
-      timers.current[id] = setTimeout(() => {
-        delete timers.current[id];
-        if (latest.current[id] === text) void store(id, text);
-      }, RETRY_MS);
-    }
-    return false;
-  }
 
   function save(q: SetQuestion, text: string) {
     latest.current = { ...latest.current, [q.id]: text };
@@ -178,6 +288,8 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
     setBusy(true);
     setError(null);
     try {
+      // Files still on their way go first (lane F's rule for S-08's box), then the words
+      await files.settle();
       // Flush every answer the server does not hold yet (still waiting, or failed), and stop if any fails
       const flushes = questions
         .filter((q) => timers.current[q.id] !== undefined || (texts[q.id] ?? "") !== (stored[q.id] ?? ""))
@@ -242,7 +354,9 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
         <nav className="ans-steps" aria-label="Questions">
           <ol>
             {set.questions.map((x, i) => {
-              const done = Boolean((stored[x.id] ?? "").trim() || x.answer?.sent);
+              const done = Boolean(
+                (stored[x.id] ?? "").trim() || x.answer?.sent || (files.rows[x.id] ?? []).some(counts),
+              );
               return (
                 <li key={x.id}>
                   <button
@@ -283,10 +397,10 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
               <li key={q.id}>
                 <p className="body">{q.text}</p>
                 <p className="meta">Added to {q.part_name}</p>
-                <p className="body">
-                  {(q.answer?.sent ? q.answer.text : (stored[q.id] ?? "")).trim() ||
-                    "Not answered. It stays open until the deadline."}
-                </p>
+                <AnswerLines
+                  words={(q.answer?.sent ? q.answer.text : (stored[q.id] ?? "")).trim()}
+                  files={filesLine(q.answer?.sent ? sentFiles(q.answer.files) : attachedOf(files.rows[q.id]))}
+                />
               </li>
             ))}
           </ol>
@@ -311,7 +425,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
       <nav className="ans-steps" aria-label="Questions">
         <ol>
           {questions.map((x, i) => {
-            const done = Boolean((texts[x.id] ?? "").trim());
+            const done = isAnswered(texts[x.id], files.rows[x.id]);
             return (
               <li key={x.id}>
                 <button
@@ -349,9 +463,10 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
               <li key={x.id}>
                 <p className="body">{x.text}</p>
                 <p className="meta">Added to {x.part_name}</p>
-                <p className="body">
-                  {(texts[x.id] ?? "").trim() || "Not answered. It stays open until the deadline."}
-                </p>
+                <AnswerLines
+                  words={(texts[x.id] ?? "").trim()}
+                  files={filesLine(attachedOf(files.rows[x.id]))}
+                />
                 <Button variant="text" onClick={() => setStep(i)}>
                   Change<span className="vh"> your answer to question {i + 1}</span>
                 </Button>
@@ -390,8 +505,6 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
             {/* The question in its own element, as the board draws it apart from its number (J-TRACK/4) */}
             <span>{q.text}</span>
           </h2>
-          {/* Seams, not built yet: files on an answer (C-FILE.row, S-R3.rules/3) and "Say your answer" through
-              lane C's voice route mount beside this box. */}
           <Field
             label={`Your answer to question ${step + 1}`}
             multiline
@@ -424,6 +537,42 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
               />
             )}
           </Field>
+          {/* The box's tool row (C-PROMPT.anatomy/2, DEC-124): the "+", with the Answer board's name and tooltip, opens
+              the system's file chooser; focus stays on it after picking. Its rows follow, under the box (C-FILE.row). */}
+          <div className="ans-tools">
+            <AttachButton
+              ref={plus}
+              label={ANSWER_FILES_COPY.attach}
+              tooltip={ANSWER_FILES_COPY.attachTip}
+              onClick={() => {
+                files.loadConfig();
+                chooser.current?.click();
+              }}
+            />
+            <input
+              ref={chooser}
+              type="file"
+              multiple
+              hidden
+              tabIndex={-1}
+              onChange={(e) => {
+                const chosen = Array.from(e.target.files ?? []);
+                e.target.value = "";
+                if (chosen.length) files.addFiles(q.id, chosen);
+                requestAnimationFrame(() => plus.current?.focus());
+              }}
+            />
+          </div>
+          <AnswerFileRows
+            rows={files.rows[q.id] ?? []}
+            limitMb={files.limitMb}
+            canHide={blackout}
+            onRetry={(key) => void files.retry(q.id, key)}
+            onHide={(key) => void files.hide(q.id, key)}
+            onRemove={(key) =>
+              void files.remove(q.id, key).then(() => requestAnimationFrame(() => plus.current?.focus()))
+            }
+          />
           {error ? (
             <FieldMsg kind="error">
               <span role="alert">{error}</span>
@@ -434,7 +583,7 @@ export function AnswerView({ ideaId, initial }: { ideaId: string; initial: SetVi
               Back
             </Button>
             <Button variant="primary" onClick={() => setStep(step + 1)}>
-              {(texts[q.id] ?? "").trim() ? "Next" : "Skip for now"}
+              {isAnswered(texts[q.id], files.rows[q.id]) ? "Next" : "Skip for now"}
             </Button>
           </Dock>
         </section>

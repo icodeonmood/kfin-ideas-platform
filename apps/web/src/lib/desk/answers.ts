@@ -2,6 +2,7 @@
  * S-R3's saves (L-QUESTIONS.answer, A-API.questions): each answer is saved as it is typed, and what the server holds
  * is what the screen reports. Framework-free, so the failure paths are tested without a browser.
  */
+import type { AnswerFile } from "@/lib/contracts";
 import { replyError } from "@/lib/desk/reply";
 import { COUNTS_EVENT } from "@/lib/inbox-events";
 
@@ -13,9 +14,14 @@ export const SAVE_FAILED = "Couldn’t save that. Try again.";
 export const RETRY_MS = 4000;
 export const SAVE_AFTER_MS = 700;
 
-export type SaveResult = { ok: true; text: string } | { ok: false; message: string; retry: boolean };
+/** A save that reached the server: the text it holds, and (BLD-B275) the answer's id and files when its reply has
+ * them, so S-R3's "+" knows the answer row an upload goes to. */
+export type SaveResult =
+  | { ok: true; text: string; id?: string; files?: AnswerFile[] }
+  | { ok: false; message: string; retry: boolean };
 
-/** One answer to the server (A-API.questions `PUT /api/questions/:id/answer`). Never throws. */
+/** One answer to the server (A-API.questions `PUT /api/questions/:id/answer`). An empty text saves too: the first
+ * save makes the answer's row (the worker's `save_answer`). Never throws. */
 export async function putAnswer(questionId: string, text: string): Promise<SaveResult> {
   let res: Response;
   try {
@@ -29,7 +35,10 @@ export async function putAnswer(questionId: string, text: string): Promise<SaveR
   }
   const body: unknown = await res.json().catch(() => null);
   if (res.ok && body && typeof body === "object" && "text" in body && typeof body.text === "string") {
-    return { ok: true, text: body.text };
+    const saved: Extract<SaveResult, { ok: true }> = { ok: true, text: body.text };
+    if ("id" in body && typeof body.id === "string") saved.id = body.id;
+    if ("files" in body && Array.isArray(body.files)) saved.files = body.files as AnswerFile[];
+    return saved;
   }
   // The worker's own refusal ("Keep your answer under 2,000 characters.") is shown as it is and not tried again;
   // a paused feature shows its banner; anything else is the failure line, tried again.

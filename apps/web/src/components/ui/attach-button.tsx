@@ -15,6 +15,11 @@ export type AttachButtonProps = {
   /** Shown as aria-disabled; the button stays focusable and a click does nothing (C-BUTTON.states/4). */
   disabled?: boolean;
   className?: string;
+  /** The button's name (aria-label); `ATTACH_NAME` unless the box's board names it otherwise. S-R3 passes the Answer
+   * board's "Attach files to this answer", because its "+" opens files only (BLD-B275, approved by lane D). */
+  label?: string;
+  /** The tooltip (title); `ATTACH_NAME` unless the board draws another ("Attach files" on S-R3). */
+  tooltip?: string;
 };
 
 /**
@@ -27,7 +32,15 @@ export type AttachButtonProps = {
  * Only the button: the screen wires the picker and the menu through `onClick`, `aria-expanded` and `aria-controls`.
  */
 export const AttachButton = forwardRef<HTMLButtonElement, AttachButtonProps>(function AttachButton(
-  { onClick, "aria-expanded": expanded, "aria-controls": controls, disabled, className },
+  {
+    onClick,
+    "aria-expanded": expanded,
+    "aria-controls": controls,
+    disabled,
+    className,
+    label = ATTACH_NAME,
+    tooltip = ATTACH_NAME,
+  },
   ref,
 ) {
   return (
@@ -35,8 +48,8 @@ export const AttachButton = forwardRef<HTMLButtonElement, AttachButtonProps>(fun
       ref={ref}
       type="button"
       className={className ? `attach-btn ${className}` : "attach-btn"}
-      aria-label={ATTACH_NAME}
-      title={ATTACH_NAME}
+      aria-label={label}
+      title={tooltip}
       aria-expanded={expanded}
       aria-controls={controls}
       aria-disabled={disabled ? true : undefined}
