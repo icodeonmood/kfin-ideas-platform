@@ -401,7 +401,7 @@ names = [argv[i + 1] for i, a in enumerate(argv[:-1]) if a == "-e"]
 record = {"tool": tool, "argv": argv, "env_names": sorted(os.environ), "named": {n: os.environ.get(n) for n in names},
           "key": os.environ.get("ANTHROPIC_API_KEY"), "cwd": os.getcwd()}
 if tool == "python":
-    for n in ("DATABASE_URL", "LLM_MODE", "COMPANY_REPO_PATH", "EVAL_REPORTS_DIR", "VAULT_ENCRYPTION_KEY"):
+    for n in ("DATABASE_URL", "LLM_MODE", "COMPANY_REPO_PATH", "EVAL_REPORTS_DIR", "VAULT_ENCRYPTION_KEY", "LLM_DAILY_BUDGET_INR"):
         record["named"][n] = os.environ.get(n)
 with open(here / "calls.jsonl", "a") as f:
     f.write(json.dumps(record) + "\n")
@@ -604,7 +604,10 @@ def test_v_eval_c229_mac_run_throwaway_database_and_the_key_for_the_golden_sets_
         "LC_CTYPE",
         "__CF_USER_TEXT_ENCODING",
     } | STEP_ENV
-    allowed |= {"LLM_FAST_MODEL", "LLM_REASONING_MODEL", "LLM_REFUSAL_FALLBACK"}
+    allowed |= {"LLM_FAST_MODEL", "LLM_REASONING_MODEL", "LLM_REFUSAL_FALLBACK", "LLM_DAILY_BUDGET_INR"}
+    assert all(
+        c["named"]["LLM_DAILY_BUDGET_INR"] == "1000" for c in py
+    )  # the eval's cap beats a low .env budget
     assert "LLM_REASONING_MODEL" in golden["env_names"]
     for c in py:
         extra = set(c["env_names"]) - allowed - ({"ANTHROPIC_API_KEY"} if c is golden else set())

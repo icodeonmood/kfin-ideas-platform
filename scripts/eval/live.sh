@@ -51,7 +51,7 @@ umask 077
 unset EL_MODE EL_ROUTE EL_CHECKOUT EL_PROJECT EL_APP_ENV_FILE EL_DATA_DIR EL_WORK EL_ERR EL_PY EL_DB_URL EL_PG_PW \
   EL_GEN_VAULT EL_GEN_PSEUDO EL_GEN_HMAC EL_GEN_INTERNAL EL_GEN_SESSION EL_RUNS EL_CREATED_PROJECT EL_CREATED_DATA \
   EL_REPO EL_REPORTS EL_EVAL_PROJECT EL_SHA EL_TAG EL_BEFORE EL_AFTER EL_PASSED EL_CREDS EL_LOCK EL_LOCKED \
-  ROOT AGENTS MAC_PROJECT MAC_PORT SERVER_PROJECT SERVER_DATA_DIR WORKER_UID EMAIL_DOMAINS SWITCH_REASON \
+  ROOT AGENTS MAC_PROJECT MAC_PORT SERVER_PROJECT SERVER_DATA_DIR WORKER_UID EMAIL_DOMAINS SWITCH_REASON EVAL_BUDGET_INR \
   BASE_URL_NAMES CREDS_ANTHROPIC CREDS_BEDROCK MODEL_NAMES PROXY_NAMES SECRET_NAMES STEP_ENV_NAMES MAC_KEEP_NAMES NAME_START NL \
   where have_id have_secret running pg line ports changes bound block eval_exit paste_exit paste_args status_out sw g p name v
 unset COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_ENV_FILES COMPOSE_PATH_SEPARATOR
@@ -65,6 +65,10 @@ SERVER_DATA_DIR="/srv/kfin-ideas-eval"
 WORKER_UID=10001
 EMAIL_DOMAINS="kfintech.com,kfintech.example"
 SWITCH_REASON="eval-live: golden sets on this throwaway database only (BLD-C229)"
+# Mac only: the eval's own daily budget for the gateway. core/config.py reads the checkout's .env for any setting not in
+# the environment, so a low LLM_DAILY_BUDGET_INR there could switch calls off mid-run; this cap always wins. A full run
+# of both golden sets costs a small part of it. (The server's container never reads an env file: the default applies.)
+EVAL_BUDGET_INR=1000
 # The model SDK's own base-URL overrides (gateway/routes.py builds anthropic.Anthropic() and AnthropicBedrockMantle()
 # from the environment) and the AWS endpoint overrides: any of them set means the run might not reach the real API.
 BASE_URL_NAMES="ANTHROPIC_BASE_URL ANTHROPIC_BEDROCK_BASE_URL ANTHROPIC_BEDROCK_MANTLE_BASE_URL AWS_ENDPOINT_URL AWS_ENDPOINT_URL_BEDROCK AWS_ENDPOINT_URL_BEDROCK_RUNTIME"
@@ -432,7 +436,8 @@ py() {
     export APP_ENV=test DATABASE_URL="$EL_DB_URL" COMPANY_REPO_PATH="$EL_REPO" EVAL_REPORTS_DIR="$EL_REPORTS" \
       LLM_MODE="$mode" EMBEDDINGS_MODE=hash SPEECH_MODE=fake KFIN_EMAIL_DOMAINS="$EMAIL_DOMAINS" \
       VAULT_ENCRYPTION_KEY="$EL_GEN_VAULT" PSEUDONYM_VAULT_KEY="$EL_GEN_PSEUDO" CONTRIBUTOR_HMAC_SECRET="$EL_GEN_HMAC" \
-      INTERNAL_API_TOKEN="$EL_GEN_INTERNAL" SESSION_SECRET="$EL_GEN_SESSION" PYTHONDONTWRITEBYTECODE=1
+      INTERNAL_API_TOKEN="$EL_GEN_INTERNAL" SESSION_SECRET="$EL_GEN_SESSION" PYTHONDONTWRITEBYTECODE=1 \
+      LLM_DAILY_BUDGET_INR="$EVAL_BUDGET_INR"
     cd "$ROOT/services/worker" || exit 97
     exec "${EL_PY[@]}" "$@"
   )
