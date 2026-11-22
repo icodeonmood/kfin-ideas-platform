@@ -2,8 +2,10 @@
 database with the object store faked (no stack): `POST /files` with `for: "conversation"` beside `idea_id`, stored
 as `attachments.purpose`; who may add one (`convo.access.reader`'s `may_attach`: the sharer, the review desk and the
 Ones Committee); 422 for any other `for` or one without an idea; the migration's backfill; every reader of an idea's
-own files leaving conversation files out; the sweep of unsent conversation files after a day; and DEC-107 for a
-conversation file with a customer detail found (the sharer, the desk and the committee open it, never the crew).
+own files leaving conversation files out; the sweep of unsent conversation files after a day; an unsent
+conversation file is its uploader's alone (BLD-C222); and DEC-127 for a conversation file with a customer detail
+found (its uploader, the desk and the committee open it; never the idea's lead or sharer who did not upload it, nor
+the crew), and for a file still checking (nobody but its uploader sees it, and nobody opens it).
 Synthetic people, files and values only (non-negotiable 11)."""
 
 from __future__ import annotations
@@ -46,38 +48,96 @@ def test_A_API_files_for_conversation_needs_an_idea_and_nothing_else_is_taken() 
     assert (e.value.status, e.value.code) == (422, "target_required")
 
 
+# The viewer rows of DEC-127 and BLD-C222. `desk` stands for the review desk and the Ones Committee alike: both are
+# `desk.store.READERS`, which the database tests below take one by one.
+VIEWERS = {
+    "uploader": F.Viewer(uploader=True),
+    "lead_uploader": F.Viewer(uploader=True, sharer=True, crew=True, lead=True),  # the idea's sharer added it
+    "lead": F.Viewer(
+        sharer=True, crew=True, lead=True
+    ),  # the idea's own sharer (its crew lead), did not add it
+    "co_sharer": F.Viewer(sharer=True),  # credited through a merge
+    "crew": F.Viewer(crew=True),
+    "desk": F.Viewer(desk=True),
+    "other": F.Viewer(),
+}
+UPLOADERS = {"uploader", "lead_uploader"}
+CHECKED_READERS = {*UPLOADERS, "lead", "co_sharer", "crew", "desk"}  # P-PRODUCT.privacy, unchanged (BLD-F062)
+
+
 @pytest.mark.parametrize(
     ("state", "sees", "opens_for"),
     [
-        ("personal_data_found", {"uploader", "lead", "desk"}, {"uploader", "lead", "desk"}),
-        (
-            "checked",
-            {"uploader", "lead", "co_sharer", "crew", "desk"},
-            {"uploader", "lead", "co_sharer", "crew", "desk"},
-        ),
-        ("checking", {"uploader"}, set()),
+        # DEC-127: a found conversation file opens for its uploader, the desk and the committee only.
+        ("personal_data_found", {*UPLOADERS, "desk"}, {*UPLOADERS, "desk"}),
+        # Checked conversation files on a sent entry: exactly as on main (lane F's question (a) stays open).
+        ("checked", CHECKED_READERS, CHECKED_READERS),
+        ("hidden_checked", CHECKED_READERS, CHECKED_READERS),
+        ("checking", UPLOADERS, set()),
+        ("upload_failed", UPLOADERS, set()),
+        ("infected", UPLOADERS, set()),
     ],
 )
-def test_DEC_107_a_conversation_file_with_a_detail_opens_for_the_sharer_desk_and_committee_only(
+def test_DEC_127_BLD_C222_every_viewer_row_on_a_sent_conversation_file(
     state: str, sees: set[str], opens_for: set[str]
 ) -> None:
-    viewers = {
-        "uploader": F.Viewer(uploader=True),
-        "lead": F.Viewer(sharer=True, crew=True, lead=True),  # the idea's own sharer (its crew lead)
-        "co_sharer": F.Viewer(sharer=True),  # credited through a merge
-        "crew": F.Viewer(crew=True),
-        "desk": F.Viewer(desk=True),  # the review desk and the Ones Committee (READERS)
-        "other": F.Viewer(),
-    }
-    for name, v in viewers.items():
-        see, opens = F.rights(state, "file", draft=False, answer_unsent=False, viewer=v, conversation=True)
+    for name, v in VIEWERS.items():
+        see, opens = F.rights(
+            state, "file", draft=False, answer_unsent=False, viewer=v, conversation=True, unsent=False
+        )
         assert see is (name in sees) and opens is (name in opens_for), (state, name)
     # The idea's own files keep their rule: a found file is never the sharer's unless they added it (DEC-107).
-    lead = viewers["lead"]
-    assert F.rights("personal_data_found", "file", draft=False, answer_unsent=False, viewer=lead) == (
+    assert F.rights(
+        "personal_data_found", "file", draft=False, answer_unsent=False, viewer=VIEWERS["lead"]
+    ) == (
         False,
         False,
     )
+
+
+@pytest.mark.parametrize(
+    "state", ["checked", "hidden_checked", "personal_data_found", "checking", "upload_failed", "too_big"]
+)
+def test_BLD_C222_an_unsent_conversation_file_is_its_uploaders_alone_in_every_state(state: str) -> None:
+    """A conversation file on no entry yet is seen and opened by its uploader only, like a draft's file: not the
+    idea's lead or a co-sharer, not the crew, not the desk or the committee (DEC-127's last line, BLD-C222)."""
+    for name, v in VIEWERS.items():
+        see, opens = F.rights(
+            state, "file", draft=False, answer_unsent=False, viewer=v, conversation=True, unsent=True
+        )
+        assert see is (name in UPLOADERS), (state, name)
+        assert opens is (name in UPLOADERS and state in F.VIEWABLE), (state, name)
+
+
+def test_DEC_127_who_opens_a_found_conversation_file_is_one_rule_that_rights_follows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rule lives in `opens_found_conversation_file` only: its uploader, the review desk and the Ones Committee.
+    Changing that one function changes `rights` (and so every route), and nothing else needs an edit."""
+    for name, v in VIEWERS.items():
+        assert F.opens_found_conversation_file(v) is (name in {*UPLOADERS, "desk"}), name
+    found = {"draft": False, "answer_unsent": False, "conversation": True, "unsent": False}
+    assert F.rights("personal_data_found", "file", viewer=VIEWERS["lead"], **found) == (False, False)
+    monkeypatch.setattr(F, "opens_found_conversation_file", lambda v: v.uploader or v.desk or v.lead)
+    assert F.rights("personal_data_found", "file", viewer=VIEWERS["lead"], **found) == (True, True)
+    assert F.rights("personal_data_found", "file", viewer=VIEWERS["crew"], **found) == (False, False)
+
+
+@pytest.mark.parametrize("state", ["checking", "uploading"])
+def test_DEC_127_no_one_but_the_uploader_opens_a_file_before_both_checks_are_done(state: str) -> None:
+    """DEC-127: a file opens for anyone but its uploader only once its checks are complete, the virus scan and the
+    gatekeeper; never on the pattern check alone. Until then it is `checking` (BLD-C107), and the desk, the
+    committee, the idea's lead or sharer and the crew neither see nor open it, an idea's own file or a conversation
+    file, sent or not. The uploader sees the row and opens nothing, as before."""
+    shapes = [
+        {"conversation": False, "unsent": False},  # the idea's own file
+        {"conversation": True, "unsent": False},  # a conversation file on an entry
+        {"conversation": True, "unsent": True},  # a conversation file not yet sent
+    ]
+    for shape in shapes:
+        for name, v in VIEWERS.items():
+            got = F.rights(state, "file", draft=False, answer_unsent=False, viewer=v, **shape)
+            assert got == ((name in UPLOADERS), False), (state, shape, name)
 
 
 # ---- the database, with the object store faked -------------------------------------------------------------------
@@ -90,6 +150,7 @@ def objects(monkeypatch: pytest.MonkeyPatch) -> dict[tuple[str, str], bytes]:
     monkeypatch.setattr(store, "put", lambda bucket, key, data: kept.__setitem__((bucket, key), data))
     monkeypatch.setattr(store, "delete", lambda bucket, key: kept.pop((bucket, key), None))
     monkeypatch.setattr(store, "exists", lambda bucket, key: (bucket, key) in kept)
+    monkeypatch.setattr(store, "get", lambda bucket, key: kept[(bucket, key)])
     return kept
 
 
@@ -323,20 +384,160 @@ def test_the_sweep_removes_only_unsent_conversation_files_older_than_a_day(
     assert F.sweep_unsent_conversation(db) == 0
 
 
-def test_DEC_107_a_detail_found_conversation_file_opens_for_the_sharer_desk_and_committee_never_the_crew(
-    db: Conn, cast: dict[str, Any]
+def _co_sharer(db: Conn, idea: dict[str, Any]) -> dict[str, str]:
+    """Nisha, credited on the idea through a merge (`own_codes`): a sharer of it, not its lead, not on its crew."""
+    nisha = f.person(db, "Nisha Rao")
+    joined = f.idea(db, nisha, status="merged", title="The R07 SMS gives a code, not a reason")
+    db.execute(
+        "INSERT INTO merges (lead_idea_uuid, merged_idea_uuid, via, by_code) VALUES (%s, %s, 'lead_accepted', %s)",
+        (idea["id"], joined["id"], idea["contributor_code"]),
+    )
+    return nisha
+
+
+def _copy(db: Conn, objects: dict[Any, bytes], att: str) -> None:
+    """The file's copy in the faked clean bucket, so that whoever may open it gets bytes back."""
+    key = str(_one(db, "SELECT store_key FROM attachments WHERE id = %s", att)["store_key"])
+    objects[(get_settings().s3_bucket_clean, key)] = b"%PDF-1.4 synthetic"
+
+
+def _not_found_anywhere(db: Conn, att: str, who: dict[str, str]) -> None:
+    """The row and the copy (`GET /files/:id`, `GET /files/:id/view`) are both not found, in the very words an id
+    that does not exist gets, so nothing says that the file is there."""
+    missing = _refused(F.get_item, db, "ATT-2099-999999", who["id"]).body()
+    for fn in (F.get_item, F.content):
+        e = _refused(fn, db, att, who["id"])
+        assert (e.status, e.body()) == (404, missing), (fn.__name__, who["name"])
+
+
+def test_BLD_C222_DEC_127_an_unsent_conversation_file_is_404_for_everyone_but_its_uploader(
+    db: Conn, cast: dict[str, Any], objects: dict[Any, bytes]
 ) -> None:
-    idea = cast["idea"]
-    att = _row(db, idea, cast["meera"], purpose="conversation", state="personal_data_found")
-    for who in ("meera", "kavya", "rohan", "dev"):
-        item = F.get_item(db, att, cast[who]["id"])
-        assert item["customer_detail"] is True and item["view_url"] == f"/api/files/{att}/view", who
-    for who in ("arjun", "sam"):
-        assert _refused(F.get_item, db, att, cast[who]["id"]).status == 404, who
-    # A checked conversation file is the crew's to open, as checked files are (P-PRODUCT.privacy).
-    checked = _row(db, idea, cast["meera"], purpose="conversation")
-    assert F.get_item(db, checked, cast["arjun"]["id"])["view_url"] == f"/api/files/{checked}/view"
-    assert _refused(F.get_item, db, checked, cast["sam"]["id"]).status == 404
+    """Item 1 of the walk's privacy fixes: Meera at the review desk adds a file in the conversation's box and has
+    not sent it. Whoever asks for the ids after their own gets nothing: the idea's lead, a co-sharer, the crew,
+    the Ones Committee, anyone else. Meera alone sees the row and opens the copy, checked or found."""
+    idea, kavya, meera = cast["idea"], cast["kavya"], cast["meera"]
+    nisha = _co_sharer(db, idea)
+    mine = _upload(db, kavya, idea)["id"]  # Kavya knows her own file's id
+    theirs = _upload(db, meera, idea)["id"]
+    guesses = [f"{mine[:-6]}{int(mine[-6:]) + n:06d}" for n in (1, 2, 3)]
+    assert theirs in guesses  # ids are sequential: the next one is Meera's
+    for state in ("checking", "checked", "personal_data_found"):
+        db.execute(
+            "UPDATE attachments SET file_state = %s, state = %s WHERE id = %s",
+            (state, "clean" if state == "checked" else "quarantine", theirs),
+        )
+        _copy(db, objects, theirs)
+        for who in ("kavya", "arjun", "sam", "rohan", "dev"):
+            for guess in guesses:
+                _not_found_anywhere(db, guess, cast[who])
+        _not_found_anywhere(db, theirs, nisha)
+        item = F.get_item(db, theirs, meera["id"])
+        assert item["state"] == state, state
+        if state == "checking":
+            assert "view_url" not in item
+            assert _refused(F.content, db, theirs, meera["id"]).status == 403  # as before: not yet checked
+        else:
+            assert item["view_url"] == f"/api/files/{theirs}/view"
+            assert F.content(db, theirs, meera["id"])[0] == b"%PDF-1.4 synthetic"
+    # Sent on an entry, a checked conversation file is read as on main: the crew and the sharers open it.
+    db.execute(
+        "UPDATE attachments SET file_state = 'checked', state = 'clean', conversation_entry_id = %s WHERE id = %s",
+        (_entry(db, idea, meera), theirs),
+    )
+    for who in (kavya, cast["arjun"], nisha, cast["rohan"]):
+        assert F.get_item(db, theirs, who["id"])["view_url"] == f"/api/files/{theirs}/view", who["name"]
+    _not_found_anywhere(db, theirs, cast["sam"])
+
+
+def test_BLD_C222_the_worker_routes_answer_an_unsent_conversation_file_as_an_id_that_does_not_exist(
+    db: Conn,
+    cast: dict[str, Any],
+    test_database: str,
+    monkeypatch: pytest.MonkeyPatch,
+    objects: dict[Any, bytes],
+) -> None:
+    """The same, through the routes behind `GET /api/files/:id` and `GET /api/files/:id/view`: the status, the
+    body and the content type are those of an id that does not exist."""
+    from fastapi.testclient import TestClient
+
+    from tests import helpers
+
+    att = _upload(db, cast["meera"], cast["idea"])["id"]
+    db.execute("UPDATE attachments SET file_state = 'checked', state = 'clean' WHERE id = %s", (att,))
+    _copy(db, objects, att)
+    monkeypatch.setenv("DATABASE_URL", helpers.db_url(test_database))
+    monkeypatch.setenv("INTERNAL_API_TOKEN", TOKEN)
+    get_settings.cache_clear()
+    from api.app import app
+
+    client = TestClient(app, headers={"X-Internal-Token": TOKEN})
+    for who in ("kavya", "arjun", "rohan", "sam"):
+        uid = cast[who]["id"]
+        for path in ("/internal/files/{}", "/internal/files/{}/content"):
+            got = client.get(path.format(att), params={"user_id": uid})
+            missing = client.get(path.format("ATT-2099-999999"), params={"user_id": uid})
+            assert got.status_code == missing.status_code == 404, (who, path)
+            assert got.json() == missing.json(), (who, path)
+            assert got.headers["content-type"] == missing.headers["content-type"], (who, path)
+    own = client.get(f"/internal/files/{att}/content", params={"user_id": cast["meera"]["id"]})
+    assert own.status_code == 200 and own.content == b"%PDF-1.4 synthetic"
+    get_settings.cache_clear()
+
+
+def test_DEC_127_a_found_conversation_file_opens_for_its_uploader_the_desk_and_the_committee_only(
+    db: Conn, cast: dict[str, Any], objects: dict[Any, bytes]
+) -> None:
+    """Item 2, every viewer row on a conversation file in which our checks found a customer detail, put on an entry
+    here as a belt (lane F's send refuses one, BLD-F095): its uploader, the review desk and the Ones Committee open
+    it; the idea's lead or sharer who did not upload it, a co-sharer, the crew and anyone else get not found."""
+    idea, kavya, meera = cast["idea"], cast["kavya"], cast["meera"]
+    nisha = _co_sharer(db, idea)
+    entry = _entry(db, idea, meera)
+    by_desk = _row(db, idea, meera, purpose="conversation", entry=entry, state="personal_data_found")
+    by_lead = _row(db, idea, kavya, purpose="conversation", entry=entry, state="personal_data_found")
+    rows = {
+        by_desk: ({"meera", "rohan", "dev"}, {"kavya", "nisha", "arjun", "sam"}),
+        by_lead: ({"kavya", "meera", "rohan", "dev"}, {"nisha", "arjun", "sam"}),
+    }
+    people = {**cast, "nisha": nisha}
+    for att, (opens, never) in rows.items():
+        _copy(db, objects, att)
+        for who in sorted(opens):
+            item = F.get_item(db, att, people[who]["id"])
+            assert item["customer_detail"] is True and item["view_url"] == f"/api/files/{att}/view", who
+            assert F.content(db, att, people[who]["id"])[0] == b"%PDF-1.4 synthetic", who
+        for who in sorted(never):
+            _not_found_anywhere(db, att, people[who])
+    # The found line is the uploader's only, as before (C-FILE.row); the desk reads `customer_detail`.
+    assert "problem" not in F.get_item(db, by_desk, cast["rohan"]["id"])
+
+
+def test_DEC_127_a_file_still_checking_opens_for_no_one_and_shows_only_to_its_uploader(
+    db: Conn, cast: dict[str, Any], objects: dict[Any, bytes]
+) -> None:
+    """DEC-127's last sentence: until the virus scan and the gatekeeper have both run the file is `checking`, so
+    the desk, the committee, the idea's lead and the crew neither see nor open it, even with the pattern check
+    done (`checks.patterns`). The uploader's own access is as before: the row, and no copy."""
+    idea, kavya, meera = cast["idea"], cast["kavya"], cast["meera"]
+    entry = _entry(db, idea, meera)
+    waiting = [
+        _row(db, idea, meera, purpose="conversation", entry=entry, state="checking"),  # sent, still checking
+        _row(db, idea, kavya, state="checking"),  # the idea's own file
+    ]
+    for att in waiting:
+        db.execute(
+            "UPDATE attachments SET checks = checks || '{\"patterns\": true}'::jsonb WHERE id = %s", (att,)
+        )
+        _copy(db, objects, att)
+    for att, uploader in zip(waiting, (meera, kavya), strict=True):
+        for who in ("meera", "rohan", "dev", "kavya", "arjun", "sam"):
+            if cast[who] is uploader:
+                continue
+            _not_found_anywhere(db, att, cast[who])
+        item = F.get_item(db, att, uploader["id"])
+        assert item["state"] == "checking" and "view_url" not in item
+        assert _refused(F.content, db, att, uploader["id"]).status == 403
 
 
 def test_attachment_purpose_the_new_column_defaults_to_idea_for_every_existing_writer(

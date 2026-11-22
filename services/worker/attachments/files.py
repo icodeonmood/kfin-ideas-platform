@@ -28,10 +28,14 @@ path as the boards show it ("kfintech.sharepoint.com/ops/R07").
 Who sees and opens what (DEC-107, P-PRODUCT.privacy; the coordinator's rule of 17 Nov), in `rights`:
 - the person who added it: the row in every state; opens it once checked or found;
 - checked, hidden_checked and ok: the idea's sharers, its crew, the review desk and the Ones Committee;
-- personal_data_found: the review desk and the Ones Committee as well, never the crew or a co-sharer;
-- a conversation file (`purpose = 'conversation'`, the "+" in S-08's box, DEC-124) with a customer detail found also
-  opens for the idea's own sharer, so it opens for the sharer, the desk and the committee (DEC-107; BLD-C216);
-- a draft's files, and a draft answer's: only the person who added them;
+- personal_data_found: the review desk and the Ones Committee as well, never the crew or a sharer who did not add it;
+- a conversation file (`purpose = 'conversation'`, the "+" in S-08's box, DEC-124) with a customer detail found:
+  only the person who uploaded it, the review desk and the Ones Committee, never the idea's lead or sharer who did
+  not upload it, the crew, previews or anyone else (DEC-127, decided; `opens_found_conversation_file`, BLD-C222);
+- a draft's files, a draft answer's, and a conversation file not yet on an entry: only the person who added them
+  (BLD-C222);
+- before both checks have finished (the virus scan and the gatekeeper; `checking` until then, never on the pattern
+  check alone) nobody but the person who added it sees the row, and nobody opens it (DEC-127);
 - everyone else: not found.
 
 A file's `purpose` is `idea` (Proof, the edit page, an answer) or `conversation` (BLD-C216). Every reader of an idea's
@@ -182,16 +186,35 @@ class Viewer:
     lead: bool = False  # the idea's own sharer (its contributor), not a co-sharer from a merge
 
 
+def opens_found_conversation_file(viewer: Viewer) -> bool:
+    """DEC-127 (decided by the product lead, 22 Nov), kept in this one place: a conversation file in which our checks
+    find a customer detail opens only for the person who uploaded it, the review desk and the Ones Committee
+    (`desk`, `desk.store.READERS`). Never for the idea's lead or sharer who did not upload it, the crew, previews or
+    anyone else. `rights` reads it, so `_rights` and every route here do too (`GET /files/:id`, `/view`); a change
+    to DEC-127 is a change to this line only (BLD-C222)."""
+    return viewer.uploader or viewer.desk
+
+
 def rights(
-    state: str, kind: str, *, draft: bool, answer_unsent: bool, viewer: Viewer, conversation: bool = False
+    state: str,
+    kind: str,
+    *,
+    draft: bool,
+    answer_unsent: bool,
+    viewer: Viewer,
+    conversation: bool = False,
+    unsent: bool = False,
 ) -> tuple[bool, bool]:
-    """(sees the row, opens the file). Pure, so every row of the rule has its own unit test. A conversation file
-    with a customer detail found opens for the idea's own sharer as it does for the desk (DEC-107, BLD-C216)."""
+    """(sees the row, opens the file). Pure, so every row of the rule has its own unit test. `conversation` is a file
+    added for the conversation (BLD-C216) and `unsent` one of those still on no entry: it is the uploader's alone,
+    like a draft's file (DEC-127, BLD-C222). A found conversation file follows `opens_found_conversation_file`."""
     if viewer.uploader:
         see = True
-    elif draft or answer_unsent:
-        see = False  # a draft's files, and a draft answer's, stay with the person who added them
-    elif viewer.desk or (conversation and viewer.lead):
+    elif draft or answer_unsent or (conversation and unsent):
+        see = False  # a draft's files, a draft answer's and an unsent conversation file stay with their uploader
+    elif conversation and state == CUSTOMER_DETAIL:
+        see = opens_found_conversation_file(viewer)  # DEC-127: never the idea's lead or sharer, nor the crew
+    elif viewer.desk:
         see = state in DESK_SEES
     elif viewer.sharer or viewer.crew:
         see = state in FILES_CHECKED
@@ -259,11 +282,15 @@ def _viewer(conn: Conn, row: dict[str, Any], user_id: str) -> Viewer:
 
 
 def _rights(conn: Conn, row: dict[str, Any], user_id: str) -> tuple[Viewer, bool, bool]:
+    """`rights` for a loaded row (`_ROW`, every column): every route here decides through this. A conversation file
+    on no entry yet (`conversation_entry_id` NULL) is unsent: a non-uploader gets not found for its row and its
+    copy, exactly as for an id that does not exist (BLD-C222)."""
     v = _viewer(conn, row, user_id)
+    conversation = row.get("purpose") == CONVERSATION
     see, opens = rights(
         effective_state(row), str(row.get("kind") or "file"), draft=row["idea_status"] == "draft",
         answer_unsent=row.get("answer_id") is not None and row.get("answer_sent_at") is None, viewer=v,
-        conversation=row.get("purpose") == CONVERSATION,
+        conversation=conversation, unsent=conversation and row.get("conversation_entry_id") is None,
     )  # fmt: skip
     return v, see, opens
 
