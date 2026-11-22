@@ -470,6 +470,7 @@ if [ "$EL_MODE" = server ]; then
   EL_AFTER="$(install_count)" || stop "the install's llm_calls could not be read" "install count after"
   paste_args+=(--mode server --installed-sha "$EL_SHA" --install-before "$EL_BEFORE" --install-after "$EL_AFTER")
   [ -z "$EL_TAG" ] || paste_args+=(--installed-tag "$EL_TAG")
+  EL_RUNS="$EL_RUNS $SERVER_PROJECT-paste" # worker_run's own note of it is lost in the command substitution
   block="$(worker_run paste none ro python -m evalrunner.paste "${paste_args[@]}" 2>>"$EL_ERR")"
 else
   paste_args+=(--mode mac --checkout-sha "$EL_SHA")
