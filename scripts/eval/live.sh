@@ -17,9 +17,10 @@
 #       --app-env <app env file> --route anthropic|bedrock [--data-dir <a folder that does not exist yet>]
 #   Its own compose project kfin-ideas-eval with its own Postgres, unpublished, and throwaway containers from the
 #   INSTALLED worker image (<project>-worker), on the eval project's own network only. From the app env file only the
-#   route's credentials are passed, by name, through the process environment (never argv, never a file); everything
-#   else the container gets is generated here. The install is only read: one `SELECT count(*) FROM llm_calls WHERE
-#   outcome <> 'switched_off'` through its own Postgres container before and after, and the run FAILs if that count
+#   route's credentials and proxy settings (to the golden sets) and the model settings (to the golden sets and the paste
+#   block) are passed, by name, through the process environment (never argv, never a file); everything else the
+#   containers get is generated here. The install is only read: one `SELECT count(*) FROM llm_calls WHERE outcome <>
+#   'switched_off'` by docker exec into its own Postgres container before and after, and the run FAILs if that count
 #   changed. Calls the install refused with ai.all off are left out (the gateway writes a row for each, so people using
 #   the app meanwhile would move a plain count); every call that went to or tried a route counts. The data folder
 #   (default /srv/kfin-ideas-eval) holds the company repo copy and the reports, and goes at the end.
@@ -31,10 +32,12 @@
 # reports in a throwaway folder (nothing lands in eval/reports/ or anywhere in the repo); no --switch-off-failing:
 # people decide (non-negotiable 5). Then `python -m evalrunner.paste` prints the block from the report JSON.
 #
-# Refuses (exit 2), before any container: CI set; a route that is not anthropic or bedrock; the route's credentials
-# missing; a base-URL override for the model set (so it can only reach the real API); then, asking Docker: the eval
-# project, its volumes or networks already there; on the Mac, port 55447 busy; on the server, a relative path, the data
-# folder already there, the install's worker image missing or without this command, or --project not running.
+# Refuses (exit 2), before any eval project or volume (on the server the one earlier container is a --rm --network none
+# probe of the installed image): CI set; a route that is not anthropic or bedrock; the route's credentials missing
+# (Bedrock: AWS_REGION alone is enough, as the install's preflight has it); a base-URL override for the model set (so it
+# can only reach the real API); another run holding the lock; then, asking Docker: the eval project, its volumes or
+# networks already there; on the Mac, port 55447 busy; on the server, a relative path, the data folder already there,
+# the install's worker image missing or without this command, or --project not running.
 #
 # Prints, between "=== PASTE FROM HERE ===" and "=== PASTE TO HERE ===", numbers and names only, ending with
 # "EVAL-LIVE: PASS" or "EVAL-LIVE: FAIL (<gates>)". Exit 0 on PASS, 1 on FAIL or a stop. On an error it prints only
