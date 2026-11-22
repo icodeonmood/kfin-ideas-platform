@@ -125,6 +125,13 @@ describe("F-SPACE.targets, F-A11Y.rules/2: the skip link, with focus, covers no 
     const signedIn = cascade(".skip-link:focus:has(~ .shell:not(.shell-public))");
     expect(signedIn.get("margin-inline-start")).toBe("calc(var(--sbw) + var(--space-4))");
   });
+
+  it("BLD-D033, F-A11Y.rules/2: with focus it sets no ring of its own, so it takes the global blue one (a white ring outside the Zed pill vanished on a white page)", () => {
+    const focus = cascade(".skip-link:focus");
+    for (const prop of ["outline", "outline-color", "outline-style", "outline-width"])
+      expect(focus.has(prop), prop).toBe(false);
+    expect(cascade(":focus-visible").get("outline")).toMatch(/ solid var\(--(focus|blue)\)$/);
+  });
 });
 
 const COARSE = (a: string) => a === "@media (pointer: coarse)";
