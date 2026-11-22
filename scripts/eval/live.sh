@@ -53,7 +53,7 @@ unset EL_MODE EL_ROUTE EL_CHECKOUT EL_PROJECT EL_APP_ENV_FILE EL_DATA_DIR EL_WOR
   EL_REPO EL_REPORTS EL_EVAL_PROJECT EL_SHA EL_TAG EL_BEFORE EL_AFTER EL_PASSED EL_CREDS \
   ROOT AGENTS MAC_PROJECT MAC_PORT SERVER_PROJECT SERVER_DATA_DIR WORKER_UID EMAIL_DOMAINS SWITCH_REASON \
   BASE_URL_NAMES CREDS_ANTHROPIC CREDS_BEDROCK MODEL_NAMES PROXY_NAMES SECRET_NAMES STEP_ENV_NAMES MAC_KEEP_NAMES NAME_START NL \
-  where have_id have_secret running pg ports changes bound block eval_exit paste_exit paste_args status_out sw g p name v
+  where have_id have_secret running pg line ports changes bound block eval_exit paste_exit paste_args status_out sw g p name v
 unset COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_ENV_FILES COMPOSE_PATH_SEPARATOR
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -98,11 +98,26 @@ stop() {  # <error type> <step>: the one line to paste; the details are in the e
   exit 1
 }
 usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; }
-# One value from an env file without running it as shell code (as scripts/uat/lib.sh `value` reads it), on stdout
-# for a command substitution only: never printed.
+# One value from an env file without running it as shell code, on stdout for a command substitution only: never printed.
+# The last `NAME=` or `export NAME=` line wins; a Windows line end (\r) goes; a value in double or single quotes is the
+# text between them, a ` #` inside included; an unquoted value loses a trailing ` # comment` and trailing spaces.
 value() {
-  { grep -E "^$1=" "$2" || true; } | tail -1 | cut -d= -f2- \
-    | sed -E "s/[[:space:]]+#.*\$//; s/^\"(.*)\"\$/\\1/; s/^'(.*)'\$/\\1/"
+  local line v
+  line="$({ grep -E "^(export[[:space:]]+)?$1=" "$2" || true; } | tail -1 | tr -d '\r')"
+  [ -n "$line" ] || return 0
+  v="${line#*=}"
+  case "$v" in
+    \"*)
+      v="${v#\"}"
+      v="${v%%\"*}"
+      ;;
+    \'*)
+      v="${v#\'}"
+      v="${v%%\'*}"
+      ;;
+    *) v="$(printf '%s' "$v" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//')" ;;
+  esac
+  printf '%s' "$v"
 }
 gen() { od -An -N24 -tx1 /dev/urandom | tr -d ' \n'; }  # 48 hex characters, throwaway
 

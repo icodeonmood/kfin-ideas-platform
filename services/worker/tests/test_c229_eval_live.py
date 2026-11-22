@@ -746,6 +746,43 @@ def test_at_b4_03_c229_server_run_reads_the_install_only_and_passes_only_the_key
     assert not (tmp_path / "srv" / "kfin-ideas-eval").exists() and leftovers(stubs) == []
 
 
+@pytest.mark.parametrize(
+    ("text", "key", "model"),
+    [
+        (
+            f"ANTHROPIC_API_KEY={KEY}\r\nLLM_FAST_MODEL=claude-haiku-5-5   \r\n",
+            KEY,
+            "claude-haiku-5-5",
+        ),  # CRLF
+        (
+            f'export ANTHROPIC_API_KEY={KEY}\nexport LLM_FAST_MODEL="claude-haiku-5-5"  # the id\n',
+            KEY,
+            "claude-haiku-5-5",
+        ),
+        (
+            f"ANTHROPIC_API_KEY='{KEY} #part'\nLLM_FAST_MODEL=claude-haiku-5-5 # a comment\n",
+            f"{KEY} #part",
+            "claude-haiku-5-5",
+        ),
+        (f'ANTHROPIC_API_KEY=old\nANTHROPIC_API_KEY="{KEY}"   # the last line wins\n', KEY, None),
+    ],
+)
+def test_v_eval_c229_the_app_env_file_is_read_as_written(
+    stubs: Path, app_env: Path, tmp_path: Path, text: str, key: str, model: str | None
+) -> None:
+    """A CRLF file, an `export ` prefix, quotes around a value with ` #` in it, a trailing comment and spaces: the
+    golden sets get exactly the value written, so a Windows-edited env file gives the right key, not a 401."""
+    app_env.write_bytes(text.encode())
+    scenario(stubs, running=[INSTALL], install_counts=[7, 7])
+    done = run_live(stubs, *server_args(tmp_path))
+    assert done.returncode == 0, done.stdout + done.stderr
+    golden = [c for c in calls(stubs) if c["argv"][:1] == ["run"] and "--only" in c["argv"]]
+    assert len(golden) == 1
+    assert golden[0]["named"]["ANTHROPIC_API_KEY"] == key
+    assert golden[0]["named"].get("LLM_FAST_MODEL") == model
+    assert key not in done.stdout + done.stderr
+
+
 def test_at_b4_03_c229_server_run_fails_when_the_install_llm_calls_moved(
     stubs: Path, app_env: Path, tmp_path: Path
 ) -> None:
