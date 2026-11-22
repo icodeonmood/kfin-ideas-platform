@@ -18,8 +18,11 @@ PY      := cd services/worker && uv run --frozen
 WEB     := cd apps/web &&
 # The Python that runs `make sarvam-live`; another checkout's worker venv works too (…/services/worker/.venv/bin/python).
 SARVAM_LIVE_PYTHON ?= uv run --frozen python
+# `make eval-live` (BLD-C229): the same choice of Python, and the model route (anthropic or bedrock).
+EVAL_LIVE_PYTHON ?= uv run --frozen python
+ROUTE := anthropic
 
-.PHONY: help setup build up down health migrate db-users seed demo demo-reset demo-remove test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data uat-deploy uat-rehearsal uat-upgrade uat-rollback uat-rehearsal-upgrade sarvam-live
+.PHONY: help setup build up down health migrate db-users seed demo demo-reset demo-remove test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data uat-deploy uat-rehearsal uat-upgrade uat-rollback uat-rehearsal-upgrade sarvam-live eval-live
 
 help: ## List the commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-12s %s\n", $$1, $$2}'
@@ -116,6 +119,10 @@ db-types: ## Regenerate Kysely types from the migrated dev database
 # The key is read from this terminal's environment by the check itself: it never appears on a command line here.
 sarvam-live: ## Live check of the Sarvam client, your own key loaded in this terminal; never in CI (BLD-C177). ONLY=tts,…
 	cd services/worker && SPEECH_MODE=sarvam $(SARVAM_LIVE_PYTHON) -m speech.sarvam_live --only "$(ONLY)"
+
+# The model key is read from this terminal's environment by the script itself: it never appears on a command line here.
+eval-live: ## Real-model golden sets (gatekeeper, judge) on a throwaway database, your own key loaded in this terminal; never in CI (BLD-C229). ROUTE=bedrock
+	EVAL_LIVE_PYTHON="$(EVAL_LIVE_PYTHON)" scripts/eval/live.sh --route "$(ROUTE)"
 
 killswitch: ## Flip a kill switch: make killswitch NAME=submissions STATE=off REASON="…" ACTOR=REV-0001
 	$(PY) python -m core.killswitch set "$(NAME)" "$(STATE)" --reason "$(REASON)" --actor "$(ACTOR)"
