@@ -116,6 +116,42 @@ test.describe("C-SIDEBAR and C-PHONE-TABS: the shell by role (AT-B2-06)", () => 
         .toBeLessThanOrEqual(24);
     }
   });
+
+  test("C-PHONE-TABS.dock, BLD-D028: on a phone the dock is in main's slot, fixed to the screen's foot, and the page keeps room for its measured height", async ({
+    page,
+  }, info) => {
+    test.skip(!isPhone(info), "the dock is fixed to the screen only on a phone");
+    await signIn(page, PERSONAS.contributor);
+    await page.goto("/share?new=1");
+    const dock = page.locator("main#main > .dock-root > .dock");
+    await expect(dock).toHaveCount(1);
+    await expect(dock.getByRole("button", { name: "Move to Review" })).toBeVisible();
+    const read = () =>
+      page.evaluate(() => {
+        const box = document.querySelector("main#main > .dock-root > .dock")!.getBoundingClientRect();
+        const html = document.documentElement;
+        return {
+          bottom: box.bottom,
+          height: box.height,
+          screen: window.innerHeight,
+          dockH: html.style.getPropertyValue("--dock-h"),
+          flagged: html.hasAttribute("data-dock"),
+          room: parseFloat(getComputedStyle(document.querySelector("main#main")!).paddingBottom),
+        };
+      });
+    const at = await read();
+    expect(Math.abs(at.bottom - at.screen), "the dock sits on the screen's foot").toBeLessThanOrEqual(1);
+    expect(at.flagged).toBe(true);
+    expect(at.dockH).toBe(`${Math.ceil(at.height)}px`);
+    expect(at.room, "main keeps the dock's height and 24px under the page").toBeGreaterThanOrEqual(
+      Math.ceil(at.height) + 23,
+    );
+    // Still on the screen's foot once the page scrolls: nothing the page draws can hold it
+    await page.mouse.wheel(0, 2_000);
+    const scrolled = await read();
+    expect(Math.abs(scrolled.bottom - scrolled.screen)).toBeLessThanOrEqual(1);
+    await expectNoSeriousAxeIssues(page);
+  });
 });
 
 async function tabTo(page: Page, target: ReturnType<Page["locator"]>) {
