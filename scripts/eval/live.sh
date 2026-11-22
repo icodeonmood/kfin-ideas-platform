@@ -50,7 +50,7 @@ umask 077
 # Script-internal names start clean, so a same-named variable from the caller's environment is neither used nor passed.
 unset EL_MODE EL_ROUTE EL_CHECKOUT EL_PROJECT EL_APP_ENV_FILE EL_DATA_DIR EL_WORK EL_ERR EL_PY EL_DB_URL EL_PG_PW \
   EL_GEN_VAULT EL_GEN_PSEUDO EL_GEN_HMAC EL_GEN_INTERNAL EL_GEN_SESSION EL_RUNS EL_CREATED_PROJECT EL_CREATED_DATA \
-  EL_REPO EL_REPORTS EL_EVAL_PROJECT EL_SHA EL_TAG EL_BEFORE EL_AFTER EL_PASSED EL_CREDS \
+  EL_REPO EL_REPORTS EL_EVAL_PROJECT EL_SHA EL_TAG EL_BEFORE EL_AFTER EL_PASSED EL_CREDS EL_LOCK EL_LOCKED \
   ROOT AGENTS MAC_PROJECT MAC_PORT SERVER_PROJECT SERVER_DATA_DIR WORKER_UID EMAIL_DOMAINS SWITCH_REASON \
   BASE_URL_NAMES CREDS_ANTHROPIC CREDS_BEDROCK MODEL_NAMES PROXY_NAMES SECRET_NAMES STEP_ENV_NAMES MAC_KEEP_NAMES NAME_START NL \
   where have_id have_secret running pg line ports changes bound block eval_exit paste_exit paste_args status_out sw g p name v
@@ -260,6 +260,15 @@ EL_RUNS=""
 EL_CREATED_PROJECT=0
 EL_CREATED_DATA=0
 EL_PASSED=0
+EL_LOCKED=0
+# One run at a time, so two overlapping runs cannot both pass the checks and one take the other's project down. Mac: in
+# this user's temp folder; server: beside the data folder (root's, not the shared /tmp).
+if [ "$EL_MODE" = mac ]; then
+  EL_LOCK="${TMPDIR:-/tmp}"
+  EL_LOCK="${EL_LOCK%/}/kfin-eval-live.lock"
+else
+  EL_LOCK="$EL_DATA_DIR.lock"
+fi
 
 # Docker never gets a credential: every call runs with them unset, except the golden sets' container (worker_run).
 D() (
@@ -294,6 +303,7 @@ cleanup() {
     rm -rf "$EL_DATA_DIR" 2>>"$EL_ERR" || say "clean-up: could not remove $EL_DATA_DIR; remove it by hand"
   fi
   [ -z "$EL_WORK" ] || rm -rf "$EL_WORK"
+  [ "$EL_LOCKED" = 0 ] || rmdir "$EL_LOCK" 2>>"$EL_ERR" || true # only the run that took the lock removes it
   [ "$made" = 0 ] || say "cleaned up: project $EL_EVAL_PROJECT, its database volume and the throwaway folders are gone"
   if [ "$code" = 0 ] && [ "$EL_PASSED" = 1 ] || [ ! -s "$EL_ERR" ]; then
     rm -f "$EL_ERR"
@@ -306,6 +316,9 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap 'exit 129' HUP
+mkdir "$EL_LOCK" 2>/dev/null \
+  || refuse "another eval-live run holds $EL_LOCK. If none is running (one was cut off), remove that folder and run this again."
+EL_LOCKED=1
 
 # ---- 3. Refusals that ask Docker (read-only) -------------------------------------------------------------------------
 # The install's running Postgres container, found by its compose labels (no compose model is loaded): exactly one ID on

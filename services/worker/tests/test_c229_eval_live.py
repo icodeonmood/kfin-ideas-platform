@@ -534,6 +534,25 @@ def test_v_eval_c229_bedrock_takes_aws_region_alone_as_the_install_preflight_doe
     assert calls(stubs) and calls(stubs)[0]["argv"][:2] == ["compose", "ls"]
 
 
+def test_v_eval_c229_one_run_at_a_time_and_a_held_lock_is_left_alone(
+    stubs: Path, app_env: Path, tmp_path: Path
+) -> None:
+    """Two overlapping runs cannot both pass the checks: the second is refused before Docker is asked anything, and
+    the lock it did not take stays (only the run that took it removes it)."""
+    scenario(stubs, fail_if_called=True)
+    (stubs.parent / "t").mkdir(exist_ok=True)
+    mac_lock = stubs.parent / "t" / "kfin-eval-live.lock"
+    mac_lock.mkdir()
+    done = run_live(stubs, env={"ANTHROPIC_API_KEY": KEY})
+    assert done.returncode == 2 and "another eval-live run holds" in done.stdout
+    assert calls(stubs) == [] and mac_lock.is_dir() and leftovers(stubs) == ["kfin-eval-live.lock"]
+    server_lock = tmp_path / "srv" / "kfin-ideas-eval.lock"
+    server_lock.mkdir()
+    done = run_live(stubs, *server_args(tmp_path))
+    assert done.returncode == 2 and "another eval-live run holds" in done.stdout
+    assert calls(stubs) == [] and server_lock.is_dir() and not (tmp_path / "srv" / "kfin-ideas-eval").exists()
+
+
 def test_v_eval_c229_live_sh_never_traces_the_key_even_under_bash_x(stubs: Path) -> None:
     scenario(stubs, fail_if_called=True)
     done = run_live(
@@ -744,6 +763,7 @@ def test_at_b4_03_c229_server_run_reads_the_install_only_and_passes_only_the_key
         ["10001:10001", str(tmp_path / "srv" / "kfin-ideas-eval")]
     ]
     assert not (tmp_path / "srv" / "kfin-ideas-eval").exists() and leftovers(stubs) == []
+    assert not (tmp_path / "srv" / "kfin-ideas-eval.lock").exists()  # the run's own lock, gone with it
 
 
 @pytest.mark.parametrize(
