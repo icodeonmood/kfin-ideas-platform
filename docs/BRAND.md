@@ -61,7 +61,7 @@ The % sign with its slash drawn as a rising spark and an ember: a one between tw
 | Upper zero | circle cx 52, cy 58, r 34, stroke 12, no fill | White on Zed, Zed on white |
 | Lower zero | circle cx 148, cy 184, r 34, stroke 12, no fill | Same as upper zero |
 | Spark | polygon 34,236 146.9,27.2 169.1,40.8 | Spark |
-| Ember | circle cx 171.6, cy 11.8, r 7 | Spark |
+| Ember | circle cx 171.6, cy 11.8, r 9 | Spark |
 
 **Small sizes (below 32 px tall):** in the app, `SparkMark` draws the pack's one mark (F-ICONS.mark) at every size, 22 px in the sidebar included (BLD-D022). Only the favicon (`app/icon*`) and the email marks keep the small cut, `spark-mark-small-*.svg`: the zeros are r 32 with stroke 24, the spark is polygon `34,236 141,23.5 175,44.5`, and there is no ember. Smallest use: 14 px tall.
 
