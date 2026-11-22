@@ -271,6 +271,15 @@ trap 'exit 143' TERM
 trap 'exit 129' HUP
 
 # ---- 3. Refusals that ask Docker (read-only) -------------------------------------------------------------------------
+# The install's running Postgres container, found by its compose labels (no compose model is loaded): exactly one ID on
+# stdout and 0; 1 for none or more than one; 2 when Docker could not tell.
+install_pg() {
+  local out
+  out="$(D ps -q --filter "label=com.docker.compose.project=$EL_PROJECT" \
+    --filter "label=com.docker.compose.service=postgres" --filter status=running 2>>"$EL_ERR")" || return 2
+  case "$out" in '' | *"$NL"*) return 1 ;; esac
+  printf '%s' "$out"
+}
 # 0: the project's containers, volumes or networks exist; 1: none; anything else: Docker could not tell (a stop).
 project_exists() {
   local out
@@ -300,9 +309,12 @@ if [ "$EL_MODE" = server ]; then
     || refuse "the install's worker image $EL_PROJECT-worker is missing: is --project the install's project?"
   running="$(D compose ls -q 2>>"$EL_ERR")" || stop "docker did not answer" "checks"
   has_line "$running" "$EL_PROJECT" || refuse "--project $EL_PROJECT is not running"
-  pg="$(D ps -q --filter "label=com.docker.compose.project=$EL_PROJECT" --filter "label=com.docker.compose.service=postgres" --filter status=running 2>>"$EL_ERR")" \
-    || stop "docker did not answer" "checks"
-  [ -n "$pg" ] || refuse "the install's Postgres is not running in project $EL_PROJECT"
+  pg="$(install_pg)"
+  case $? in
+    0) ;;
+    1) refuse "the install's Postgres is not running in project $EL_PROJECT (or more than one is)" ;;
+    *) stop "docker did not answer" "checks" ;;
+  esac
   # The installed image must carry this command (BLD-C229): a release from before it has no --only and no paste block.
   D run --rm --pull never --network none "$EL_PROJECT-worker" python -c "import evalrunner.paste" >>"$EL_ERR" 2>&1 \
     || refuse "the install's worker image has no make eval-live (BLD-C229): install a release that carries it first"
@@ -406,12 +418,13 @@ worker_run() {
   )
 }
 
-# The install's llm_calls that went to or tried a route, read-only through its own Postgres container: the only command
-# this script sends to the install's project. Rows the gateway writes for calls refused while a switch is off
-# (outcome 'switched_off', gateway/core.py) are left out, so people using the app during the run do not move it.
+# The install's llm_calls that went to or tried a route, read-only, by `docker exec` into its own Postgres container ($1,
+# from install_pg; no compose file or compose model of the install is used): the only command this script sends to the
+# install. Rows the gateway writes for calls refused while a switch is off (outcome 'switched_off', gateway/core.py) are
+# left out, so people using the app during the run do not move it.
 install_count() {
   local out
-  out="$(cd "$EL_WORK" && D compose -p "$EL_PROJECT" exec -T postgres psql -U ideas -d ideas -At \
+  out="$(D exec "$1" psql -U ideas -d ideas -At \
     -c "SELECT count(*) FROM llm_calls WHERE outcome <> 'switched_off'" 2>>"$EL_ERR")" || return 1
   case "$out" in '' | *[!0123456789]*) return 1 ;; esac
   printf '%s' "$out"
@@ -421,7 +434,7 @@ install_count() {
 if [ "$EL_MODE" = server ]; then
   EL_SHA="$(git -c safe.directory="$EL_CHECKOUT" -C "$EL_CHECKOUT" rev-parse HEAD 2>>"$EL_ERR")" || stop "no commit" "checkout"
   EL_TAG="$(git -c safe.directory="$EL_CHECKOUT" -C "$EL_CHECKOUT" describe --tags 2>>"$EL_ERR")" || EL_TAG=""
-  EL_BEFORE="$(install_count)" || stop "the install's llm_calls could not be read" "install count before"
+  EL_BEFORE="$(install_count "$pg")" || stop "the install's llm_calls could not be read" "install count before"
   say "eval-live (BLD-C229), server, route $EL_ROUTE: throwaway project $SERVER_PROJECT beside $EL_PROJECT (read-only)"
 else
   EL_SHA="$(git -C "$ROOT" rev-parse HEAD 2>>"$EL_ERR")" || stop "no commit" "checkout"
@@ -470,7 +483,8 @@ eval_exit=$? # 1 is a gate that failed: the paste block says which
 
 paste_args=(--reports "$EL_REPORTS" --route "$EL_ROUTE" --agents "$AGENTS" --eval-exit "$eval_exit")
 if [ "$EL_MODE" = server ]; then
-  EL_AFTER="$(install_count)" || stop "the install's llm_calls could not be read" "install count after"
+  pg="$(install_pg)" || stop "the install's Postgres was not found again" "install count after" # re-resolved, same way
+  EL_AFTER="$(install_count "$pg")" || stop "the install's llm_calls could not be read" "install count after"
   paste_args+=(--mode server --installed-sha "$EL_SHA" --install-before "$EL_BEFORE" --install-after "$EL_AFTER")
   [ -z "$EL_TAG" ] || paste_args+=(--installed-tag "$EL_TAG")
   EL_RUNS="$EL_RUNS $SERVER_PROJECT-paste" # worker_run's own note of it is lost in the command substitution

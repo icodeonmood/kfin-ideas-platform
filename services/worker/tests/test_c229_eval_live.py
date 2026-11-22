@@ -398,7 +398,6 @@ if tool == "python":
     sys.exit(0)
 if tool == "chown":
     sys.exit(0)
-project = argv[argv.index("-p") + 1] if "-p" in argv else ""
 if argv[:3] == ["compose", "ls", "-a"]:
     print("\n".join(cfg.get("all_projects", [])))
 elif argv[:2] == ["compose", "ls"]:
@@ -415,7 +414,7 @@ elif argv[:1] == ["run"]:
         sys.exit(1 if cfg.get("image_old") else 0)
     if "evalrunner.paste" in joined:
         print(block)
-elif argv[:1] == ["compose"] and project == cfg.get("install"):
+elif argv[:1] == ["exec"]:
     counts = cfg["install_counts"]
     seen = here / "counts-used"
     n = len(seen.read_text().splitlines()) if seen.exists() else 0
@@ -610,11 +609,20 @@ def app_env(tmp_path: Path) -> Path:
 
 
 def install_calls(recorded: list[dict[str, Any]]) -> list[list[str]]:
-    return [c["argv"] for c in recorded if c["tool"] == "docker" and "-p" in c["argv"]
-            and c["argv"][c["argv"].index("-p") + 1] == INSTALL]  # fmt: skip
+    """Every docker call that acts on the install: an exec into a container, or compose with the install's name."""
+    return [
+        c["argv"]
+        for c in recorded
+        if c["tool"] == "docker"
+        and (
+            c["argv"][:1] == ["exec"]
+            or ("-p" in c["argv"] and c["argv"][c["argv"].index("-p") + 1] == INSTALL)
+        )
+    ]
 
 
-COUNT = ["compose", "-p", INSTALL, "exec", "-T", "postgres", "psql", "-U", "ideas", "-d", "ideas", "-At", "-c",
+# `docker exec` into the install's Postgres container, found by its compose labels (no compose model): the only command.
+COUNT = ["exec", "pg0000000001", "psql", "-U", "ideas", "-d", "ideas", "-At", "-c",
          "SELECT count(*) FROM llm_calls WHERE outcome <> 'switched_off'"]  # fmt: skip
 
 
