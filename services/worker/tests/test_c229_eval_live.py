@@ -489,10 +489,11 @@ def leftovers(bin_dir: Path) -> list[str]:
         ({"ANTHROPIC_API_KEY": KEY, "ANTHROPIC_BEDROCK_MANTLE_BASE_URL": ""}, [], "MANTLE_BASE_URL is set"),
         ({"ANTHROPIC_API_KEY": KEY}, ["--route", "openai"], "the route must be anthropic or bedrock"),
         ({"ANTHROPIC_API_KEY": KEY}, ["--route", "bedrock"], "the Bedrock route needs AWS_REGION"),
+        ({"AWS_ACCESS_KEY_ID": "synthetic-id"}, ["--route", "bedrock"], "the Bedrock route needs AWS_REGION"),
         (
             {"AWS_ACCESS_KEY_ID": "synthetic-id", "AWS_REGION": "ap-south-1"},
             ["--route", "bedrock"],
-            "Bedrock route",
+            "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY go together",
         ),
         ({"ANTHROPIC_API_KEY": KEY}, ["--checkout", "/tmp"], "for --server only"),
     ],
@@ -507,6 +508,16 @@ def test_v_eval_c229_live_sh_refuses_before_any_container(
     assert calls(stubs) == []  # docker (and python) never called
     assert KEY not in done.stdout + done.stderr
     assert leftovers(stubs) == []
+
+
+def test_v_eval_c229_bedrock_takes_aws_region_alone_as_the_install_preflight_does(stubs: Path) -> None:
+    """Lane A's decision: an instance role gives the credentials, so AWS_REGION alone gets past the refusals (the run
+    goes on to ask Docker, which this stub refuses, so it stops there)."""
+    scenario(stubs, fail_if_called=True)
+    done = run_live(stubs, "--route", "bedrock", env={"AWS_REGION": "ap-south-1"})
+    assert "eval-live refused" not in done.stdout, done.stdout
+    assert done.returncode == 1 and "STOP: docker did not answer at checks" in done.stdout
+    assert calls(stubs) and calls(stubs)[0]["argv"][:2] == ["compose", "ls"]
 
 
 def test_v_eval_c229_live_sh_never_traces_the_key_even_under_bash_x(stubs: Path) -> None:

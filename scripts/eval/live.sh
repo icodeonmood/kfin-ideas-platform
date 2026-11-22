@@ -53,7 +53,7 @@ unset EL_MODE EL_ROUTE EL_CHECKOUT EL_PROJECT EL_APP_ENV_FILE EL_DATA_DIR EL_WOR
   EL_REPO EL_REPORTS EL_EVAL_PROJECT EL_SHA EL_TAG EL_BEFORE EL_AFTER EL_PASSED EL_CREDS \
   ROOT AGENTS MAC_PROJECT MAC_PORT SERVER_PROJECT SERVER_DATA_DIR WORKER_UID EMAIL_DOMAINS SWITCH_REASON \
   BASE_URL_NAMES CREDS_ANTHROPIC CREDS_BEDROCK MODEL_NAMES PROXY_NAMES SECRET_NAMES STEP_ENV_NAMES MAC_KEEP_NAMES NAME_START NL \
-  where have_aws running pg ports changes bound block eval_exit paste_exit paste_args status_out sw g p name v
+  where have_id have_secret running pg ports changes bound block eval_exit paste_exit paste_args status_out sw g p name v
 unset COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_ENV_FILES COMPOSE_PATH_SEPARATOR
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -212,11 +212,16 @@ fi
 if [ "$EL_ROUTE" = anthropic ]; then
   [ -n "${ANTHROPIC_API_KEY:-}" ] || refuse "ANTHROPIC_API_KEY is not set $where."
 else
-  have_aws=0
-  if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then have_aws=1; fi
-  if [ -n "${AWS_BEARER_TOKEN_BEDROCK:-}" ]; then have_aws=1; fi
-  { [ "$have_aws" = 1 ] && [ -n "${AWS_REGION:-}" ]; } \
-    || refuse "the Bedrock route needs AWS_REGION and AWS credentials (AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or AWS_BEARER_TOKEN_BEDROCK) $where."
+  # Lane A's decision: AWS_REGION alone is enough, as the install's preflight has it (bootstrap/preflight.py): the SDK
+  # then takes its default chain (an instance role). With no usable credential every call is a route_error and the
+  # gates FAIL, so it fails closed. Keys or a bearer token are passed as before; half a key pair is a mistake.
+  [ -n "${AWS_REGION:-}" ] \
+    || refuse "the Bedrock route needs AWS_REGION $where (and AWS_ACCESS_KEY_ID with AWS_SECRET_ACCESS_KEY, or AWS_BEARER_TOKEN_BEDROCK, unless an instance role gives the credentials)."
+  have_id=0
+  have_secret=0
+  if [ -n "${AWS_ACCESS_KEY_ID:-}" ]; then have_id=1; fi
+  if [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then have_secret=1; fi
+  [ "$have_id" = "$have_secret" ] || refuse "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY go together: set both $where, or neither."
 fi
 
 command -v docker >/dev/null 2>&1 || refuse "docker is not on this PATH"
