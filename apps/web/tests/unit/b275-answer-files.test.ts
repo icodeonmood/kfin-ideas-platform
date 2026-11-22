@@ -9,9 +9,12 @@ import {
   answerFileItem,
   answerUploadForm,
   attachedOf,
+  counts,
+  deskSees,
   filesLine,
   isAnswered,
   seedRows,
+  sentFiles,
 } from "@/lib/desk/answer-files";
 
 const file = (over: Partial<AnswerFile> = {}): AnswerFile => ({
@@ -48,7 +51,7 @@ describe("BLD-B275 S-R3 answerUploadForm (A-API.files)", () => {
 });
 
 describe("BLD-B275 L-QUESTIONS.answer isAnswered (the worker's _has_content)", () => {
-  it("words alone, or a file the server holds alone, count as answered", () => {
+  it("words alone, or a file the review desk sees alone, count as answered", () => {
     expect(isAnswered("Our Hyderabad branch alone.", [])).toBe(true);
     expect(isAnswered("", [row()])).toBe(true);
     expect(isAnswered("   ", [row({ item: answerFileItem(file({ state: "personal_data_found" })) })])).toBe(
@@ -61,6 +64,42 @@ describe("BLD-B275 L-QUESTIONS.answer isAnswered (the worker's _has_content)", (
     expect(isAnswered(undefined, undefined)).toBe(false);
     expect(isAnswered("  \n", [row({ item: null, localState: "uploading" })])).toBe(false);
     expect(isAnswered("", [row({ item: null, localState: "too_big" })])).toBe(false);
+  });
+
+  it("DEC-132: a file the desk never sees does not count; one still checking counts once its check ends", () => {
+    for (const state of ["infected", "upload_failed", "locked", "too_big", "checking", "uploading"]) {
+      expect(isAnswered("", [row({ item: answerFileItem(file({ state })) })]), state).toBe(false);
+      expect(isAnswered("Branch R07 only.", [row({ item: answerFileItem(file({ state })) })]), state).toBe(
+        true,
+      );
+    }
+    const infected = row({ key: "k2", item: answerFileItem(file({ id: "F-2", state: "infected" })) });
+    expect(isAnswered("", [infected, row({ item: answerFileItem(file({ state: "hidden_checked" })) })])).toBe(
+      true,
+    );
+  });
+});
+
+describe("DEC-132 BLD-B275 deskSees and counts (the worker's DESK_SEES and _counts)", () => {
+  it("the desk's states are the worker's DESK_SEES, word for word", () => {
+    const all = [
+      "uploading",
+      "checking",
+      "checked",
+      "upload_failed",
+      "personal_data_found",
+      "hidden_checked",
+    ];
+    const seen = [...all, "too_big", "locked", "infected", "ok", "unreachable", null, undefined].filter(
+      deskSees,
+    );
+    expect(seen).toEqual(["checked", "personal_data_found", "hidden_checked", "ok"]);
+  });
+
+  it("a row counts only once the server holds it, with no local state", () => {
+    expect(counts(row())).toBe(true);
+    expect(counts(row({ item: null, localState: "uploading" }))).toBe(false);
+    expect(counts(row({ localState: "refused" }))).toBe(false);
   });
 });
 
@@ -123,6 +162,17 @@ describe('BLD-B275 S-R3 filesLine (Answer.md: "Two screenshots attached, folio h
     expect(filesLine(attachedOf([row(), row({ key: "k2", item: null, localState: "upload_failed" })]))).toBe(
       "One screenshot attached.",
     );
+  });
+
+  it("DEC-132: names only the files that go to the desk, before and after sending", () => {
+    const infected = file({ id: "F-2", state: "infected" });
+    expect(filesLine(attachedOf([row(), row({ key: "k2", item: answerFileItem(infected) })]))).toBe(
+      "One screenshot attached.",
+    );
+    expect(filesLine(attachedOf([row({ item: answerFileItem(file({ state: "checking" })) })]))).toBe("");
+    expect(
+      sentFiles([file(), infected, file({ id: "F-3", state: "personal_data_found" })]).map((x) => x.id),
+    ).toEqual(["F-1", "F-3"]);
   });
 });
 

@@ -24,10 +24,11 @@ import type { SendAnswersResponse, SharerQuestionSetResponse, SetQuestion } from
 import {
   ANSWER_FILES_COPY,
   attachedOf,
+  counts,
   filesLine,
-  held,
   isAnswered,
   seedRows,
+  sentFiles,
 } from "@/lib/desk/answer-files";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import {
@@ -354,7 +355,7 @@ export function AnswerView({
           <ol>
             {set.questions.map((x, i) => {
               const done = Boolean(
-                (stored[x.id] ?? "").trim() || x.answer?.sent || (files.rows[x.id] ?? []).some(held),
+                (stored[x.id] ?? "").trim() || x.answer?.sent || (files.rows[x.id] ?? []).some(counts),
               );
               return (
                 <li key={x.id}>
@@ -398,7 +399,7 @@ export function AnswerView({
                 <p className="meta">Added to {q.part_name}</p>
                 <AnswerLines
                   words={(q.answer?.sent ? q.answer.text : (stored[q.id] ?? "")).trim()}
-                  files={filesLine(q.answer?.sent ? q.answer.files : attachedOf(files.rows[q.id]))}
+                  files={filesLine(q.answer?.sent ? sentFiles(q.answer.files) : attachedOf(files.rows[q.id]))}
                 />
               </li>
             ))}

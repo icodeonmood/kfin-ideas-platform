@@ -210,8 +210,17 @@ def _set_facts(s: dict[str, Any], rows: Sequence[dict[str, Any]]) -> SetFacts:
     )  # fmt: skip
 
 
+def _counts(files: Sequence[dict[str, Any]]) -> bool:
+    """An answer's files count towards answering only when the review desk will see one (DEC-132): checked, hidden,
+    or holding a customer detail (`DESK_SEES`, DEC-107). A file still checking counts once its check ends; one that
+    is infected, locked or failed never does, so an answer whose only file is one of those is not sent and the desk
+    never receives an empty answer. The same states as `_only(..., DESK_SEES)`, the desk's own read."""
+    return bool(_only(list(files), DESK_SEES))
+
+
 def _has_content(answer: dict[str, Any]) -> bool:
-    return bool(str(answer["text"]).strip()) or bool(answer["files"])
+    """Words, or a file the desk will see (DEC-132): S-R3's "N of M answered" and Send's count."""
+    return bool(str(answer["text"]).strip()) or _counts(answer["files"])
 
 
 def _set_json(
@@ -838,7 +847,8 @@ def send_answers(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None =
             r for r in rows if r["answer_id"] is not None and r["sent_at"] is None and r["by_code"] == code
         ]
         files = _files(conn, [str(r["answer_id"]) for r in unsent])
-        ready = [r for r in unsent if _answer_text(r).strip() or files.get(str(r["answer_id"]))]
+        # words, or a file the desk will see (DEC-132): an answer whose only file is infected or failed stays unsent
+        ready = [r for r in unsent if _answer_text(r).strip() or _counts(files.get(str(r["answer_id"]), []))]
         if not ready:
             raise Refused(422, "nothing_answered", NOTHING_ANSWERED)
         _gatekeep(conn, str(idea["id"]), ready, user_id)
