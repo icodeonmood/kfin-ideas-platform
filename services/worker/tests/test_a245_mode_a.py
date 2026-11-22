@@ -18,8 +18,10 @@ import shlex
 import stat
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
+import yaml
 
 from bootstrap import preflight
 from tests import helpers
@@ -287,3 +289,100 @@ def test_a245_runbook_full_mode_section_in_order_with_paste_backs_and_no_secret(
     # Never a real key, address or name: setting names only, no value after them, no key shapes.
     assert not re.search(r"(ANTHROPIC_API_KEY|AWS_[A-Z_]+)=[^.+$ ]", section)
     assert not re.search(r"sk-ant-|AKIA[0-9A-Z]{12,}|@kfintech\.com", section)
+
+
+# ---- BLD-A246: the web container never gets the model route's credentials ------------------------------------------
+
+MODEL_CREDENTIALS = (
+    "ANTHROPIC_API_KEY",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "AWS_BEARER_TOKEN_BEDROCK",
+)
+
+
+class _Loader(yaml.SafeLoader):
+    """Reads Compose's !reset and !override tags as plain values (as test_compose_speech.py does)."""
+
+
+_Loader.add_multi_constructor(
+    "!",
+    lambda loader, suffix, node: (
+        loader.construct_sequence(node)
+        if isinstance(node, yaml.SequenceNode)
+        else loader.construct_scalar(node)
+    ),
+)
+
+
+def _compose(name: str) -> dict[str, Any]:
+    text = (helpers.ROOT / "infra" / name).read_text(encoding="utf-8")
+    return yaml.load(text, Loader=_Loader)  # noqa: S506 - our own file, a safe loader
+
+
+@pytest.mark.parametrize("name", ["docker-compose.yml", "uat/compose.uat.yml"])
+def test_bld_a246_the_web_container_gets_no_model_credential(name: str) -> None:
+    services = _compose(name)["services"]
+    web = services["web"]["environment"]
+    worker = services["worker"].get("environment") or {}
+    for key in MODEL_CREDENTIALS:
+        assert web.get(key) == "", (name, key)  # blanked over whatever the env file says
+        assert key not in worker, (name, key)  # the worker reads them from its env file, untouched
+    assert web["SARVAM_API_KEY"] == "" and web["SPEECH_SERVICE_TOKEN"] == ""  # the earlier blanks stay
+
+
+def test_bld_a246_the_web_app_reads_no_model_credential() -> None:
+    # The blank is safe only while the web app never reads these names (S3 uses S3_ACCESS_KEY and S3_SECRET_KEY).
+    src = helpers.ROOT / "apps" / "web" / "src"
+    hits = [
+        str(p.relative_to(helpers.ROOT))
+        for p in src.rglob("*")
+        if p.suffix in {".ts", ".tsx", ".js", ".mjs"}
+        and not re.search(r"\.(test|spec)\.", p.name)
+        and re.search(r"\b(ANTHROPIC_[A-Z_]+|AWS_[A-Z_]+)\b", p.read_text(encoding="utf-8"))
+    ]
+    assert hits == []
+
+
+def test_a245_runbook_step_3_follows_live_sh_bld_c229() -> None:
+    # Step 3 says what live.sh (lane C, BLD-C229) passes, reads and leaves behind, in its own words; the install count
+    # leaves out calls refused while ai.all is off, so there is no quiet window; the key is readable by the docker group
+    # while the run lasts. Every quoted line is live.sh's own.
+    section = _section(UAT_DOC.read_text(encoding="utf-8"), "Switching to full mode (mode A)")
+    step3 = section.split("3. **Run the golden sets", 1)[1].split("4. **The product lead says go.**", 1)[0]
+    for line in (
+        "`kfin-ideas-eval`",
+        "`/srv/kfin-ideas-eval` (it must not exist yet)",
+        "only the route's credentials and proxy lines, for the golden sets' container alone",
+        "the model settings, for that container and the one that prints the paste block",
+        "by `docker exec` into the install's own Postgres",
+        "people can keep using 1% Club during the run",
+        "`docker inspect`",
+        "The `docker` group is as good as root",
+        "`=== PASTE FROM HERE ===` to `=== PASTE TO HERE ===`",
+        "`STOP: <error> at <step>`",
+        "`eval-live refused: …`",
+        "`details, for your eyes only and never to paste: …`",
+        "`another eval-live run holds /srv/kfin-ideas-eval.lock`",
+    ):
+        assert line in step3, line
+    live_sh = helpers.ROOT / "scripts" / "eval" / "live.sh"
+    if live_sh.exists():  # on a tree with BLD-C229 (train 15 and on), the quoted lines are the script's own
+        script = live_sh.read_text(encoding="utf-8")
+        for text in (
+            'say "STOP: $1 at $2"',
+            "details, for your eyes only and never to paste:",
+            'refuse "another eval-live run holds $EL_LOCK.',
+            'SERVER_DATA_DIR="/srv/kfin-ideas-eval"',
+            "WHERE outcome <> 'switched_off'",
+        ):
+            assert text in script, text
+    step2 = section.split("2. **Put the route's credentials", 1)[1].split("3. **Run the golden sets", 1)[0]
+    for text in (
+        "`AWS_REGION` alone is enough",
+        "`LLM_FAST_MODEL`",
+        "`HTTPS_PROXY`",
+        "never gets the key (BLD-A246)",
+    ):
+        assert text in step2, text
