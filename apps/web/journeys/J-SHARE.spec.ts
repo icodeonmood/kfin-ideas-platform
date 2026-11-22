@@ -712,8 +712,8 @@ step(
 step(
   "J-SHARE/v6",
   "S-04B",
-  'Capture first (the assistant off): no draft panel, the conversation at full width, "+" then Move to Review with its line; the phone keeps its dock, and Full mode brings the panel back',
-  { needs: ["S-04", "S-04B", "C-PROMPT.attach", "C-DRAFT-PANEL", "L-DRAFT"] },
+  'Capture first (the assistant off): no draft panel, the conversation and the box at most 960px wide and centred, "+" then Move to Review with its line; the phone keeps its dock, and Full mode brings the panel back',
+  { needs: ["S-04", "S-04B", "C-PROMPT.attach", "C-DRAFT-PANEL", "L-DRAFT", "BLD-D032"] },
   async ({ page, browser }, info) => {
     // Two admin visits, three waits of up to 30 s and the 11 s below: the default 60 s is too short, and a step that
     // times out must still reach its `finally` and put the switch back.
@@ -751,6 +751,21 @@ step(
         draft = new URL(page.url()).pathname;
         await expect(page.getByText(words).first()).toBeVisible();
         await expect(root).toHaveClass(/\bcapture\b/);
+
+        // DEC-130 (BLD-D032): at 1440 the conversation and the prompt box are at most 960px wide, centred in
+        // the column the draft panel left (it amends DEC-125 (2), "the full width").
+        const middle = async (sel: string) => {
+          const box = await page.locator(sel).first().boundingBox();
+          if (!box) throw new Error(`DEC-130: ${sel} has no box`);
+          return { width: box.width, centre: box.x + box.width / 2 };
+        };
+        const column = await middle(".cz .cmain");
+        for (const sel of [".cz .convo", ".cz .cdock .prompt"]) {
+          const part = await middle(sel);
+          const off = Math.abs(part.centre - column.centre);
+          expect(part.width, `${sel} is at most 960px wide`).toBeLessThanOrEqual(960);
+          expect(off, `${sel} is centred in the column`).toBeLessThanOrEqual(2);
+        }
 
         // (2): no draft panel and nothing that forms.
         await expect(page.getByRole("heading", { level: 2, name: "Your draft" })).toHaveCount(0);
