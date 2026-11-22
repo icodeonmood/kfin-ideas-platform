@@ -318,6 +318,91 @@ describe("C-PROMPT.attach on Home (S-03; DEC-124, BLD-C213, C214)", () => {
     expect(document.activeElement).toBe(plus());
   });
 
+  it('V-ACC C-PROMPT.attach, WCAG 2.4.3 (BLD-C224): the picker opens with the focus on its first control, and Escape with the focus on "+" closes it and keeps the focus on "+"', async () => {
+    await showHome();
+    await openPicker();
+    expect(document.activeElement).toBe(named("Choose a folder"));
+    const b = plus()!;
+    act(() => b.focus());
+    expect(document.activeElement).toBe(b);
+    await act(async () => {
+      b.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await act(async () => await new Promise<void>((r) => requestAnimationFrame(() => r())));
+    expect(host.querySelector(".cpick")).toBeNull();
+    expect(plus()!.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(plus());
+  });
+
+  it('BLD-C224: a pick of only names starting with "." adds nothing, and the picker says so', async () => {
+    await showHome();
+    await openPicker();
+    await choose([pdf(".DS_Store")]);
+    // No file, and no draft made for it.
+    expect(calls.some((c) => c.method === "POST" && /^\/api\/(files|drafts)$/.test(c.url))).toBe(false);
+    expect(host.querySelector(".cpick")?.textContent).toContain(
+      "Nothing was added. Files whose names start with a dot are left out.",
+    );
+  });
+
+  it("BLD-C224: a folder dropped on the drop area adds its files through the directory entries; without them it says to use Choose a folder", async () => {
+    routes.push((c) =>
+      c.method === "POST" && c.url === "/api/drafts"
+        ? { status: 201, body: { draft: { id: DRAFT, messages: [] }, run_id: null } }
+        : undefined,
+    );
+    type Entry = Record<string, unknown>;
+    const fileEntry = (f: File): Entry => ({
+      isFile: true,
+      isDirectory: false,
+      file: (ok: (f: File) => void) => ok(f),
+    });
+    const dirEntry = (children: Entry[]): Entry => ({
+      isFile: false,
+      isDirectory: true,
+      createReader: () => {
+        let read = false;
+        return {
+          readEntries: (ok: (es: Entry[]) => void) => {
+            ok(read ? [] : children);
+            read = true;
+          },
+        };
+      },
+    });
+    const drop = async (items: unknown[]) => {
+      await act(async () => {
+        const ev = new Event("drop", { bubbles: true, cancelable: true });
+        Object.defineProperty(ev, "dataTransfer", { value: { items, files: [] } });
+        host.querySelector(".cpick")!.dispatchEvent(ev);
+      });
+      for (let i = 0; i < 4; i++) await flush(); // the folder is read entry by entry, then the draft, then each file
+    };
+    await showHome();
+    await openPicker();
+    const folder = dirEntry([
+      fileEntry(pdf("Week 47 call log.pdf")),
+      fileEntry(pdf(".DS_Store")),
+      dirEntry([fileEntry(pdf("Week 48 call log.pdf"))]),
+    ]);
+    await drop([
+      { kind: "file", getAsFile: () => new File([], "Branch notes"), webkitGetAsEntry: () => folder },
+    ]);
+    const sent = calls.filter((c) => c.method === "POST" && c.url === "/api/files");
+    expect(sent.map((c) => (c.form!.get("file") as File).name)).toEqual([
+      "Week 47 call log.pdf",
+      "Week 48 call log.pdf",
+    ]);
+    expect(host.querySelector(".cpick")).toBeNull(); // the files are in: the picker closes
+
+    // A browser with no directory entries hands a folder over as an empty file with no type: never uploaded.
+    await openPicker();
+    await drop([{ kind: "file", getAsFile: () => new File([], "Branch notes") }]);
+    expect(calls.filter((c) => c.method === "POST" && c.url === "/api/files")).toHaveLength(2);
+    expect(host.querySelector(".cpick")?.textContent).toContain("Use Choose a folder to add a folder.");
+    expect(text()).not.toContain("Didn’t upload");
+  });
+
   it("V-ACC J-SHARE C-PROMPT.attach: the first file makes the draft once, a second file does not, and sending continues into THAT draft", async () => {
     const created: Call[] = [];
     routes.push((c) => {
@@ -345,7 +430,12 @@ describe("C-PROMPT.attach on Home (S-03; DEC-124, BLD-C213, C214)", () => {
     const box = host.querySelector(".prompt")!;
     expect(box.querySelector(".cfiles")?.textContent).toContain("Rejection codes reference.pdf");
     expect(named("Remove Rejection codes reference.pdf")?.closest(".prompt")).toBe(box);
-    expect(box.querySelector(".cfiles ul")?.getAttribute("aria-live")).toBe("polite");
+    // BLD-C224: the list is no live region; the status line, outside the list, says what changed.
+    expect(box.querySelector(".cfiles ul")?.hasAttribute("aria-live")).toBe(false);
+    expect(box.querySelector(".cfiles ul")?.getAttribute("aria-label")).toBe("Your files and links");
+    const status = host.querySelector<HTMLElement>(".attach-w [role=status]")!;
+    expect(box.querySelector(".cfiles")?.contains(status)).toBe(false);
+    expect(status.textContent).toMatch(/^Rejection codes reference\.pdf(?: added|: Checked)$/);
     expect(host.querySelector(".cpick")).toBeNull(); // the picker closes once the files are in
 
     await openPicker();
@@ -457,6 +547,8 @@ describe("C-PROMPT.attach on Share a problem and the draft page (S-04, S-04B; DE
     expect(rows.textContent).not.toContain("From the email.pdf");
     expect(named("Remove Rejection codes reference.pdf")).toBeTruthy();
     expect(boxFilesOf(undefined)).toEqual([]);
+    // BLD-C224: files put back in the box are not news: the status line is empty on page load.
+    expect(host.querySelector(".attach-w [role=status]")?.textContent).toBe("");
   });
 });
 

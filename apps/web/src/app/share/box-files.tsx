@@ -12,6 +12,7 @@
  * file behaves the same in both places. Links are kept as typed and never fetched (BLD-E001).
  */
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -25,7 +26,7 @@ import { AttachButton } from "@/components/ui/attach-button";
 import { IconClose, IconFolder, IconLink } from "@/components/compose/icons";
 import { Button } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
-import { DropArea, FileList, FileRow } from "@/components/ui/file";
+import { DropArea, FileRow } from "@/components/ui/file";
 import type { FileItem, UploadConfig } from "@/lib/contracts";
 
 import { api, type Call } from "./[id]/check/client";
@@ -45,6 +46,15 @@ export const BOX_FILES_COPY = {
   /** NOT DRAWN: the list's name for screen readers (listed in BUILD_LOG "to confirm later", BLD-C215). */
   rows: "Your files and links",
   removeOf: CHECK_COPY.proof.removeOf,
+  /** To confirm later (HR, DEC-123; BLD-C224): the status line's words. "Checked" and the row's own lines are the
+   * boards' (C-FILE.row); "added" is new. */
+  added: (name: string) => `${name} added`,
+  addedMany: (n: number) => `${n} files added`,
+  rowNow: (name: string, line: string) => `${name}: ${line}`,
+  /** To confirm later (HR, DEC-123; BLD-C224): nothing left to add once names starting with "." are left out. */
+  onlyDotFiles: "Nothing was added. Files whose names start with a dot are left out.",
+  /** To confirm later (HR, DEC-123; BLD-C224): a folder dropped where the browser gives no way to read it. */
+  useFolder: "Use Choose a folder to add a folder.",
 } as const;
 
 /** The limit before `GET /api/config/uploads` answers: the web edge's own ceiling; the worker checks the real one. */
@@ -86,6 +96,18 @@ export function useBoxFiles({
   const ids = useId();
   const pickerId = `${ids}-pick`;
   const plus = useRef<HTMLSpanElement>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const quiet = useRef(false);
+  const status = useStatusLine(proof.proof, limitMb, quiet);
+  const proofLoad = proof.load;
+  // A draft's files put back in the box (S-04B) are not news: the status line stays as it was.
+  const load = useCallback(
+    (files: FileItem[]) => {
+      quiet.current = true;
+      proofLoad(files);
+    },
+    [proofLoad],
+  );
 
   // The one limit, type list and help line (C-FILE.uploader/1, BLD-E007), read when the picker first opens.
   useEffect(() => {
@@ -101,24 +123,44 @@ export function useBoxFiles({
 
   const close = (focus: boolean) => {
     setOpen(false);
+    setNote(null);
     if (focus) requestAnimationFrame(() => plus.current?.querySelector("button")?.focus());
   };
 
   const addFiles = (files: File[]) => {
     // A folder's own entries for the system (".DS_Store" and the like) are not the person's files.
     const kept = files.filter((f) => !f.name.startsWith("."));
-    if (!kept.length) return;
+    if (!kept.length) {
+      setNote(files.length ? BOX_FILES_COPY.onlyDotFiles : null); // the picker stays open and says why
+      return;
+    }
     proof.addFiles(kept);
     close(true);
   };
 
+  // WCAG 2.4.3: Escape closes the picker from anywhere in the "+" or the picker, the "+" itself included, and the
+  // focus goes back to "+". The status line lives here too: outside the list, so a row is never found twice.
   const button = (
-    <span ref={plus} className="attach-w">
+    <span
+      ref={plus}
+      className="attach-w"
+      onKeyDown={(e) => {
+        if (e.key !== "Escape" || !open) return;
+        e.stopPropagation();
+        close(true);
+      }}
+    >
       <AttachButton
         aria-expanded={open}
         aria-controls={open ? pickerId : undefined}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setNote(null);
+          setOpen((o) => !o);
+        }}
       />
+      <span className="vh" role="status">
+        {status}
+      </span>
     </span>
   );
 
@@ -126,6 +168,8 @@ export function useBoxFiles({
     <Picker
       id={pickerId}
       help={config?.help_text ?? null}
+      note={note}
+      onNote={setNote}
       onFiles={addFiles}
       onLinks={async (links) => {
         const out = await proof.addLinks(links);
@@ -145,7 +189,7 @@ export function useBoxFiles({
     />
   ) : null;
 
-  return { button, picker, rows, load: proof.load, settle: proof.settleUploads };
+  return { button, picker, rows, load, settle: proof.settleUploads };
 }
 
 function Rows({
@@ -161,7 +205,8 @@ function Rows({
 }) {
   return (
     <div className="cfiles">
-      <FileList label={BOX_FILES_COPY.rows}>
+      {/* Lane D's FileList, drawn here without its aria-live: the status line says what changed (BLD-C224). */}
+      <ul className="flist" aria-label={BOX_FILES_COPY.rows} role="list">
         {items.map((p) => {
           const v = rowView(p, limitMb);
           const name = p.item?.name ?? p.name;
@@ -192,7 +237,7 @@ function Rows({
             </FileRow>
           );
         })}
-      </FileList>
+      </ul>
     </div>
   );
 }
@@ -200,12 +245,17 @@ function Rows({
 function Picker({
   id,
   help,
+  note,
+  onNote,
   onFiles,
   onLinks,
   onClose,
 }: {
   id: string;
   help: string | null;
+  /** Why nothing was added (only names starting with "." were picked, or a folder the browser cannot read). */
+  note: string | null;
+  onNote(note: string | null): void;
   onFiles(files: File[]): void;
   onLinks(links: string[]): Promise<{ left: string[]; problem: "not_a_link" | "failed" | null }>;
   onClose(): void;
@@ -217,11 +267,14 @@ function Picker({
   const [adding, setAdding] = useState(false);
   const files = useRef<HTMLInputElement>(null);
   const folder = useRef<HTMLInputElement>(null);
+  const first = useRef<HTMLButtonElement>(null);
   const ids = useId();
 
-  // A folder is picked with the browser's own folder chooser; every file in it is added (BLD-C214).
+  // A folder is picked with the browser's own folder chooser; every file in it is added (BLD-C214). WCAG 2.4.3: the
+  // picker opens with the focus on its first control, "Choose a folder" (BLD-C224).
   useEffect(() => {
     folder.current?.setAttribute("webkitdirectory", "");
+    first.current?.focus();
   }, []);
 
   const addLinks = async () => {
@@ -244,8 +297,22 @@ function Picker({
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragging(false);
-    const dropped = Array.from(e.dataTransfer?.files ?? []);
-    if (dropped.length) onFiles(dropped);
+    onNote(null);
+    const dropped = droppedOf(e.dataTransfer);
+    if (dropped.some((d) => d.entry?.isDirectory)) {
+      // A folder dropped here: its files through the browser's directory entries (BLD-C224).
+      void filesOfDrop(dropped).then(
+        (got) => (got.length ? onFiles(got) : onNote(BOX_FILES_COPY.useFolder)),
+        () => onNote(BOX_FILES_COPY.useFolder),
+      );
+      return;
+    }
+    // No directory entries: a folder arrives as an empty file with no type, which can never upload.
+    const real = dropped.flatMap((d) =>
+      d.file && !(d.entry === null && looksLikeFolder(d.file)) ? [d.file] : [],
+    );
+    if (real.length < dropped.length) onNote(BOX_FILES_COPY.useFolder);
+    if (real.length) onFiles(real);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -274,6 +341,7 @@ function Picker({
     >
       <div className="cpick-drop">
         <button
+          ref={first}
           type="button"
           className="cpick-folder"
           aria-label={BOX_FILES_COPY.folder}
@@ -324,6 +392,7 @@ function Picker({
           {BOX_FILES_COPY.addLink}
         </Button>
       </div>
+      {note ? <FieldMsg>{note}</FieldMsg> : null}
       {bad ? <FieldMsg id={`${ids}-m`}>{CHECK_COPY.proof.notALink}</FieldMsg> : null}
       {failed ? <FieldMsg>{CHECK_COPY.failed}</FieldMsg> : null}
       <p className="cpick-h" id={`${ids}-h`}>
@@ -333,4 +402,95 @@ function Picker({
       <input ref={folder} type="file" multiple hidden onChange={(e) => picked(e.target)} />
     </div>
   );
+}
+
+/**
+ * The status line (WCAG 4.1.3, BLD-C224): one short line for what last changed in the rows, "{name} added", then
+ * "{name}: Checked" or the row's own line, in place of the whole list being read again. Empty on page load: the
+ * rows already there when the box first draws them, or when a draft's files are put back (`load`), say nothing.
+ * A removed row's line goes with it.
+ */
+function useStatusLine(items: ProofItem[], limitMb: number, quietRef: { current: boolean }): string {
+  const seen = useRef<Map<string, string> | null>(null);
+  const [line, setLine] = useState("");
+  useEffect(() => {
+    const now = new Map(items.map((p) => [p.key, lineOf(p, limitMb)] as const));
+    const before = seen.current;
+    seen.current = now;
+    if (before === null || quietRef.current) {
+      quietRef.current = false; // the first draw, or `load`
+      return;
+    }
+    setLine((was) => nextLine(items, before, now) ?? was);
+  }, [items, limitMb, quietRef]);
+  return line;
+}
+
+/** The new line, or null to keep the one there: a row added, then a row whose words changed, then a row removed
+ * (its name leaves the line). */
+function nextLine(items: ProofItem[], before: Map<string, string>, now: Map<string, string>): string | null {
+  const added = items.filter((p) => !before.has(p.key));
+  if (added.length > 1) return BOX_FILES_COPY.addedMany(added.length);
+  if (added.length === 1) return BOX_FILES_COPY.added(nameOf(added[0]!));
+  const changed = items.filter((p) => now.get(p.key) && before.get(p.key) !== now.get(p.key));
+  const last = changed[changed.length - 1];
+  if (last) return BOX_FILES_COPY.rowNow(nameOf(last), now.get(last.key)!);
+  if ([...before.keys()].some((k) => !now.has(k))) return "";
+  return null;
+}
+
+const nameOf = (p: ProofItem) => p.item?.name ?? p.name;
+
+/** The row's own words, as it shows them: its status ("Checked") or its line ("Didn’t upload. …"). */
+function lineOf(p: ProofItem, limitMb: number): string {
+  const v = rowView(p, limitMb);
+  return v.message?.text || v.statusText || "";
+}
+
+/** The browser's directory entry API, where it exists (`webkitGetAsEntry`). */
+type Entry = {
+  isFile: boolean;
+  isDirectory: boolean;
+  file?(ok: (f: File) => void, err: (e: unknown) => void): void;
+  createReader?(): { readEntries(ok: (es: Entry[]) => void, err: (e: unknown) => void): void };
+};
+type Dropped = { file: File | null; entry: Entry | null };
+
+/** Each dropped file, with its entry: read during the drop event, which the browser clears once it returns. */
+function droppedOf(data: DataTransfer | null): Dropped[] {
+  const items = Array.from(data?.items ?? []).filter((i) => i.kind === "file");
+  if (!items.length) return Array.from(data?.files ?? []).map((file) => ({ file, entry: null }));
+  return items.map((i) => {
+    const get = (i as { webkitGetAsEntry?: () => Entry | null }).webkitGetAsEntry;
+    return { file: i.getAsFile(), entry: typeof get === "function" ? get.call(i) : null };
+  });
+}
+
+/** The files of a drop with a folder in it: every file in every folder, one level of nesting at a time. */
+async function filesOfDrop(dropped: Dropped[]): Promise<File[]> {
+  const out: File[] = [];
+  for (const d of dropped) {
+    if (d.entry?.isDirectory) out.push(...(await filesOfEntry(d.entry, 0)));
+    else if (d.file) out.push(d.file);
+  }
+  return out;
+}
+
+const FOLDER_DEPTH = 8;
+
+async function filesOfEntry(entry: Entry, depth: number): Promise<File[]> {
+  if (entry.isFile && entry.file) return [await new Promise<File>((ok, err) => entry.file!(ok, err))];
+  if (!entry.isDirectory || !entry.createReader || depth > FOLDER_DEPTH) return [];
+  const reader = entry.createReader();
+  const out: File[] = [];
+  for (;;) {
+    const batch = await new Promise<Entry[]>((ok, err) => reader.readEntries(ok, err));
+    if (!batch.length) return out;
+    for (const e of batch) out.push(...(await filesOfEntry(e, depth + 1)));
+  }
+}
+
+/** A folder dropped where the browser gives no entries: an empty file with no type. */
+function looksLikeFolder(f: File): boolean {
+  return f.size === 0 && f.type === "";
 }
