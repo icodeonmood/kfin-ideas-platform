@@ -235,7 +235,8 @@ def _hidden(conn: Conn, idea_uuid: Any) -> Hidden:
     """The details hidden from everyone, one per value: a desk "Hide this" adds a row for each copy it masks, so the
     rows are grouped by vault tag (L-HIDE.rules/7). Shown details are not here (`_shown`). Only what the sharer has
     given the desk: never the desk's own words (a question, a reason) nor an answer still in draft, which stays the
-    sharer's until sent (non-negotiable 7; BLD-B247). `_shown` reads under the same filter."""
+    sharer's until sent (non-negotiable 7; BLD-B247), nor a file not yet sent: an unsent conversation file (DEC-127)
+    or an unsent answer's file, its name's details (`<id>:name`) included. `_shown` reads under the same filter."""
     return [
         (str(r["kind"]), str(r["masked"]) if r["masked"] else None)
         for r in conn.execute(
@@ -243,6 +244,11 @@ def _hidden(conn: Conn, idea_uuid: Any) -> Hidden:
             "FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' AND source <> 'desk' "
             "AND source <> 'teamup' AND NOT (source = "
             "'answer' AND NOT EXISTS (SELECT 1 FROM answers a WHERE a.id::text = source_id AND a.sent_at IS NOT NULL)) "
+            "AND NOT (source = 'file' AND EXISTS (SELECT 1 FROM attachments f "
+            "WHERE f.id::text = split_part(source_id, ':', 1) AND ("
+            "(f.purpose = 'conversation' AND f.conversation_entry_id IS NULL) "
+            "OR (f.answer_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM answers a "
+            "WHERE a.id = f.answer_id AND a.sent_at IS NOT NULL))))) "
             "ORDER BY coalesce(vault_tag, id::text), created_at) d ORDER BY created_at",
             (idea_uuid,),
         )
@@ -259,7 +265,8 @@ SHOWN_BECAUSE = {
 def _shown(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
     """L-HIDE.rules/6: what the sharer chose to show, and why, as the review desk reads it: "Folio shown, because
     it’s an internal reference." One line per value (grouped by vault tag; the latest showing), oldest first. The
-    value itself is never here: the desk reads it in the masked copy's place, as everyone does."""
+    value itself is never here: the desk reads it in the masked copy's place, as everyone does. As `_hidden`, never a
+    file not yet sent: an unsent conversation file (DEC-127) or an unsent answer's file."""
     from desk.store import person_by_user
 
     rows = conn.execute(
@@ -268,6 +275,11 @@ def _shown(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
         "AND source <> 'teamup' "
         "AND NOT (source = 'answer' AND NOT EXISTS (SELECT 1 FROM answers a WHERE a.id::text = source_id "
         "AND a.sent_at IS NOT NULL)) "
+        "AND NOT (source = 'file' AND EXISTS (SELECT 1 FROM attachments f "
+        "WHERE f.id::text = split_part(source_id, ':', 1) AND ("
+        "(f.purpose = 'conversation' AND f.conversation_entry_id IS NULL) "
+        "OR (f.answer_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM answers a "
+        "WHERE a.id = f.answer_id AND a.sent_at IS NOT NULL))))) "
         "ORDER BY coalesce(vault_tag, id::text), shown_at DESC) d ORDER BY shown_at, kind",
         (idea_uuid,),
     ).fetchall()
