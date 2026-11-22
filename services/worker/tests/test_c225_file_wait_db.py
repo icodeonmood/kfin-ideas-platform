@@ -290,11 +290,8 @@ def test_l_hide_files_bld_c225_a_late_switch_off_or_spent_budget_waits_a_gateway
     db: Conn, cast: dict[str, Any], stood_in: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The gatekeeper switched off while the file is read, or the day's budget spent: a wait. The gateway failing
-    (a refusal, invalid output, a timeout): a counted try with today's backoff, its reason kept."""
-    files = {
-        code: _add(db, cast, name=f"{code}.pdf")
-        for code in ("switched_off", "daily_budget", "invalid_output")
-    }
+    (a refusal, an answer off its schema, a timeout): a counted try with today's backoff, its reason kept."""
+    files = {code: _add(db, cast, name=f"{code}.pdf") for code in ("switched_off", "daily_budget", "refusal")}
     _switch(db, "on")
 
     def waits(code: str) -> Any:
@@ -310,8 +307,8 @@ def test_l_hide_files_bld_c225_a_late_switch_off_or_spent_budget_waits_a_gateway
         assert (wait.value.seconds, wait.value.code) == (300, "waiting_gatekeeper")
         assert _row(db, files[code])["checks"]["waiting_for"] == "gatekeeper"
 
-    att = files["invalid_output"]
-    monkeypatch.setattr(F.hide_files, "gate_for", waits("invalid_output"))
+    att = files["refusal"]
+    monkeypatch.setattr(F.hide_files, "gate_for", waits("refusal"))
     _run(db, att)
     job = _job(db, att)
     assert (job["state"], job["attempts"], job["last_error"]) == ("queued", 1, "CheckWaits")
@@ -589,7 +586,7 @@ def test_l_hide_files_bld_c227_bld_c225_the_failed_copies_sweep_keeps_an_r3_copy
     db: Conn, cast: dict[str, Any], stood_in: dict[str, Any]
 ) -> None:
     """Condition e and `sweep_failed_copies`: an r3 row's quarantine copy is kept until `ended_at` is older than
-    `attachments.rejected_retention_hours` (24 in the seeded rules), then deleted and marked gone, and the start
+    the failed uploads' retention (24 hours in the seeded rules), then deleted and marked gone, and the start
     sweep no longer brings it back."""
     s = get_settings()
     att = _add(db, cast)
