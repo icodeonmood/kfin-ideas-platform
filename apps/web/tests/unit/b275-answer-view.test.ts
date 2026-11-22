@@ -299,6 +299,39 @@ describe("S-R3, C-FILE.row, L-QUESTIONS.answer, BLD-B275: files on an answer", (
     expect(send!.getAttribute("aria-disabled")).not.toBe("true");
   });
 
+  it("DEC-132, L-QUESTIONS.answer, BLD-B275: a file-only answer counts once its check ends, never while checking", async () => {
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    server({
+      get: async () => {
+        await gate; // the check runs until the test lets it end
+        return json(fileItem("f-9", "checked"));
+      },
+    });
+    await render(set([answerFile("checking", { id: "f-9", name: NAME, type: "text/markdown" })]));
+    expect(button("Question 1, not answered yet")).toBeDefined();
+    expect(button("Skip for now")).toBeDefined();
+    await flush(2000);
+    expect(button("Question 1, not answered yet")).toBeDefined(); // still checking
+    open();
+    await flush(2000);
+    expect(host.querySelector(".frow")!.textContent).toContain("Checked");
+    expect(button("Question 1, answered")).toBeDefined();
+    expect(button("Next")).toBeDefined();
+  });
+
+  it("DEC-132, BLD-B275: an answer whose only file is infected is not answered, attaches nothing and can't be sent", async () => {
+    server();
+    await render(set([answerFile("infected", { id: "f-9", name: NAME, type: "text/markdown" })]));
+    expect(button("Question 1, not answered yet")).toBeDefined();
+    const check = buttons().find((b) => b.textContent === "Check your answers and send")!;
+    await act(async () => check.click());
+    expect(host.textContent).not.toContain("attached.");
+    const send = buttons().find((b) => b.textContent === "Answer at least one question");
+    expect(send).toBeDefined();
+    expect(send!.disabled || send!.getAttribute("aria-disabled") === "true").toBe(true);
+  });
+
   it("C-FILE.row, BLD-B275: a file removed while it uploads leaves no row, and what reached the server goes too", async () => {
     const post = deferred();
     const seen = server({ post: () => post.promise });

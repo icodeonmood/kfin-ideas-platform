@@ -4,8 +4,9 @@
  *
  * - An answer's file is one of the idea's own files (purpose 'idea', BLD-B274): `POST /api/files` carries the answer's
  *   id and the file, never `for` ("conversation" is S-08's box, and the worker refuses it on an answer).
- * - An answer counts as answered with words or with a file the server holds, as the worker's `_has_content` and
- *   `send_answers` count it.
+ * - An answer counts as answered with words or with a file the review desk will see (DEC-132), as the worker's
+ *   `_has_content` and `send_answers` count it: a file still checking counts once its check ends, and one infected,
+ *   locked or failed never does, so the desk never receives an empty answer.
  * - "Check your answers" and the Sent list say what is attached in the Answer board's pattern: "Two screenshots
  *   attached, folio hidden." (reference/copy/Answer.md, state Sent).
  */
@@ -30,14 +31,23 @@ export function answerUploadForm(answerId: string, file: File): FormData {
   return form;
 }
 
-/** A row the server holds for the answer, in any state: the worker counts it as the answer's (`_files`). */
-export function held(p: Pick<ProofItem, "item">): boolean {
-  return Boolean(p.item?.id);
+/** The states of a file the review desk sees (the worker's `DESK_SEES`, DEC-107): checked, hidden, a link, or holding
+ * a customer detail, which can still be sent and is marked. */
+const DESK_SEES: ReadonlySet<string> = new Set(["checked", "hidden_checked", "ok", "personal_data_found"]);
+
+/** A file in a state the review desk sees (DEC-132, the worker's `_counts`). */
+export function deskSees(state: string | null | undefined): boolean {
+  return DESK_SEES.has(state ?? "");
 }
 
-/** Answered: words, or a file the server holds (the worker's `_has_content`). */
+/** A row that counts towards answering (DEC-132): on the server, and in a state the review desk sees. */
+export function counts(p: Pick<ProofItem, "item" | "localState">): boolean {
+  return Boolean(p.item?.id) && !p.localState && deskSees(p.item?.state);
+}
+
+/** Answered: words, or a file the review desk will see (DEC-132, the worker's `_has_content`). */
 export function isAnswered(text: string | undefined, rows: readonly ProofItem[] | undefined): boolean {
-  return Boolean((text ?? "").trim()) || (rows ?? []).some(held);
+  return Boolean((text ?? "").trim()) || (rows ?? []).some(counts);
 }
 
 /** An answer's file as the set's read gives it (`AnswerFile`), as the row's `FileItem`. */
@@ -86,7 +96,12 @@ export function filesLine(files: readonly Attached[]): string {
   return `${COUNT_WORDS[n - 1] ?? String(n)} ${noun} attached${hidden.length ? `, ${hidden.join(", ")}` : ""}.`;
 }
 
-/** The files a row list holds on the server, for `filesLine`. */
+/** The files of a row list that go to the review desk with the answer (DEC-132), for `filesLine`. */
 export function attachedOf(rows: readonly ProofItem[] | undefined): Attached[] {
-  return (rows ?? []).filter(held).map((p) => ({ type: p.item?.type, hidden_note: p.item?.hidden_note }));
+  return (rows ?? []).filter(counts).map((p) => ({ type: p.item?.type, hidden_note: p.item?.hidden_note }));
+}
+
+/** A sent answer's files that the review desk sees (DEC-132), for `filesLine` on the Sent list. */
+export function sentFiles(files: readonly AnswerFile[]): AnswerFile[] {
+  return files.filter((f) => deskSees(f.state));
 }
