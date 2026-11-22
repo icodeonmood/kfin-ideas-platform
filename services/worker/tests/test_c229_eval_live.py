@@ -637,6 +637,14 @@ def test_at_b4_03_c229_server_run_reads_the_install_only_and_passes_only_the_key
         COUNT,
         COUNT,
     ]  # before and after: the only commands sent to the install
+    pgs = [
+        c["argv"]
+        for c in recorded
+        if c["argv"][:1] == ["ps"] and "label=com.docker.compose.service=postgres" in c["argv"]
+    ]
+    assert len(pgs) == 2 and all(
+        f"label=com.docker.compose.project={INSTALL}" in a for a in pgs
+    )  # resolved twice
     runs = [c for c in recorded if c["tool"] == "docker" and c["argv"][:1] == ["run"]]
     probe, steps = runs[0], runs[1:]
     assert probe["argv"][-4:] == [f"{INSTALL}-worker", "python", "-c", "import evalrunner.paste"]
