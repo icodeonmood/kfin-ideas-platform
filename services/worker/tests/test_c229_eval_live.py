@@ -3,9 +3,9 @@ and on the launch server.
 
 No database, no Docker, no key: `--only` runs with the runners stood in for; the paste block renders from fixture
 reports; and `scripts/eval/live.sh` runs under bash with a stubbed `docker` (and, for the Mac run, a stubbed Python)
-that records every call. The refusals happen before any container; a server run touches the install's project only
-with the read-only `SELECT count(*) FROM llm_calls`; only the golden sets' step gets the route's credential, by name,
-never in argv. CI keeps LLM_MODE=fake with no secret and never runs live.sh beyond these tests.
+that records every call. The refusals happen before any container; a server run touches the install only with the
+read-only `SELECT count(*) FROM llm_calls WHERE outcome <> 'switched_off'`; only the golden sets' step gets the route's
+credential, by name, never in argv. CI keeps LLM_MODE=fake with no secret and never runs live.sh beyond these tests.
 """
 
 from __future__ import annotations
@@ -615,7 +615,7 @@ def install_calls(recorded: list[dict[str, Any]]) -> list[list[str]]:
 
 
 COUNT = ["compose", "-p", INSTALL, "exec", "-T", "postgres", "psql", "-U", "ideas", "-d", "ideas", "-At", "-c",
-         "SELECT count(*) FROM llm_calls"]  # fmt: skip
+         "SELECT count(*) FROM llm_calls WHERE outcome <> 'switched_off'"]  # fmt: skip
 
 
 def test_at_b4_03_c229_server_run_reads_the_install_only_and_passes_only_the_key(

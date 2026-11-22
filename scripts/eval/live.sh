@@ -18,9 +18,11 @@
 #   Its own compose project kfin-ideas-eval with its own Postgres, unpublished, and throwaway containers from the
 #   INSTALLED worker image (<project>-worker), on the eval project's own network only. From the app env file only the
 #   route's credentials are passed, by name, through the process environment (never argv, never a file); everything
-#   else the container gets is generated here. The install is only read: one `SELECT count(*) FROM llm_calls` through
-#   its own Postgres container before and after, and the run FAILs if the count changed. The data folder (default
-#   /srv/kfin-ideas-eval) holds the company repo copy and the reports, and goes at the end.
+#   else the container gets is generated here. The install is only read: one `SELECT count(*) FROM llm_calls WHERE
+#   outcome <> 'switched_off'` through its own Postgres container before and after, and the run FAILs if that count
+#   changed. Calls the install refused with ai.all off are left out (the gateway writes a row for each, so people using
+#   the app meanwhile would move a plain count); every call that went to or tried a route counts. The data folder
+#   (default /srv/kfin-ideas-eval) holds the company repo copy and the reports, and goes at the end.
 #
 # Both modes: migrated with dbmate as CI does; the company repo seeded into a throwaway folder and the 200 synthetic
 # people loaded (APP_ENV=test, so the dev overlay's synthetic client names are there for the golden sets); the switches
@@ -404,12 +406,13 @@ worker_run() {
   )
 }
 
-# The install's llm_calls, read-only through its own Postgres container: the only command this script sends to the
-# install's project.
+# The install's llm_calls that went to or tried a route, read-only through its own Postgres container: the only command
+# this script sends to the install's project. Rows the gateway writes for calls refused while a switch is off
+# (outcome 'switched_off', gateway/core.py) are left out, so people using the app during the run do not move it.
 install_count() {
   local out
   out="$(cd "$EL_WORK" && D compose -p "$EL_PROJECT" exec -T postgres psql -U ideas -d ideas -At \
-    -c "SELECT count(*) FROM llm_calls" 2>>"$EL_ERR")" || return 1
+    -c "SELECT count(*) FROM llm_calls WHERE outcome <> 'switched_off'" 2>>"$EL_ERR")" || return 1
   case "$out" in '' | *[!0123456789]*) return 1 ;; esac
   printf '%s' "$out"
 }
