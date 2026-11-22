@@ -48,11 +48,13 @@ IST = dt.timezone(dt.timedelta(hours=5, minutes=30), "IST")
 
 @dataclass
 class Calls:
-    """The throwaway database's `llm_calls`: rows, the ones that reached the model route, and the gateway's cost."""
+    """The throwaway database's `llm_calls`: rows, the ones that reached the model route, the ones the model answered
+    (`ok` or `ok_after_retry`), and the gateway's cost."""
 
     rows: int
     reached_model: int
     cost_inr: float
+    answered: int = 0
 
 
 @dataclass
@@ -97,8 +99,9 @@ def latest_reports(reports_dir: Path, agents: Sequence[str]) -> dict[str, dict[s
     return found
 
 
-def verdict(reports: dict[str, dict[str, Any]], meta: Meta) -> list[str]:
-    """The failed gate names, in the order the block shows them; empty means PASS."""
+def verdict(reports: dict[str, dict[str, Any]], meta: Meta, calls: Calls | None = None) -> list[str]:
+    """The failed gate names, in the order the block shows them; empty means PASS. `model.no_calls` when the model
+    answered no call at all (or the calls were not counted): a run that never reached the model cannot PASS."""
     failed: list[str] = []
     for agent in meta.agents:
         r = reports.get(agent)
@@ -115,6 +118,8 @@ def verdict(reports: dict[str, dict[str, Any]], meta: Meta) -> list[str]:
             failed.append(f"{agent}.no_gates")
     ordered = [f"{a}.{g}" for a, g in LEAD_ROWS if f"{a}.{g}" in failed]
     failed = ordered + [f for f in failed if f not in ordered]
+    if calls is None or calls.answered == 0:
+        failed.append("model.no_calls")
     if meta.mode == "server" and (
         meta.install_before is None or meta.install_after is None or meta.install_before != meta.install_after
     ):
@@ -181,7 +186,8 @@ def render(
         out.append("model calls: not counted")
     else:
         out.append(
-            f"model calls: {calls.reached_model} (llm_calls rows: {calls.rows}) | cost: INR {calls.cost_inr:.2f}"
+            f"model calls: {calls.reached_model} ({calls.answered} answered; llm_calls rows: {calls.rows}) | "
+            f"cost: INR {calls.cost_inr:.2f}"
         )
     if meta.mode == "server":
         if meta.install_before is not None and meta.install_before == meta.install_after:
@@ -190,7 +196,7 @@ def render(
             before = "?" if meta.install_before is None else meta.install_before
             after = "?" if meta.install_after is None else meta.install_after
             out.append(f"install database: llm_calls CHANGED ({before} to {after})")
-    failed = verdict(reports, meta)
+    failed = verdict(reports, meta, calls)
     out.append("EVAL-LIVE: PASS" if not failed else f"EVAL-LIVE: FAIL ({', '.join(failed)})")
     out.append(END)
     return out, not failed
@@ -198,17 +204,24 @@ def render(
 
 def count_calls() -> Calls:
     """The throwaway database's model calls (DATABASE_URL): `llm_calls` rows, the ones that reached the route (not
-    switched off, leak-aborted or cached), and the gateway's own cost in INR."""
+    switched off, leak-aborted or cached), the ones the model answered (`ok`, `ok_after_retry`), and the gateway's
+    own cost in INR."""
     from core.db import connect
 
     with connect(autocommit=True) as conn:
         row = conn.execute(
             "SELECT count(*) AS n, "
             "count(*) FILTER (WHERE outcome NOT IN ('switched_off', 'leak_abort', 'cached')) AS reached, "
+            "count(*) FILTER (WHERE outcome IN ('ok', 'ok_after_retry')) AS answered, "
             "coalesce(sum(cost_inr), 0) AS cost FROM llm_calls"
         ).fetchone()
     assert row is not None
-    return Calls(rows=int(row["n"]), reached_model=int(row["reached"]), cost_inr=float(row["cost"]))
+    return Calls(
+        rows=int(row["n"]),
+        reached_model=int(row["reached"]),
+        cost_inr=float(row["cost"]),
+        answered=int(row["answered"]),
+    )
 
 
 def _gates_of(agent: str) -> dict[str, Any]:

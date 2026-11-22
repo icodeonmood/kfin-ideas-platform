@@ -272,7 +272,7 @@ def meta(**over: Any) -> paste.Meta:
     return paste.Meta(**(base | over))
 
 
-CALLS = paste.Calls(rows=53, reached_model=53, cost_inr=12.3456)
+CALLS = paste.Calls(rows=53, reached_model=53, cost_inr=12.3456, answered=52)
 
 
 def row(lines: list[str], name: str) -> tuple[int, str]:
@@ -307,7 +307,7 @@ def test_at_b4_03_at_b5_04_c229_paste_block_rows_lead_first_numbers_only() -> No
     assert "time: 23 Nov 2026 10:00 IST" in text
     assert "agent gatekeeper 0.2.0: 41 cases" in text and "agent judge 0.3.1: 12 cases" in text
     assert "harness gates: gatekeeper 4/4 PASS | judge 2/2 PASS" in text
-    assert "model calls: 53 (llm_calls rows: 53) | cost: INR 12.35" in text
+    assert "model calls: 53 (52 answered; llm_calls rows: 53) | cost: INR 12.35" in text
     assert "installed:" not in text and "install database" not in text  # Mac: no install lines
     assert SENTENCE not in text and "SIP mandate" not in text  # no case text, ever
     assert "://" not in text and KEY not in text
@@ -327,7 +327,7 @@ def test_at_b4_03_c229_paste_block_fails_without_a_report_on_another_route_or_a_
     lines, passed = paste.render({"gatekeeper": gk_report()}, PASS_GATES, None, meta())
     assert not passed and row(lines, "judge same_precision")[1].endswith("FAIL (no report)")
     assert "model calls: not counted" in lines
-    assert lines[-2] == "EVAL-LIVE: FAIL (judge.no_report)"
+    assert lines[-2] == "EVAL-LIVE: FAIL (judge.no_report, model.no_calls)"
     faked = gk_report() | {"route": "fake"}
     lines, passed = paste.render({"gatekeeper": faked, "judge": judge_report()}, PASS_GATES, CALLS, meta())
     assert not passed and lines[-2] == "EVAL-LIVE: FAIL (gatekeeper.route_not_anthropic)"
@@ -339,6 +339,20 @@ def test_at_b4_03_c229_paste_block_fails_without_a_report_on_another_route_or_a_
     reports = {"gatekeeper": gk_report(), "judge": judge_report()}
     lines, passed = paste.render(reports, PASS_GATES, CALLS, meta(eval_exit=1))
     assert not passed and lines[-2] == "EVAL-LIVE: FAIL (evalrunner.exit_1)"
+
+
+def test_v_eval_c229_a_run_the_model_never_answered_cannot_pass() -> None:
+    """Every gate's boolean can read PASS while no call reached the model (a fake route, every call refused or a route
+    error): `model.no_calls` then fails the run, as it does when the calls were not counted."""
+    reports = {"gatekeeper": gk_report(), "judge": judge_report()}
+    silent = paste.Calls(rows=53, reached_model=53, cost_inr=0.0, answered=0)  # every call a route_error
+    lines, passed = paste.render(reports, PASS_GATES, silent, meta())
+    assert not passed and lines[-2] == "EVAL-LIVE: FAIL (model.no_calls)"
+    assert "model calls: 53 (0 answered; llm_calls rows: 53) | cost: INR 0.00" in lines
+    lines, passed = paste.render(reports, PASS_GATES, None, meta())
+    assert not passed and lines[-2] == "EVAL-LIVE: FAIL (model.no_calls)"
+    one = paste.Calls(rows=1, reached_model=1, cost_inr=0.01, answered=1)
+    assert paste.render(reports, PASS_GATES, one, meta())[1]
 
 
 def test_at_b4_03_c229_server_block_shows_the_install_and_fails_if_its_llm_calls_moved() -> None:
