@@ -200,7 +200,15 @@ def test_pdf_pan_rejected_with_page_and_clean_pdf_opens_for_reviewer(deep_off: A
     sent = b.post(f"/api/submissions/{draft}/submit", json={"canvas": full_canvas()})
     assert sent.status_code == 202, sent.text
 
-    # After submit, the clean PDF opens for a reviewer as a safe download, and the download is logged.
+    # DEC-127 (3), BLD-C222: with the deep check off this file passed on the patterns alone (`checks.gatekeeper`
+    # false), so after submit it still opens for no one but its owner: never on the pattern check alone.
+    assert reviewer.get(f"/api/attachments/{good_id}").status_code == 404
+    # Once the gatekeeper has checked it (`checks.gatekeeper` true, as the deep check records), the clean PDF opens
+    # for a reviewer as a safe download, and the download is logged.
+    conn.execute(
+        "UPDATE attachments SET checks = checks || jsonb_build_object('gatekeeper', true) WHERE id = %s",
+        (good_id,),
+    )
     opened = reviewer.get(f"/api/attachments/{good_id}")
     assert opened.status_code == 200
     assert opened.content == clean_bytes
