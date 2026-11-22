@@ -697,3 +697,75 @@ def test_bld_f097_l_hide_the_teamup_source_migration_checks_and_its_down_with_a_
         assert sealed_check() == SEALED_SOURCES | {"teamup"}
         raise _Undo
     assert len(_details(db, lead["id"], sent["id"])) == 2 and len(_sealed(db)) == 1 and vault_values() == 2
+
+
+# ---- the requester's own request on a match card (similar/views.py `my_request`, BLD-F101) -------------------
+
+
+def test_l_teamup_l_similar_dec_103_dec_104_bld_f101_the_requester_reads_their_own_note_on_the_match_card(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, customer: str
+) -> None:
+    """L-SIMILAR, L-TEAMUP: the match card's `my_request` is the viewer's own request (its row is theirs by
+    `from_code`), so its note is the words they typed, from lane C's sealed copy (BLD-F097), as everywhere else
+    they read it back. The stored copy, which the lead and everyone else read, stays masked (DEC-103, DEC-104)."""
+    from similar.preview import Viewer
+    from similar.views import my_request
+
+    folio, pan, phone = made_up()
+    note = f"{customer} rang our Hyderabad branch twice about this. Folio {folio}, PAN {pan}, call {phone} after 6."
+    lead = cast["lead"]
+    rid = requests.send(db, lead["idea_id"], cast["kavya"]["id"], {"note": note, "brought_idea_ids": []})[
+        "id"
+    ]
+    card = my_request(db, str(lead["id"]), Viewer.of(db, cast["kavya"]["id"]))
+    assert card is not None and card["id"] == rid
+    assert card["note"] == note
+    stored = _stored(db, "teamup_requests", "note_encrypted", rid)
+    assert stored is not None and stored != note
+    _masked_only(stored, customer, folio, pan, phone)
+    assert (
+        my_request(db, str(lead["id"]), Viewer.of(db, cast["ravi"]["id"])) is None
+    )  # only the requester's own
+
+
+def test_l_teamup_l_similar_dec_103_bld_f101_a_note_with_no_sealed_words_reads_as_its_masked_copy(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, customer: str
+) -> None:
+    """A request sent before BLD-F097, or seeded, has no sealed words: the match card reads the masked copy stored
+    on the request, never nothing and never the other's words."""
+    from similar.preview import Viewer
+    from similar.views import my_request
+
+    folio, _, phone = made_up()
+    lead = cast["lead"]
+    rid = requests.send(db, lead["idea_id"], cast["kavya"]["id"],
+                        {"note": f"{customer} asked again. Folio {folio}, call {phone}.", "brought_idea_ids": []},
+                        )["id"]  # fmt: skip
+    db.execute("DELETE FROM idea_words_sealed WHERE source = 'teamup' AND idea_uuid = %s", (lead["id"],))
+    card = my_request(db, str(lead["id"]), Viewer.of(db, cast["kavya"]["id"]))
+    assert card is not None
+    assert card["note"] == _stored(db, "teamup_requests", "note_encrypted", rid)
+    _masked_only(card["note"], customer, folio, phone)
+
+
+def test_l_teamup_l_similar_dec_103_bld_f101_the_leads_reason_on_the_card_stays_masked(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, customer: str
+) -> None:
+    """The lead's decline reason on the requester's card is the lead's words, so the requester reads the masked
+    copy even though the lead's own words are sealed (lane C's condition, BLD-F101)."""
+    from similar.preview import Viewer
+    from similar.views import my_request
+
+    folio, _, phone = made_up()
+    lead = cast["lead"]
+    rid = requests.send(db, lead["idea_id"], cast["kavya"]["id"], {"note": NOTE, "brought_idea_ids": []})[
+        "id"
+    ]
+    reason = f"{customer} already raised this with us. Ask about folio {folio} on {phone} after 6."
+    requests.answer(db, rid, cast["ravi"]["id"], {"answer": "decline", "reason": reason})
+    assert own_words(db, "teamup", adapters.decline_id(rid), idea_uuid=str(lead["id"])) == reason  # sealed
+    card = my_request(db, str(lead["id"]), Viewer.of(db, cast["kavya"]["id"]))
+    assert card is not None and card["state"] == "declined"
+    assert card["lead_reason"] == _stored(db, "teamup_requests", "lead_reason_encrypted", rid)
+    _masked_only(card["lead_reason"], customer, folio, phone)
+    assert card["note"] == NOTE  # her own note, as typed
