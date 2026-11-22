@@ -834,10 +834,66 @@ function overlaps(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
 
+/** The hint sits over the round button: wholly above it, across its middle. */
+function over(hint: Rect, round: Rect): boolean {
+  const middle = round.x + round.width / 2;
+  return hint.y + hint.height <= round.y && hint.x <= middle && middle <= hint.x + hint.width;
+}
+
+/**
+ * After a resize, waits for the page to settle: two frames, as lib.ts's axe check waits for a remount after a
+ * media query change, then until Home's box reads the same on two frames in a row (at most 30 more). Read any
+ * sooner, the box can still be mid-change in a narrower column, where its hint clears more than it does once
+ * settled (v7's flake of 22 Nov, BLD-G009).
+ */
+async function settled(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const frame = () => new Promise((done) => requestAnimationFrame(done));
+    const read = () => {
+      const box = document.querySelector(".hm-prompt");
+      const hint = box?.querySelector(".vhint");
+      return JSON.stringify([box?.getBoundingClientRect(), hint?.getBoundingClientRect()]);
+    };
+    await frame();
+    await frame();
+    let last = read();
+    for (let i = 0; i < 30; i += 1) {
+      await frame();
+      const now = read();
+      if (now === last) return;
+      last = now;
+    }
+  });
+}
+
+/** Home's box as laid out now: its hint, its "+" and its round button. */
+async function homeBox(page: Page): Promise<{ hint: Rect; plus: Rect; round: Rect }> {
+  const at = await page.evaluate(
+    ({ plusName, roundName }) => {
+      const prompt = document.querySelector(".hm-prompt");
+      const rect = (el: Element | null | undefined) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      return {
+        hint: rect(prompt?.querySelector(".vhint")),
+        plus: rect(prompt?.querySelector(`button[aria-label="${plusName}"]`)),
+        round: rect(prompt?.querySelector(`button[aria-label="${roundName}"]`)),
+      };
+    },
+    { plusName: PLUS, roundName: "Tap to start speaking" },
+  );
+  if (!at.hint || !at.plus || !at.round) {
+    throw new Error('Home\'s box has its hint, its "+" and its round button');
+  }
+  return { hint: at.hint, plus: at.plus, round: at.round };
+}
+
 step(
   "J-SHARE/v7",
   "S-04B",
-  'Home\'s mic: the round button in the empty box, its hint clear of the "+" and the first line on a phone; a tap makes the draft once, and the note lands on Share a problem',
+  'Home\'s mic: the round button in the empty box, its hint over it on arrival and clear of the "+" on a phone; a tap makes the draft once, and the note lands on Share a problem',
   { needs: ["S-03", "C-PROMPT.voice", "L-DRAFT.voice", "S-04B", "BLD-C220"] },
   async ({ page }, info) => {
     info.setTimeout(120_000); // about 5 seconds of tone for the fake route to hear, then the note is finished
@@ -874,43 +930,21 @@ step(
       return d.featurePolicy ? d.featurePolicy.allowsFeature("microphone") : null;
     });
     expect(allowed, "DEC-128: the microphone is allowed on Home").not.toBe(false);
+    // On arrival the hint sits over the round button (C-PROMPT.voice, both Home boards).
+    await settled(page);
+    const desk = await homeBox(page);
+    expect(over(desk.hint, desk.round), "on arrival the hint sits over the round button").toBe(true);
 
-    // Lane D's QA: on a phone the hint (about 200 px, two lines, above the round button) covers neither the "+" nor
-    // the box's first line, where the placeholder sits.
+    // Lane D's QA: on a phone the hint (about 200 px, two lines) sits over the round button and clear of the
+    // "+". While it shows it may cover the box's first line, as the PhoneHome drawing does (lane D, 22 Nov,
+    // BLD-G009); that it goes at 5.9 s under reduced motion too is lane C's BLD-C240, which v7's part 2 pins.
     await page.setViewportSize({ width: 360, height: 780 });
+    await settled(page);
     await expect(round).toBeVisible();
     await expect(hint).toBeVisible();
-    const at = await page.evaluate((plusName) => {
-      const prompt = document.querySelector(".hm-prompt");
-      const rect = (el: Element | null | undefined) => {
-        if (!el) return null;
-        const r = el.getBoundingClientRect();
-        return { x: r.x, y: r.y, width: r.width, height: r.height };
-      };
-      const words = prompt?.querySelector("textarea");
-      let first: { x: number; y: number; width: number; height: number } | null = null;
-      if (words) {
-        const r = words.getBoundingClientRect();
-        const s = getComputedStyle(words);
-        const n = (v: string) => parseFloat(v) || 0;
-        const left = n(s.borderLeftWidth) + n(s.paddingLeft);
-        const right = n(s.borderRightWidth) + n(s.paddingRight);
-        first = {
-          x: r.x + left,
-          y: r.y + n(s.borderTopWidth) + n(s.paddingTop),
-          width: r.width - left - right,
-          height: n(s.lineHeight) || n(s.fontSize) * 1.5,
-        };
-      }
-      return {
-        hint: rect(prompt?.querySelector(".vhint")),
-        plus: rect(prompt?.querySelector(`button[aria-label="${plusName}"]`)),
-        first,
-      };
-    }, PLUS);
-    if (!at.hint || !at.plus || !at.first) throw new Error('Home\'s box has its hint, its "+" and its words');
-    expect(overlaps(at.hint, at.plus), 'the hint covers the "+"').toBe(false);
-    expect(overlaps(at.hint, at.first), "the hint covers the box's first line").toBe(false);
+    const phone = await homeBox(page);
+    expect(over(phone.hint, phone.round), "on a phone the hint sits over the round button").toBe(true);
+    expect(overlaps(phone.hint, phone.plus), 'the hint covers the "+"').toBe(false);
     await page.setViewportSize({ width: 1440, height: 900 });
     await expectNoSeriousAxeIssues(page);
 
