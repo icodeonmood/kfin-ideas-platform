@@ -1256,7 +1256,7 @@ def sweep_failed_copies(conn: Conn) -> int:
     (`sweep_unsent_conversation`, BLD-C216). Nothing is deleted unless the most recent worker start sweep finished
     (`start_sweep_done`). Returns how many of both, 0 while it waits."""
     if not start_sweep_done(conn):
-        log.info("files.sweep_waits", reason="start_sweep")
+        log.info("files.sweep_waits")  # the latest start sweep did not finish
         return 0
     return _sweep_failed(conn) + sweep_unsent_conversation(conn)
 
