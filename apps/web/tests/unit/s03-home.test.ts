@@ -1429,4 +1429,28 @@ describe("S-03 C-PROMPT.voice: the round voice button in Home's empty box (WF-02
     expect(phone).toMatch(/\.hm \.cz \.hm-prompt \.vhint \{\s*display: flex;/);
     expect(css).toMatch(/\.hm \.cz \.hm-prompt:has\(\.cpick\) \.vhint \{\s*display: none;/);
   });
+
+  it("BLD-C240, C-PROMPT.voice: once typed, the hint never comes back, even after the box is cleared; the round button is still the microphone", async () => {
+    await show(baseRoutes());
+    expect(host.querySelector(".prompt .vhint")).not.toBeNull();
+    type(WORDS);
+    expect(host.querySelector(".prompt .vhint")).toBeNull();
+    type("");
+    expect(host.querySelector(".prompt .vhint")).toBeNull(); // as the board's !draft && !typed
+    expect(button("Tap to start speaking")).toBeDefined(); // the round button keeps roundIsMic
+  });
+
+  it("BLD-C240 (lane D): on a phone the hint goes while the words box has focus", () => {
+    const css = readFileSync(path.resolve(__dirname, "../../src/app/home/home.css"), "utf8");
+    const phone = css.slice(css.indexOf("@media (max-width: 640px)"));
+    expect(phone).toMatch(/\.hm \.cz \.hm-prompt:has\(textarea:focus\) \.vhint \{\s*display: none;/);
+  });
+
+  it("BLD-C240 (lane D): under reduced motion the hint still shows for the same time, then goes at once at 5.9 s", () => {
+    const css = readFileSync(path.resolve(__dirname, "../../src/app/share/compose.css"), "utf8");
+    const reduce = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+    const off = reduce.slice(0, reduce.indexOf("animation: none;"));
+    expect(off).not.toMatch(/\.cz \.vhint/); // not in the animation: none list
+    expect(reduce).toMatch(/\.cz \.vhint \{\s*animation: czHintOut 0s linear 5\.9s forwards;/);
+  });
 });

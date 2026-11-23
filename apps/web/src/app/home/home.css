@@ -759,6 +759,11 @@
     display: flex;
   }
 
+  /* BLD-C240 (lane D): on a phone the hint goes while the words box has focus, so it never sits over what is typed. */
+  .hm .cz .hm-prompt:has(textarea:focus) .vhint {
+    display: none;
+  }
+
   .hm-pnote {
     order: 3;
   }
