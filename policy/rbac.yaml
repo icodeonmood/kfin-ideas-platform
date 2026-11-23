@@ -330,6 +330,10 @@ endpoints:
   - POST /api/question-sets/{id}/remind               work_review_queue
   - GET /api/ideas/{id}/question-set                  signed_in       # the sharer only, checked by the worker
   - PUT /api/questions/{id}/answer                    signed_in       # the sharer only, checked by the worker
+  - POST /api/questions/{id}/answer/voice/start      submit          # S-R3's spoken answer (BLD-B276): lane C's stream, the sharer only, checked by the worker
+  - POST /api/questions/{id}/answer/voice/chunk      submit          # ~1 s of 16 kHz PCM, relayed and never kept; answers the words so far
+  - POST /api/questions/{id}/answer/voice/end        submit          # their own words, with no English copy (DEC-131)
+  - GET /api/questions/{id}/answer/voice/{stream}    submit          # polling, as a draft's note polls
   - POST /api/question-sets/{id}/send                 signed_in       # the sharer only, checked by the worker
   - GET /api/ideas/{id}/decision                      signed_in       # the decision as the sharer and crew read it
   - GET /api/committee                                committee_window

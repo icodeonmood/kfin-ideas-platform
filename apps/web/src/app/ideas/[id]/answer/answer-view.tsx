@@ -10,10 +10,18 @@
  * files to this answer") adds files to that answer: each is one of the
  * idea's own files (BLD-B274), checked as DEC-107 says, and an answer with no words counts as answered with a file the
  * review desk sees (DEC-132), as the worker counts it. Files only: no folder or link on S-R3 yet.
+ *
+ * The mic after it (BLD-B276; C-PROMPT.voice, "Say your answer") is lane C's capture on the question's own routes:
+ * the words the person said go into the box after what it holds, where they read, edit and save them like typing.
+ * The notice before the first recording says where the voice goes (DEC-108); no English copy is made for an answer
+ * (DEC-131(5)). Moving to another question while a note is on its way stops it first, and the move follows once its
+ * words are in the box, so nothing heard is lost. Typing always works; a failed or paused note never blocks it.
  */
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { IconMic, IconMicOff } from "@/components/compose/icons";
+import { PROMPT_COPY } from "@/components/compose/prompt";
 import { Dock, PhoneBar } from "@/components/shell/phone";
 import { AttachButton } from "@/components/ui/attach-button";
 import { Button, ButtonLink } from "@/components/ui/button";
@@ -30,6 +38,14 @@ import {
   seedRows,
   sentFiles,
 } from "@/lib/desk/answer-files";
+import {
+  ANSWER_VOICE_COPY,
+  answerVoiceBase,
+  isSpeaking,
+  spokenWords,
+  voiceFailedLine,
+  withSpoken,
+} from "@/lib/desk/answer-voice";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import {
   MAX_ANSWER,
@@ -43,6 +59,8 @@ import {
 import { call } from "@/lib/desk/reply";
 import { clockLabel, dayLabel } from "@/lib/desk/when";
 import { REVIEW_DESK, REVIEW_DESK_START } from "@/lib/review-desk";
+import { useVoiceCapture } from "@/lib/use-voice-capture";
+import { VOICE_LISTENING, type VoiceCaptureState } from "@/lib/voice-capture";
 
 import { AnswerFileRows, useAnswerFiles, type AnswerTarget } from "./answer-files";
 
@@ -224,6 +242,64 @@ export function AnswerView({
   const plus = useRef<HTMLButtonElement>(null);
   const chooser = useRef<HTMLInputElement>(null);
 
+  /** One answer typed or said: the box shows it at once, and it saves after the pause (the autosave). */
+  function saveText(id: string, text: string) {
+    latest.current = { ...latest.current, [id]: text };
+    setTexts((t) => ({ ...t, [id]: text }));
+    clearTimeout(timers.current[id]);
+    timers.current[id] = setTimeout(() => {
+      delete timers.current[id]; // fired: gone, so a send never flushes it twice
+      void store(id, text);
+    }, SAVE_AFTER_MS);
+  }
+
+  // ── speaking (C-PROMPT.voice, BLD-B276): lane C's capture, on the shown question's own routes ─────────────────────
+  const speakingFor = (set?.questions ?? []).filter((x) => !x.answer?.sent)[step]?.id ?? "";
+  const voiceOptions = useMemo(() => ({ base: answerVoiceBase(speakingFor) }), [speakingFor]);
+  const voice = useVoiceCapture(speakingFor, voiceOptions);
+  // A move asked for while a note was on its way: it follows once the note's words are in the box
+  const moveAfter = useRef<number | null>(null);
+  const handledVoice = useRef<VoiceCaptureState | null>(null);
+  const { state: voiceState, reset: voiceReset, noticeShown } = voice;
+  const voiceNotice = voiceState.status === "idle" ? voiceState.notice : null;
+
+  /** To another step. While a note is on its way it stops first, and the move waits for its words. */
+  function go(to: number) {
+    if (isSpeaking(voiceState.status)) {
+      moveAfter.current = to;
+      voice.stop();
+      return;
+    }
+    setStep(to);
+  }
+
+  useEffect(() => {
+    const s = voiceState;
+    if (handledVoice.current === s) return;
+    // Taken on the next tick, once per state, as Home and Share take a note: the capture is an outside system telling
+    // the screen what it heard. The words go to the question they were said for.
+    const t = setTimeout(() => {
+      if (handledVoice.current === s) return;
+      handledVoice.current = s;
+      const words = spokenWords(s);
+      if (speakingFor && words.trim())
+        saveText(speakingFor, withSpoken(latest.current[speakingFor] ?? "", words));
+      if (s.status === "done") voiceReset();
+      if (!isSpeaking(s.status) && moveAfter.current !== null) {
+        setStep(moveAfter.current);
+        moveAfter.current = null;
+      }
+    }, 0);
+    return () => clearTimeout(t);
+    // saveText reads only refs and state setters, so the latest one is the same as any
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voiceState, voiceReset, speakingFor]);
+
+  // The notice before the first recording is on screen (DEC-108): the first recording then marks it seen
+  useEffect(() => {
+    if (voiceNotice) noticeShown();
+  }, [voiceNotice, noticeShown]);
+
   useEffect(() => {
     let t: ReturnType<typeof setTimeout>;
     const tick = () => {
@@ -272,15 +348,18 @@ export function AnswerView({
   const live = set.due_at ? countdown(set.due_at, now) : null;
   const ready = questions.filter((q) => isAnswered(texts[q.id], files.rows[q.id])).length;
   const answeredCount = answeredBefore.length + ready;
+  const speaking = isSpeaking(voiceState.status);
+  const heard = voiceState.status === "recording" || voiceState.status === "sending" ? voiceState.text : "";
+  const blocked = voiceState.status === "blocked" ? voiceState : null;
+  const failedVoice = voiceState.status === "failed" ? voiceFailedLine(voiceState.reason) : null;
+  const micLabel = blocked
+    ? PROMPT_COPY.micBlocked
+    : speaking
+      ? PROMPT_COPY.stopAndUse
+      : ANSWER_VOICE_COPY.say;
 
   function save(q: SetQuestion, text: string) {
-    latest.current = { ...latest.current, [q.id]: text };
-    setTexts((t) => ({ ...t, [q.id]: text }));
-    clearTimeout(timers.current[q.id]);
-    timers.current[q.id] = setTimeout(() => {
-      delete timers.current[q.id]; // fired: gone, so a send never flushes it twice
-      void store(q.id, text);
-    }, SAVE_AFTER_MS);
+    saveText(q.id, text);
   }
 
   async function sendAll() {
@@ -433,7 +512,7 @@ export function AnswerView({
                   aria-current={step === i ? "step" : undefined}
                   className={done ? "done" : undefined}
                   aria-label={stepName(i + 1, done)}
-                  onClick={() => setStep(i)}
+                  onClick={() => go(i)}
                 >
                   <StepLabel n={i + 1} done={done} />
                 </button>
@@ -442,7 +521,7 @@ export function AnswerView({
           })}
           <li>
             {/* The board names it "Check your answers and send" and shows "Check and send". */}
-            <button type="button" aria-current={checking ? "step" : undefined} onClick={() => setStep(n)}>
+            <button type="button" aria-current={checking ? "step" : undefined} onClick={() => go(n)}>
               Check <span className="vh">your answers </span>and send
             </button>
           </li>
@@ -467,7 +546,7 @@ export function AnswerView({
                   words={(texts[x.id] ?? "").trim()}
                   files={filesLine(attachedOf(files.rows[x.id]))}
                 />
-                <Button variant="text" onClick={() => setStep(i)}>
+                <Button variant="text" onClick={() => go(i)}>
                   Change<span className="vh"> your answer to question {i + 1}</span>
                 </Button>
               </li>
@@ -524,14 +603,17 @@ export function AnswerView({
                 {...p}
                 rows={5}
                 maxLength={MAX_ANSWER}
-                value={texts[q.id] ?? ""}
+                placeholder={ANSWER_VOICE_COPY.placeholder}
+                // While a note is on its way the box shows the words so far after the answer, and waits for them
+                value={heard ? withSpoken(texts[q.id] ?? "", heard) : (texts[q.id] ?? "")}
+                readOnly={speaking}
                 onChange={(e) => save(q, e.target.value)}
                 onKeyDown={(e) => {
                   // An IME's Enter picks a word; it never moves on
                   if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    setStep(step + 1);
+                    go(step + 1);
                   }
                 }}
               />
@@ -562,7 +644,50 @@ export function AnswerView({
                 requestAnimationFrame(() => plus.current?.focus());
               }}
             />
+            {/* The mic after the "+" (C-PROMPT.anatomy/2): pressed while a note is on its way, where it stops it */}
+            <button
+              type="button"
+              className={`ans-mic${speaking ? " stop" : ""}${blocked ? " blk" : ""}`}
+              aria-pressed={speaking}
+              aria-busy={voiceState.status === "asking" || voiceState.status === "sending" ? true : undefined}
+              aria-label={micLabel}
+              title={micLabel}
+              onClick={() => (speaking ? voice.stop() : void voice.start())}
+            >
+              {blocked ? <IconMicOff /> : <IconMic />}
+            </button>
+            <span className="ans-vline" role="status">
+              {voiceState.status === "recording" ? VOICE_LISTENING : ""}
+            </span>
+            {/* Share's voice lines (C-PROMPT.voice): both regions stay mounted, so a line that appears in them is
+                announced (WCAG 4.1.3); in the tool row, so an empty one adds no space to the sheet */}
+            <div className="ans-vlive" role="status">
+              {voiceState.status === "paused" ? <p className="ans-vnote">{voiceState.banner}</p> : null}
+            </div>
+            <div className="ans-vlive" role="alert">
+              {failedVoice === "paused" ? (
+                <p className="ans-vnote">{ANSWER_VOICE_COPY.paused}</p>
+              ) : failedVoice === "sign_in" ? (
+                <p className="ans-vnote">
+                  <a
+                    href={`/sign-in?next=${encodeURIComponent(`/ideas/${encodeURIComponent(ideaId)}/answer`)}`}
+                  >
+                    {ANSWER_VOICE_COPY.signInAgain}
+                  </a>
+                </p>
+              ) : null}
+            </div>
           </div>
+          {blocked ? (
+            <div className="ans-blk" role="alert">
+              <IconMicOff />
+              <div>
+                <p className="ans-blk-t">{blocked.title}</p>
+                <p>{blocked.body}</p>
+              </div>
+            </div>
+          ) : null}
+          {voiceNotice ? <p className="ans-vnote">{voiceNotice}</p> : null}
           <AnswerFileRows
             rows={files.rows[q.id] ?? []}
             limitMb={files.limitMb}
@@ -579,10 +704,10 @@ export function AnswerView({
             </FieldMsg>
           ) : null}
           <Dock label="Move between questions">
-            <Button variant="text" disabled={step === 0} onClick={() => setStep(step - 1)}>
+            <Button variant="text" disabled={step === 0} onClick={() => go(step - 1)}>
               Back
             </Button>
-            <Button variant="primary" onClick={() => setStep(step + 1)}>
+            <Button variant="primary" onClick={() => go(step + 1)}>
               {isAnswered(texts[q.id], files.rows[q.id]) ? "Next" : "Skip for now"}
             </Button>
           </Dock>

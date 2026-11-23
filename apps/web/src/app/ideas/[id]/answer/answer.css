@@ -121,6 +121,73 @@
   gap: 8px;
   margin-left: -8px; /* the icon in line with the box's edge, as in S-08's box */
 }
+/* The mic after the "+" (C-PROMPT.voice, BLD-B276): the tool row's icon button, as lane D's "+" and Share's mic
+   draw it (a 44px round target, --ink2 at rest, the row's hover fill, the 2px blue focus ring); blue with white while
+   a note is on its way, the warning colours when the microphone is blocked. Tokens only */
+.ans-mic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-round);
+  background: transparent;
+  color: var(--ink2);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.ans-mic:hover {
+  background: var(--hover-fill-strong);
+  color: var(--ink);
+}
+.ans-mic.stop {
+  background: var(--blue);
+  color: #ffffff;
+}
+.ans-mic.blk {
+  background: var(--warnW);
+  color: var(--warnT);
+}
+.ans-mic:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+/* A paused or failed note's line takes its own line under the row, in line with the box's edge */
+.ans-tools {
+  flex-wrap: wrap;
+}
+.ans-vlive:not(:empty) {
+  flex-basis: 100%;
+  padding-left: 8px;
+}
+.ans-vline,
+.ans-vnote {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--mute);
+}
+/* The microphone blocked (C-PROMPT.voice "Blocked"), as Share draws it */
+.ans-blk {
+  padding: 14px 16px;
+  border-radius: var(--r-sm);
+  background: var(--warnW);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--warnT);
+}
+.ans-blk p {
+  margin: 0;
+}
+.ans-blk-t {
+  font-weight: 500;
+}
 /* An answer's files (C-FILE.row), under its tool row */
 .ans-files .flist {
   margin: 0;

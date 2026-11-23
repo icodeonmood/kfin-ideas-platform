@@ -242,6 +242,74 @@ def voice_stream_status(stream_id: str, idea_uuid: str, by: str) -> JSONResponse
     return _stream_call(drafts.status, stream_id, idea_uuid=idea_uuid, by_code=by)
 
 
+# ---- S-R3's "Say your answer" (BLD-B276): lane C's stream for an answer to the review desk. The worker checks, on
+# every request, that `user_id` is a sharer of the question's idea who may answer it now and that `by` is their own
+# code (`desk.answer_voice._check`); no English copy is made. The same token and error mapping as lane C's. ----
+
+
+@app.post("/internal/answer-voice-streams", dependencies=[Depends(require_token)])
+def answer_voice_stream_start(body: dict[str, Any]) -> JSONResponse:
+    """Open a stream for the person's answer: `{question_id, user_id, by}`."""
+    from desk import answer_voice
+
+    resp = _stream_call(
+        answer_voice.start_for_answer,
+        str(body.get("question_id", "")),
+        user_id=str(body.get("user_id", "")),
+        by_code=str(body.get("by", "")),
+    )
+    if resp.status_code == 200:
+        resp.status_code = 201
+    return resp
+
+
+@app.post("/internal/answer-voice-streams/{stream_id}/chunk", dependencies=[Depends(require_token)])
+async def answer_voice_stream_chunk(
+    stream_id: str, question_id: str, user_id: str, by: str, seq: int, request: Request
+) -> JSONResponse:
+    """About a second of 16 kHz mono 16-bit PCM, relayed as lane C's chunk route relays it and never kept."""
+    from starlette.concurrency import run_in_threadpool
+
+    from desk import answer_voice
+    from speech import drafts
+
+    data = b""
+    async for part in request.stream():
+        data += part
+        if len(data) > drafts.MAX_CHUNK_BYTES:
+            return JSONResponse({"error": "chunk_too_large"}, status_code=413)
+    return await run_in_threadpool(
+        _stream_call,
+        answer_voice.chunk_for_answer,
+        stream_id,
+        question_id,
+        user_id=user_id,
+        by_code=by,
+        seq=seq,
+        data=data,
+    )
+
+
+@app.post("/internal/answer-voice-streams/{stream_id}/end", dependencies=[Depends(require_token)])
+def answer_voice_stream_end(stream_id: str, body: dict[str, Any]) -> JSONResponse:
+    from desk import answer_voice
+
+    return _stream_call(
+        answer_voice.end_for_answer,
+        stream_id,
+        str(body.get("question_id", "")),
+        user_id=str(body.get("user_id", "")),
+        by_code=str(body.get("by", "")),
+    )
+
+
+@app.get("/internal/answer-voice-streams/{stream_id}", dependencies=[Depends(require_token)])
+def answer_voice_stream_status(stream_id: str, question_id: str, user_id: str, by: str) -> JSONResponse:
+    from desk import answer_voice
+
+    return _stream_call(answer_voice.status_for_answer, stream_id, question_id, user_id=user_id, by_code=by)
+
+
 @app.get("/internal/voice-config", dependencies=[Depends(require_token)])
 def voice_config() -> JSONResponse:
     """What the screen shows before recording, and what the browser sends (BLD-C116)."""
