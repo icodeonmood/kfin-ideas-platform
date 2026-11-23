@@ -804,6 +804,9 @@ describe("S-06B phone (PhoneEdit, S-06B.rules/5)", () => {
     expect(edit).toContain(".ck .bmsg.ok,\n.ed-dock .bmsg.ok {");
     expect(edit).toContain(".ed .bmsg .tb,\n.ed-dock .bmsg .tb {");
     expect(edit).not.toMatch(/\.ed-phone \{\s*padding-bottom/);
+    // The saved line's words wrap beside its tick, never under it (lane D's QA, 360 px)
+    expect(edit).toMatch(/\.ed-live > \.bmsg\.ok \{\s*flex-wrap: nowrap;\s*align-items: flex-start;/);
+    expect(edit).toMatch(/\.ed-live > \.bmsg\.ok > svg \{\s*flex: none;/);
   });
 });
 
