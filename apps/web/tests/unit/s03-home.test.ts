@@ -1419,16 +1419,18 @@ describe("S-03 C-PROMPT.voice: the round voice button in Home's empty box (WF-02
   });
 
   it("BLD-C232 (review nit 3): when the tap cannot make a draft, its error is said once and no voice-off line goes over it", async () => {
+    // A refusal, not a busy server: the client sends a 503 again after 0.4, 1.2 and 3 s, so its error would come
+    // after this test reads the page.
     const routes = baseRoutes({
       "/api/drafts": () => ({
-        status: 503,
-        body: { error: { code: "unavailable", message: "Not available right now." } },
+        status: 403,
+        body: { error: { code: "forbidden", message: "Not allowed." } },
       }),
     });
     await show(routes);
     await tap("Tap to start speaking");
     await hear({ status: "failed", reason: "unavailable", text: "", spans: [] });
-    expect(host.querySelector('[role="alert"]')?.textContent?.trim()).toBeTruthy(); // the draft's own error
+    expect(host.textContent!.split("Not allowed.").length).toBe(2); // the draft's own error, said once
     expect(host.textContent).not.toContain(BANNERS["capture.voice"]);
   });
 
