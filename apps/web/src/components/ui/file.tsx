@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { IconClose } from "@/components/compose/icons";
 import { IconTick } from "@/components/shell/icons";
 
 /**
@@ -68,7 +69,8 @@ export function FileRow({
 }) {
   const ok = status === "checked" || status === "hidden";
   return (
-    <li className={`frow frow-${status}`}>
+    // `frow-msg` names a row with a message under it, so a compact list gives it its own line without :has()
+    <li className={`frow frow-${status}${message ? " frow-msg" : ""}`}>
       <div className="frow-in">
         <span className={`fbadge fb-${kind}`} aria-hidden="true">
           {fileBadge(kind)}
@@ -101,12 +103,44 @@ export function FileRow({
   );
 }
 
-/** The list of file rows; announces changes politely. */
-export function FileList({ label, children }: { label: string; children: ReactNode }) {
+/**
+ * The list of file rows. It announces changes politely, unless the screen says them in its own status line and passes
+ * `live={false}`, so nothing is said twice (the prompt box's files, BLD-C224). `compact` draws the rows as the
+ * conversation box draws its files (Messages.md `.cvfile`): small rows that wrap, 260px at most, one with a message
+ * under it on its own line (BLD-D030).
+ */
+export function FileList({
+  label,
+  live = true,
+  compact,
+  children,
+}: {
+  label: string;
+  live?: boolean;
+  compact?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <ul className="flist" aria-label={label} aria-live="polite" role="list">
+    <ul
+      className={compact ? "flist compact" : "flist"}
+      aria-label={label}
+      aria-live={live ? "polite" : undefined}
+      role="list"
+    >
       {children}
     </ul>
+  );
+}
+
+/**
+ * A compact row's Remove (C-FILE.row, BLD-D030): a 32px round button with the close icon, named "Remove {name}" by the
+ * screen's words, its hit area padded to 44px on touch (F-SPACE.targets/2).
+ */
+export function FileRemove({ label, onClick }: { label: string; onClick(): void }) {
+  return (
+    <button type="button" className="frow-x" aria-label={label} title={label} onClick={onClick}>
+      <IconClose />
+    </button>
   );
 }
 

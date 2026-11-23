@@ -26,7 +26,7 @@ import { AttachButton } from "@/components/ui/attach-button";
 import { IconClose, IconFolder, IconLink } from "@/components/compose/icons";
 import { Button } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
-import { DropArea, FileRow } from "@/components/ui/file";
+import { DropArea, FileList, FileRow } from "@/components/ui/file";
 import type { FileItem, UploadConfig } from "@/lib/contracts";
 
 import { api, type Call } from "./[id]/check/client";
@@ -205,8 +205,8 @@ function Rows({
 }) {
   return (
     <div className="cfiles">
-      {/* Lane D's FileList, drawn here without its aria-live: the status line says what changed (BLD-C224). */}
-      <ul className="flist" aria-label={BOX_FILES_COPY.rows} role="list">
+      {/* Lane D's FileList without its aria-live: the status line says what changed (BLD-C224, BLD-D030). */}
+      <FileList label={BOX_FILES_COPY.rows} live={false}>
         {items.map((p) => {
           const v = rowView(p, limitMb);
           const name = p.item?.name ?? p.name;
@@ -238,7 +238,7 @@ function Rows({
             </FileRow>
           );
         })}
-      </ul>
+      </FileList>
     </div>
   );
 }

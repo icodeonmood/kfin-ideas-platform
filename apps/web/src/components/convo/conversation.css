@@ -419,65 +419,13 @@
   display: inline-flex;
   margin: 6px 0 0 -8px; /* the board's `.cvtool`: the icon in line with the words */
 }
-/* The files in the box (Messages.md, `.cvfile`): compact rows that wrap, one with a line under it on its own row */
+/* The files in the box (Messages.md, `.cvfile`): lane D's compact FileList and FileRemove (BLD-D030); only their place
+   is set here */
 .cv-files {
   grid-area: files;
   min-width: 0;
   padding-top: 10px;
 }
-.cv-files .flist {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0;
-}
-.cv-files .frow {
-  flex: 0 1 260px;
-  min-width: 0;
-}
-.cv-files .frow:has(.fmsg) {
-  flex-basis: 100%;
-}
-.cv-files .frow-in {
-  gap: 10px;
-  padding: 8px 8px 8px 10px;
-}
-.cv-files .fbadge {
-  width: 36px;
-  height: 30px;
-  font-size: 11px;
-}
-.cv-files .frow-n {
-  overflow: hidden;
-  font-size: 14px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  overflow-wrap: normal;
-}
-.cv-files .frow-s {
-  font-size: 12.5px;
-}
-.cv-files .frow-a {
-  align-items: center;
-  gap: 4px;
-}
-/* "Remove {name}": a 32px round target (F-SPACE.targets/1, 24px at least), padded to 44px on touch below */
-.cv-file-x {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: var(--r-round);
-  background: transparent;
-  color: var(--mute2);
-  cursor: pointer;
-}
-.cv-file-x:hover {
-  background: var(--hover-fill-strong);
-  color: var(--ink);
-}
-.cv-file-x:focus-visible,
 .cv-pick-folder:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
@@ -533,18 +481,6 @@
   display: grid;
   color: var(--mute);
   pointer-events: none;
-}
-/* On touch the remove button's hit area is padded to 44px (F-SPACE.targets/2, lane C's and lane D's pattern): an
- * empty layer 6px above and below its 32px circle, 8px to its right (the row's own padding) and 4px to its left. */
-@media (pointer: coarse) {
-  .cv-file-x {
-    position: relative;
-  }
-  .cv-file-x::after {
-    content: "";
-    position: absolute;
-    inset: -6px -8px -6px -4px;
-  }
 }
 
 .cv-closed {
@@ -810,12 +746,6 @@
   }
   .cv-files {
     padding: 0 0 8px;
-  }
-  .cv-files .frow-in {
-    flex-wrap: nowrap; /* one line in the dock: the name gives way first */
-  }
-  .cv-files .frow-a {
-    width: auto;
   }
   .cv-pick {
     margin: 0 0 8px;

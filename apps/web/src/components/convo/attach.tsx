@@ -34,10 +34,10 @@ import {
   type RowView,
 } from "@/app/share/[id]/check/model";
 import { BOX_FILES_COPY } from "@/app/share/box-files";
-import { IconClose, IconFolder, IconLink } from "@/components/compose/icons";
+import { IconFolder, IconLink } from "@/components/compose/icons";
 import { Button } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
-import { DropArea, FileList, FileRow } from "@/components/ui/file";
+import { DropArea, FileList, FileRemove, FileRow } from "@/components/ui/file";
 import type { FileItem, UploadConfig } from "@/lib/contracts";
 
 import { S08_COPY } from "./compose";
@@ -294,7 +294,7 @@ export function ConvoFileRows({
   if (!rows.length) return null;
   return (
     <div className="cv-files">
-      <FileList label={S08_COPY.files}>
+      <FileList label={S08_COPY.files} compact>
         {rows.map((p) => {
           const v = convoRowView(p, limitMb);
           const name = p.item?.name ?? p.name;
@@ -314,15 +314,7 @@ export function ConvoFileRows({
                   {CHECK_COPY.retry}
                 </Button>
               ) : null}
-              <button
-                type="button"
-                className="cv-file-x"
-                aria-label={BOX_FILES_COPY.removeOf(name)}
-                title={BOX_FILES_COPY.removeOf(name)}
-                onClick={() => onRemove(p.key)}
-              >
-                <IconClose />
-              </button>
+              <FileRemove label={BOX_FILES_COPY.removeOf(name)} onClick={() => onRemove(p.key)} />
             </FileRow>
           );
         })}

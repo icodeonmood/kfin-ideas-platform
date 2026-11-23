@@ -12,7 +12,7 @@ import { Deck } from "@/components/ui/deck";
 import { Dropdown } from "@/components/ui/dropdown";
 import { Empty } from "@/components/ui/empty";
 import { Field } from "@/components/ui/field";
-import { DropArea, FileList, FileRow } from "@/components/ui/file";
+import { DropArea, FileList, FileRemove, FileRow } from "@/components/ui/file";
 import { OnesEmpty, OnesFan, OnesNext, OnesPost } from "@/components/ui/ones-fan";
 import { QuestionBox } from "@/components/ui/question-box";
 import { SearchBar } from "@/components/ui/search";
@@ -424,6 +424,31 @@ export function KitDemo() {
             <button type="button" className="tb">
               Hide it for me
             </button>
+          </FileRow>
+        </FileList>
+        {/* BLD-D030: the conversation box's compact rows (Messages.md `.cvfile`): one waiting while the check is off,
+            with no spinner (BLD-C237), and one with an error on its own line */}
+        <FileList label="Files in your message" compact>
+          <FileRow name="branch-notes.md" size="2 KB" status="checked" statusText="Checked">
+            <FileRemove label="Remove branch-notes.md" onClick={() => undefined} />
+          </FileRow>
+          <FileRow
+            name="call-log-week-47.pdf"
+            size="3.4 MB"
+            status="checking"
+            statusText="Waiting for the personal details check. It runs when the assistant is back."
+            waiting
+          >
+            <FileRemove label="Remove call-log-week-47.pdf" onClick={() => undefined} />
+          </FileRow>
+          <FileRow
+            name="rejection-sms-screens.png"
+            size="16 MB"
+            status="too-big"
+            statusText=""
+            message={{ kind: "error", text: "Too big. Files can be up to 15 MB." }}
+          >
+            <FileRemove label="Remove rejection-sms-screens.png" onClick={() => undefined} />
           </FileRow>
         </FileList>
         <DropArea

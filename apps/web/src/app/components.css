@@ -1457,6 +1457,89 @@ textarea:is(.fld, .textarea) {
   gap: 12px;
 }
 
+/* Compact rows (BLD-D030; Messages.md `.cvfile`): the conversation box's files as small rows that wrap, 260px at most.
+   A row with a message under it takes its own line (`frow-msg`, named by FileRow: Firefox 111 has no :has()). Moved
+   here from conversation.css, as drawn there since BLD-F058 */
+.flist.compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+
+.flist.compact > .frow {
+  flex: 0 1 260px;
+  min-width: 0;
+}
+
+.flist.compact > .frow-msg {
+  flex-basis: 100%;
+}
+
+.flist.compact .frow-in {
+  gap: 10px;
+  padding: 8px 8px 8px 10px;
+}
+
+.flist.compact .fbadge {
+  width: 36px;
+  height: 30px;
+  font-size: 11px;
+}
+
+.flist.compact .frow-n {
+  overflow: hidden;
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+
+.flist.compact .frow-s {
+  font-size: 12.5px;
+}
+
+.flist.compact .frow-a {
+  align-items: center;
+  gap: 4px;
+}
+
+/* A compact row's Remove (FileRemove): a 32px round target (F-SPACE.targets/1, 24px at least), padded to 44px on touch
+   by an empty layer 6px above and below, 8px to its right (the row's own padding) and 4px to its left (the gap) */
+.frow-x {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-round);
+  background: transparent;
+  color: var(--mute2);
+  cursor: pointer;
+}
+
+.frow-x:hover {
+  background: var(--hover-fill-strong);
+  color: var(--ink);
+}
+
+.frow-x:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .frow-x {
+    position: relative;
+  }
+
+  .frow-x::after {
+    content: "";
+    position: absolute;
+    inset: -6px -8px -6px -4px;
+  }
+}
+
 .fdrop {
   display: grid;
   gap: 6px;
@@ -1496,6 +1579,15 @@ textarea:is(.fld, .textarea) {
   .frow-a {
     width: 100%;
     justify-content: flex-end;
+  }
+
+  /* A compact row keeps one line on a phone too: the name gives way first (BLD-D030, as S-08's dock drew it) */
+  .flist.compact .frow-in {
+    flex-wrap: nowrap;
+  }
+
+  .flist.compact .frow-a {
+    width: auto;
   }
 }
 
