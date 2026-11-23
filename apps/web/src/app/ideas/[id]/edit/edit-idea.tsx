@@ -28,6 +28,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { IconTick } from "@/components/shell/icons";
+import { Dock } from "@/components/shell/phone";
 import { Taskbar, type SaveState } from "@/components/shell/taskbar";
 import { Button, ButtonLink, buttonClass } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
@@ -709,8 +710,8 @@ export function EditIdea({
     </Link>
   );
 
-  const foot = (
-    <div className={phone ? "dock ed-dock" : "ed-foot"}>
+  const footContents = (
+    <>
       {confirmCancel ? (
         <p className="bmsg warn ed-confirm" role="alert" ref={confirmRef}>
           <strong>{E.cancelConfirm.lead}.</strong> {E.cancelConfirm.line}
@@ -725,7 +726,15 @@ export function EditIdea({
           {E.save}
         </Button>
       </div>
-    </div>
+    </>
+  );
+  // On a phone the foot is the shared dock (C-PHONE-TABS.dock, BLD-D028; BLD-C241): fixed at the foot through the
+  // shell's slot, with the page's room under it from its own height (`--dock-h`). Its contents leave the page there,
+  // so they are styled by their own classes and `.ed-dock`, never under `.ck` or `.ed`.
+  const foot = phone ? (
+    <Dock className="ed-dock">{footContents}</Dock>
+  ) : (
+    <div className="ed-foot">{footContents}</div>
   );
 
   const sheet = (

@@ -218,12 +218,14 @@
   margin-left: auto;
 }
 
-.ck .bmsg.ok {
+.ck .bmsg.ok,
+.ed-dock .bmsg.ok {
   background: var(--okW);
   color: var(--okT);
 }
 
-.ed .bmsg .tb {
+.ed .bmsg .tb,
+.ed-dock .bmsg .tb {
   min-height: 24px;
   margin-left: auto;
   color: inherit;
@@ -291,10 +293,8 @@
 }
 
 @media (max-width: 640px) {
-  /* The dock is fixed at the foot: the page keeps room for it. */
-  .ed-phone {
-    padding-bottom: 200px;
-  }
+  /* The dock is the shared one (BLD-C241): the shell keeps the page's room under it from its own height
+     (`--dock-h`, shell.css), so the page sets none of its own. */
 
   /* The dock reads top to bottom here: the declaration, then Cancel and Save changes (PhoneEdit). */
   .ed-dock {

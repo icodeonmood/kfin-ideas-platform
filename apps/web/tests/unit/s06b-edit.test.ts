@@ -6,6 +6,9 @@
  * the review desk hid), the sorting held until Save, the fix kept on the page until Save, files on the shared idea,
  * a closed window at load, and the phone. Synthetic people only: the pack's fictional cast.
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -775,6 +778,32 @@ describe("S-06B phone (PhoneEdit, S-06B.rules/5)", () => {
       "Editing closes when the review desk opens it. After that, you can add a note for them.",
     );
     expect(document.body.textContent).not.toContain("By Friday 20 November");
+  });
+
+  it("BLD-C241, C-PHONE-TABS.dock: on a phone the foot is the shared dock, moved into the shell's slot, and its lines keep their look", async () => {
+    phoneScreen();
+    // The shell's slot for a phone's dock, as ShellFrame draws it (BLD-D028)
+    const main = document.createElement("main");
+    main.id = "main";
+    const slot = document.createElement("div");
+    slot.className = "dock-root";
+    main.append(slot);
+    document.body.append(main);
+    await mount(base());
+    const dock = slot.querySelector(".dock.ed-dock");
+    expect(dock?.getAttribute("role")).toBe("group"); // the shared Dock, not a page's own div
+    expect(dock?.querySelector("button") && nameOf(dock.querySelector("button")!)).toBe("Save changes");
+    expect(host.querySelector(".dock")).toBeNull(); // no longer inside the page
+    // Out of the page, its lines are styled by the dock's own class; the page keeps no room of its own for it
+    const dir = path.resolve(__dirname, "../../src/app");
+    const check = readFileSync(path.join(dir, "share/[id]/check/check.css"), "utf8");
+    const edit = readFileSync(path.join(dir, "ideas/[id]/edit/edit.css"), "utf8");
+    for (const kind of ["", ".bad", ".warn", ".info"]) {
+      expect(check).toContain(`.ck .bmsg${kind},\n.ed-dock .bmsg${kind} {`);
+    }
+    expect(edit).toContain(".ck .bmsg.ok,\n.ed-dock .bmsg.ok {");
+    expect(edit).toContain(".ed .bmsg .tb,\n.ed-dock .bmsg .tb {");
+    expect(edit).not.toMatch(/\.ed-phone \{\s*padding-bottom/);
   });
 });
 

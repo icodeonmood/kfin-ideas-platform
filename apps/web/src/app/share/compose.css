@@ -1711,9 +1711,10 @@
     color: var(--mute);
   }
 
-  /* the dock (~98 px), then the sheet's peek (~80 px), then the box */
+  /* the dock, then the sheet's peek (~80 px), then the box. The dock's own height (`--dock-h`, BLD-D028) when it
+     has measured itself, else the ~98 px it is drawn at (BLD-C241) */
   .cz .cdock {
-    bottom: calc(var(--ctl-full) + 42px + 80px);
+    bottom: calc(var(--dock-h, calc(var(--ctl-full) + 42px)) + 80px);
   }
 
   .cz .rows {
@@ -1728,7 +1729,7 @@
     position: fixed;
     left: 0;
     right: 0;
-    bottom: calc(var(--ctl-full) + 42px);
+    bottom: var(--dock-h, calc(var(--ctl-full) + 42px));
     z-index: var(--z-sheet);
     border-radius: var(--r-lg) var(--r-lg) 0 0;
     background: var(--glass-dock);
