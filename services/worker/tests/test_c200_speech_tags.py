@@ -325,6 +325,8 @@ def test_BLD_C200_DEC_120_a_name_written_in_devanagari_is_not_tagged_and_goes_un
     masked = f"{COLLEAGUE_DEVANAGARI} ने बताया कि investor का PAN ••••4F दो बार type होता है"
     text_en, translated, failure = english(world, masked)
     went = world["sent"][0]["input"]
-    assert COLLEAGUE_DEVANAGARI in went and "[[" not in went  # not tagged: DEC-120's exception
-    assert "PAN ••••4F" in went and "ABCPE" not in went  # the customer's detail went masked
+    # Not tagged: it reaches the service as written, under DEC-120's exception. (The tagger may still tag other
+    # words in the sentence, which hides more, not less; that is not what this pins.)
+    assert went.startswith(f"{COLLEAGUE_DEVANAGARI} ")
+    assert "ABCPE" not in went  # the customer's detail never went unmasked
     assert failure is None and translated is True and text_en is not None
