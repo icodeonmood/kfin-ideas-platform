@@ -2,9 +2,13 @@
 the same transaction, as lane F's team-up and lane B's desk do, so the two kinds of lock always queue in one order
 and a team-up answer never deadlocks against a draft message, an edit, a file or the check.
 
-A spy records, in order, each call of `hide.core.lock` as ("hide", uuid) and each statement with FOR UPDATE as
-("row", sql). Each path is one transaction: its first lock is hide's on its idea, before its first row lock, and
-hide's own call comes after the row lock (re-entrant, held already), so the path did reach hide. The assistant is
+A spy records, in order, each call of `hide.core.lock` as ("hide", uuid) and each statement with a row-lock clause
+(FOR UPDATE, FOR NO KEY UPDATE, FOR SHARE, FOR KEY SHARE) as ("row", sql). Each path is one transaction: its first
+lock is hide's on its idea, before its first row lock, and hide's own call comes after the row lock (re-entrant, held
+already), so the path did reach hide. What the spy does not see (review nits, kept as limits): a plain UPDATE or DELETE
+locks the rows it writes, and is not recorded; and only statements through the test connection's own `execute` are
+seen (an instance patch), so a path that opened its own cursor or connection would pass unseen. Lane C's paths here
+use `conn.execute` only. The assistant is
 off, so no model is called; the file store, the virus scanner, the sandbox and the file gatekeeper are stood in for.
 Synthetic people and values only (non-negotiable 11). Everything made is removed afterwards except `audit_log`,
 whose trigger refuses DELETE."""
@@ -12,6 +16,7 @@ whose trigger refuses DELETE."""
 from __future__ import annotations
 
 import datetime as dt
+import re
 import secrets
 from collections.abc import Iterator
 from pathlib import Path
@@ -39,6 +44,8 @@ SEED = Path(__file__).resolve().parents[3] / "seed" / "company-repo"
 LAPTOP = Device("laptop", "laptop-c228-0001")
 WORDS = "Investors call the branch about 40 times a day because the SMS only says R07."
 Calls = list[tuple[str, str]]
+# Every row-lock clause Postgres has, not FOR UPDATE alone (review nit after r4)
+ROW_LOCK = re.compile(r"\bFOR\s+(?:NO\s+KEY\s+UPDATE|UPDATE|KEY\s+SHARE|SHARE)\b", re.IGNORECASE)
 
 
 def _pan() -> str:
@@ -71,7 +78,7 @@ def db(db: Conn, monkeypatch: pytest.MonkeyPatch) -> Iterator[Conn]:
 @pytest.fixture
 def locks(db: Conn, monkeypatch: pytest.MonkeyPatch) -> Calls:
     """Every lock asked for on `db`, in order: ("hide", uuid) for each `hide.core.lock` (lane C's callers and hide's
-    own entry points reach it through the module), ("row", sql) for each statement with FOR UPDATE."""
+    own entry points reach it through the module), ("row", sql) for each statement with a row-lock clause."""
     import hide.core
 
     calls: Calls = []
@@ -83,7 +90,7 @@ def locks(db: Conn, monkeypatch: pytest.MonkeyPatch) -> Calls:
 
     def execute(query: Any, params: Any = None, **kw: Any) -> Any:
         text = query if isinstance(query, str) else str(query)
-        if "FOR UPDATE" in text.upper():
+        if ROW_LOCK.search(text):
             calls.append(("row", " ".join(text.split())[:80]))
         return real_execute(query, params, **kw)
 
@@ -147,6 +154,19 @@ def test_l_hide_bld_c228_l_draft_add_and_edit_message_take_hides_lock_before_the
     locks.clear()
     store.edit_message(db, owner, draft_id, mid, LAPTOP, text=f"{WORDS} Each call takes 5 to 10 minutes.")
     _hide_first(list(locks), draft_id)
+
+
+def test_l_hide_bld_c228_l_draft_create_with_words_takes_hides_lock_on_the_new_draft_first(
+    db: Conn, cast: dict[str, Any], locks: Calls
+) -> None:
+    """A-API.drafts `POST /drafts` with the first words (review nit after r4: the create path was not asserted):
+    hide's lock on the new draft is the first lock, before the draft's row is written, and hide is reached again for
+    the first message. Its rows are new, so there is no row lock to order against, only the first lock."""
+    draft_id, _ = store.create(db, cast["owner"], LAPTOP, text=WORDS)
+    calls = list(locks)
+    assert calls and calls[0] == ("hide", draft_id), calls
+    assert calls.count(("hide", draft_id)) >= 2, calls  # hide itself, for the first message
+    assert all(c[0] == "hide" and c[1] == draft_id for c in calls if c[0] == "hide"), calls
 
 
 def test_l_hide_bld_c228_l_draft_pins_a_parts_save_and_its_forget_take_hides_lock_before_the_drafts_row(
