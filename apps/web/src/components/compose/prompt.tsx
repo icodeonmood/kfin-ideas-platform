@@ -197,18 +197,25 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
         ? PROMPT_COPY.sayInstead
         : PROMPT_COPY.speakInstead;
   const roundIsMic = Boolean(voice) && micFirst && !has && !recording && !blocked;
+  // While the words are sending the small mic does nothing, and says so as Send does (lane D, BLD-C232).
+  const micInert = Boolean(sending) && !recording;
   const canSend = has && !recording && !sending;
   const englishLines = english ? (typeof english === "string" ? [english] : english) : [];
 
   const mic = voice ? (
     <button
       type="button"
-      className={`mic2${recording ? " stop" : ""}${blocked ? " blk" : ""}${roundIsMic ? " hid" : ""}`}
+      className={`mic2${recording ? " stop" : ""}${blocked ? " blk" : ""}${roundIsMic ? " hid" : ""}${micInert ? " dim" : ""}`}
       aria-pressed={recording}
       aria-busy={status === "asking" || status === "sending" ? true : undefined}
+      aria-disabled={micInert ? true : undefined}
       aria-label={micLabel}
       title={micLabel}
-      onClick={() => (recording ? voice.stop() : voice.start())}
+      onClick={() => {
+        if (micInert) return;
+        if (recording) voice.stop();
+        else voice.start();
+      }}
     >
       {blocked ? <IconMicOff /> : <IconMic />}
     </button>

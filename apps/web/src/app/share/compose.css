@@ -259,6 +259,14 @@
   display: none;
 }
 
+/* While the words send, the small mic does nothing and looks it, as Send's dim does (BLD-C232, lane D). */
+.cz .mic2.dim,
+.cz .mic2.dim:hover {
+  background: transparent;
+  color: #6c6c70;
+  cursor: default;
+}
+
 .cz .sendw {
   position: relative;
   display: inline-flex;
