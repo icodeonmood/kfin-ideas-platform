@@ -131,10 +131,12 @@ def revise_worth(
         worth_id = int(row["id"])
         masked = None
         if note is not None and note.strip():
-            masked, _ = adapters.hide(conn, str(idea["id"]), note.strip(), by=user_id)
+            masked, checked = adapters.hide_checked(conn, str(idea["id"]), note.strip(), by=user_id)
+            # `gatekeeper_done_at` only when the gatekeeper's check is complete; else desk.text_recheck asks (BLD-B278)
             conn.execute(
-                "UPDATE idea_worth SET note_encrypted = %s WHERE id = %s",
-                (seal(masked, "idea_worth", "note_encrypted", worth_id), worth_id),
+                "UPDATE idea_worth SET note_encrypted = %s, gatekeeper_done_at = CASE WHEN %s THEN now() END "
+                "WHERE id = %s",
+                (seal(masked, "idea_worth", "note_encrypted", worth_id), checked, worth_id),
             )
         # recategorise (L-WORTH/2): the idea itself takes the new kind and area; the audit keeps the old ones
         before: dict[str, Any] = {}

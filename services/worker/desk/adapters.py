@@ -25,7 +25,7 @@ from typing import Any
 
 from core.db import Conn
 from core.logging import get_logger
-from hide import Hidden, forget, hide_message, hide_text, sealed_key
+from hide import Hidden, forget, hide_message, hide_text, hide_text_result, sealed_key
 from hide.core import lock as hide_lock
 from hide.core import own_words
 
@@ -113,6 +113,15 @@ def hide(
     sharer's answer is `source="answer"` with its row id, so its details keep their ids across autosaves and the
     sharer's own words are sealed for them alone (BLD-B246)."""
     return hide_text(conn, idea_uuid, text, by=by, source=source, source_id=source_id)
+
+
+def hide_checked(conn: Conn, idea_uuid: str, text: str, *, by: str) -> tuple[str, bool]:
+    """`hide` for the review desk's own words that others read (a sent question, a decision reason, a reversal, merge
+    or worth note), with whether the gatekeeper's check of them is complete (lane C's `hide_text_result`,
+    `Hidden.gatekeeper_checked`; BLD-C231). The writer marks the row's `gatekeeper_done_at` only then: a text written
+    while the assistant was off, or while the gateway failed, waits for `desk.text_recheck` (BLD-B278)."""
+    done = hide_text_result(conn, idea_uuid, text, by=by, source="desk")
+    return done.masked, done.gatekeeper_checked
 
 
 def hide_queued(conn: Conn, idea_uuid: str, text: str, *, by: str, question_id: str) -> str:
