@@ -1013,10 +1013,28 @@ def _sql_log(db: Conn, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]
     return log
 
 
+_GATED = "-- the gatekeeper was asked (BLD-F100)"
+
+
+def _gate_marked(log: list[tuple[str, Any]], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mark in `log` where lane C's gatekeeper ask ends (`adapters.gate`, BLD-F100). The ask runs before the write's
+    transaction, in the gateway's own short one, and writes there (`llm_calls`); the write's locks come after it."""
+    real = adapters.gate
+
+    def gate(conn: Conn, idea_uuid: str, text: str) -> Any:
+        out = real(conn, idea_uuid, text)
+        log.append((_GATED, None))
+        return out
+
+    monkeypatch.setattr(adapters, "gate", gate)
+
+
 def _locks_before_anything_else(log: list[tuple[str, Any]]) -> list[str]:
-    """The ideas `lock_ideas` locked, in the order it locked them, before the first write or any other lock."""
+    """The ideas `lock_ideas` locked, in the order it locked them, before the first write or any other lock. Read
+    from the end of the gatekeeper's ask when there was one (`_gate_marked`): it runs before the transaction."""
+    marks = [i for i, (sql, _) in enumerate(log) if sql == _GATED]
     out: list[str] = []
-    for sql, params in log:
+    for sql, params in log[marks[-1] + 1 :] if marks else log:
         if sql == _LOCK_IDEA:
             out.append(str(params[0]))
         elif "FOR UPDATE" in sql or sql.split(None, 1)[0].upper() in _WRITES:
@@ -1038,9 +1056,11 @@ def test_BLD_F027_answer_send_with_a_draft_and_ask_lock_every_idea_first_in_id_o
     kept = f.draft(db, cast["kavya"])
     f.similar(db, kept, cast["lead"])
     log = _sql_log(db, monkeypatch)
+    _gate_marked(log, monkeypatch)
     sent = requests.send(db, cast["lead"]["idea_id"], cast["kavya"]["id"],
                          {"note": NOTE, "brought_idea_ids": [cast["mine"]["idea_id"]],
                           "draft_id": str(kept["id"])})  # fmt: skip
+    assert (_GATED, None) in log  # the note went to the gatekeeper before the transaction (BLD-F100)
     locked = _locks_before_anything_else(log)
     assert locked == sorted(locked) and set(locked) == {lead, mine, str(kept["id"])}
     # POST /team-up/:id/answer: the lead's idea and every idea brought, then the request row
@@ -1053,6 +1073,7 @@ def test_BLD_F027_answer_send_with_a_draft_and_ask_lock_every_idea_first_in_id_o
     asking = f.draft(db, pradeep)
     log.clear()
     drafts.ask(db, str(asking["id"]), pradeep["id"], {"other_idea_id": cast["lead"]["idea_id"], "note": NOTE})
+    assert (_GATED, None) in log  # the ask, likewise
     locked = _locks_before_anything_else(log)
     assert locked == sorted(locked) and set(locked) == {lead, str(asking["id"])}
 
