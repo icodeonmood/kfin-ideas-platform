@@ -384,12 +384,34 @@ function convoRow(page: Page, name: string) {
   return page.getByRole("list", { name: "Your files" }).getByRole("listitem").filter({ hasText: name });
 }
 
+/** The picker's link field (C-PROMPT.attach). */
+const LINK_FIELD = "Or paste a link to a page, file or idea";
+
+/** True once S-08 is laid out for a phone: the "+" before the words, as wider it comes after (BLD-F078). */
+async function plusFirst(page: Page): Promise<boolean> {
+  return page.getByRole("textbox", { name: "Message the crew" }).evaluate((words) => {
+    const plus = document.querySelector(".cv-attach");
+    if (!plus) return false;
+    return (words.compareDocumentPosition(plus) & Node.DOCUMENT_POSITION_PRECEDING) !== 0;
+  });
+}
+
+/**
+ * Crosses 640px to a phone (390) or the desk (1440) and waits until S-08 has drawn the other copy of the
+ * "+", so a focus check reads the new page, not the old one still on screen (BLD-F098).
+ */
+async function crossTo(page: Page, width: 390 | 1440): Promise<void> {
+  const phone = width === 390;
+  await page.setViewportSize(phone ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  await expect.poll(() => plusFirst(page), { message: `S-08 is laid out for ${width}px` }).toBe(phone);
+}
+
 step(
   "J-TEAMUP/6b",
   "S-08",
-  'Rekha\'s "+" in the conversation: a checked file and a link go with her message, a file with a customer detail stays out, and the crew reads the message and opens the checked file',
+  'Rekha\'s "+" in the conversation: the picker and the "+" keep focus across 640px, a checked file and a link go with her message, a file with a customer detail stays out, and the crew reads the message and opens the checked file',
   {
-    needs: ["S-08", "C-PROMPT.attach", "C-FILE", "L-CONVO", "BLD-F095"],
+    needs: ["S-08", "C-PROMPT.attach", "C-FILE", "L-CONVO", "BLD-F095", "BLD-F098", "BLD-F102"],
     changes: ["R1"],
     after: ["J-TEAMUP/6"],
   },
@@ -417,16 +439,34 @@ step(
       await expect(picker.getByRole("button", { name: label, exact: true })).toBeVisible();
     }
     await expectNoSeriousAxeIssues(page);
-    const link = picker.getByRole("textbox", { name: "Or paste a link to a page, file or idea" });
-    await link.focus();
+    const link = picker.getByRole("textbox", { name: LINK_FIELD });
+    const plus = page.getByRole("button", { name: PLUS });
+    // BLD-F102: a link being typed stays across 640px both ways, the picker open and its link field focused.
+    await link.fill(REASONS_LINK);
     await expect(link).toBeFocused();
+    for (const width of [390, 1440] as const) {
+      await crossTo(page, width);
+      await expect(picker).toBeVisible();
+      await expect(link).toBeFocused();
+      await expect(link).toHaveValue(REASONS_LINK);
+    }
+    // Escape closes it and focus goes to the "+", which keeps it with its ring across 640px (BLD-F098).
     await page.keyboard.press("Escape");
     await expect(picker).toHaveCount(0);
-    await expect(page.getByRole("button", { name: PLUS })).toBeFocused();
+    await expect(plus).toBeFocused();
+    for (const width of [390, 1440] as const) {
+      await crossTo(page, width);
+      await expect(plus).toBeFocused();
+      const ring = await plus.evaluate((el) => el.matches(":focus-visible"));
+      expect(ring, 'the "+" shows its focus ring').toBe(true);
+    }
 
-    // A link goes into the words as typed, never a row and never fetched (non-negotiable 8).
+    // A link goes into the words as typed, never a row and never fetched (non-negotiable 8). Escape dropped
+    // the one typed above (BLD-F102), so the field opens empty.
     const again = await openPicker(page);
-    await again.getByRole("textbox", { name: "Or paste a link to a page, file or idea" }).fill(REASONS_LINK);
+    const field = again.getByRole("textbox", { name: LINK_FIELD });
+    await expect(field, "Escape dropped the link typed before").toHaveValue("");
+    await field.fill(REASONS_LINK);
     await again.getByRole("button", { name: "Add link", exact: true }).click();
     await expect(box).toHaveValue(new RegExp(`^${esc(WITH_FILE)} ${esc(REASONS_LINK)}\\s*$`));
 
