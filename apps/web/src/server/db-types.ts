@@ -386,6 +386,7 @@ export interface DecisionReversals {
   at: Generated<Timestamp>;
   by_user_id: string;
   gatekeeper_done_at: Timestamp | null;
+  gatekeeper_failures: Generated<number>;
   id: Generated<string>;
   note_encrypted: Buffer;
   return_at: Timestamp | null;
@@ -627,6 +628,7 @@ export interface IdeaDecisions {
   by_user_id: string;
   choice: string;
   gatekeeper_done_at: Timestamp | null;
+  gatekeeper_failures: Generated<number>;
   id: Generated<string>;
   idea_uuid: string;
   joined_with: string | null;
@@ -826,6 +828,7 @@ export interface IdeaWorth {
   cost_high: Numeric | null;
   cost_low: Numeric | null;
   gatekeeper_done_at: Timestamp | null;
+  gatekeeper_failures: Generated<number>;
   hours_about: boolean | null;
   hours_high: Numeric | null;
   hours_low: Numeric | null;
@@ -977,6 +980,7 @@ export interface Merges {
   by_code: string | null;
   by_user_id: string | null;
   gatekeeper_done_at: Timestamp | null;
+  gatekeeper_failures: Generated<number>;
   id: Generated<string>;
   lead_idea_uuid: string;
   merge_request_id: string | null;
@@ -1208,6 +1212,7 @@ export interface PseudonymVault {
 export interface Questions {
   created_at: Generated<Timestamp>;
   gatekeeper_done_at: Timestamp | null;
+  gatekeeper_failures: Generated<number>;
   id: Generated<string>;
   part: string;
   seq: number;

@@ -9,7 +9,8 @@ and marks each text done only after a complete check:
 
 - the writers mark a text done when the gatekeeper's check is complete as it is written;
 - while either switch is off the job waits, and nothing is asked;
-- a gateway failure is never marked done, and the run fails so the runner tries again;
+- a gateway failure is never marked done, and the run fails so the runner tries again; after five failed asks about
+  one text the re-check gives up on it, marks it done and audits `hide.recheck_gave_up` (IDs and the code only);
 - a queued question is not re-checked (Send hides it again);
 - a reviewer's "Hide this" (lane C's `_sweep`) now reaches the desk's reasons and notes too.
 
@@ -171,6 +172,15 @@ def done_of(db: Conn, ids: dict[str, str]) -> dict[str, bool]:
     return out
 
 
+def failures(db: Conn, table: str, row_id: str) -> int:
+    row = db.execute(
+        f"SELECT gatekeeper_failures AS n FROM {table} WHERE id::text = %s",  # noqa: S608
+        (row_id,),
+    ).fetchone()
+    assert row is not None
+    return int(row["n"])
+
+
 def mine(db: Conn, cast: dict[str, Any]) -> list[tr.Text]:
     """The re-check's queue, only this test's idea (other rows in the database are not this test's)."""
     idea = str(cast["idea"]["id"])
@@ -278,6 +288,7 @@ def test_BLD_B278_a_gateway_failure_is_never_marked_done_and_the_run_fails_for_t
         tr.run(db, {})
     assert len(gatekeeper["asked"]) == len(TEXTS)  # each text asked once; a failure goes on to the next
     assert done_of(db, ids) == dict.fromkeys(TEXTS, False)
+    assert {t: failures(db, t, ids[t]) for t in TEXTS} == dict.fromkeys(TEXTS, 1)  # one failed ask each
     assert all(name in text_of(db, table, row_id) for table, row_id in ids.items())
     gatekeeper["down"] = False
     tr.run(db, {})
@@ -305,6 +316,58 @@ def test_BLD_B278_the_gatekeeper_switched_off_makes_the_job_wait_with_nothing_ma
     with pytest.raises(JobWaits):
         tr.check_one(db, t)
     assert done_of(db, ids) == dict.fromkeys(TEXTS, False)
+    assert {t: failures(db, t, ids[t]) for t in TEXTS} == dict.fromkeys(
+        TEXTS, 0
+    )  # a wait is not a failed ask
+
+
+def test_BLD_B278_a_text_the_gateway_can_never_check_gives_up_after_five_failed_asks(
+    db: Conn, cast: dict[str, Any], gatekeeper: dict[str, Any], switches: dict[str, bool],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    """As lane C's sealed texts give up (BLD-C067): a failure that repeats on one text (here the gateway refuses the
+    decision reason every time) costs at most five asks. The fifth marks it done and audits `hide.recheck_gave_up`
+    with the table, the row id and the code only; it is never asked about again, and the run does not fail for it."""
+    name = gatekeeper["name"]
+    ids = write_all(db, cast, name)
+    switches["ai.all"] = True
+    stand_in = detect.gatekeeper_finds
+
+    def refuses_the_reason(conn: Any, text: str, scope: str) -> detect.Gate:
+        if "rang the branch four times" in text:
+            gatekeeper["asked"].append(text)
+            return detect.Gate([], "schema_invalid")
+        return stand_in(conn, text, scope)
+
+    monkeypatch.setattr(detect, "gatekeeper_finds", refuses_the_reason)
+    t = next(x for x in mine(db, cast) if x.table == "idea_decisions")
+    for n in range(1, tr.GIVE_UP_AFTER):
+        with pytest.raises(tr.RecheckFailed):
+            tr.check_one(db, t)
+        assert failures(db, "idea_decisions", ids["idea_decisions"]) == n
+        assert done_of(db, ids)["idea_decisions"] is False
+    assert tr.check_one(db, t) == 0  # the fifth failed ask: given up
+    assert done_of(db, ids)["idea_decisions"] is True
+    assert name in text_of(
+        db, "idea_decisions", ids["idea_decisions"]
+    )  # still hidden by the patterns and names only
+    gave_up = db.execute(
+        "SELECT actor, after FROM audit_log WHERE action = 'hide.recheck_gave_up' AND entity = %s ORDER BY id DESC",
+        (f"idea:{cast['idea']['id']}",),
+    ).fetchall()
+    assert [dict(r) for r in gave_up] == [
+        {
+            "actor": "system",
+            "after": {"source": "desk", "text": "idea_decisions", "source_id": ids["idea_decisions"],
+                      "code": "schema_invalid"},
+        }
+    ]  # fmt: skip
+    assert t not in mine(db, cast)  # never asked about again
+    asked = len(gatekeeper["asked"])
+    monkeypatch.setattr(tr, "unchecked", lambda conn, limit=tr.BATCH, head=tr.HEAD: mine(conn, cast)[:limit])
+    tr.run(db, {})  # the other four are checked as usual, and the run does not fail
+    assert done_of(db, ids) == dict.fromkeys(TEXTS, True)
+    assert not any("rang the branch four times" in x for x in gatekeeper["asked"][asked:])
 
 
 def test_BLD_B278_a_queued_question_is_not_rechecked(

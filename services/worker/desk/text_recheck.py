@@ -19,8 +19,11 @@ failed) keeps `gatekeeper_done_at` NULL.
 - the text is marked done only when the gatekeeper's check of it is complete (`Gate.checked`).
 
 While either switch is off the job waits (`JobWaits`, its try given back, as `hide.recheck` waits). A gateway failure
-leaves that text NULL and the run goes on with the next; the run then fails, so the runner's backoff tries again.
-Nothing is marked done after a failure.
+leaves that text NULL, counts one failed ask against it (`gatekeeper_failures`) and the run goes on with the next; the
+run then fails, so the runner's backoff tries again. Nothing is marked done after a failure, except a give-up: after
+`GIVE_UP_AFTER` failed asks about one text the re-check stops asking about it, marks it done and audits
+`hide.recheck_gave_up` with the table, the row id and the code only, as lane C's sealed texts give up (BLD-C067), so a
+text the gateway can never check costs no more model calls. The text stays hidden by the patterns and names.
 
 `sweep_value` is lane C's step 10 of `_sweep`: one value masked, as whole words in any case, in the desk's reasons and
 notes on the idea (decision reasons, reversal notes, desk merge notes with the idea on either side, the reviewer's
@@ -43,6 +46,7 @@ JOB = "desk.text_recheck"  # lane C's hide/recheck.py DESK_TEXT_RECHECK
 BATCH = 5  # texts asked about per run: about five model calls a minute, as lane C's re-checks (RECHECK_OUTSTANDING)
 WAITING = "waiting_gatekeeper"  # the job's reason code while a switch is off (lane C's recheck.WAITING)
 WAIT_S = 300
+GIVE_UP_AFTER = 5  # failed asks about one text before the re-check gives up on it (lane E, BLD-B278)
 
 
 @dataclass(frozen=True)
@@ -125,13 +129,39 @@ def _waits() -> Exception:
     return JobWaits(WAIT_S, WAITING)
 
 
+def _failed(conn: Conn, t: Text, code: str) -> bool:
+    """One failed ask about this text, counted. True when that was the last one: the text is then marked done and
+    `hide.recheck_gave_up` is audited with the table, the row id and the code only (never its words)."""
+    from hide.core import audit
+
+    with conn.transaction():
+        row = conn.execute(
+            f"UPDATE {t.table} SET gatekeeper_failures = gatekeeper_failures + 1 WHERE id::text = %s "  # noqa: S608 (fixed names)
+            "RETURNING gatekeeper_failures",
+            (t.row_id,),
+        ).fetchone()
+        if row is None or int(row["gatekeeper_failures"]) < GIVE_UP_AFTER:
+            return False
+        _done(conn, t)
+        audit(
+            conn,
+            "system",
+            "hide.recheck_gave_up",
+            t.idea_uuid,
+            {"source": "desk", "text": t.table, "source_id": t.row_id, "code": code},
+        )
+    log.info("desk.text_recheck_gave_up", idea_id=t.idea_uuid, text_code=t.table, error_code=code)
+    return True
+
+
 class RecheckFailed(Exception):
     """The gateway could not check a desk text (its texts stay waiting); the runner's backoff tries again."""
 
 
 def check_one(conn: Conn, t: Text) -> int:
     """Ask the gatekeeper about one desk text and hide what it finds in every copy of the idea. Returns how many
-    values it hid. Raises `JobWaits` while a switch is off, `RecheckFailed` when the gateway failed; the text is
+    values it hid. Raises `JobWaits` while a switch is off, `RecheckFailed` when the gateway failed (and it was not
+    this text's last try: then it gives up, `_failed`); the text is
     marked done only after a complete check."""
     import hide
     from hide import desk as hide_desk
@@ -151,7 +181,10 @@ def check_one(conn: Conn, t: Text) -> int:
     if g.switched_off or not _gatekeeper_on(conn):
         raise _waits()
     if not g.checked:
-        raise RecheckFailed(g.skipped or "gatekeeper_unavailable")
+        code = (g.skipped or "gatekeeper_unavailable")[:120]
+        if _failed(conn, t, code):
+            return 0  # given up: done and audited, never asked about again
+        raise RecheckFailed(code)
     masks = detect.mask_tokens(words)
     values = sorted(
         {
