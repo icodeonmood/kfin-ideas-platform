@@ -34,6 +34,8 @@ PAN = "ABCPE1234F"  # synthetic
 HEARD = f"{COLLEAGUE} ne bataya ki investor ka {PAN} do baar type hota hai"
 MASKED = f"{COLLEAGUE} ne bataya ki investor ka PAN ••••4F do baar type hota hai"  # hide_text's copy of HEARD
 SECOND = bytes(drafts.BYTES_PER_SECOND)
+# The same synthetic colleague's name, written in Devanagari (Finding 6).
+COLLEAGUE_DEVANAGARI = "देविका रघुनाथन"
 
 
 def english_of(text: str) -> str:
@@ -310,3 +312,19 @@ def test_BLD_C200_L_DRAFT_voice_a_vault_that_cannot_be_opened_keeps_the_words_an
     assert [b["input"] for b in world["sent"]] == [
         "[[KFIN_EMPLOYEE_1]] ne bataya ki investor ka PAN ••••4F do baar type hota hai"
     ]
+
+
+def test_BLD_C200_DEC_120_a_name_written_in_devanagari_is_not_tagged_and_goes_under_dec_120s_exception(
+    world: dict[str, Any],
+) -> None:
+    """Finding 6 (the honest edge of BLD-C200): the gateway's tagger knows names in Latin script, from `users` and
+    its name rules, so a colleague's name written in Devanagari is not recognised. It reaches the speech service as
+    written, under DEC-120's exception for names, which still holds for such names. The customer's details are
+    masked before it either way, and the leak check still runs. This pins today's behaviour so the docs say it; a
+    tagger for other scripts would be a later change."""
+    masked = f"{COLLEAGUE_DEVANAGARI} ने बताया कि investor का PAN ••••4F दो बार type होता है"
+    text_en, translated, failure = english(world, masked)
+    went = world["sent"][0]["input"]
+    assert COLLEAGUE_DEVANAGARI in went and "[[" not in went  # not tagged: DEC-120's exception
+    assert "PAN ••••4F" in went and "ABCPE" not in went  # the customer's detail went masked
+    assert failure is None and translated is True and text_en is not None
