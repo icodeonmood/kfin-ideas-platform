@@ -161,3 +161,13 @@ DEC-113 extends DEC-111 to the Ones Committee: a sharer, and the crew, never see
 |---|---|---|
 | The idea page, Reversed by the Ones Committee, the first line of the committee's card (the avatar "RM" goes too) | Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm | The Ones Committee, Tuesday 24 November, 5:40 pm |
 | The decision as sent to the sharer and the crew, the line under "Now: Not now" (the committee page's words; the idea page does not show this line today) | by Rohan Mehta, Tuesday 24 November | by the Ones Committee, Tuesday 24 November |
+
+## 13. Lines added with lane B's after-launch fixes (23 Nov, BLD-B277)
+
+Two lines the boards do not draw. The first is the review desk's page for an idea that is not there, or that this person may not open: it reads the same in both cases, so it never says an idea exists. The second is how the listen player reads an idea merged into the one under review, after each part of the lead idea. "Ravi" stands for the merged idea's sharer.
+
+| Where | Before | On screen |
+|---|---|---|
+| The reviewer's page when the idea cannot be shown, the heading | Next's own "404 This page could not be found." | We couldn’t find that idea. |
+| The same page, the line under it, with the back link "Home" above | (none) | Check the link, or go back to Home. |
+| Listen, inside a part, after the lead idea's words and answers | (the merged idea was not read) | From Ravi’s idea: (that idea's words for the part, then its answers, "Ravi answered: …") |
