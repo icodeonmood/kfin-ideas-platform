@@ -949,23 +949,66 @@ def test_A_API_files_a_row_that_cannot_be_written_leaves_no_stored_copy(
     assert db.execute("SELECT 1 FROM attachments WHERE store_key = %s", (put[0],)).fetchone() is None
 
 
+def _start_swept(db: Conn) -> None:
+    """A worker start sweep that finished, as `start_sweep` records it: the attachments sweep waits for one
+    (BLD-C242). audit_log is append-only, so the row stays for the rest of the run."""
+    db.execute(
+        "INSERT INTO audit_log (actor, action, entity, after) VALUES "
+        "('system:files', 'file.start_sweep', 'files:start_sweep', '{\"count\": 0, \"complete\": true}'::jsonb)"
+    )
+
+
 def test_L_HIDE_files_a_failed_uploads_copy_goes_after_the_retention_period(
-    db: Conn, cast: dict[str, Any]
+    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     kavya = cast["kavya"]
     att = _add(db, kavya, make.pdf(["Synthetic"]), idea_id=cast["idea"]["idea_id"])["id"]
     F.gave_up(db, att)
     key = _row(db, att)["store_key"]
+    _start_swept(db)
+    assert F.start_sweep_done(db)
     assert F.sweep_failed_copies(db) == 0 and store.exists(get_settings().s3_bucket_quarantine, key)
     db.execute(
         "UPDATE attachments SET checks = checks || jsonb_build_object('ended_at', now() - interval '25 hours') "
         "WHERE id = %s",
         (att,),
     )
+    # BLD-C242: until a worker start sweep has finished once, nothing goes, however old the copy (lane A: the start
+    # sweep brings r3's files back from these copies).
+    monkeypatch.setattr(F, "start_sweep_done", lambda _conn: False)
+    assert F.sweep_failed_copies(db) == 0 and store.exists(get_settings().s3_bucket_quarantine, key)
+    monkeypatch.undo()
     assert F.sweep_failed_copies(db) == 1
     assert not store.exists(get_settings().s3_bucket_quarantine, key)
     assert F.sweep_failed_copies(db) == 0
     assert _refused(F.retry, db, att, kavya["id"]).code == "upload_again"
+
+
+def test_BLD_C242_the_hourly_files_sweep_job_deletes_a_failed_copy_past_its_retention(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """The sweep's only caller was drafts.purge, which is retired (BLD-C074): `files.sweep` runs it every hour."""
+    from jobs import handlers  # noqa: F401 - registers the handlers
+    from jobs.runner import HANDLERS, run_one
+    from jobs.schedule import EVERY, RETIRED
+
+    assert EVERY["files.sweep"] == 60 and "files.sweep" in HANDLERS and "files.sweep" not in RETIRED
+    att = _add(db, cast["kavya"], make.pdf(["Synthetic"]), idea_id=cast["idea"]["idea_id"])["id"]
+    F.gave_up(db, att)
+    key = _row(db, att)["store_key"]
+    db.execute(
+        "UPDATE attachments SET checks = checks || jsonb_build_object('ended_at', now() - interval '25 hours') "
+        "WHERE id = %s",
+        (att,),
+    )
+    _start_swept(db)
+    db.execute("DELETE FROM jobs WHERE state = 'queued'")  # only the sweep is there to take
+    db.execute("INSERT INTO jobs (type) VALUES ('files.sweep')")
+    assert run_one(db, "test-worker")
+    assert not store.exists(get_settings().s3_bucket_quarantine, key)
+    assert _row(db, att)["checks"]["copy"] == "gone"
+    job = db.execute("SELECT state FROM jobs WHERE type = 'files.sweep' ORDER BY id DESC").fetchone()
+    assert job["state"] == "done"
 
 
 # ---- the worker's routes (A-API.files behind the internal token) ----------------------------------------------------
