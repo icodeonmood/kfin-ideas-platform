@@ -147,12 +147,28 @@ def preview(conn: Conn | None, text: str, *, idea_uuid: str | None = None) -> Hi
     return Hidden(_masked(text, found), spans, [], _counts(found))
 
 
+def gate(conn: Conn, idea_uuid: str, text: str, *, source: str = "message") -> Any:
+    """The gatekeeper's finds for `text`, asked before hide's lock is taken (L-HIDE's `hide.gate`, BLD-C234), to
+    pass to `hide_message` or `hide_text` as `gate=`. Call it with no transaction open, after checking the person
+    owns the draft. None without L-HIDE (the fallback below calls no model)."""
+    ask = landed("hide", "gate")
+    return ask(conn, idea_uuid, text, source=source) if ask is not None else None
+
+
 def hide_message(
-    conn: Conn, idea_uuid: str, text: str, *, by: str, source: str = "message", source_id: str
+    conn: Conn,
+    idea_uuid: str,
+    text: str,
+    *,
+    by: str,
+    source: str = "message",
+    source_id: str,
+    gate: Any = None,
 ) -> Hidden:
     """Mask a message (or an edit), record each detail (kind, span, mask, vault tag; never the value) and seal the
     person's own words for them alone (`idea_words_sealed`, context "<source>:<source_id>"). Running it again for
-    the same source finds every detail afresh. Inside the caller's transaction."""
+    the same source finds every detail afresh. Inside the caller's transaction. `gate`: from `gate()` above, asked
+    before the lock; hide uses it only for this exact text."""
     if source not in SEALED_SOURCES:
         raise ValueError("hide_message takes a message, answer, conversation or edit")
     hide = landed("hide", "hide_message")
@@ -164,8 +180,9 @@ def hide_message(
                 (idea_uuid, source, source_id),
             ).fetchall()
         ]
+        extra = {"gate": gate} if gate is not None else {}  # only when asked before the lock (BLD-C234)
         hidden: Hidden = hide(
-            conn, idea_uuid, text, by=by, source=source, source_id=source_id, gatekeeper=True
+            conn, idea_uuid, text, by=by, source=source, source_id=source_id, gatekeeper=True, **extra
         )
         # L-HIDE drops the details an edit took out; their values leave the vault too, once nothing in the draft
         # holds them (BLD-C038, kept with L-HIDE on main: BLD-C151).
@@ -239,13 +256,21 @@ def _drop_unreferenced(conn: Conn, idea_uuid: str, tags: list[Any]) -> None:
 
 
 def hide_text(
-    conn: Conn, idea_uuid: str, text: str, *, by: str, source: str = "edit", source_id: str | None = None
+    conn: Conn,
+    idea_uuid: str,
+    text: str,
+    *,
+    by: str,
+    source: str = "edit",
+    source_id: str | None = None,
+    gate: Any = None,
 ) -> tuple[str, int]:
-    """Any other text the person writes on the draft (a part they change by hand): (masked text, hidden count)."""
+    """Any other text the person writes on the draft (a part they change by hand): (masked text, hidden count).
+    `gate`: as for `hide_message`."""
     if source_id is None:
         found = find(text)
         return _masked(text, found), len(found)
-    done = hide_message(conn, idea_uuid, text, by=by, source=source, source_id=source_id)
+    done = hide_message(conn, idea_uuid, text, by=by, source=source, source_id=source_id, gate=gate)
     return done.masked, done.hidden_count
 
 
