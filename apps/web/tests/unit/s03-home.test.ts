@@ -1443,7 +1443,8 @@ describe("S-03 C-PROMPT.voice: the round voice button in Home's empty box (WF-02
   it("BLD-C240 (lane D): on a phone the hint goes while the words box has focus", () => {
     const css = readFileSync(path.resolve(__dirname, "../../src/app/home/home.css"), "utf8");
     const phone = css.slice(css.indexOf("@media (max-width: 640px)"));
-    expect(phone).toMatch(/\.hm \.cz \.hm-prompt:has\(textarea:focus\) \.vhint \{\s*display: none;/);
+    expect(phone).toMatch(/\.hm \.cz \.hm-prompt \.tx:focus-within ~ \.cfoot \.vhint \{\s*display: none;/);
+    expect(phone).not.toMatch(/:has\(textarea/); // no :has(): Firefox 111, the floor, drops it
   });
 
   it("BLD-C240 (lane D): under reduced motion the hint still shows for the same time, then goes at once at 5.9 s", () => {
@@ -1452,5 +1453,10 @@ describe("S-03 C-PROMPT.voice: the round voice button in Home's empty box (WF-02
     const off = reduce.slice(0, reduce.indexOf("animation: none;"));
     expect(off).not.toMatch(/\.cz \.vhint/); // not in the animation: none list
     expect(reduce).toMatch(/\.cz \.vhint \{\s*animation: czHintOut 0s linear 5\.9s forwards;/);
+    // foundation.css's F-MOTION.reduced rule sets every animation-delay to 0s !important; the hint's own
+    // !important keeps its 5.9 s, or it would be gone on arrival.
+    const foundation = readFileSync(path.resolve(__dirname, "../../src/app/foundation.css"), "utf8");
+    expect(foundation).toMatch(/animation-delay: 0s !important;/);
+    expect(reduce).toMatch(/\.cz \.vhint \{[^}]*animation-delay: 5\.9s !important;/);
   });
 });
