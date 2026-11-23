@@ -414,6 +414,75 @@ def test_BLD_B278_a_reviewers_hide_now_reaches_the_desks_reasons_and_notes(
         assert tr.sweep_value(db, idea, name, "name", found_by="reviewer") == 0
 
 
+def test_BLD_B278_a_merge_note_swept_from_both_its_ideas_at_once_keeps_both_masks(
+    db: Conn, cast: dict[str, Any], gatekeeper: dict[str, Any], test_database: str
+) -> None:
+    """Lane E's review (the shape of lane C's BLD-C239): a desk merge's note belongs to its lead and to the idea that
+    joined it. One sweep holds the lead's hide lock and has masked one name in the note; a second, under the joining
+    idea's hide lock, masks another name in the same note. The row lock makes the second wait and then read the
+    first's mask, so both names end masked (non-negotiable 4). Two connections, no load."""
+    import threading
+
+    from core.db import connect
+    from tests import helpers
+
+    first, second = gatekeeper["name"], made_up_name()
+    lead, joined = str(cast["idea"]["id"]), str(cast["ravis"]["id"])
+    merging.desk_merge(db, cast["idea"]["idea_id"], cast["meera"]["id"],
+                       {"other_idea_id": cast["ravis"]["idea_id"], "lead": "this",
+                        "note": f"You both heard from {first} and {second} about the R07 SMS."}, T)  # fmt: skip
+    row = db.execute("SELECT id::text AS id FROM merges WHERE lead_idea_uuid = %s", (lead,)).fetchone()
+    assert row is not None
+    merge_id = str(row["id"])
+    other = connect(helpers.db_url(test_database), autocommit=True)
+    other.execute("SET lock_timeout = '20s'")  # a regression fails on the lock, not on the join's timeout
+    got: dict[str, int] = {}
+    errors: list[BaseException] = []
+    waited_on: list[str] = []
+
+    def sweep_from_the_joining_idea() -> None:
+        try:
+            with other.transaction():
+                lock(other, joined)
+                got["n"] = tr.sweep_value(other, joined, second, "name", found_by="reviewer")
+        except BaseException as exc:  # reported below
+            errors.append(exc)
+
+    sweeper = threading.Thread(
+        target=sweep_from_the_joining_idea, daemon=True
+    )  # never holds the test run open
+    try:
+        with db.transaction():
+            lock(db, lead)
+            assert tr.sweep_value(db, lead, first, "name", found_by="reviewer") == 1  # the note's row is held
+            sweeper.start()
+            for _ in range(200):  # until the second sweep waits on the note's row
+                state = db.execute(
+                    "SELECT wait_event_type, wait_event FROM pg_stat_activity WHERE pid = %s",
+                    (other.info.backend_pid,),
+                ).fetchone()
+                if state is not None and state["wait_event_type"] == "Lock":
+                    waited_on.append(str(state["wait_event"]))
+                    break
+                db.execute("SELECT pg_sleep(0.05)")
+            else:
+                raise AssertionError("the second sweep never waited")
+    finally:
+        if sweeper.ident is not None:
+            sweeper.join(timeout=30)
+        if sweeper.is_alive():  # `other` is closed only once the thread is done with it
+            other.cancel_safe()
+            sweeper.join(timeout=5)
+        if not sweeper.is_alive():
+            other.close()
+    assert not sweeper.is_alive()
+    assert not errors, [type(e).__name__ for e in errors]
+    assert got == {"n": 1} and waited_on and waited_on[0] in ("transactionid", "tuple")
+    note = text_of(db, "merges", merge_id)
+    assert first not in note and second not in note
+    assert detect.mask("name", first) in note and detect.mask("name", second) in note
+
+
 def test_BLD_B278_the_job_is_registered_under_lane_cs_name() -> None:
     from hide.recheck import DESK_TEXT_RECHECK
     from jobs import handlers  # noqa: F401 (importing it registers the handlers)

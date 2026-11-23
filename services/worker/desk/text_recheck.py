@@ -28,7 +28,10 @@ text the gateway can never check costs no more model calls. The text stays hidde
 `sweep_value` is lane C's step 10 of `_sweep`: one value masked, as whole words in any case, in the desk's reasons and
 notes on the idea (decision reasons, reversal notes, desk merge notes with the idea on either side, the reviewer's
 worth notes), each changed text with a `hidden_details` row (source "desk"). Questions are step 5's. It runs under the
-lock `_sweep`'s caller took and never calls `_sweep`. Logs carry IDs and counts only (non-negotiable 3).
+hide lock `_sweep`'s caller took, then locks each row it reads, in one fixed order: a merge's note (and a reversal
+note on a merge's window) belongs to two ideas, so two sweeps under the two ideas' locks may reach it at once, and the
+row lock keeps both masks (lane E's review; the shape of lane C's BLD-C239). It never calls `_sweep`. Logs carry IDs
+and counts only (non-negotiable 3).
 """
 
 from __future__ import annotations
@@ -240,29 +243,53 @@ def run(conn: Conn, payload: dict[str, Any]) -> None:
 # ---- lane C's step 10 of `hide.desk._sweep` -------------------------------------------------------------------------
 
 
-def _reasons_and_notes(conn: Conn, idea_uuid: str) -> list[tuple[str, str, Any]]:
-    """(table, row id, sealed blob) for each desk reason or note that others read on this idea."""
-    rows = conn.execute(
-        "SELECT 'idea_decisions' AS t, id::text AS id, reason_encrypted AS blob FROM idea_decisions "
-        "WHERE idea_uuid = %(i)s "
-        "UNION ALL SELECT 'decision_reversals', r.id::text, r.note_encrypted FROM decision_reversals r "
+# Each desk reason or note others read on an idea, one table at a time in this order and by id, each row locked
+# (FOR UPDATE): a desk merge's note, and a reversal note on a merge's window, belong to two ideas, so two sweeps under
+# the two ideas' hide locks can reach the same row; the row lock makes the second read the first one's mask. Hide's
+# lock(s) come first, then these row locks, always in this order (BLD-C228), so two sweeps never cross.
+_REASONS_AND_NOTES = (
+    (
+        "idea_decisions",
+        "SELECT id::text AS id, reason_encrypted AS blob FROM idea_decisions WHERE idea_uuid = %(i)s "
+        "ORDER BY id FOR UPDATE",
+    ),
+    (
+        "decision_reversals",
+        "SELECT r.id::text AS id, r.note_encrypted AS blob FROM decision_reversals r "
         "JOIN decision_windows w ON w.id = r.window_id LEFT JOIN idea_decisions d ON d.id = w.decision_id "
         "LEFT JOIN merges m ON m.id = w.merge_id "
         "WHERE d.idea_uuid = %(i)s OR m.lead_idea_uuid = %(i)s OR m.merged_idea_uuid = %(i)s "
-        "UNION ALL SELECT 'merges', id::text, note_encrypted FROM merges WHERE via = 'review_desk' "
+        "ORDER BY r.id FOR UPDATE OF r",
+    ),
+    (
+        "merges",
+        "SELECT id::text AS id, note_encrypted AS blob FROM merges WHERE via = 'review_desk' "
         "AND note_encrypted IS NOT NULL AND (lead_idea_uuid = %(i)s OR merged_idea_uuid = %(i)s) "
-        "UNION ALL SELECT 'idea_worth', id::text, note_encrypted FROM idea_worth WHERE idea_uuid = %(i)s "
-        "AND by_side = 'reviewer' AND note_encrypted IS NOT NULL",
-        {"i": idea_uuid},
-    ).fetchall()
-    return [(str(r["t"]), str(r["id"]), r["blob"]) for r in rows]
+        "ORDER BY id FOR UPDATE",
+    ),
+    (
+        "idea_worth",
+        "SELECT id::text AS id, note_encrypted AS blob FROM idea_worth WHERE idea_uuid = %(i)s "
+        "AND by_side = 'reviewer' AND note_encrypted IS NOT NULL ORDER BY id FOR UPDATE",
+    ),
+)
+
+
+def _reasons_and_notes(conn: Conn, idea_uuid: str) -> list[tuple[str, str, Any]]:
+    """(table, row id, sealed blob) for each desk reason or note that others read on this idea, each row locked for
+    the caller's transaction, in `_REASONS_AND_NOTES`' order."""
+    out: list[tuple[str, str, Any]] = []
+    for table, sql in _REASONS_AND_NOTES:
+        out += [(table, str(r["id"]), r["blob"]) for r in conn.execute(sql, {"i": idea_uuid}).fetchall()]
+    return out
 
 
 def sweep_value(conn: Conn, idea_uuid: str, value: str, kind: str, *, found_by: str) -> int:
     """`value` masked, as whole words in any case, in every desk reason and note others read on this idea (BLD-B278;
     lane C's `_sweep` step 10, under the lock its caller took). Each changed text gets one `hidden_details` row
     (source "desk", `<table>:<id>`), made as `_sweep` makes one for any copy with no owner's words. Returns how many
-    texts changed. The sharer's words are never touched here, and this never calls `_sweep`."""
+    texts changed. Each row is read locked (`_reasons_and_notes`), so a merge's note swept from both its ideas at once
+    keeps both masks. The sharer's words are never touched here, and this never calls `_sweep`."""
     from hide import detect
     from hide.desk import _copy_detail
 
