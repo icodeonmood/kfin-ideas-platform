@@ -736,7 +736,7 @@ def test_L_HIDE_files_1_DEC_103_the_gateway_failing_keeps_the_file_checking_then
     FAKE_SCRIPT.append(RouteError("connection"))
     assert run_one(db, "test-files")
     job = _job(db, att)
-    assert (job["state"], job["last_error"]) == ("queued", "CheckWaits")  # it tries again later
+    assert (job["state"], job["last_error"]) == ("queued", "CheckRetry")  # it tries again later (BLD-C236)
     assert _row(db, att)["file_state"] == "checking"
     assert F.get_item(db, att, kavya["id"])["state"] == "checking"
     assert _refused(F.content, db, att, kavya["id"]).code == "not_available"

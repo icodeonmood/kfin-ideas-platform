@@ -360,11 +360,19 @@ export function settling(p: ProofItem): boolean {
 }
 
 /** Asking for a moving file's state: every 2 s; after a failed ask, twice as long each time up to 30 s; after five
- * failed asks in a row the row offers "Try again" (C-FILE.row, BLD-C139). */
-export const POLL = { everyMs: 2000, maxMs: 30_000, tries: 5 } as const;
+ * failed asks in a row the row offers "Try again" (C-FILE.row, BLD-C139). A file waiting for the gatekeeper (the
+ * assistant is off) changes in minutes or hours, not seconds: while every moving file waits, ask every 30 s
+ * (BLD-C236). */
+export const POLL = { everyMs: 2000, maxMs: 30_000, tries: 5, waitingMs: 30_000 } as const;
 
-export function pollDelay(fails: number): number {
-  return Math.min(POLL.everyMs * 2 ** Math.max(0, fails), POLL.maxMs);
+/** A file whose check waits for the gatekeeper: the worker's waiting line is on its checking row (BLD-C225). */
+export function waitingForCheck(p: ProofItem): boolean {
+  return (p.localState ?? p.item?.state) === "checking" && Boolean(p.item?.problem);
+}
+
+export function pollDelay(fails: number, allWaiting = false): number {
+  const step = Math.min(POLL.everyMs * 2 ** Math.max(0, fails), POLL.maxMs);
+  return allWaiting ? Math.max(step, POLL.waitingMs) : step;
 }
 
 /** "Paste a link… Add several links at once with commas." Each piece must look like a link (C-FILE.uploader/3). */
