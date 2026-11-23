@@ -353,6 +353,16 @@ def desk_clocks(conn: Conn, payload: dict[str, Any]) -> None:
     run_due(conn)
 
 
+@handler("desk.text_recheck")
+def desk_text_recheck(conn: Conn, payload: dict[str, Any]) -> None:
+    """L-HIDE.detect, DEC-131 (3): the review desk's own texts written while the assistant was off get the
+    gatekeeper's check once it is back, a few at a time (lane B, BLD-B278). Lane C's watch queues it while both
+    switches are on (hide/recheck.py DESK_TEXT_RECHECK); it waits while either is off."""
+    from desk import text_recheck
+
+    text_recheck.run(conn, payload)
+
+
 @handler("hide.recheck")
 def hide_recheck(conn: Conn, payload: dict[str, Any]) -> None:
     """L-HIDE.detect: the gatekeeper was down when a text was hidden; run it again on the person's sealed words

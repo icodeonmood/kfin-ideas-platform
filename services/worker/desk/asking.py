@@ -497,12 +497,13 @@ def send_set(
         )
         for seq, q in enumerate(asked, start=1):
             qid = str(uuid.uuid4())
-            masked, _ = adapters.hide(conn, str(idea["id"]), str(q["text"]).strip(), by=user_id)
+            masked, checked = adapters.hide_checked(conn, str(idea["id"]), str(q["text"]).strip(), by=user_id)
+            # `gatekeeper_done_at` only when the gatekeeper's check is complete; else desk.text_recheck asks (BLD-B278)
             conn.execute(
-                "INSERT INTO questions (id, set_id, seq, part, text_encrypted, suggested, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO questions (id, set_id, seq, part, text_encrypted, suggested, created_at, gatekeeper_done_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, CASE WHEN %s THEN now() END)",
                 (qid, set_id, seq, q["part"], seal(masked, "questions", "text_encrypted", qid),
-                 bool(q.get("suggested")), t),
+                 bool(q.get("suggested")), t, checked),
             )  # fmt: skip
         conn.execute("UPDATE ideas SET status = 'needs_you' WHERE id = %s", (idea["id"],))
         decide_by = idea["decide_by"]
