@@ -9,7 +9,7 @@
  * first (`move`, DEC-125), the key hint, then the mic and the round button at the right. Files show as rows above the
  * words (`files`) and the picker opens between the words and the tool row (`picker`), as the Home board draws them.
  */
-import { forwardRef, useEffect, useId, type ReactNode } from "react";
+import { forwardRef, useEffect, useId, useState, type ReactNode } from "react";
 
 import {
   IconArrowUp,
@@ -174,6 +174,8 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
     sendHref,
   } = props;
   const id = useId();
+  // Typed once (BLD-C240): the hint never comes back after the box is cleared, as the board's `!draft && !typed`.
+  const [typed, setTyped] = useState(false);
   const v = voice?.state ?? null;
   const status = v?.status ?? "idle";
   const recording = status === "recording" || status === "sending" || status === "asking";
@@ -233,7 +235,10 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
           placeholder={placeholder}
           readOnly={recording}
           aria-describedby={`${id}-help`}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            setTyped(true);
+            onChange(e.target.value);
+          }}
           onKeyDown={(e) => {
             if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
             if (e.metaKey || e.ctrlKey) {
@@ -260,7 +265,7 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
         </span>
         {mic}
         <span className="sendw">
-          {roundIsMic ? (
+          {roundIsMic && !typed ? (
             <span className="vhint" aria-hidden="true">
               <b>{PROMPT_COPY.tapToSpeak}</b>
               <span>{PROMPT_COPY.notRecording}</span>

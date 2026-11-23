@@ -1785,9 +1785,17 @@
 @media (prefers-reduced-motion: reduce) {
   .cz .dl-fill::after,
   .cz .dl-bead,
-  .cz .dload.all .dl-bead,
-  .cz .vhint {
+  .cz .dload.all .dl-bead {
     animation: none;
+  }
+
+  /* BLD-C240 (lane D): reduced motion removes the movement, not the hint, the only line that says nothing records
+     until the tap: it shows for the same time and goes at once at 5.9 s, with no fade or slide. foundation.css's
+     F-MOTION.reduced rule sets every animation-delay to 0s !important; the hint's 5.9 s is when it goes, not
+     movement, so it keeps it (a class-scoped !important outranks the `*` one; the 0.01ms duration still applies). */
+  .cz .vhint {
+    animation: czHintOut 0s linear 5.9s forwards;
+    animation-delay: 5.9s !important;
   }
 
   .cz .dl-fill,
