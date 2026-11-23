@@ -68,3 +68,102 @@ def test_l_draft_bld_c234_the_store_asks_about_the_words_it_will_hide() -> None:
     assert store._part_texts("who", ["Investors", " ", 7]) == ["Investors", None, None]
     assert store._part_texts("often", "Every day") == ["Every day"]
     assert store._part_texts("value", ["a", "b"]) == []  # a value list is not hidden item by item
+
+
+# ---- BLD-C231: the re-check sweep's pieces ------------------------------------------------------------------------
+
+
+def test_l_hide_bld_c231_caller_id_undoes_sealed_key_for_every_source() -> None:
+    """The sweep queues each re-check under the caller's own id, which hidden details and lane F's writer use."""
+    from hide.core import caller_id, sealed_key
+
+    idea = "11111111-2222-4333-8444-555555555555"
+    rid = "66666666-7777-4888-9999-000000000000"
+    for source, raw in (
+        ("message", rid),
+        ("answer", rid),
+        ("conversation", rid),
+        ("edit", f"{idea}:part:who:0"),
+        ("edit", f"{idea}:3:title"),
+        ("teamup", rid),
+        ("teamup", f"{rid}:decline"),
+        ("teamup", f"{rid}:ask"),
+    ):
+        key = sealed_key(idea, raw)
+        assert caller_id(idea, source, key) == raw, (source, raw)
+        assert sealed_key(idea, caller_id(idea, source, key)) == key
+
+
+def test_l_hide_bld_c231_blank_words_are_checked_with_nothing_to_ask() -> None:
+    gate = detect.gatekeeper_finds(cast(Any, None), "   ", "DRAFT-x")
+    assert gate.checked and gate.finds == []
+    assert not detect.Gate([]).checked  # a gate is unchecked unless the gatekeeper answered
+
+
+def test_l_hide_bld_c231_the_watch_asks_the_sweep_and_survives_it_failing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core import watch
+    from hide import recheck
+
+    asked: list[Any] = []
+
+    def queue_unchecked(conn: Any) -> int:
+        asked.append(conn)
+        return 3
+
+    monkeypatch.setattr(recheck, "queue_unchecked", queue_unchecked)
+    assert watch.Watch.unchecked_texts(cast(Any, "conn")) is True and asked == ["conn"]
+
+    def broken(conn: Any) -> int:
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(recheck, "queue_unchecked", broken)
+    w = cast(Any, object.__new__(watch.Watch))
+    for name in ("scanner", "bounces", "speech_route", "waiting_files"):
+        monkeypatch.setattr(w, name, lambda conn: False, raising=False)
+    w.run(cast(Any, "conn"))  # one check failing never stops the others or the ticker
+
+
+def test_l_hide_bld_c231_the_desk_texts_sweep_is_nothing_until_lane_bs_module_is_there(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLD-B278's hook in `_sweep`: lane B's `sweep_value`, called with the value under hide's lock; 0 without it."""
+    from hide import desk
+
+    monkeypatch.setattr(desk, "DESK_TEXTS", ("desk.no_such_module_c231", "sweep_value"))
+    assert desk._sweep_desk_texts(cast(Any, None), "idea", "value", "name", "reviewer") == 0
+    called: list[Any] = []
+    fake = types.ModuleType("c231_fake_desk_texts")
+
+    def sweep_value(conn: Any, idea: str, value: str, kind: str, *, found_by: str) -> int:
+        called.append((idea, kind, found_by))
+        return 2
+
+    fake.sweep_value = sweep_value
+    monkeypatch.setitem(sys.modules, "c231_fake_desk_texts", fake)
+    monkeypatch.setattr(desk, "DESK_TEXTS", ("c231_fake_desk_texts", "sweep_value"))
+    assert desk._sweep_desk_texts(cast(Any, None), "idea", "value", "name", "reviewer") == 2
+    assert called == [("idea", "name", "reviewer")]
+
+
+def test_l_hide_bld_c231_lane_bs_desk_text_job_is_queued_only_where_its_handler_is(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLD-B278: the switch-on queues `desk.text_recheck` only in a build that registers lane B's handler, so a build
+    without it never holds a row no worker will run."""
+    from hide import recheck
+    from jobs import runner
+
+    queued: list[tuple[str, Any]] = []
+
+    def enqueue(conn: Any, kind: str, payload: Any, dedupe_key: str | None = None) -> int:
+        queued.append((kind, dedupe_key))
+        return 9
+
+    monkeypatch.setattr(runner, "enqueue", enqueue)
+    monkeypatch.delitem(runner.HANDLERS, recheck.DESK_TEXT_RECHECK, raising=False)
+    assert recheck._start_desk_texts(cast(Any, None)) is False and queued == []
+    monkeypatch.setitem(runner.HANDLERS, recheck.DESK_TEXT_RECHECK, lambda conn, payload: None)
+    assert recheck._start_desk_texts(cast(Any, None)) is True
+    assert queued == [(recheck.DESK_TEXT_RECHECK, recheck.DESK_TEXT_RECHECK)]

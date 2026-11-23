@@ -21,6 +21,7 @@ review desk hid, or any detail holding a value the desk hid, cannot be shown: th
 from __future__ import annotations
 
 import datetime as dt
+import importlib
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -589,7 +590,29 @@ def _sweep(conn: Conn, idea_uuid: str, value: str, kind: str, *, found_by: str =
 
     # 9. The team-up texts the other party reads: a note on the idea, its lead's reason, a draft's ask (BLD-C235).
     out.copies += _sweep_teamup(conn, idea_uuid, value, kind, found_by)
+    # 10. The review desk's own texts: sent questions, decision reasons, reversal and merge notes, the worth note
+    # (lane B's writer, BLD-B278; non-negotiable 4).
+    out.copies += _sweep_desk_texts(conn, idea_uuid, value, kind, found_by)
     return out
+
+
+# Lane B's module and function for the desk's own texts (BLD-B278). Nothing until that module is on main.
+DESK_TEXTS = ("desk.text_recheck", "sweep_value")
+
+
+def _sweep_desk_texts(conn: Conn, idea_uuid: str, value: str, kind: str, found_by: str) -> int:
+    """`value` hidden in every desk text of the idea by lane B's own writer: `sweep_value(conn, idea_uuid, value,
+    kind, *, found_by) -> int` (texts changed). Runs under hide's lock on the idea, taken first, as the team-up
+    sweep does. 0 while lane B's module is not there; a module that is there but breaks on import still raises."""
+    name, fn = DESK_TEXTS
+    try:
+        mod = importlib.import_module(name)
+    except ModuleNotFoundError as exc:
+        if exc.name and name.startswith(exc.name):
+            return 0
+        raise
+    sweep = getattr(mod, fn, None)
+    return int(sweep(conn, idea_uuid, value, kind, found_by=found_by)) if callable(sweep) else 0
 
 
 def _notify_sharer(conn: Conn, idea: dict[str, Any], by: str) -> bool:
