@@ -215,12 +215,30 @@ type AnswerFiles = { counts: string; found: string };
  * approved by lane D). */
 const ATTACH_ANSWER = "Attach files to this answer";
 const ATTACH_TIP = "Attach files";
+/** S-R3's mic after the "+" (BLD-B276) and the box's placeholder: the Answer board's words. */
+const SAY_ANSWER = "Say your answer";
+const ANSWER_PLACEHOLDER = "Type your answer, or tap the mic and say it";
+/** DEC-108: before a device's first recording the screen says where the voice goes, naming no vendor. */
+const VOICE_NOTICE =
+  "Your voice note goes to an Indian speech service to turn it into text. You can check the text before you send it.";
 
 step(
   "J-TRACK/4a",
   "S-R3",
-  'The "+" on an answer: a file that checks and one with a customer detail go with the saved answer',
-  { needs: ["S-R3", "C-PROMPT.attach", "C-FILE", "L-QUESTIONS", "L-HIDE", "BLD-B275"], changes: ["T6"] },
+  'The "+" and the mic on an answer: the mic follows the "+" and records nothing until pressed; a file that checks and one with a customer detail go with the saved answer',
+  {
+    needs: [
+      "S-R3",
+      "C-PROMPT.attach",
+      "C-PROMPT.voice",
+      "C-FILE",
+      "L-QUESTIONS",
+      "L-HIDE",
+      "BLD-B275",
+      "BLD-B276",
+    ],
+    changes: ["T6"],
+  },
   async ({ page }, info) => {
     info.setTimeout(120_000); // two files, each scanned and checked
     const t6 = await seeded("T6");
@@ -246,6 +264,19 @@ step(
     await expect(page.getByRole("button", { name: "Question 1, answered" })).toBeVisible();
     await expect(page.getByText(T6_QUESTIONS[0], { exact: true }).first()).toBeVisible();
     await expect(plus).toHaveAttribute("title", ATTACH_TIP);
+
+    // The box's tool row reads the "+", then the mic (C-PROMPT.anatomy/2, BLD-B276). Nothing records until
+    // she presses it, and before her first note the screen says where the voice goes (DEC-108). No note is
+    // recorded here: J-TRACK/4 reads her saved answer word for word; lane C tests the capture on its own.
+    const tools = page.locator(".ans-tools > button");
+    await expect(tools).toHaveCount(2);
+    await expect(tools.nth(0)).toHaveAccessibleName(ATTACH_ANSWER);
+    await expect(tools.nth(1)).toHaveAccessibleName(SAY_ANSWER);
+    await expect(tools.nth(1)).toHaveAttribute("aria-pressed", "false");
+    const box = page.getByRole("textbox", { name: "Your answer to question 1" });
+    await expect(box).toHaveAttribute("placeholder", ANSWER_PLACEHOLDER);
+    await expect(box).toHaveValue(SAVED_ANSWER);
+    await expect(page.getByText(VOICE_NOTICE, { exact: true })).toBeVisible();
 
     // The count she saved, as a file with the saved answer: scanned, then checked (DEC-107).
     await add(counts, "Held folios by region, October: about 120, mostly in one region.");
