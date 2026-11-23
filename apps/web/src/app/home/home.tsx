@@ -403,16 +403,21 @@ export function HomeScreen({
   const voice = useVoiceCapture("", voiceOptions);
   /** One message key per note, so a note is never added twice however it is retried. */
   const noteKeys = useRef(new Map<string, string>());
+  // One take at a time (BLD-C220 review fix): set while a note goes in, cleared when it fails back into the box, kept
+  // once the page moves on.
+  const taking = useRef(false);
 
   /** A finished note: into the draft at once, after the typed words if any, then on to S-04B, as after typing. A
    * failure keeps the words in the box and says why, as `send()` does. */
   const takeNote = useCallback(
     async (note: VoiceNote) => {
       const words = note.text;
-      if (!words.trim()) return;
+      if (!words.trim() || taking.current) return; // a second note while one goes in adds nothing
+      taking.current = true;
       const typed = box.trim() ? box : "";
       const both = typed ? `${typed.replace(/\s+$/, "")} ${words}` : words;
       const keep = (rest: string, err: unknown) => {
+        taking.current = false;
         setBox(rest);
         createKey.current = "";
         messageKey.current = "";
@@ -452,6 +457,7 @@ export function HomeScreen({
       try {
         router.push(`/share/${id}`);
       } catch {
+        taking.current = false;
         setSending(false);
       }
     },
@@ -680,7 +686,10 @@ export function HomeScreen({
             picker={files.picker}
             voice={{
               state: voice.state,
-              start: () => void voice.start(),
+              // No new note while one goes in or the words are sending (BLD-C220 review fix); called in the click.
+              start: () => {
+                if (!sending && !taking.current) void voice.start();
+              },
               stop: voice.stop,
               noticeShown: voice.noticeShown,
             }}
