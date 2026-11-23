@@ -167,3 +167,15 @@ def test_l_hide_bld_c231_lane_bs_desk_text_job_is_queued_only_where_its_handler_
     monkeypatch.setitem(runner.HANDLERS, recheck.DESK_TEXT_RECHECK, lambda conn, payload: None)
     assert recheck._start_desk_texts(cast(Any, None)) is True
     assert queued == [(recheck.DESK_TEXT_RECHECK, recheck.DESK_TEXT_RECHECK)]
+
+
+def test_l_hide_bld_c239_only_a_drafts_ask_needs_another_ideas_lock() -> None:
+    """A draft's ask ("<merge request id>:ask") is the one sealed text read on another idea; nothing else looks."""
+    from hide.recheck import _also_locked
+
+    rid = "66666666-7777-4888-9999-000000000000"
+    nobody = cast(Any, None)  # these return before any read
+    assert _also_locked(nobody, "idea", "message", rid) == []
+    assert _also_locked(nobody, "idea", "teamup", rid) == []  # a team-up note lives under its own idea
+    assert _also_locked(nobody, "idea", "teamup", f"{rid}:decline") == []
+    assert _also_locked(nobody, "idea", "teamup", "not-a-uuid:ask") == []

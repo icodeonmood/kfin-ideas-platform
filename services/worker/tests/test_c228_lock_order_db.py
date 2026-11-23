@@ -369,3 +369,40 @@ def test_l_hide_bld_c234_l_draft_nothing_is_asked_for_someone_elses_draft(
     with pytest.raises(store.DraftError):
         store.add_message(db, Owner(meera["id"], meera["code"]), draft_id, LAPTOP, text=WORDS)
     assert ASK not in asks, asks
+
+
+# ---- BLD-C239: a draft's ask is re-checked under both ideas' hide locks --------------------------------------------
+
+
+def test_l_hide_bld_c239_a_drafts_ask_is_rechecked_under_both_ideas_hide_locks_in_uuid_order(
+    db: Conn, cast: dict[str, Any], asks: Calls
+) -> None:
+    """L-HIDE.detect, L-MERGE.request: a draft's ask is kept under the draft but read, and swept by the desk's "Hide
+    this", on the idea it was sent to. Its re-check asks the gatekeeper first, with no lock held, then takes hide's
+    lock on both ideas in uuid order before anything else, so the desk's sweep of the other idea can never land
+    between the re-check's read and its write of the masked copy."""
+    from core import killswitch
+    from hide import recheck
+    from teamup import adapters as teamup_adapters
+    from teamup import drafts
+
+    other = f.idea(db, cast["meera"], title="Branch SMS codes confuse investors")
+    draft_id = str(cast["draft"]["id"])
+    got = drafts.ask(
+        db, draft_id, cast["kavya"]["id"],
+        {"other_idea_id": other["idea_id"], "note": "Investors at our branch ask the same about the SMS codes."},
+    )  # fmt: skip
+    payload = {
+        "idea_uuid": draft_id,
+        "source": "teamup",
+        "source_id": teamup_adapters.ask_id(str(got["id"])),
+        "by": cast["kavya"]["id"],
+    }
+    db.execute("UPDATE kill_switches SET state = 'on' WHERE name IN ('ai.all', 'agent.gatekeeper')")
+    killswitch.clear_cache()
+    asks.clear()
+    recheck.run(db, payload)
+    calls = list(asks)
+    first, second = sorted({draft_id, str(other["id"])})
+    assert calls[:3] == [ASK, ("hide", first), ("hide", second)], calls
+    assert calls.count(ASK) == 1, calls  # the gate was used: no second ask under the locks
