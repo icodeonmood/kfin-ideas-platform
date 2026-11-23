@@ -153,7 +153,7 @@ Run it in a quiet window, and tell the review desk first: a rollback loses anyth
 | 1 Checks | The checkout is clean; prints the old and new sha; Postgres runs and has migrations; the env file checks of deploy step 1, the notice version included; reads `ai.all`; free disk for the backup | anything fails; `ai.all` is on while `LLM_MODE=fake` |
 | 2 Keep | Tags the running images `:rollback-<old sha>` and saves the old version's compose files beside the backup | — |
 | 3 Build | Builds the new images while the old ones keep serving; runs preflight on the new worker image | the build or preflight fails (nothing changed) |
-| 4 Backup | `pg_dump` of the database to `backups/` (mode 600), checked with `pg_restore --list`; an archive of the company repo | the backup fails or is empty (nothing changed) |
+| 4 Backup | `pg_dump` of the database to `backups/` (mode 600), checked with `pg_restore --list`; an archive of the company repo, copied again (up to 10 tries, 2 s apart, one line per try) if the running worker changes it while it is copied (BLD-A247) | the backup fails or is empty (nothing changed) |
 | 5 Migrations | `dbmate up`, then `dbmate status`; prints the migrations applied | anything pending |
 | 6 Restart | Web and worker (and speech, if used) on the new images. Postgres is not restarted | a service does not become healthy in 4 minutes |
 | 7 Smoke | The thirteen checks, without `--fresh`: real people and their roles are expected now | any check fails |
