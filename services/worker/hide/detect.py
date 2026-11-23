@@ -14,6 +14,7 @@ A `Found` carries the value, so it is never logged; callers log counts and kinds
 
 from __future__ import annotations
 
+import hashlib
 import re
 import unicodedata
 from collections.abc import Iterable, Mapping
@@ -326,11 +327,28 @@ def gatekeeper_kind(data_type: str, value: str) -> str | None:
 @dataclass(frozen=True)
 class Gate:
     """The gatekeeper's finds for one text. `skipped` is the gateway's error code when it could not run (the text
-    then goes on with the patterns and names only, and a re-check is queued, BLD-C067)."""
+    then goes on with the patterns and names only, and a re-check is queued, BLD-C067). `text_hash`: the sha256 of
+    the exact text the finds belong to, set by `hide.gate` (BLD-C234), so hide uses them only for that text. It is
+    kept in memory only: never logged, stored or sent. A gate with no hash (a file's pieces, `hide/files.py`) is
+    used as given."""
 
     finds: list[Found]
     skipped: str | None = None
     switched_off: bool = False
+    text_hash: str | None = None
+
+
+def text_hash(text: str) -> str:
+    """The key that ties a gate to one exact text (BLD-C234). In memory only (non-negotiable 3)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def usable(gate: Gate | None, text: str) -> Gate | None:
+    """`gate` if hide may use it for `text`: one with no hash (a file's pieces, as given) or one asked about this
+    exact text. None otherwise, and hide then asks the gatekeeper itself (BLD-C234)."""
+    if gate is None or gate.text_hash is None or gate.text_hash == text_hash(text):
+        return gate
+    return None
 
 
 def gatekeeper_finds(conn: Conn, text: str, scope: str) -> Gate:

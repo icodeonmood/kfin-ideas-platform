@@ -283,3 +283,89 @@ def test_l_hide_bld_c228_l_hide_files_the_file_checks_finish_takes_hides_lock_be
     locks.clear()
     assert F.check(db, att) == "checked"
     _hide_first(list(locks), idea["id"])
+
+
+# ---- BLD-C234: the gatekeeper is asked before hide's lock ---------------------------------------------------------
+
+ASK = ("gatekeeper", "")
+
+
+@pytest.fixture
+def asks(locks: Calls, monkeypatch: pytest.MonkeyPatch) -> Calls:
+    """`locks`, with each gatekeeper ask recorded as ("gatekeeper", "") in the same order. The ask is stood in for
+    (nothing found), so no model is called; hide's own ask under its lock, when it makes one, is recorded too."""
+
+    def gatekeeper_finds(conn: Conn, text: str, scope: str) -> detect.Gate:
+        locks.append(ASK)
+        return detect.Gate([])
+
+    monkeypatch.setattr(detect, "gatekeeper_finds", gatekeeper_finds)
+    return locks
+
+
+def test_l_hide_bld_c234_l_draft_add_and_edit_message_ask_the_gatekeeper_once_before_hides_lock(
+    db: Conn, cast: dict[str, Any], asks: Calls
+) -> None:
+    """L-HIDE.detect, L-DRAFT.autosave: a typed message and its edit are put to the gatekeeper before hide's lock is
+    taken (`hide.gate`), and hide uses that answer for the same words (padded words are trimmed first), so the
+    model is asked once and the lock never waits on it. The BLD-C228 order follows unchanged."""
+    draft_id, owner = str(cast["draft"]["id"]), cast["owner"]
+    mid, _ = store.add_message(db, owner, draft_id, LAPTOP, text=f"  {WORDS}  ", defer_run=True)
+    calls = list(asks)
+    assert calls[0] == ASK and calls.count(ASK) == 1, calls
+    _hide_first(calls[1:], draft_id)
+
+    asks.clear()
+    store.edit_message(db, owner, draft_id, mid, LAPTOP, text=f"{WORDS} Each call takes 5 to 10 minutes.")
+    calls = list(asks)
+    assert calls[0] == ASK and calls.count(ASK) == 1, calls
+    _hide_first(calls[1:], draft_id)
+
+
+def test_l_hide_bld_c234_l_draft_pins_each_of_a_parts_words_is_asked_before_hides_lock(
+    db: Conn, cast: dict[str, Any], asks: Calls
+) -> None:
+    """L-DRAFT.pins: a part saved by hand with two items asks the gatekeeper once per item, before hide's lock."""
+    draft_id, owner = str(cast["draft"]["id"]), cast["owner"]
+    store.set_part(db, owner, draft_id, "who", LAPTOP, {"value": ["Investors", "Branch staff"]})
+    calls = list(asks)
+    assert calls[:2] == [ASK, ASK] and calls.count(ASK) == 2, calls
+    _hide_first(calls[2:], draft_id)
+
+
+def test_l_hide_bld_c234_a_gate_takes_no_lock_and_is_not_used_for_other_words(
+    db: Conn, cast: dict[str, Any], asks: Calls
+) -> None:
+    """L-HIDE: `hide.gate` takes neither hide's lock nor a row lock and stores nothing. Its answer belongs to one
+    exact text: given to `hide_message` for other words, it is set aside and hide asks the gatekeeper itself."""
+    import uuid
+
+    import hide
+    import hide.core
+
+    draft_id = str(cast["draft"]["id"])
+    before = int(db.execute("SELECT count(*) AS n FROM hidden_details").fetchone()["n"])
+    asked = hide.gate(db, draft_id, "Investors call the branch every day", source="message")
+    assert asked.text_hash is not None
+    assert list(asks) == [ASK], asks  # one ask, no lock of any kind
+    assert int(db.execute("SELECT count(*) AS n FROM hidden_details").fetchone()["n"]) == before
+
+    with db.transaction():
+        hide.core.lock(db, draft_id)
+        done = hide.hide_message(
+            db, draft_id, "Investors call the branch every week", by=cast["kavya"]["id"], source="message",
+            source_id=str(uuid.uuid4()), gate=asked,
+        )  # fmt: skip
+    assert done.masked == "Investors call the branch every week"
+    assert asks.count(ASK) == 2, asks  # the other words were asked about afresh
+
+
+def test_l_hide_bld_c234_l_draft_nothing_is_asked_for_someone_elses_draft(
+    db: Conn, cast: dict[str, Any], asks: Calls
+) -> None:
+    """L-DRAFT, DEC-103: the draft is read first with no lock, so a message to someone else's draft is not found, as
+    before, and their idea's text never reaches the gatekeeper."""
+    draft_id, meera = str(cast["draft"]["id"]), cast["meera"]
+    with pytest.raises(store.DraftError):
+        store.add_message(db, Owner(meera["id"], meera["code"]), draft_id, LAPTOP, text=WORDS)
+    assert ASK not in asks, asks

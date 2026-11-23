@@ -16,6 +16,7 @@ Every detect, show and hide is written to `audit_log` with IDs, kinds and reason
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -340,6 +341,25 @@ def forget(conn: Conn, idea_uuid: str, *, source: str, source_id: str) -> int:
     return removed
 
 
+def gate(conn: Conn, idea_uuid: str, text: str, *, source: str) -> detect.Gate:
+    """The gatekeeper's finds for `text`, asked with no hide lock and no row lock held (BLD-C234, L-HIDE.detect).
+
+    A caller that must take hide's lock first (BLD-C228: the lock before any row lock) asks here BEFORE it opens the
+    transaction that takes the lock, then passes the result as `gate=` to `hide_text`, `hide_message` or
+    `hide_into`. The model call (seconds on the real route) then runs with nothing held, and the lock covers only the
+    writes. Hide uses the finds only if the text is unchanged (`Gate.text_hash`); otherwise it asks again, as it does
+    today. Values the desk hides in between are still applied, because hide reads them under the lock (BLD-C067).
+    Nothing is stored. Call it with no transaction open: inside one, it still works but holds what that transaction
+    holds. With `ai.all` off the gate is empty and no model is called, as in `hide_into`. Check that the caller may
+    write on the idea before asking."""
+    if source not in DETAIL_SOURCES:
+        raise ValueError("unknown hide source")
+    idea_row(conn, idea_uuid)
+    with conn.transaction():  # the gateway's own writes, as in `_hide`
+        found = detect.gatekeeper_finds(conn, text, scope_for(idea_uuid))
+    return dataclasses.replace(found, text_hash=detect.text_hash(text))
+
+
 def hide_into(
     conn: Conn,
     idea_uuid: str,
@@ -354,7 +374,8 @@ def hide_into(
 ) -> Hidden:
     """Detect, store each value sealed, keep earlier "Show it" choices for the same values, and return the result.
     Re-running on an edited text keeps each detail's id where its value is still there. `gate`: the gatekeeper's
-    finds the caller already has (a file's text, asked piece by piece, `hide/files.py`); then no model is called here.
+    finds the caller already has (a file's text, asked piece by piece, `hide/files.py`; or `gate()` before the lock,
+    BLD-C234); then no model is called here, unless the gate belongs to another text.
 
     Call it inside the same transaction as the write that stores the masked copy (see `hide/__init__.py`): the
     idea's lock is held until that transaction ends, so a desk hide cannot land in between. Its own work runs in
@@ -384,6 +405,9 @@ def _hide(
         raise ValueError("unknown hide source")
     idea_row(conn, idea_uuid)
     scope = scope_for(idea_uuid)
+    if gate is not None and detect.usable(gate, text) is None:
+        log.info("hide.gate_stale", idea_id=idea_uuid, source_code=source)  # asked again below (BLD-C234)
+        gate = None
     if gate is None:
         gate = detect.Gate([])
         if gatekeeper:
