@@ -167,10 +167,15 @@ test('C-FIELD, C-PROMPT.anatomy/2 (BLD-D029): a field\'s own "+" sits inside its
   const frame = page.locator(".fld-frame").filter({ has: field });
   const plus = frame.getByRole("button", { name: "Attach files to this answer", exact: true });
   await expect(plus).toHaveAttribute("title", "Attach files");
+  // The kit's arrival scales its cards in; measure once it has finished (CI 45117067515 caught it mid-way at 0.99)
+  await settleMotion(page);
   const [f, p, t] = await Promise.all([frame.boundingBox(), plus.boundingBox(), field.boundingBox()]);
   // Inside the frame, 4px in from its right and bottom edges (1px border + 4px), right of the text, 44px
-  expect(p!.width).toBe(44);
-  expect(p!.height).toBe(44);
+  expect(await plus.evaluate((el) => [getComputedStyle(el).width, getComputedStyle(el).height])).toEqual([
+    "44px",
+    "44px",
+  ]);
+  expect(p!.width).toBeCloseTo(44, 0);
   expect(f!.x + f!.width - (p!.x + p!.width)).toBeCloseTo(5, 0);
   expect(f!.y + f!.height - (p!.y + p!.height)).toBeCloseTo(5, 0);
   expect(p!.x).toBeGreaterThanOrEqual(t!.x + t!.width);
