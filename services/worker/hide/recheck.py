@@ -5,11 +5,15 @@ patterns and names only (the person never waits on the model), `hide.gatekeeper_
 `hide.recheck` job is queued with IDs only. The job runs the gatekeeper again on the person's sealed words once the
 gateway is back: what it finds is stored like any find, the text's masked copy is rebuilt (messages, answers and
 conversation messages), and each new value is masked in every other copy of the idea (`desk._sweep`), which covers
-an edit's masked copies in the fix, the parts and the idea's lines. While the gateway is still down, or the assistant
-(`ai.all`) or the gatekeeper (`agent.gatekeeper`) is switched off, the job fails with `GatekeeperUnavailable` and the
-runner tries again with its backoff, so a job queued while the assistant was on never finishes with nothing found.
-When its last attempt fails, `gave_up` audits `hide.recheck_gave_up` with IDs and the code only; the text stays
-hidden by the patterns and names.
+an edit's masked copies in the fix, the parts and the idea's lines. While the gateway is still down the job fails
+with `GatekeeperUnavailable` and the runner tries again with its backoff. While the assistant (`ai.all`) or the
+gatekeeper (`agent.gatekeeper`) is switched off it waits (`JobWaits`: the try is given back, as a file's check does,
+BLD-C225), so a switch-off never uses up its tries. When its last attempt fails, `gave_up` audits
+`hide.recheck_gave_up` with IDs and the code only; the text stays hidden by the patterns and names.
+
+Texts written while the assistant was off (DEC-131 (3), BLD-C231): their sealed row keeps `gatekeeper_done_at` NULL
+(nothing is queued while off). Once both switches are on, the ticker's watch calls `queue_unchecked`, which keeps a
+few re-checks going at a time until every sealed text has had the gatekeeper's check or given up.
 """
 
 from __future__ import annotations
@@ -21,9 +25,9 @@ from core.logging import get_logger
 from hide.core import (
     RECHECK_JOB,
     SEALED_SOURCES,
-    GatekeeperUnavailable,
     _hide,
     audit,
+    caller_id,
     details_for,
     is_uuid,
     own_words,
@@ -31,6 +35,19 @@ from hide.core import (
 )
 
 log = get_logger("hide")
+
+# The job's `last_error` while it waits for the switches (a reason, not a failure), and the fallback step:
+# `queue_unchecked` makes waiting re-checks due within a tick of the switch-on.
+WAITING = "waiting_gatekeeper"
+WAIT_S = 300
+# At most this many re-checks running or due at once (BLD-C231). The jobs table has no priority, so the backlog after a
+# switch-on yields to live work by size: one top-up per watch tick (about 60 s) is about 5 model calls a minute.
+RECHECK_OUTSTANDING = 5
+# Words still being typed (an answer's autosave) settle before the sweep asks about them.
+SETTLE = "10 minutes"
+# Lane B's job for the review desk's own texts (BLD-B278): queued once per tick while both switches are on, deduped,
+# and run by lane B's handler (a worker without it leaves the one job waiting).
+DESK_TEXT_RECHECK = "desk.text_recheck"
 
 
 def run(conn: Conn, payload: dict[str, Any]) -> None:
@@ -46,7 +63,9 @@ def run(conn: Conn, payload: dict[str, Any]) -> None:
     if words is None:
         return  # the text was removed since
     if not _gatekeeper_on(conn):
-        raise GatekeeperUnavailable("ai_off")  # tried again later, never finished with nothing found
+        from jobs.runner import JobWaits
+
+        raise JobWaits(WAIT_S, WAITING)  # waits for the switches, its try given back (BLD-C231, as BLD-C225)
     with conn.transaction():
         before = {str(d["vault_tag"]) for d in details_for(conn, idea_uuid, source, source_id)}
         done, kept = _hide(
@@ -101,4 +120,64 @@ def gave_up(conn: Conn, payload: dict[str, Any]) -> None:
             "attempts": int(job["attempts"]) if job else None,
         },
     )
+    # The audit row is the record (BLD-C067): the sweep does not ask again about these words (BLD-C231).
+    conn.execute(
+        "UPDATE idea_words_sealed SET gatekeeper_done_at = now() "
+        "WHERE idea_uuid = %s AND source = %s AND source_id = %s AND gatekeeper_done_at IS NULL",
+        (idea_uuid, source, sealed_key(idea_uuid, source_id)),
+    )
     log.info("hide.recheck_gave_up", idea_id=idea_uuid, source_code=source, error_code=code)
+
+
+def queue_unchecked(conn: Conn, limit: int = RECHECK_OUTSTANDING) -> int:
+    """Texts written while the assistant was off get the gatekeeper's check once it is back (DEC-131 (3), BLD-C231).
+    Called on every tick of the ticker's watch; does nothing unless `ai.all` and `agent.gatekeeper` are both on.
+
+    It tops up to `limit` re-checks running or due now: first the ones waiting for the switches (made due now), then
+    new ones for sealed words with `gatekeeper_done_at` NULL that settled at least `SETTLE` ago and have no re-check
+    queued, oldest first, under the same dedupe key `_gatekeeper_skipped` uses. Each re-check is one model call
+    through the gateway, run by the job runner like any job. Nothing is checked here. Logs counts only. Returns how
+    many it made due or queued."""
+    if not _gatekeeper_on(conn):
+        return 0
+    from jobs.runner import enqueue
+
+    # Lane B's re-check of the review desk's own texts (BLD-B278), one at a time, started by the same switch-on.
+    enqueue(conn, DESK_TEXT_RECHECK, {}, dedupe_key=DESK_TEXT_RECHECK)
+    busy = conn.execute(
+        "SELECT count(*) AS n FROM jobs WHERE type = %s AND (state = 'running' OR (state = 'queued' AND run_at <= now()))",
+        (RECHECK_JOB,),
+    ).fetchone()  # fmt: skip
+    room = limit - int(busy["n"] if busy else 0)
+    if room <= 0:
+        return 0
+    with conn.transaction():  # the batch picked once (a MATERIALIZED CTE, BLD-C238)
+        requeued = conn.execute(
+            "WITH due AS MATERIALIZED (SELECT id FROM jobs WHERE type = %s AND state = 'queued' AND last_error = %s "
+            "AND run_at > now() ORDER BY id LIMIT %s FOR UPDATE SKIP LOCKED) "
+            "UPDATE jobs SET run_at = now() FROM due WHERE jobs.id = due.id",
+            (RECHECK_JOB, WAITING, room),
+        ).rowcount
+    room -= requeued
+    queued = 0
+    if room > 0:
+        rows = conn.execute(
+            "SELECT w.idea_uuid, w.source, w.source_id, w.owner_user_id FROM idea_words_sealed w "
+            "WHERE w.gatekeeper_done_at IS NULL AND w.updated_at < now() - %s::interval "
+            "AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.dedupe_key = %s || w.idea_uuid::text || ':' || w.source "
+            "|| ':' || w.source_id AND j.state IN ('queued', 'running')) ORDER BY w.id LIMIT %s",
+            (SETTLE, f"{RECHECK_JOB}:", room),
+        ).fetchall()
+        for r in rows:
+            idea_uuid, source, key = str(r["idea_uuid"]), str(r["source"]), str(r["source_id"])
+            payload = {
+                "idea_uuid": idea_uuid,
+                "source": source,
+                "source_id": caller_id(idea_uuid, source, key),
+                "by": str(r["owner_user_id"]),
+            }
+            if enqueue(conn, RECHECK_JOB, payload, dedupe_key=f"{RECHECK_JOB}:{idea_uuid}:{source}:{key}"):
+                queued += 1
+    if requeued or queued:
+        log.info("hide.recheck_swept", requeued_count=requeued, queued_count=queued)
+    return requeued + queued

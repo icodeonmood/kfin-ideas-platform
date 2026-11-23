@@ -45,6 +45,10 @@ take it first too. Two transactions that take the two kinds of lock in opposite 
     `by` is the users.id of whoever typed it (the one person who may read the values). With a sealed source
     ("message", "answer", "conversation", "edit") and its `source_id`, their own words are sealed too.
 
+`hide_text_result(…same as hide_text…) -> Hidden`
+    `hide_text` with the whole result: `Hidden.gatekeeper_checked` is True only when the gatekeeper's check of the
+    text is complete (BLD-C231), for callers that keep their own re-check marker (lane B's desk texts, BLD-B278).
+
 `hide_message(conn, idea_uuid, text, *, by, source="message", source_id, gatekeeper=True, gate=None) -> Hidden`
     What drafts need (L-DRAFT, through lane C's adapter), for a message or an edit of one:
     - `Hidden.masked`: the masked copy, for `idea_messages.text_encrypted` and for every service and model;
@@ -111,6 +115,7 @@ __all__ = [
     "hide_again",
     "hide_message",
     "hide_text",
+    "hide_text_result",
     "kinds_line",
     "mask",
     "preview",
@@ -132,13 +137,29 @@ def hide_text(
 ) -> tuple[str, int]:
     """Hide the customers' details in `text` written on an idea. Returns (masked_text, hidden_count). `gate`: the
     gatekeeper's finds asked before the lock (`hide.gate`, BLD-C234)."""
+    done = hide_text_result(conn, idea_uuid, text, by=by, source=source, source_id=source_id, gate=gate)
+    return done.masked, done.hidden_count
+
+
+def hide_text_result(
+    conn: Conn,
+    idea_uuid: str,
+    text: str,
+    *,
+    by: str,
+    source: str = "desk",
+    source_id: str | None = None,
+    gate: Gate | None = None,
+) -> Hidden:
+    """`hide_text`, returning the whole `Hidden`. `Hidden.gatekeeper_checked` says whether the gatekeeper's check of
+    the text is complete, so a caller that re-checks its own texts later (lane B's desk texts, BLD-B278) marks one
+    done only then, never after a gateway failure (BLD-C231)."""
     if source not in DETAIL_SOURCES:
         raise ValueError("unknown hide source")
     sid = source_id or str(uuid.uuid4())
-    done = hide_into(
+    return hide_into(
         conn, idea_uuid, text, by=by, source=source, source_id=sid, seal=source_id is not None, gate=gate
     )
-    return done.masked, done.hidden_count
 
 
 def hide_message(

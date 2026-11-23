@@ -81,6 +81,10 @@ class Hidden:
     counts: dict[str, int] = field(default_factory=dict)  # hidden (not shown) details by kind
     receipt: str | None = None  # "Hid 3 personal details from everyone but you: …"
     kinds_line: str = ""  # "Folio number, PAN and phone number"
+    # The gatekeeper's check of this text is complete (it answered, or the text is blank). False while the assistant
+    # is off or the gateway failed, so a caller that keeps its own re-check marker (lane B's desk texts, BLD-B278)
+    # never marks such a text done (BLD-C231).
+    gatekeeper_checked: bool = False
 
     @property
     def hidden_count(self) -> int:
@@ -225,7 +229,7 @@ def spans_of(details: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def summary(masked: str, details: list[dict[str, Any]]) -> Hidden:
+def summary(masked: str, details: list[dict[str, Any]], *, gatekeeper_checked: bool = False) -> Hidden:
     hidden = [d for d in details if d["state"] == "hidden"]
     counts = dict(Counter(str(d["kind"]) for d in hidden))
     return Hidden(
@@ -235,6 +239,7 @@ def summary(masked: str, details: list[dict[str, Any]]) -> Hidden:
         counts=counts,
         receipt=detect.receipt([str(d["masked"]) for d in hidden]),
         kinds_line=detect.kinds_line(str(d["kind"]) for d in hidden),
+        gatekeeper_checked=gatekeeper_checked,
     )
 
 
@@ -252,16 +257,39 @@ def sealed_key(idea_uuid: str, source_id: str) -> str:
     return f"{uuid.UUID(idea_uuid)}:{sid}"
 
 
-def _seal_words(conn: Conn, idea_uuid: str, source: str, source_id: str, owner_user: str, text: str) -> None:
-    """Seal the person's own words. A row under the same key for another idea or person is never overwritten."""
+def caller_id(idea_uuid: str, source: str, key: str) -> str:
+    """The caller's source id for a sealed row's key: the inverse of `sealed_key` for every caller today
+    (BLD-C231). Message, answer and conversation ids and a team-up request's id are uuids, kept as they are; lane C's
+    edits already start with the idea's uuid; a team-up decline reason ("<request id>:decline") or a draft's ask
+    ("<merge request id>:ask") was kept under the idea's uuid, which is dropped here."""
+    prefix = f"{uuid.UUID(idea_uuid)}:"
+    if source == "teamup" and key.startswith(prefix) and not is_uuid(key):
+        return key[len(prefix) :]
+    return key
+
+
+def _seal_words(
+    conn: Conn,
+    idea_uuid: str,
+    source: str,
+    source_id: str,
+    owner_user: str,
+    text: str,
+    *,
+    checked: bool = False,
+) -> None:
+    """Seal the person's own words. A row under the same key for another idea or person is never overwritten.
+    `checked`: the gatekeeper's check of these words is complete; when not, `gatekeeper_done_at` stays NULL and the
+    re-check sweep asks once the assistant is back (BLD-C231). New words replace the mark too."""
     key = sealed_key(idea_uuid, source_id)
     row = conn.execute(
-        "INSERT INTO idea_words_sealed (idea_uuid, source, source_id, owner_user_id, text_encrypted) "
-        "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (source, source_id) DO UPDATE SET text_encrypted = EXCLUDED.text_encrypted "
+        "INSERT INTO idea_words_sealed (idea_uuid, source, source_id, owner_user_id, text_encrypted, gatekeeper_done_at) "
+        "VALUES (%s, %s, %s, %s, %s, CASE WHEN %s THEN now() END) ON CONFLICT (source, source_id) DO UPDATE SET "
+        "text_encrypted = EXCLUDED.text_encrypted, gatekeeper_done_at = EXCLUDED.gatekeeper_done_at "
         "WHERE idea_words_sealed.idea_uuid = EXCLUDED.idea_uuid AND idea_words_sealed.owner_user_id = EXCLUDED.owner_user_id "
         "RETURNING id",
         (idea_uuid, source, key, owner_user,
-         seal_text("idea_words_sealed", "text_encrypted", f"{source}:{key}", text, vault=True)),
+         seal_text("idea_words_sealed", "text_encrypted", f"{source}:{key}", text, vault=True), checked),
     ).fetchone()  # fmt: skip
     if row is None:
         raise HideError(409, "conflict")
@@ -449,7 +477,7 @@ def _hide(
         masked, _ = layout(text, kept)
         sealed = seal and source in SEALED_SOURCES and is_uuid(by)
         if sealed:
-            _seal_words(conn, idea_uuid, source, source_id, by, text)
+            _seal_words(conn, idea_uuid, source, source_id, by, text, checked=gate.checked)
         if kept or gone:
             audit(
                 conn,
@@ -467,7 +495,7 @@ def _hide(
         if gate.skipped:
             _gatekeeper_skipped(conn, idea_uuid, by, source, source_id, gate, recheck=sealed)
     log.info("hide.text_hidden", idea_id=idea_uuid, source_code=source, hidden_count=len(kept))
-    return summary(masked, kept), kept
+    return summary(masked, kept, gatekeeper_checked=gate.checked), kept
 
 
 RECHECK_JOB = "hide.recheck"

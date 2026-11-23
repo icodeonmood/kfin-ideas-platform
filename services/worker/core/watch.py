@@ -128,8 +128,22 @@ class Watch:
 
         return requeue_waiting(conn) > 0
 
+    @staticmethod
+    def unchecked_texts(conn: Conn) -> bool:
+        """Sealed texts written while the assistant was off get the gatekeeper's check, a few re-checks at a time,
+        while both switches are on (DEC-131 (3), BLD-C231)."""
+        from hide.recheck import queue_unchecked
+
+        return queue_unchecked(conn) > 0
+
     def run(self, conn: Conn) -> None:
-        for check in (self.scanner, self.bounces, self.speech_route, self.waiting_files):
+        for check in (
+            self.scanner,
+            self.bounces,
+            self.speech_route,
+            self.waiting_files,
+            self.unchecked_texts,
+        ):
             try:
                 check(conn)
             except Exception as exc:  # one watch failing must not stop the other, or the ticker
