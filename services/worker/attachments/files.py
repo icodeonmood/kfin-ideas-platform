@@ -21,8 +21,11 @@ A file's life (`attachments.file_state`, E-ENUMS.file):
    before the virus scan, so no scan is repeated while it is off, the file stays `checking` with
    `checks.waiting_for` "gatekeeper", and its row reads `WAITING_LINE`. The ticker's watch runs waiting checks
    within a tick of the switches coming back on (`requeue_waiting`, BLD-C226); the 300-second step is only the
-   fallback. Each other wait (`CheckWaits`: the scanner, the store, OCR, the gateway failing) is still a try, and
-   its reason is kept in `checks.waiting_for`, so a file that gives up says which wait it died of.
+   fallback. A spent budget waits too, as `WAITING_BUDGET` every 30 minutes, which the watch leaves alone, so no
+   scan or OCR is repeated each tick until tomorrow's budget (BLD-C236). Each other wait (`CheckRetry`: the scanner,
+   the store, OCR, the gateway failing, kept as "gateway") is still a try, and its reason is kept in
+   `checks.waiting_for`, so a file that gives up says which wait it died of; only the gatekeeper's own wait shows
+   `WAITING_LINE` (BLD-C236).
    At worker start, files that an earlier build (r3) let die of those waits are put back to waiting
    (`start_sweep`, BLD-C227): nothing is checked or opened by it.
 4. The old `state` column is kept in step only for the checked states, which are its `clean`; nothing else is ever
@@ -95,8 +98,13 @@ UNSENT_CONVERSATION_HOURS = 24  # a conversation file not on an entry after this
 GATEKEEPER = "gatekeeper"  # `checks.waiting_for` while the check waits for it
 WAITING_GATEKEEPER = "waiting_gatekeeper"  # the job's `last_error` while it waits (a reason, not a failure)
 WAIT_STEP_S = 300  # the fallback step: the watch runs waiting checks within a tick of the switch-on
-# The gateway's codes for an assistant that is off (switched off, or the day's budget spent), not failing.
-ASSISTANT_OFF = ("switched_off", "daily_budget")
+# The day's budget spent: the job's `last_error`, which `requeue_waiting` does not touch, and a longer step, since the
+# budget comes back tomorrow, not within a tick (BLD-C236). The row still reads `WAITING_LINE`.
+WAITING_BUDGET = "waiting_budget"
+BUDGET_WAIT_S = 1800
+GATEWAY = (
+    "gateway"  # `checks.waiting_for` after a counted gateway failure: the assistant is on, so no waiting line
+)
 NO_WAIT = "none"  # `checks.waiting_for` of a file that gave up on an error that was not a wait
 BATCH = 50  # rows per commit in the switch-on re-queue and the start sweep
 SYSTEM = "system:files"
@@ -798,10 +806,15 @@ def accept_link(
 # ---- the check (job `file.check`) -------------------------------------------------------------------------------
 
 
-class CheckWaits(Exception):
-    """The check cannot run yet (the scanner, OCR, the store or the gatekeeper is not answering): the job retries;
+class CheckRetry(Exception):
+    """The check cannot run yet (the scanner, OCR, the store or the gateway is not answering): the job retries;
     after its last try the file is `upload_failed`, with Try again. The message is a reason code only, and `check`
-    keeps it in `checks.waiting_for`. A gatekeeper that is switched off is not this: it is `JobWaits` (BLD-C225)."""
+    keeps it in `checks.waiting_for`. A gatekeeper that is switched off is not this: it is `JobWaits` (BLD-C225).
+    The job's `last_error` is "CheckRetry". r3 raised it as `CheckWaits` and wrote that name, which is how
+    `reset_r3_waits` finds r3's jobs and leaves this build's retries in their backoff (BLD-C236)."""
+
+
+CheckWaits = CheckRetry  # r3's name for it, kept for code that imports it; the jobs now record "CheckRetry"
 
 
 ENDS_COPY = ("not_checkable",)  # a failure Try again cannot change: the quarantine copy goes at once
@@ -879,21 +892,22 @@ def _note_wait(conn: Conn, att_id: str, reason: str) -> None:
     )
 
 
-def _gatekeeper_wait(conn: Conn, att_id: str) -> JobWaits:
+def _gatekeeper_wait(conn: Conn, att_id: str, *, budget: bool = False) -> JobWaits:
     """The file waits for the gatekeeper (BLD-C225): it stays checking, its row reads `WAITING_LINE`, and the job
-    runs again after the step without using a try. Never a skip of the gatekeeper (non-negotiable 4)."""
+    runs again after the step without using a try. Never a skip of the gatekeeper (non-negotiable 4). `budget`: the
+    day's budget is spent, so it waits as `WAITING_BUDGET`, every `BUDGET_WAIT_S` (BLD-C236)."""
     _note_wait(conn, att_id, GATEKEEPER)
-    return JobWaits(WAIT_STEP_S, WAITING_GATEKEEPER)
+    return JobWaits(BUDGET_WAIT_S, WAITING_BUDGET) if budget else JobWaits(WAIT_STEP_S, WAITING_GATEKEEPER)
 
 
 def check(conn: Conn, att_id: str) -> str:
     """Virus scan, then the file's structure and text layer in the sandbox, then the gatekeeper and hide's
     detection (L-HIDE.files/1, /6). Returns the new state. Raises `JobWaits` while the gatekeeper is switched off
-    (BLD-C225) and `CheckWaits` while a service it needs is down, its reason kept in `checks.waiting_for`.
+    (BLD-C225) and `CheckRetry` while a service it needs is down, its reason kept in `checks.waiting_for`.
     A job for a file that is gone, or no longer checking, changes nothing."""
     try:
         return _check(conn, att_id)
-    except CheckWaits as wait:
+    except CheckRetry as wait:
         _note_wait(conn, att_id, str(wait))
         raise
 
@@ -923,11 +937,11 @@ def _check(conn: Conn, att_id: str) -> str:
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
             return _finish(conn, row, "upload_failed", "no_copy")
-        raise CheckWaits("store") from None
+        raise CheckRetry("store") from None
     try:
         verdict = clamav.scan_bytes(data)
     except clamav.ScannerUnavailable:
-        raise CheckWaits("scanner") from None
+        raise CheckRetry("scanner") from None
     if not verdict.clean:
         return _finish(conn, row, "infected", "virus")
     kind = str((row.get("checks") or {}).get("type") or kind_before_scan(data) or "")
@@ -935,7 +949,7 @@ def _check(conn: Conn, att_id: str) -> str:
         got = _extract(kind, data, uploads().types)
     except sandbox.ExtractionFailed as exc:
         if exc.code == "ocr_unavailable":
-            raise CheckWaits("ocr") from None
+            raise CheckRetry("ocr") from None
         state = {"locked": "locked", "too_big": "too_big"}.get(exc.code, "upload_failed")
         return _finish(conn, row, state, exc.code)
     real = got.kind if got.kind in MIME else kind
@@ -950,9 +964,9 @@ def _check(conn: Conn, att_id: str) -> str:
     try:
         gate = hide_files.gate_for(conn, str(row["idea_uuid"]), hide_files.text_of(got.pieces))
     except hide_files.GatekeeperWaits as exc:
-        if str(exc) in ASSISTANT_OFF:
-            raise _gatekeeper_wait(conn, att_id) from None
-        raise CheckWaits(GATEKEEPER) from None
+        if str(exc) in ("switched_off", "daily_budget"):  # the assistant is off, not failing
+            raise _gatekeeper_wait(conn, att_id, budget=str(exc) == "daily_budget") from None
+        raise CheckRetry(GATEWAY) from None  # a counted try; its row never says "when the assistant is back"
     with conn.transaction():
         # L-HIDE's lock before the file's row (BLD-C067, BLD-C228): `hide_file` takes it next. The gatekeeper has
         # already run above, so nothing waits on a model under it.

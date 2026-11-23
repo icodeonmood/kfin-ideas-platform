@@ -300,20 +300,27 @@ def test_l_hide_files_bld_c225_a_late_switch_off_or_spent_budget_waits_a_gateway
 
         return gate_for
 
-    for code in ("switched_off", "daily_budget"):
+    # The day's budget waits as `waiting_budget`, 30 minutes on, which the watch leaves alone (BLD-C236).
+    for code, step, job_code in (
+        ("switched_off", 300, "waiting_gatekeeper"),
+        ("daily_budget", 1800, "waiting_budget"),
+    ):
         monkeypatch.setattr(F.hide_files, "gate_for", waits(code))
         with pytest.raises(JobWaits) as wait:
             F.check(db, files[code])
-        assert (wait.value.seconds, wait.value.code) == (300, "waiting_gatekeeper")
+        assert (wait.value.seconds, wait.value.code) == (step, job_code)
         assert _row(db, files[code])["checks"]["waiting_for"] == "gatekeeper"
+        assert F.get_item(db, files[code], cast["kavya"]["id"])["problem"] == WAITING
 
     att = files["refusal"]
     monkeypatch.setattr(F.hide_files, "gate_for", waits("refusal"))
     _run(db, att)
     job = _job(db, att)
-    assert (job["state"], job["attempts"], job["last_error"]) == ("queued", 1, "CheckWaits")
+    assert (job["state"], job["attempts"], job["last_error"]) == ("queued", 1, "CheckRetry")
     assert 50 < float(job["wait_s"]) <= 60  # today's first step: 1 minute
-    assert _row(db, att)["checks"]["waiting_for"] == "gatekeeper"
+    # A counted try with the assistant on: kept as "gateway", and the row never says "when the assistant is back".
+    assert _row(db, att)["checks"]["waiting_for"] == "gateway"
+    assert "problem" not in F.get_item(db, att, cast["kavya"]["id"])
 
 
 def test_l_hide_files_bld_c225_real_failures_still_back_off_and_give_up_as_today(
@@ -330,7 +337,7 @@ def test_l_hide_files_bld_c225_real_failures_still_back_off_and_give_up_as_today
     monkeypatch.setattr(F.clamav, "scan_bytes", down)
     _run(db, att)
     job = _job(db, att)
-    assert (job["state"], job["attempts"], job["last_error"]) == ("queued", 1, "CheckWaits")
+    assert (job["state"], job["attempts"], job["last_error"]) == ("queued", 1, "CheckRetry")
     assert 50 < float(job["wait_s"]) <= 60
     assert _row(db, att)["checks"]["waiting_for"] == "scanner"
     assert "problem" not in F.get_item(
@@ -390,6 +397,23 @@ def test_l_hide_files_bld_c226_bld_c225_the_requeue_is_batched_and_stops_when_sw
     monkeypatch.setattr(F, "gatekeeper_on", lambda conn: next(reads))
     assert F.requeue_waiting(db, batch=1) == 1
     assert [_job(db, a)["due"] for a in (first, second)] == [True, False]
+
+
+def test_l_hide_files_bld_c236_the_requeue_leaves_a_spent_budgets_wait_alone(
+    db: Conn, cast: dict[str, Any], stood_in: dict[str, Any]
+) -> None:
+    """BLD-C236 (review nit 2): a check waiting for tomorrow's budget is not made due on every tick, so its scan and
+    OCR are not run again each minute; a check waiting for the switches still is."""
+    budget, off = _add(db, cast, name="budget.pdf"), _add(db, cast, name="off.pdf")
+    _run(db, budget)
+    _run(db, off)
+    db.execute(
+        "UPDATE jobs SET last_error = 'waiting_budget' WHERE type = %s AND payload->>'attachment_id' = %s",
+        (F.JOB, budget),
+    )
+    _switch(db, "on")
+    assert F.requeue_waiting(db) >= 1
+    assert [_job(db, a)["due"] for a in (budget, off)] == [False, True]
 
 
 # ---- BLD-C227: the worker-start sweep (THE EXACT RULE) ------------------------------------------------------------
@@ -559,6 +583,22 @@ def test_l_hide_files_bld_c227_bld_c225_start_sweep_resets_r3s_live_waiters_outs
     assert len(reset) == 1 and set(reset[0]) == {"level", "logger", "event", "job_count"}
     assert reset[0]["logger"] == "jobs" and reset[0]["job_count"] >= 1
     assert _row(db, att)["file_state"] == "checking"
+
+
+def test_l_hide_files_bld_c236_start_sweep_leaves_this_builds_retries_in_their_backoff(
+    db: Conn, cast: dict[str, Any], stood_in: dict[str, Any]
+) -> None:
+    """BLD-C236 (review nit 4): this build's counted retries record `CheckRetry`, so a worker restart's r3 reset
+    (which reads r3's `CheckWaits` only) neither gives their tries back nor makes them wait for the gatekeeper."""
+    att = _add(db, cast)
+    db.execute(
+        "UPDATE jobs SET attempts = 2, last_error = 'CheckRetry', run_at = now() + interval '15 minutes' "
+        "WHERE type = %s AND payload->>'attachment_id' = %s",
+        (F.JOB, att),
+    )
+    F.start_sweep(db)
+    job = _job(db, att)
+    assert (job["state"], job["attempts"], job["last_error"]) == ("queued", 2, "CheckRetry")
 
 
 def test_l_hide_files_bld_c227_bld_c225_a_sweep_that_fails_part_way_says_so_and_audits_complete_false(

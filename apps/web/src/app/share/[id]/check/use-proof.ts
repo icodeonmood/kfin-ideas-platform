@@ -14,7 +14,7 @@ import type { FileItem } from "@/lib/contracts";
 
 import { api, type Call, type ProofTarget } from "./client";
 import { CHECK_COPY } from "./copy";
-import { POLL, pollDelay, settling, type ProofItem } from "./model";
+import { POLL, pollDelay, settling, waitingForCheck, type ProofItem } from "./model";
 import type { LinkResult } from "./proof";
 
 /** Every call the page makes, so its save status can follow it (C-TASKBAR.save). */
@@ -239,28 +239,32 @@ export function useProof(
 
   // Files settle on the server (scan, then the personal-details check): ask again until they do (C-FILE.row). A
   // failed ask (the network, a 4xx while a switch is off) waits longer and asks again; after five in a row the row
-  // offers "Try again" rather than freezing (BLD-C139).
+  // offers "Try again" rather than freezing (BLD-C139). While every moving file waits for the gatekeeper, every
+  // 30 s (BLD-C236).
   useEffect(() => {
     const moving = proof.filter(settling);
     if (!moving.length) return;
     const worst = Math.max(0, ...moving.map((p) => pollFails.current.get(p.key) ?? 0));
-    const t = setTimeout(async () => {
-      let again = false;
-      for (const p of moving) {
-        if (!p.item?.id) continue;
-        const r = await api.file(p.item.id);
-        if (r.ok && r.body) {
-          pollFails.current.delete(p.key);
-          replace(p.key, { item: r.body });
-          continue;
+    const t = setTimeout(
+      async () => {
+        let again = false;
+        for (const p of moving) {
+          if (!p.item?.id) continue;
+          const r = await api.file(p.item.id);
+          if (r.ok && r.body) {
+            pollFails.current.delete(p.key);
+            replace(p.key, { item: r.body });
+            continue;
+          }
+          const fails = (pollFails.current.get(p.key) ?? 0) + 1;
+          pollFails.current.set(p.key, fails);
+          if (fails >= POLL.tries) replace(p.key, { stalled: true });
+          else again = true;
         }
-        const fails = (pollFails.current.get(p.key) ?? 0) + 1;
-        pollFails.current.set(p.key, fails);
-        if (fails >= POLL.tries) replace(p.key, { stalled: true });
-        else again = true;
-      }
-      if (again) setPollTick((n) => n + 1);
-    }, pollDelay(worst));
+        if (again) setPollTick((n) => n + 1);
+      },
+      pollDelay(worst, moving.every(waitingForCheck)),
+    );
     return () => clearTimeout(t);
   }, [proof, pollTick, replace]);
 
