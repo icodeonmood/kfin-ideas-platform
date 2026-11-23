@@ -1,6 +1,6 @@
 # UAT deploy runbook
 
-**Read this runbook from `release/2026-11-20`** (`git show origin/release/2026-11-20:docs/UAT.md`). A copy inside a checkout can be out of date: the one in `launch-2026-11-20` lacks the privacy notice version and the Ones Committee step, and the one in `launch-2026-11-20-r2` lacks the fixes made after it.
+**Read this runbook from the tag lane A sent you** for this install, upgrade or switch to full mode: `git fetch --tags`, then `git show <tag>:docs/UAT.md` (for r4, `git show launch-2026-11-20-r4:docs/UAT.md`). A copy anywhere else can be out of date: `release/2026-11-20` stays on r3 and has no upgrade section, the one in `launch-2026-11-20` lacks the privacy notice version and the Ones Committee step, and the one in `launch-2026-11-20-r2` lacks the fixes made after it (BLD-A248).
 
 For: KFin IT and the product team, installing 1% Club with `make uat-deploy`, on a UAT host or on the launch server. **The launch server is production** (`APP_ENV=prod`): real employees sign in there. Synthetic data only in dev, UAT and tests: they never hold real employee, investor or client data. On a UAT host (`APP_ENV=uat`) the deploy loads 200 synthetic people (all `@kfintech.example`, who cannot sign in), which the smoke checks need. **The launch server uses `APP_ENV=prod`, so the install loads no people at all:** real people come only from HR's file, which IT loads after the first admin's first sign-in (the HR import, step 1b under After the deploy). That is the one difference: otherwise `uat` and `prod` behave the same in the code (BLD-A235).
 
@@ -203,7 +203,7 @@ Do the steps in order. After each one, paste to lane A the lines its **Paste bac
 
 Run every command from the release checkout, the one the server was deployed or last upgraded from.
 
-1. **Check the build.** The build on the server must carry lane C's file wait (A2, BLD-C225 to BLD-C227), `scripts/eval/live.sh` (BLD-C229) and this change (BLD-A245). Lane A sends IT the tag that has all three. If the server runs an older one, install the new tag first with **Updating the live server** above.
+1. **Check the build.** The build on the server must carry lane C's file wait (A2, BLD-C225 to BLD-C227), `scripts/eval/live.sh` (BLD-C229), lane C's re-check of the words typed while the assistant was off (BLD-C231, with BLD-C234) and this change (BLD-A245). Lane A sends IT the tag that has all four. If the server runs an older one, install the new tag first with **Updating the live server** above.
 
    ```bash
    git describe --tags --exact-match
@@ -258,7 +258,9 @@ Run every command from the release checkout, the one the server was deployed or 
 
    Paste back: the switch list. Pass: `ai.all on`, and every other switch as before, apart from any agent switched off in step 4.
 
-7. **Check the files waiting for the personal-data check.** They go back into the queue on their own (A2's ticker, about a minute) and are checked now that the assistant is on. Both commands only read, and print counts only: no file name and no text.
+7. **Check the files and the words waiting for the personal-data check.** Both go back into the queue on their own now that the assistant is on: the files on A2's ticker (about a minute), and the words people typed while it was off at up to 5 a minute (BLD-C231). Every command here only reads, and prints counts and error codes only: no file name, no ID and no text.
+
+   Files:
 
    ```bash
    docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT file_state, count(*) FROM attachments GROUP BY 1 ORDER BY 1"
@@ -267,7 +269,24 @@ Run every command from the release checkout, the one the server was deployed or 
 
    Run both straight after step 6, then every 2 minutes. Paste back: the counts each time. Pass: within 10 minutes of step 6, no `file.check` row with `waiting_gatekeeper` is left (its count falls to 0). If one is still there after 10 minutes, send the counts to lane A.
 
-8. **Turn on similar ideas.** Follow **Moving a server from hash to BGE-M3 vectors (BLD-C211)** below first, with its own checks. Then, on the product lead's word, an admin switches `matching.show` on from the Admin page, with a reason.
+   Words:
+
+   ```bash
+   docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT count(*) FROM idea_words_sealed WHERE gatekeeper_done_at IS NULL"
+   docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT state, last_error, run_at <= now() AS due, count(*) FROM jobs WHERE type = 'hide.recheck' GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"
+   docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "WITH s AS (SELECT max(at) AS since FROM audit_log WHERE action = 'kill_switch.set' AND entity IN ('kill_switch:ai.all', 'kill_switch:agent.gatekeeper') AND after->>'state' = 'on') SELECT s.since, a.after->>'code' AS code, count(a.id) FROM s LEFT JOIN audit_log a ON a.action = 'hide.recheck_gave_up' AND a.at >= s.since GROUP BY 1, 2 ORDER BY 2"
+   ```
+
+   Run all three straight after step 6, then every 10 minutes until the first count is 0. Paste back: the counts each time. The first count is the number of texts still to check. They go at about 300 an hour, so N texts take about N/300 hours (600 take about two hours). Pass:
+   - the first count falls between reads and reaches 0. It can rise a little and fall again: a text written in the last 10 minutes waits until it settles, and a new one is checked at once unless the model route fails on it;
+   - in the jobs read, `running` plus `queued` with `due` `t` stay at 5 or fewer, and `done` grows. A `queued` row with a `last_error` and `due` `f` is a re-check waiting to try again after the model route failed: that is fine while the first count still falls. A `queued` row with `last_error` `waiting_gatekeeper` that shows on two reads in a row means a switch is off: go back to step 6. `dead` rows from before this build are history;
+   - the third read prints one row: `since` is the time of step 6 (the switch-on; if it is empty, stop and tell lane A), the code is empty and the count is `0`. Any other row means a re-check gave up since the switch-on: paste its code and count, whatever the code says, for the product lead. Those texts are hidden by the patterns and names only, never by the gatekeeper.
+
+   If the first count is the same on two reads 10 minutes apart, with `ai.all` and `agent.gatekeeper` both on, send all three reads to lane A.
+
+   Step 8 waits until the first count is 0. Until then, a similar-idea card could show a name or an address the gatekeeper would have hidden. Each re-check updates the similar-ideas index within seconds, so step 8 needs nothing more. Step 9 does not wait.
+
+8. **Turn on similar ideas**, once step 7's first words count is 0. Follow **Moving a server from hash to BGE-M3 vectors (BLD-C211)** below first, with its own checks. Then, on the product lead's word, an admin switches `matching.show` on from the Admin page, with a reason.
 
    Paste back: that section's checks, then `docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list`. Pass: as that section says, then `matching.show on`.
 

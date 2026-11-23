@@ -291,6 +291,49 @@ def test_a245_runbook_full_mode_section_in_order_with_paste_backs_and_no_secret(
     assert not re.search(r"sk-ant-|AKIA[0-9A-Z]{12,}|@kfintech\.com", section)
 
 
+def test_bld_a248_runbook_is_read_from_the_tag_lane_a_sent() -> None:
+    """release/2026-11-20 stays on r3 and has no upgrade section, so IT reads the runbook from the tag it installs."""
+    doc = UAT_DOC.read_text("utf-8")
+    first = next(p for p in doc.split("\n\n") if p.startswith("**Read this runbook from"))
+    assert first.startswith("**Read this runbook from the tag lane A sent you**")
+    assert "`git show <tag>:docs/UAT.md`" in first and "git show launch-2026-11-20-r4:docs/UAT.md" in first
+    assert "git show origin/release/2026-11-20" not in doc
+    assert "`release/2026-11-20` stays on r3 and has no upgrade section" in first
+
+
+def test_bld_a248_full_mode_step_7_waits_for_the_words_and_step_8_waits_for_step_7() -> None:
+    """BLD-C231: the words typed while the assistant was off are re-checked before similar ideas come on."""
+    section = _section(UAT_DOC.read_text("utf-8"), "Switching to full mode (mode A)")
+    [step1] = [line for line in section.splitlines() if line.startswith("1. **")]
+    assert "(BLD-C231, with BLD-C234)" in step1 and "the tag that has all four" in step1
+    step7 = section.split("\n7. **", 1)[1].split("\n8. **", 1)[0]
+    order = [
+        "FROM jobs WHERE type = 'file.check' GROUP BY 1, 2",
+        "Words:",
+        "SELECT count(*) FROM idea_words_sealed WHERE gatekeeper_done_at IS NULL",
+        "SELECT state, last_error, run_at <= now() AS due, count(*) FROM jobs WHERE type = 'hide.recheck' "
+        "GROUP BY 1, 2, 3",
+        "action = 'kill_switch.set' AND entity IN ('kill_switch:ai.all', 'kill_switch:agent.gatekeeper')",
+        "LEFT JOIN audit_log a ON a.action = 'hide.recheck_gave_up' AND a.at >= s.since",
+        "stay at 5 or fewer",
+        "`waiting_gatekeeper` that shows on two reads in a row means a switch is off: go back to step 6",
+        "if it is empty, stop and tell lane A",
+        "Step 8 waits until the first count is 0.",
+    ]
+    positions = [step7.index(s) for s in order]
+    assert positions == sorted(positions)
+    # The reads print counts, states and codes: never an ID, a name or the text itself.
+    words = step7.split("Words:", 1)[1]
+    reads = re.findall(r'psql -U ideas -d ideas -c "([^"]+)"', words)
+    assert len(reads) == 3
+    for sql in reads:
+        columns = re.sub(r"count\([^)]*\)", "count", sql.rsplit("SELECT ", 1)[1].split(" FROM ", 1)[0])
+        forbidden = r"\b(id|idea_id|payload|text|words|entity|actor|before|reason|ip)\b"
+        assert not re.search(forbidden, columns), sql
+    [step8] = [line for line in section.splitlines() if line.startswith("8. **")]
+    assert step8.startswith("8. **Turn on similar ideas**, once step 7's first words count is 0.")
+
+
 # ---- BLD-A246: the web container never gets the model route's credentials ------------------------------------------
 
 MODEL_CREDENTIALS = (
