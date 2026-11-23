@@ -808,6 +808,19 @@ describe("S-06B phone (PhoneEdit, S-06B.rules/5)", () => {
     expect(edit).toMatch(/\.ed-live > \.bmsg\.ok \{\s*flex-wrap: nowrap;\s*align-items: flex-start;/);
     expect(edit).toMatch(/\.ed-live > \.bmsg\.ok > svg \{\s*flex: none;/);
   });
+
+  it("WCAG 1.4.10, PhoneEdit: on a short phone the dock stays one column and scrolls inside its cap; Save changes never leaves it", () => {
+    // `.dock` wraps (shell.css); a wrapping column starts a hidden second column at the 45vh cap, which took Cancel
+    // and Save changes off the right edge at 320x640 with the closed line (lane D's QA of BLD-C241)
+    const css = readFileSync(path.resolve(__dirname, "../../src/app/ideas/[id]/edit/edit.css"), "utf8");
+    const phone = css.slice(css.lastIndexOf("@media (max-width: 640px)"));
+    expect(phone).toMatch(
+      /\.ed-dock \{[^}]*flex-direction: column;[^}]*flex-wrap: nowrap;[^}]*max-height: 45dvh;/,
+    );
+    // and from the top: packed to the end, what passes the cap would leave by the top edge, out of scroll's reach
+    expect(phone).toMatch(/\.ed-dock \{[^}]*flex-wrap: nowrap;[^}]*justify-content: flex-start;/);
+    expect(phone).toMatch(/\.ed-dock > \* \{\s*flex-shrink: 0;\s*\}/);
+  });
 });
 
 // --- Review round on c/s06b (BLD-C161, C163, C165) ------------------------------------------------------------------
