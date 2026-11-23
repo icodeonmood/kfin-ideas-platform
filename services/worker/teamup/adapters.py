@@ -12,6 +12,8 @@
   lead's decline reason (`decline_id`) and a draft's ask (`ask_id`). Each value is kept in lane C's vault under the
   idea's scope and the typer's own words are sealed for them alone (`own_words`); everyone else reads the masked
   copy. `write_masked` is lane F's writer for lane C's re-check (`hide/recheck.py`).
+- `gate`: lane C's `hide.gate` (BLD-C234): the gatekeeper asked for one of those texts BEFORE the transaction and
+  `lock_hide`, so its model call holds no lock (BLD-F100); the answer goes back in as `hide(gate=...)`.
 - `lock_hide`: lane C's per-idea lock (`hide.core.lock`), taken FIRST, in uuid order, in a transaction that can reach
   lane C's hide or `forget`, before `store.lock_ideas` takes the ideas' rows in the same order (BLD-B247, BLD-F096).
 - `drop_queued`: lane B's `desk.asking.drop_queued`: a merged idea's queued question sets go, and first what lane C's
@@ -31,7 +33,9 @@ from psycopg.types.json import Jsonb
 from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
+from hide import Gate as Gate
 from hide import core as hide_core
+from hide import gate as hide_gate
 from hide import hide_text
 from onepc.context import seal_text
 
@@ -164,13 +168,25 @@ def ask_id(merge_request_id: str) -> str:
     return f"{merge_request_id}:ask"
 
 
-def hide(conn: Conn, idea_uuid: str, text: str, *, by: str, source_id: str) -> tuple[str, int]:
+def gate(conn: Conn, idea_uuid: str, text: str) -> Gate:
+    """Lane C's gatekeeper asked for a team-up text with no lock held (`hide.gate`, BLD-C234, BLD-F100), so the model
+    call (seconds on the real route) runs before `lock_hide` and every row lock, not under them. Hand the result to
+    `hide(gate=...)` with the SAME text: hide uses it only for that exact string and otherwise asks again under the
+    lock. Lane C's gate checks no ownership: call it only once this person may write the text on this idea, and with
+    no transaction open. Nothing is stored; the logs carry IDs only."""
+    return hide_gate(conn, idea_uuid, text, source=HIDE_SOURCE)
+
+
+def hide(
+    conn: Conn, idea_uuid: str, text: str, *, by: str, source_id: str, gate: Gate | None = None
+) -> tuple[str, int]:
     """The masked copy of a team-up text and how many details were hidden (L-HIDE, DEC-103, BLD-F097), through lane
     C's `hide_text`: patterns, then the gatekeeper, then names. `by` is the users.id of the person who typed it, the
     one person who reads it back (`own_words`). Call it in the transaction that stores the masked copy, after lane
     C's lock on every idea the transaction locks (`lock_hide`, taken first). `source_id` must be distinct across
-    ideas: the request id for a note, `decline_id` for a reason, `ask_id` for a draft's ask."""
-    return hide_text(conn, idea_uuid, text, by=by, source=HIDE_SOURCE, source_id=source_id)
+    ideas: the request id for a note, `decline_id` for a reason, `ask_id` for a draft's ask. `gate`: the
+    gatekeeper's finds for this same text, asked before the lock (`gate` above, BLD-F100)."""
+    return hide_text(conn, idea_uuid, text, by=by, source=HIDE_SOURCE, source_id=source_id, gate=gate)
 
 
 def own_words(conn: Conn, idea_uuid: str, source_id: str) -> str | None:

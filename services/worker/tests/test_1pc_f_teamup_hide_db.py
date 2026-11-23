@@ -104,13 +104,18 @@ def made_up() -> tuple[str, str, str]:
     return folio, pan, phone
 
 
-def gatekeeper_finding(monkeypatch: pytest.MonkeyPatch, name: str) -> list[str]:
+def gatekeeper_finding(
+    monkeypatch: pytest.MonkeyPatch, name: str, *, calls: list[tuple[str, str]] | None = None
+) -> list[str]:
     """Stand in for the gatekeeper (lane C's tests do the same): it finds `name` wherever it is in a text. Returns
-    the texts it was asked about."""
+    the texts it was asked about; with `calls` (`_lock_calls`), each ask is put there too as ("gatekeeper", text),
+    in order with the locks (BLD-F100)."""
     asked: list[str] = []
 
     def gatekeeper_finds(conn: Any, text: str, scope: str) -> detect.Gate:
         asked.append(text)
+        if calls is not None:
+            calls.append(("gatekeeper", text))
         found: list[detect.Found] = []
         at = text.find(name)
         while at != -1:
@@ -608,6 +613,102 @@ def test_l_hide_bld_b247_bld_f097_send_and_a_drafts_ask_take_lane_cs_lock_first_
     ask_calls = list(calls)
     assert list(dict.fromkeys(ask_calls)) == in_order(draft["id"], lead["id"])
     assert ("hide", str(draft["id"])) in ask_calls[4:]  # lane C's hide of the ask: held already
+
+
+# ---- BLD-F100: the gatekeeper is asked before lane C's lock (lane C's `hide.gate`, BLD-C234) -------------------
+
+
+def _asked_first(calls: list[tuple[str, str]], text: str) -> None:
+    """One call's asks and locks: the gatekeeper asked once, for `text` exactly, before lane C's first lock and the
+    first row lock, and then both kinds of lock taken, so lane C's hide used that answer under the lock."""
+    asks = [c for c in calls if c[0] == "gatekeeper"]
+    assert asks == [("gatekeeper", text)], calls
+    assert calls[0] == ("gatekeeper", text), calls
+    assert any(c[0] == "hide" for c in calls) and any(c[0] == "row" for c in calls), calls
+
+
+def test_l_hide_detect_bld_f100_bld_c234_the_note_a_reason_and_an_ask_go_to_the_gatekeeper_before_any_lock(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, customer: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L-HIDE.detect, BLD-F100: the team-up note (`requests.send`), the lead's decline reason (`requests.answer`) and
+    a draft's ask (`drafts.ask`) each go to the gatekeeper once, trimmed exactly as they are hidden, before lane C's
+    lock and any row lock (`adapters.gate`). Lane C's hide uses that answer under the lock and asks nothing more,
+    so no lock waits on the model. What the gatekeeper finds is still hidden from the other side."""
+    lead, mine = cast["lead"], cast["mine"]
+    draft = f.draft(db, cast["asha"])
+    calls = _lock_calls(monkeypatch)
+    gatekeeper_finding(monkeypatch, customer, calls=calls)
+    folio = made_up()[0]
+
+    note = f"{customer} asked again at the counter. Folio {folio} is the one at our branch."
+    sent = requests.send(db, lead["idea_id"], cast["kavya"]["id"],
+                         {"note": f"  {note}  ", "brought_idea_ids": [mine["idea_id"]]})  # fmt: skip
+    _asked_first(list(calls), note)
+    _masked_only(requests.read(db, sent["id"], cast["ravi"]["id"])["note"], customer, folio)
+
+    calls.clear()
+    reason = f"{customer} is with another crew on this one, folio {folio}."
+    requests.answer(db, sent["id"], cast["ravi"]["id"], {"answer": "decline", "reason": f" {reason} "})
+    _asked_first(list(calls), reason)
+    stored = _stored(db, "teamup_requests", "lead_reason_encrypted", sent["id"])
+    assert stored is not None
+    _masked_only(stored, customer, folio)
+
+    calls.clear()
+    ask = f"{customer} wrote to us about this too, folio {folio}, so mine fits yours."
+    got = drafts.ask(
+        db, str(draft["id"]), cast["asha"]["id"], {"other_idea_id": lead["idea_id"], "note": ask}
+    )
+    _asked_first(list(calls), ask)
+    stored = _stored(db, "merge_requests", "note_encrypted", got["id"])
+    assert stored is not None
+    _masked_only(stored, customer, folio)
+    _nowhere_in_clear(db, customer, folio)
+
+    # an answer with no reason asks nothing
+    meghna = f.person(db, "Meghna Rao")
+    rid = requests.send(db, lead["idea_id"], meghna["id"], {"note": NOTE})["id"]
+    calls.clear()
+    requests.answer(db, rid, cast["ravi"]["id"], {"answer": "team_only"})
+    assert not [c for c in calls if c[0] == "gatekeeper"], calls
+
+
+def test_l_hide_bld_f100_nothing_goes_to_the_gatekeeper_before_the_person_may_write_it(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, customer: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLD-F100, DEC-103: lane C's gate checks no ownership, so lane F asks it only once the person may write the
+    text. The lead asking to team up on their own idea, a note too short, a second request while one waits, an
+    answer from someone who is not the lead and an ask from someone else's draft are each refused as before, and
+    none of those words reaches the gatekeeper."""
+    from teamup.store import Refused
+
+    lead = cast["lead"]
+    asked = gatekeeper_finding(monkeypatch, customer)
+    words = f"{customer} rang our branch about this twice last week."
+
+    def refused(call: Any, *args: Any) -> Refused:
+        with pytest.raises(Refused) as exc:
+            call(db, *args)
+        return exc.value
+
+    own = refused(requests.send, lead["idea_id"], cast["ravi"]["id"], {"note": words})
+    assert own.code == "already_on_crew"
+    short = refused(requests.send, lead["idea_id"], cast["kavya"]["id"], {"note": customer})
+    assert short.code == "note_too_short"
+    assert asked == []
+
+    rid = requests.send(db, lead["idea_id"], cast["kavya"]["id"], {"note": NOTE})["id"]
+    assert asked == [NOTE]  # hers, once she may send it
+    asked.clear()
+    again = refused(requests.send, lead["idea_id"], cast["kavya"]["id"], {"note": words})
+    assert again.code == "already_requested"
+    not_lead = refused(requests.answer, rid, cast["asha"]["id"], {"answer": "decline", "reason": words})
+    assert not_lead.code == "not_lead"
+    other_draft = f.draft(db, cast["asha"])
+    not_hers = refused(drafts.ask, str(other_draft["id"]), cast["kavya"]["id"],
+                       {"other_idea_id": lead["idea_id"], "note": words})  # fmt: skip
+    assert not_hers.status == 404
+    assert asked == []
 
 
 # ---- the idea's sharer never owns, sees or reveals a requester's details (DEC-103, DEC-104) --------------------
