@@ -3,7 +3,7 @@
 /**
  * S-08's "+" (DEC-124, walk item WF-01; BLD-F095): the files a message carries, for the readers who may attach
  * (`composer.can_attach`: the sharer, the review desk and the Ones Committee, BLD-F063, BLD-B270). Built from lane D's
- * shared pieces (`AttachButton`, C-FILE's `DropArea`, `FileList`, `FileRow`) with the Home board's words
+ * shared pieces (`AttachButton`, C-FILE's `FilePicker`, `FileList`, `FileRow`) with the Home board's words
  * (`BOX_FILES_COPY`, C-PROMPT.attach) and Check it's row rules and polling (`rowView`, `settling`, `pollDelay`),
  * because lane C's `useBoxFiles` belongs to a draft.
  *
@@ -20,7 +20,7 @@
  *
  * No words or names are logged here (non-negotiable 3).
  */
-import { useCallback, useEffect, useId, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { call, api, urls, type Call } from "@/app/share/[id]/check/client";
 import { CHECK_COPY } from "@/app/share/[id]/check/copy";
@@ -29,15 +29,13 @@ import {
   pollDelay,
   rowView,
   settling,
-  splitLinks,
   type ProofItem,
   type RowView,
 } from "@/app/share/[id]/check/model";
 import { BOX_FILES_COPY } from "@/app/share/box-files";
-import { IconFolder, IconLink } from "@/components/compose/icons";
 import { Button } from "@/components/ui/button";
-import { FieldMsg } from "@/components/ui/field";
-import { DropArea, FileList, FileRemove, FileRow } from "@/components/ui/file";
+import { FileList, FileRemove, FileRow } from "@/components/ui/file";
+import { FilePicker, type LinkDraft } from "@/components/ui/file-picker";
 import type { FileItem, UploadConfig } from "@/lib/contracts";
 
 import { S08_COPY } from "./compose";
@@ -323,20 +321,14 @@ export function ConvoFileRows({
   );
 }
 
-/**
- * The link field's words, and whether "Add link" found they are not a link. The screen keeps them, so a picker drawn
- * again (the width crossing 640px moves it, BLD-F098) still holds what was typed (BLD-F102).
- */
-export interface LinkDraft {
-  text: string;
-  bad: boolean;
-}
-
-export const NO_LINK: LinkDraft = { text: "", bad: false };
+/** The link field as the screen keeps it, so a picker drawn again (the width crossing 640px, BLD-F098) still holds
+ * what was typed (BLD-F102). Lane D's picker's own type (BLD-D031). */
+export { NO_LINK, type LinkDraft } from "@/components/ui/file-picker";
 
 /**
- * The picker the "+" opens (C-FILE.uploader, the Home board's `attachments=Picker open`): the drop area with "browse",
- * "Choose a folder", and the link field with "Add link". Escape closes it (the screen puts focus back on the "+").
+ * The picker the "+" opens: lane D's shared C-FILE.uploader picker (BLD-D031), placed by `.cv-pick`. A link goes into
+ * the words; the screen moves the focus itself (BLD-F098), so the picker does not take it on opening. Escape closes it
+ * (the screen puts focus back on the "+").
  */
 export function ConvoPicker({
   id,
@@ -357,111 +349,17 @@ export function ConvoPicker({
   onLink(link: string): void;
   onClose(): void;
 }) {
-  const [dragging, setDragging] = useState(false);
-  const { text, bad } = link;
-  const files = useRef<HTMLInputElement>(null);
-  const folder = useRef<HTMLInputElement>(null);
-  const ids = useId();
-
-  // A folder is picked with the browser's own folder chooser; every file in it is added.
-  useEffect(() => {
-    folder.current?.setAttribute("webkitdirectory", "");
-  }, []);
-
-  const addLink = () => {
-    const typed = text.trim();
-    if (splitLinks(typed).bad) {
-      onLinkDraft({ text, bad: true });
-      return;
-    }
-    onLinkDraft(NO_LINK);
-    onLink(typed);
-  };
-
-  const onDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragging(false);
-    const dropped = Array.from(e.dataTransfer?.files ?? []);
-    if (dropped.length) onFiles(dropped);
-  };
-
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== "Escape") return;
-    e.preventDefault();
-    e.stopPropagation();
-    onClose();
-  };
-
-  const picked = (input: HTMLInputElement) => {
-    const chosen = Array.from(input.files ?? []);
-    input.value = "";
-    if (chosen.length) onFiles(chosen);
-  };
-
   return (
-    <div
+    <FilePicker
       id={id}
       className="cv-pick"
-      onKeyDown={onKeyDown}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={onDrop}
-    >
-      <div className="cv-pick-drop">
-        <button
-          type="button"
-          className="cv-pick-folder"
-          aria-label={BOX_FILES_COPY.folder}
-          title={BOX_FILES_COPY.folder}
-          onClick={() => folder.current?.click()}
-        >
-          <IconFolder size={26} />
-        </button>
-        <DropArea
-          title={BOX_FILES_COPY.dropTitle}
-          help={help ? `${help} ${BOX_FILES_COPY.folderLine}` : BOX_FILES_COPY.folderLine}
-          dragging={dragging}
-          browse={
-            <button type="button" className="tb blue" onClick={() => files.current?.click()}>
-              {BOX_FILES_COPY.browse}
-            </button>
-          }
-        />
-      </div>
-      <div className="cv-pick-link">
-        <span className="cv-pick-li" aria-hidden="true">
-          <IconLink />
-        </span>
-        <label className="visually-hidden" htmlFor={`${ids}-u`}>
-          {BOX_FILES_COPY.linkInput}
-        </label>
-        <input
-          id={`${ids}-u`}
-          className="fld"
-          type="url"
-          inputMode="url"
-          autoComplete="off"
-          placeholder={BOX_FILES_COPY.linkInput}
-          aria-describedby={bad ? `${ids}-m` : undefined}
-          aria-invalid={bad ? true : undefined}
-          value={text}
-          onChange={(e) => onLinkDraft({ text: e.target.value, bad: false })}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter") return;
-            e.preventDefault(); // never the conversation's own Send
-            addLink();
-          }}
-        />
-        <Button variant="line" size="sm" onClick={addLink}>
-          {BOX_FILES_COPY.addLink}
-        </Button>
-      </div>
-      {bad ? <FieldMsg id={`${ids}-m`}>{CHECK_COPY.proof.notALink}</FieldMsg> : null}
-      <input ref={files} type="file" multiple hidden onChange={(e) => picked(e.target)} />
-      <input ref={folder} type="file" multiple hidden onChange={(e) => picked(e.target)} />
-    </div>
+      help={help}
+      autoFocus={false}
+      link={link}
+      onLinkDraft={onLinkDraft}
+      onFiles={onFiles}
+      onLinks={(_, typed) => onLink(typed)}
+      onClose={onClose}
+    />
   );
 }

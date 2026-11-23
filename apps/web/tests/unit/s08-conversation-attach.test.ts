@@ -442,12 +442,12 @@ describe('S-08, C-PROMPT, WCAG 2.4.3: focus stays on the "+" and in its picker w
     expect(onPhone).not.toBe(picker); // a new copy, drawn with its "+" before the words
     expect(plus()!.getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(onPhone.querySelector("input[type=url]"));
-    await act(async () => onPhone.querySelector<HTMLElement>(".cv-pick-folder")!.focus());
+    await act(async () => onPhone.querySelector<HTMLElement>(".cv-pick .fpick-folder")!.focus());
     await cross(false);
     const wider = pickerNow()!;
     expect(wider).not.toBe(onPhone);
     expect(plus()!.getAttribute("aria-expanded")).toBe("true");
-    expect(document.activeElement).toBe(wider.querySelector(".cv-pick-folder"));
+    expect(document.activeElement).toBe(wider.querySelector(".cv-pick .fpick-folder"));
     await act(async () => named(BOX_FILES_COPY.addLink)!.focus());
     await cross(true);
     expect(document.activeElement).toBe(named(BOX_FILES_COPY.addLink)); // the new picker's Add link

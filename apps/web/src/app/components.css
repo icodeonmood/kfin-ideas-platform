@@ -1571,6 +1571,77 @@ textarea:is(.fld, .textarea) {
   line-height: 1.5;
 }
 
+/* C-FILE.uploader, the picker the "+" opens (BLD-D031; the Home board's `attachments=Picker open`): "Choose a folder"
+   over the drop area, then the link field with its icon. One look for the prompt box and the conversation box, as both
+   drew it (compose.css `.cz .cpick`, conversation.css `.cv-pick`); each screen sets only its place (margin, grid area) */
+.fpick {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 1px var(--rule2);
+}
+
+.fpick-drop {
+  position: relative;
+}
+
+.fpick-drop .fdrop {
+  padding-top: 64px;
+}
+
+.fpick-folder {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--wash);
+  color: var(--blueT);
+  cursor: pointer;
+}
+
+.fpick-folder:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.fpick-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fpick-link .fld {
+  flex: 1;
+  min-width: 0;
+  padding-left: 38px;
+}
+
+.fpick-li {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  color: var(--mute);
+  pointer-events: none;
+}
+
+.fpick-h {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--mute);
+}
+
 @media (max-width: 640px) {
   .frow-in {
     flex-wrap: wrap;
