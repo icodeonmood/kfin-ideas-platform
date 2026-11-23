@@ -302,6 +302,10 @@
     /* One column: `.dock` wraps (shell.css), and a wrapping column starts a second, hidden column at the cap below,
        which took Cancel and Save changes off the right edge on a short phone (lane D's QA of BLD-C241) */
     flex-wrap: nowrap;
+    /* From the top: `.dock` packs to the end (shell.css), and in a column that sends what passes the cap out of the
+       top edge, where no scroll reaches it (lane D). From the top, it overflows down and scrolls: the line first,
+       Cancel and Save changes by scrolling or Tab. Not `safe flex-end`: Chrome 115, the floor is 111 */
+    justify-content: flex-start;
     align-items: stretch;
     /* WCAG 1.4.10: the fixed dock never covers most of a short window (320 px wide, or 400% zoom): its confirm, line,
        declaration and buttons scroll inside it instead. */

@@ -788,6 +788,8 @@ describe("S-06B phone (PhoneEdit, S-06B.rules/5)", () => {
     expect(phone).toMatch(
       /\.ed-dock \{[^}]*flex-direction: column;[^}]*flex-wrap: nowrap;[^}]*max-height: 45dvh;/,
     );
+    // and from the top: packed to the end, what passes the cap would leave by the top edge, out of scroll's reach
+    expect(phone).toMatch(/\.ed-dock \{[^}]*flex-wrap: nowrap;[^}]*justify-content: flex-start;/);
     expect(phone).toMatch(/\.ed-dock > \* \{\s*flex-shrink: 0;\s*\}/);
   });
 });
