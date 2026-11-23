@@ -436,6 +436,38 @@ def test_BLD_C223_the_idea_page_lists_no_hidden_detail_of_a_conversation_file(
     }
 
 
+def test_BLD_C223_the_idea_page_lists_no_hidden_detail_of_a_file_on_an_answer_to_the_desk(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """`ideapage.read.hidden`: a file on an answer to the review desk is not one of the idea's own files (`files`
+    leaves it out too), so neither its details nor its name's are listed, as lane F's `checked()` (BLD-F103)."""
+    from ideapage import read as ideapage
+
+    idea, kavya, meera = cast["idea"], cast["kavya"], cast["meera"]
+    s = db.execute(
+        "INSERT INTO question_sets (idea_uuid, by_user_id, state, time_to_answer, sent_at, due_at) "
+        "VALUES (%s, %s, 'sent', '3d', now(), now() + interval '3 days') RETURNING id",
+        (idea["id"], meera["id"]),
+    ).fetchone()
+    assert s is not None
+    q = db.execute(
+        "INSERT INTO questions (set_id, seq, part, text_encrypted) VALUES (%s, 1, 'evidence', %s) RETURNING id",
+        (s["id"], b"synthetic"),
+    ).fetchone()
+    assert q is not None
+    a = db.execute(
+        "INSERT INTO answers (question_id, by_code) VALUES (%s, %s) RETURNING id", (q["id"], kavya["code"])
+    ).fetchone()
+    assert a is not None
+    own, on_answer = _row(db, idea, kavya), _row(db, idea, kavya)
+    db.execute("UPDATE attachments SET answer_id = %s WHERE id = %s", (a["id"], on_answer))
+    _detail(db, idea, own, "Folio ••••51")
+    _detail(db, idea, on_answer, "Folio ••••52")
+    _detail(db, idea, f"{on_answer}:name", "Folio ••••53")
+    assert {r["masked"] for r in ideapage.hidden(db, str(idea["id"]))} == {"Folio ••••51"}
+    assert [r["id"] for r in ideapage.files(db, str(idea["id"]))] == [own]  # the same line `files` draws
+
+
 def test_the_sweep_removes_only_unsent_conversation_files_older_than_a_day(
     db: Conn, cast: dict[str, Any], objects: dict[Any, bytes]
 ) -> None:

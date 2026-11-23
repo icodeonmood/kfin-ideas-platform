@@ -333,7 +333,8 @@ def live_merge_into(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
 def hidden(conn: Conn, idea_uuid: str) -> list[dict[str, Any]]:
     """Hidden details as their masked form only ("Folio ••••89"); the value stays in the vault (DEC-103). A file's
     details only for the idea's own files (`IDEA_OWN`, as `files` below): never those of a file added for the
-    conversation, sent or not, nor its name's (`<id>:name`) (BLD-C223)."""
+    conversation, sent or not, nor of a file on an answer to the review desk, nor its name's (`<id>:name`)
+    (BLD-C223; the answer files as lane F's `checked()` leaves them out, BLD-F103)."""
     return [
         dict(r)
         for r in conn.execute(
@@ -342,7 +343,7 @@ def hidden(conn: Conn, idea_uuid: str) -> list[dict[str, Any]]:
             "WHERE h.idea_uuid = %s AND h.source <> 'teamup' "
             "AND NOT (h.source = 'file' AND EXISTS (SELECT 1 FROM attachments c "
             "WHERE c.id::text = split_part(h.source_id, ':', 1) "
-            "AND NOT (c.purpose = 'idea' AND c.conversation_entry_id IS NULL))) "
+            "AND NOT (c.purpose = 'idea' AND c.conversation_entry_id IS NULL AND c.answer_id IS NULL))) "
             "ORDER BY h.created_at",
             (idea_uuid,),
         ).fetchall()
