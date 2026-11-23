@@ -52,6 +52,16 @@ class Answer:
 
 
 @dataclass(frozen=True)
+class Contribution:
+    """An idea merged into this one (L-MERGE.effects/3), read under its sharer's first name as S-R2 lists it: each
+    part's masked text and the answers its sharer sent."""
+
+    by_first_name: str
+    texts: Mapping[str, str]
+    answers: Mapping[str, Sequence[Answer]]
+
+
+@dataclass(frozen=True)
 class ScriptPart:
     part: Part
     title: str
@@ -119,9 +129,12 @@ def build(
     worth: Worth | None = None,
     files: Sequence[FileLine] = (),
     answers: Mapping[str, Sequence[Answer]] | None = None,
+    contributions: Sequence[Contribution] = (),
 ) -> Script:
     """The six parts in the idea's order (L-LISTEN/1). `texts` holds each part's masked text as the reviewer sees
-    it; What it's worth and Attached come from the figures and the files when not given as text."""
+    it; What it's worth and Attached come from the figures and the files when not given as text. Each idea merged
+    into this one follows in its parts, in the order S-R2 lists them, as "From Kavya’s idea: …" with its answers
+    (L-MERGE.effects/3, BLD-B277); a part it left empty is not read for it."""
     answers = answers or {}
     out: list[ScriptPart] = []
     for part in PARTS:
@@ -133,6 +146,11 @@ def build(
         body_said = speakable(body) or _EMPTY[part]
         for a in answers.get(part, ()):
             body_said += f" {a.by_first_name} answered: {speakable(a.text)}"
+        for c in contributions:
+            said = speakable(c.texts.get(part, "") or "")
+            heard = [f"{a.by_first_name} answered: {speakable(a.text)}" for a in c.answers.get(part, ())]
+            if said or heard:
+                body_said += f" From {c.by_first_name}’s idea: " + " ".join(([said] if said else []) + heard)
         out.append(ScriptPart(part, PART_NAMES[part], body_said, estimate(PART_NAMES[part], body_said)))
     digest = hashlib.sha256("\n".join(p.text for p in out).encode()).hexdigest()[:16]
     total = sum(p.seconds for p in out) + PART_GAP_SECONDS * (len(out) - 1)

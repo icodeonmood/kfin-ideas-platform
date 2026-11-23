@@ -169,3 +169,12 @@ S-R3's "+" adds files to an answer (DEC-124). S-R3's "+" uses the Answer board's
 | Where | Board copy | On screen |
 |---|---|---|
 | S-R3, "Check your answers" and the sent list, an answer with files | Two screenshots attached, folio hidden. | The same pattern for any count and type: "One file attached.", "Two files attached.", "One screenshot attached.", "Three screenshots attached, folio hidden." ("screenshot" when every file is an image; the count in words up to ten, then figures; what was hidden from each file's own note) |
+## 13. Lines added with lane B's after-launch fixes (23 Nov, BLD-B277)
+
+Two lines the boards do not draw. The first is the review desk's page for an idea that is not there, or that this person may not open: it reads the same in both cases, so it never says an idea exists. The second is how the listen player reads an idea merged into the one under review, after each part of the lead idea. "Ravi" stands for the merged idea's sharer.
+
+| Where | Before | On screen |
+|---|---|---|
+| The reviewer's page when the idea cannot be shown, the heading | Next's own "404 This page could not be found." | We couldn’t find that idea. |
+| The same page, the line under it, with the back link "Home" above | (none) | Check the link, or go back to Home. |
+| Listen, inside a part, after the lead idea's words and answers | (the merged idea was not read) | From Ravi’s idea: (that idea's words for the part, then its answers, "Ravi answered: …") |
