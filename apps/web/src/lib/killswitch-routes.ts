@@ -159,6 +159,13 @@ export const ROUTE_RULES: readonly Rule[] = [
   // The sharer answering the review desk (S-R3) is editing their idea: read-only mode (§7.6) pauses it too.
   { methods: ["POST"], pattern: /^\/api\/question-sets\/[^/]+\/send\/?$/, switches: ["submissions"] },
   { methods: ["PUT"], pattern: /^\/api\/questions\/[^/]+\/answer\/?$/, switches: ["submissions"] },
+  // Saying the answer (S-R3, BLD-B276) is lane C's stream, so it meets the drafts voice rule's switches: starting,
+  // sending and ending a note need voice notes, the hosted speech route and sharing. Reading its words carries on.
+  {
+    methods: ["POST"],
+    pattern: /^\/api\/questions\/[^/]+\/answer\/voice\/(?:start|chunk|end)\/?$/,
+    switches: ["capture.voice", "speech.hosted", "submissions"],
+  },
   // Listen (C-LISTEN): first in Thursday's drop order, so it can be switched off on its own (SHIP_PLAN §4).
   // Lane C's hosted audio for the same player (DEC-108), GET /api/ideas/:id/listen and its /chapters, has its rule
   // in lane C's c/sarvam (desk.listen and speech.hosted), so there is one rule for those paths (BLD-B245).

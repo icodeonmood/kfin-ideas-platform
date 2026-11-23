@@ -357,6 +357,46 @@ test('S-R3, C-FILE.row, L-QUESTIONS.answer, BLD-B275: a file-only answer through
   expect(held.rows).toEqual([{ purpose: "idea", sent: true }]);
 });
 
+test('S-R3, C-PROMPT.anatomy/2, C-PROMPT.voice, BLD-B276: "Say your answer" follows the "+" in the answer box', async ({
+  browser,
+}, testInfo) => {
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `Rejection SMS gives a code only (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(sharer.code, title);
+  const sent = await reviewer.page.request.post(`/api/desk/ideas/${ideaId}/question-sets`, {
+    data: {
+      questions: [{ part: "often", text: "How many calls a week reach the branch about it?" }],
+      time_to_answer: "3d",
+    },
+  });
+  expect(sent.status()).toBe(201);
+
+  const s = sharer.page;
+  await s.goto(`/ideas/${ideaId}/answer`);
+  // The tool row reads the "+", then the mic (C-PROMPT.anatomy/2), with the Answer board's names; nothing is
+  // recorded until the person presses it. No note is recorded here: lane C's capture is tested on its own
+  const mic = s.getByRole("button", { name: "Say your answer", exact: true });
+  await expect(mic).toBeVisible();
+  await expect(mic).toHaveAttribute("aria-pressed", "false");
+  const tools = s.locator(".ans-tools > button");
+  await expect(tools).toHaveCount(2);
+  await expect(tools.nth(0)).toHaveAttribute("aria-label", "Attach files to this answer");
+  await expect(tools.nth(1)).toHaveAttribute("aria-label", "Say your answer");
+  await expect(s.getByPlaceholder("Type your answer, or tap the mic and say it")).toBeVisible();
+  // DEC-108: before the first recording, the screen says where the voice goes, with no vendor's name
+  await expect(
+    s.getByText(
+      "Your voice note goes to an Indian speech service to turn it into text. You can check the text before you send it.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expectNoSeriousAxeIssues(s);
+  // Typing still works beside it, and the box keeps its keys
+  await s.getByRole("textbox", { name: "Your answer to question 1" }).fill("About 15 calls a week.");
+  await expect(s.getByRole("button", { name: "Next" })).toBeVisible();
+});
+
 test("V-ACC.review/14: a reviewer opening their own idea cannot act on it", async ({ browser }, testInfo) => {
   const reviewer = await person(browser, PERSONAS.reviewer);
   const title = `A reviewer's own idea (${testInfo.project.name} ${Date.now()})`;
