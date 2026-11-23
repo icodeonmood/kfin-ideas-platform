@@ -82,7 +82,13 @@ if c is not None and k is not None: print(c, json.dumps(k))' "$FAKE_SWEEP_AFTER"
   *"pg_dump"*) [[ -n "${FAKE_PGDUMP_FAIL:-}" ]] && { echo "pg_dump: error: connection failed" >&2; exit 1; }; printf 'PGDMP-synthetic' ;;
   *"pg_restore --list"*) cat > /dev/null; echo "3001; 0 16420 TABLE DATA public users ideas" ;;
   *"pg_restore"*) cat > /dev/null ;;
-  *"tar -C /data -cf -"*) tar -cf - -C "$FAKE_STATE" kfin-ideas ;;
+  *"tar -C /data -cf -"*)
+    # BLD-A247: the first FAKE_TAR_CHANGED tries race the running repo writer, as GNU tar reports it; FAKE_TAR_EXIT
+    # fails every try with another message.
+    n=$(( $(cat "$FAKE_STATE/tar-tries" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$FAKE_STATE/tar-tries"
+    [[ -n "${FAKE_TAR_EXIT:-}" ]] && { echo "tar: kfin-ideas/rules: Cannot open: Permission denied" >&2; exit "$FAKE_TAR_EXIT"; }
+    tar -cf - -C "$FAKE_STATE" kfin-ideas
+    (( n > ${FAKE_TAR_CHANGED:-0} )) || { echo "tar: kfin-ideas/.git: file changed as we read it" >&2; exit 1; } ;;
   *"tar -C /data -xf -"*) cat > /dev/null ;;
   *"dbmate up"*) touch "$FAKE_STATE/migrated" ;;
   *"dbmate status"*) printf 'Applied: 3\nPending: 0\n' ;;
@@ -274,6 +280,97 @@ def test_a234_upgrade_refuses_when_pg_dump_fails_and_never_runs_dbmate(tmp_path:
     assert f"docker image tag {PROJECT}-worker:rollback-{FROM_SHA[:8]} {PROJECT}-worker:latest" in calls
     assert not list((tmp_path / "data" / "backups").iterdir())
     assert "uat-rollback" not in run.stderr
+
+
+# ---- BLD-A247: the company repo is copied again when the running repo writer races tar ----------------------------
+
+RETRY_LINE = "the company repo changed while it was copied (try {} of 10): copying it again in 2 s"
+CHANGED = "tar: kfin-ideas/.git: file changed as we read it"
+
+
+def _quick_sleep(tmp_path: Path) -> None:
+    """A `sleep` that only logs its call, so ten tries take no time here (the real script waits 2 s)."""
+    stub = tmp_path / "bin"
+    stub.mkdir(exist_ok=True)
+    (stub / "sleep").write_text('#!/usr/bin/env bash\nprintf \'sleep %s\\n\' "$*" >> "$FAKE_LOG"\nexit 0\n')
+    (stub / "sleep").chmod(stat.S_IRWXU)
+
+
+def _tar_tries(tmp_path: Path) -> int:
+    return int((tmp_path / "state" / "tar-tries").read_text())
+
+
+def test_bld_a247_a_changed_company_repo_is_copied_again_and_the_upgrade_goes_on(tmp_path: Path) -> None:
+    _quick_sleep(tmp_path)
+    run = _upgrade(tmp_path, FROM="launch-2026-11-20-r2", FAKE_TAR_CHANGED="2")
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert _tar_tries(tmp_path) == 3
+    # One line per retry, with its try number, in the output IT pastes back; tar's own line stays visible.
+    retries = [ln for ln in run.stdout.splitlines() if ln.startswith("the company repo changed")]
+    assert retries == [RETRY_LINE.format(1), RETRY_LINE.format(2)]
+    assert run.stderr.count(CHANGED) == 2
+    calls = _calls(tmp_path)
+    assert calls.count("sleep 2") == 2
+    archive = _first(calls, "tar -C /data -cf -")
+    assert _first(calls, "pg_restore --list") < archive < _first(calls, "dbmate up")
+    (record,) = (tmp_path / "data" / "ops").glob("upgrade-*.json")
+    base = json.loads(record.read_text())["backup"][: -len(".dump")]
+    repo_tar = Path(base + ".repo.tar")
+    assert stat.S_IMODE(repo_tar.stat().st_mode) == 0o600
+    listing = subprocess.run(["tar", "-tf", str(repo_tar)], capture_output=True, text=True, check=True)
+    assert "kfin-ideas/README.md" in listing.stdout
+    assert "smoke: all checks passed" in run.stdout
+
+
+def test_bld_a247_a_repo_that_changes_on_every_try_stops_after_the_tenth(tmp_path: Path) -> None:
+    _quick_sleep(tmp_path)
+    run = _upgrade(tmp_path, FROM="launch-2026-11-20-r2", FAKE_TAR_CHANGED="99")
+    assert run.returncode == 1
+    assert _tar_tries(tmp_path) == 10
+    retries = [ln for ln in run.stdout.splitlines() if ln.startswith("the company repo changed")]
+    assert retries == [RETRY_LINE.format(n) for n in range(1, 10)]
+    assert run.stderr.count(CHANGED) == 10
+    # The same stop as before BLD-A247, and the same promise: nothing was changed, no half-made backup is left.
+    assert "STOPPED: the company repo archive failed" in run.stderr and "Nothing was changed" in run.stderr
+    calls = _calls(tmp_path)
+    assert calls.count("sleep 2") == 9
+    assert not any("dbmate" in c or " up -d" in c for c in calls)
+    assert f"docker image tag {PROJECT}-worker:rollback-{FROM_SHA[:8]} {PROJECT}-worker:latest" in calls
+    assert not list((tmp_path / "data" / "backups").iterdir())
+    assert "uat-rollback" not in run.stderr
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"FAKE_TAR_EXIT": "2"},  # tar's fatal error
+        {"FAKE_TAR_EXIT": "1"},  # exit 1 without the "file changed" text
+    ],
+    ids=["exit-2", "exit-1-other-text"],
+)
+def test_bld_a247_any_other_tar_failure_stops_at_once(tmp_path: Path, extra: dict[str, str]) -> None:
+    _quick_sleep(tmp_path)
+    run = _upgrade(tmp_path, FROM="launch-2026-11-20-r2", **extra)
+    assert run.returncode == 1
+    assert _tar_tries(tmp_path) == 1
+    assert "the company repo changed" not in run.stdout
+    assert "tar: kfin-ideas/rules: Cannot open: Permission denied" in run.stderr
+    assert "STOPPED: the company repo archive failed" in run.stderr and "Nothing was changed" in run.stderr
+    calls = _calls(tmp_path)
+    assert "sleep 2" not in calls
+    assert not any("dbmate" in c or " up -d" in c for c in calls)
+    assert not list((tmp_path / "data" / "backups").iterdir())
+
+
+def test_bld_a247_only_the_upgrade_makes_the_archive_and_the_check_after_it_stays() -> None:
+    up = UPGRADE.read_text("utf-8")
+    assert up.count("tar -C /data -cf - kfin-ideas") == 1
+    assert "REPO_TAR_TRIES=10" in up
+    assert '[[ $rc -eq 1 && "$err" == *"file changed as we read it"* ]] || return 1' in up
+    after = up.split('archive_repo || fail "the company repo archive failed"', 1)[1]
+    assert after.index('tar -tf "$BASE.repo.tar"') < after.index("record_upgrade false")
+    for other in (DEPLOY, ROLLBACK):
+        assert "-cf -" not in other.read_text("utf-8")
 
 
 def test_a234_upgrade_refuses_fake_mode_while_ai_all_is_on(tmp_path: Path) -> None:

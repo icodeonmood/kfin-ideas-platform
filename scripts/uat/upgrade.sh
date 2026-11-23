@@ -226,7 +226,25 @@ chmod 600 "$DUMP"
 toc="$(compose exec -T postgres pg_restore --list < "$DUMP")" || fail "pg_restore --list cannot read the backup"
 tables="$(grep -c ' TABLE DATA ' <<< "$toc" || true)"
 [[ "$tables" -gt 0 ]] || fail "the database backup has no table data"
-compose exec -T worker tar -C /data -cf - kfin-ideas > "$BASE.repo.tar" || fail "the company repo archive failed"
+# The running worker's repo writer runs `git status` on the company repo every second, and its index.lock comes and
+# goes in .git while tar reads it: GNU tar then exits 1 with "file changed as we read it", though no file's content
+# changed (half of 20 tries on 23 Nov). Copy it again, up to REPO_TAR_TRIES tries 2 s apart, on exactly that; any
+# other failure stops at once (BLD-A247).
+REPO_TAR_TRIES=10
+archive_repo() {
+  local try rc err
+  for (( try = 1; ; try++ )); do
+    rc=0
+    err="$( { compose exec -T worker tar -C /data -cf - kfin-ideas > "$BASE.repo.tar"; } 2>&1 )" || rc=$?
+    [[ -z "$err" ]] || printf '%s\n' "$err" >&2
+    [[ $rc -ne 0 ]] || return 0
+    [[ $rc -eq 1 && "$err" == *"file changed as we read it"* ]] || return 1
+    (( try < REPO_TAR_TRIES )) || return 1
+    echo "the company repo changed while it was copied (try $try of $REPO_TAR_TRIES): copying it again in 2 s"
+    sleep 2
+  done
+}
+archive_repo || fail "the company repo archive failed"
 chmod 600 "$BASE.repo.tar"
 tar -tf "$BASE.repo.tar" > /dev/null || fail "the company repo archive cannot be read"
 sql "SELECT version FROM schema_migrations ORDER BY version" > "$BASE.from/migrations.txt"
