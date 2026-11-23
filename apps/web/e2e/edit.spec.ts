@@ -309,6 +309,14 @@ async function qaGeo(page: Page, line?: string) {
   }, line ?? "");
 }
 
+/** Signed in once: each later state reloads the page with its own synthetic answers. */
+async function qaReopen(page: Page, body: object = PAGE, save?: { status: number; json: object }) {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await serveIdea(page, body, save);
+  await page.goto(`/ideas/${REF}/edit`);
+  await expect(page.getByRole("heading", { level: 1, name: "Edit your problem" })).toBeVisible();
+}
+
 test("QA (lane D, never merged): S-06B's phone dock is the shared Dock at 360 and 320, in each of its lines (BLD-C241)", async ({
   page,
 }, info) => {
@@ -328,12 +336,13 @@ test("QA (lane D, never merged): S-06B's phone dock is the shared Dock at 360 an
   };
   const toEnd = () => page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
 
+  await signIn(page, PERSONAS.contributor);
   for (const [w, h] of [
     [360, 740],
     [320, 640],
   ] as const) {
     await page.setViewportSize({ width: w, height: h });
-    await openEdit(page);
+    await qaReopen(page);
     await expect(page.locator("html[data-dock]")).toHaveCount(1);
     await snap(`01-arrive-${w}`);
     await toEnd();
@@ -345,7 +354,7 @@ test("QA (lane D, never merged): S-06B's phone dock is the shared Dock at 360 an
 
   // Cancel's confirm (warn), then Saved (ok) at 360
   await page.setViewportSize({ width: 360, height: 740 });
-  await openEdit(page);
+  await qaReopen(page);
   await page.getByRole("button", { name: "Change title" }).click();
   await page.getByRole("textbox", { name: "Title" }).fill("Investors call about a redemption not processed");
   await page.getByRole("textbox", { name: "Title" }).press("Enter");
@@ -361,8 +370,7 @@ test("QA (lane D, never merged): S-06B's phone dock is the shared Dock at 360 an
   expect.soft(ok.msgBg, "the saved line takes the ok fill").toBe(ok.tokens.ok);
 
   // Failed (bad)
-  await page.unrouteAll({ behavior: "ignoreErrors" });
-  await openEdit(page, PAGE, {
+  await qaReopen(page, PAGE, {
     status: 500,
     json: { error: { code: "internal", message: "Something went wrong. Try again." } },
   });
@@ -379,9 +387,8 @@ test("QA (lane D, never merged): S-06B's phone dock is the shared Dock at 360 an
     [360, 740],
     [320, 640],
   ] as const) {
-    await page.unrouteAll({ behavior: "ignoreErrors" });
     await page.setViewportSize({ width: w, height: h });
-    await openEdit(page, PAGE, {
+    await qaReopen(page, PAGE, {
       status: 409,
       json: {
         error: {
