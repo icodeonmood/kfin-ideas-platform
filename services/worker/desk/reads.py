@@ -695,11 +695,38 @@ def script_for(conn: Conn, ref: str, at: dt.datetime | None = None) -> Any:
     # the plain kind names ("Folio is hidden from everyone."): the masked hint ("Folio ••••89") is for the page only,
     # never spoken
     texts = _part_texts(conn, idea, files, [(kind, None) for kind, _hint in _hidden(conn, idea["id"])])
-    answers = {
+    answers = _spoken_answers(conn, idea["id"], t)
+    return listen.build(
+        texts,
+        worth=reviewer_worth or sharer_worth,
+        answers=answers,
+        contributions=_spoken_contributions(conn, idea, t),
+    )
+
+
+def _spoken_answers(conn: Conn, idea_uuid: Any, at: dt.datetime) -> dict[str, list[Any]]:
+    """The answers sent on an idea, part by part, as the listen script reads them (L-LISTEN/2)."""
+    from desk import listen
+
+    return {
         part: [listen.Answer(q["answer"]["by"], q["answer"]["text"] or "") for q in qs if q["answer"]]
-        for part, qs in _questions(conn, idea["id"], t).items()
+        for part, qs in _questions(conn, idea_uuid, at).items()
     }
-    return listen.build(texts, worth=reviewer_worth or sharer_worth, answers=answers)
+
+
+def _spoken_contributions(conn: Conn, idea: dict[str, Any], at: dt.datetime) -> list[Any]:
+    """Every idea merged into this one, as `_contributions` lists it on S-R2 (L-MERGE.effects/3, BLD-B277), for the
+    listen script: the same for every viewer, so its files are only the checked ones (never one holding a customer
+    detail) and a hidden value is read by its kind, as the lead idea's are."""
+    from desk import listen
+
+    out = []
+    for c in conn.execute(_MERGED_IN, (idea["id"],)).fetchall():
+        files = _checked_files(conn, c["id"])
+        texts = _part_texts(conn, c, files, [(kind, None) for kind, _hint in _hidden(conn, c["id"])])
+        first = person_by_code(conn, c["contributor_code"]).first_name
+        out.append(listen.Contribution(first, texts, _spoken_answers(conn, c["id"], at)))
+    return out
 
 
 def listen_script(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
