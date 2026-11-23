@@ -153,6 +153,10 @@ def arn(rng: random.Random) -> str:
     return "ARN-" + _digits(rng, rng.randint(4, 6), "123456789")
 
 
+def euin(rng: random.Random) -> str:
+    return "E" + _digits(rng, 6)
+
+
 def person_name(rng: random.Random) -> str:
     return f"{rng.choice(_FIRST)} {rng.choice(_LAST)}"
 
@@ -183,6 +187,7 @@ GENERATORS: dict[str, Callable[[random.Random], str]] = {
     "DOB": dob,
     "IFSC": ifsc,
     "ARN": arn,
+    "EUIN": euin,
     "PERSON_NAME": person_name,
     "ADDRESS": address,
     "LAST4": last4,
