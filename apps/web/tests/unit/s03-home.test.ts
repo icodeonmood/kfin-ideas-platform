@@ -1452,7 +1452,12 @@ describe("S-03 C-PROMPT.voice: the round voice button in Home's empty box (WF-02
     const reduce = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
     const off = reduce.slice(0, reduce.indexOf("animation: none;"));
     expect(off).not.toMatch(/\.cz \.vhint/); // not in the animation: none list
-    expect(reduce).toMatch(/\.cz \.vhint \{\s*animation: czHintOut 0s linear 5\.9s forwards;/);
+    expect(reduce).toMatch(/\.cz \.vhint \{\s*animation: czHintGone 0s linear 5\.9s forwards;/);
+    // Hidden at both ends: foundation's 0.01ms duration stops Chromium a hair short of the end, and `visibility`
+    // only flips at the end, so a visible start would leave it visible at opacity ~0 (lane G, J-SHARE/v7b).
+    expect(reduce).toMatch(
+      /@keyframes czHintGone \{\s*from,\s*to \{\s*opacity: 0;\s*visibility: hidden;\s*\}/,
+    );
     // foundation.css's F-MOTION.reduced rule sets every animation-delay to 0s !important; the hint's own
     // !important keeps its 5.9 s, or it would be gone on arrival.
     const foundation = readFileSync(path.resolve(__dirname, "../../src/app/foundation.css"), "utf8");
