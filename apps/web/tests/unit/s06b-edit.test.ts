@@ -6,6 +6,9 @@
  * the review desk hid), the sorting held until Save, the fix kept on the page until Save, files on the shared idea,
  * a closed window at load, and the phone. Synthetic people only: the pack's fictional cast.
  */
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -775,6 +778,17 @@ describe("S-06B phone (PhoneEdit, S-06B.rules/5)", () => {
       "Editing closes when the review desk opens it. After that, you can add a note for them.",
     );
     expect(document.body.textContent).not.toContain("By Friday 20 November");
+  });
+
+  it("WCAG 1.4.10, PhoneEdit: on a short phone the dock stays one column and scrolls inside its cap; Save changes never leaves it", () => {
+    // `.dock` wraps (shell.css); a wrapping column starts a hidden second column at the 45vh cap, which took Cancel
+    // and Save changes off the right edge at 320x640 with the closed line (lane D's QA of BLD-C241)
+    const css = readFileSync(path.resolve(__dirname, "../../src/app/ideas/[id]/edit/edit.css"), "utf8");
+    const phone = css.slice(css.lastIndexOf("@media (max-width: 640px)"));
+    expect(phone).toMatch(
+      /\.ed-dock \{[^}]*flex-direction: column;[^}]*flex-wrap: nowrap;[^}]*max-height: 45dvh;/,
+    );
+    expect(phone).toMatch(/\.ed-dock > \* \{\s*flex-shrink: 0;\s*\}/);
   });
 });
 
