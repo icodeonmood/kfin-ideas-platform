@@ -990,6 +990,7 @@ async function hintRun(page: Page): Promise<HintRun> {
     const until = performance.now() + 15_000;
     let faded = false;
     let moved = false;
+    const clocks = new Set<Animation>([out]);
     while (performance.now() < until) {
       if (!hint.isConnected) throw new Error("the hint was drawn again, which starts its clock again");
       const style = getComputedStyle(hint);
@@ -997,9 +998,34 @@ async function hintRun(page: Page): Promise<HintRun> {
       if (style.visibility === "hidden") return { goneAt: now, faded, moved };
       if (style.transform !== "none") moved = true;
       if (now >= delay && Number(style.opacity) < 1) faded = true;
+      for (const a of hint.getAnimations()) {
+        if (isOut(a)) clocks.add(a);
+      }
       await frame();
     }
-    throw new Error("the hint was still there after 15 s");
+    // What the browser holds for the hint when it has not gone: its way-out clock and the styles in force.
+    const style = getComputedStyle(hint);
+    const timing = out.effect?.getComputedTiming();
+    const seen = {
+      clocks: clocks.size,
+      live: hint.getAnimations().includes(out),
+      state: out.playState,
+      at: out.currentTime,
+      started: out.startTime,
+      timeline: document.timeline.currentTime,
+      timing: out.effect?.getTiming(),
+      progress: timing?.progress,
+      end: timing?.endTime,
+      css: [
+        style.visibility,
+        style.opacity,
+        style.animationName,
+        style.animationDelay,
+        style.animationDuration,
+        style.animationFillMode,
+      ],
+    };
+    throw new Error(`the hint was still there after 15 s: ${JSON.stringify(seen)}`);
   });
 }
 
