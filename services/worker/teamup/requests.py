@@ -470,6 +470,20 @@ def _brought_rows(conn: Conn, raw: Any, code: str, target: Any) -> list[dict[str
     return list(out.values())
 
 
+def _gate_note(conn: Conn, idea: dict[str, Any], code: str | None, note: str) -> adapters.Gate | None:
+    """BLD-F100 (BLD-C234): lane C's gatekeeper asked for the note before `send` opens its transaction and takes
+    lane C's lock, so the lock never waits on the model. Only when this person may send it: they have a code, may
+    see the idea (`load_idea_for`, before this), may team up on it (L-TEAMUP.rules/1), have no request waiting on it
+    (rules/4) and the note is long enough; otherwise nothing goes to the gatekeeper and the refusal comes under the
+    lock as before. Everything is read again under the lock. The note is trimmed exactly as it is hidden, so the
+    gate is for that very text; if it changed, lane C's hide asks again."""
+    if code is None or team_up_refusal(conn, idea, code) is not None or waiting_from(conn, idea["id"], code):
+        return None
+    if rules.check_note(note, adapters.note_min()) is not None:
+        return None
+    return adapters.gate(conn, str(idea["id"]), note.strip())
+
+
 def send(
     conn: Conn, ref: str, user_id: str, body: dict[str, Any], idempotency_key: str | None = None
 ) -> dict[str, Any]:
@@ -488,6 +502,8 @@ def send(
     _settled_mine(conn, idea, me)  # an ended request of theirs no longer counts as waiting
     raw_draft = body.get("draft_id")
     draft_id = raw_draft if isinstance(raw_draft, str) and raw_draft else None
+    # BLD-F100: the gatekeeper before the transaction and lane C's lock, so no lock waits on the model
+    first = _gate_note(conn, idea, me, note)
     with audited(conn), conn.transaction():
         code = require_code(conn, user_id)
         # BLD-F027: every idea this send touches, in id order, before anything else: the idea, the ideas brought
@@ -522,7 +538,7 @@ def send(
         # L-HIDE, DEC-103, BLD-F097: lane C's hide (patterns, then the gatekeeper) before the lead or anything else
         # sees the note; the requester's own words are sealed for them under the request's id, made first
         rid = str(uuid.uuid4())
-        masked, _ = adapters.hide(conn, str(idea["id"]), note.strip(), by=user_id, source_id=rid)
+        masked, _ = adapters.hide(conn, str(idea["id"]), note.strip(), by=user_id, source_id=rid, gate=first)
         t = clock_now()
         try:
             with conn.transaction():
@@ -655,6 +671,7 @@ def answer(conn: Conn, request_id: str, user_id: str, body: dict[str, Any]) -> d
         peek = load_request(conn, request_id)
         code = code_of(conn, user_id)
         _require_lead(conn, peek, code, user_id, ans)  # V-ACC.similar/8: before anything else is said
+        first = _gate_reason(conn, peek, ans, body)  # BLD-F100: the lead's reason, before the transaction
         with conn.transaction():
             # Every idea the answer touches first, in id order (`lock_ideas`), then the request row. A merge
             # (`apply_lead_merge`) and a draft's ask lock ideas the same way, so two leads answering each other's
@@ -669,7 +686,7 @@ def answer(conn: Conn, request_id: str, user_id: str, body: dict[str, Any]) -> d
             _require_lead(conn, req, code, user_id, ans)
             who = person_by_code(conn, req.row["from_code"])
             if not ended(req):
-                return _answer(conn, req, who, str(code), user_id, ans, body)
+                return _answer(conn, req, who, str(code), user_id, ans, body, gate=first)
             settle(conn, req.idea)  # kept: the transaction ends normally and the refusal follows
         if is_closed(str(req.idea["status"])):
             raise Refused(409, "idea_closed", "This idea is no longer open to team up.")
@@ -684,13 +701,38 @@ def _require_lead(conn: Conn, req: Req, code: str | None, user_id: str, ans: Ans
         )  # fmt: skip
 
 
+def _reason(ans: Answer, body: dict[str, Any]) -> str:
+    """The lead's decline reason as it is checked, hidden and stored: trimmed, and only with Decline."""
+    return str(body.get("reason") or "").strip() if ans == "decline" else ""
+
+
+def _gate_reason(conn: Conn, req: Req, ans: Answer, body: dict[str, Any]) -> adapters.Gate | None:
+    """BLD-F100 (BLD-C234): lane C's gatekeeper asked for the lead's reason before `answer` opens its transaction
+    and takes lane C's lock. Only once this person is known to be the lead (`_require_lead`, before this), while the
+    request still waits, and for a reason that passes its check; otherwise nothing goes to the gatekeeper. The text
+    is `_reason`, the same string `_answer` hides, so the gate is for that very text."""
+    reason = _reason(ans, body)
+    if not reason or not req.waiting or rules.check_reason(reason) is not None:
+        return None
+    return adapters.gate(conn, str(req.idea["id"]), reason)
+
+
 def _answer(
-    conn: Conn, req: Req, who: Person, code: str, user_id: str, ans: Answer, body: dict[str, Any]
+    conn: Conn,
+    req: Req,
+    who: Person,
+    code: str,
+    user_id: str,
+    ans: Answer,
+    body: dict[str, Any],
+    *,
+    gate: adapters.Gate | None = None,
 ) -> dict[str, Any]:
-    """The answer itself, in `answer`'s transaction, with every idea and the request row locked."""
+    """The answer itself, in `answer`'s transaction, with every idea and the request row locked. `gate`: the
+    gatekeeper's finds for the reason, asked before the transaction (BLD-F100)."""
     if not req.waiting:
         raise _not_waiting(req, who)
-    reason = str(body.get("reason") or "").strip() if ans == "decline" else ""
+    reason = _reason(ans, body)
     mergeable = _open_brought(req)
     if ans == "merge":
         if not req.brought:
@@ -705,9 +747,11 @@ def _answer(
     t = clock_now()
     state = (rules.TEAMUP_STATE_FOR if req.kind == "teamup" else rules.MERGE_STATE_FOR)[ans]
     # L-HIDE, DEC-103, BLD-F097: lane C's hide before the requester reads it; the lead's own words sealed for them.
-    # `answer` already holds lane C's lock on the idea, taken first.
+    # `answer` already holds lane C's lock on the idea, taken first, and asked the gatekeeper before it (BLD-F100).
     masked_reason = (
-        adapters.hide(conn, str(req.idea["id"]), reason, by=user_id, source_id=adapters.decline_id(req.id))[0]
+        adapters.hide(
+            conn, str(req.idea["id"]), reason, by=user_id, source_id=adapters.decline_id(req.id), gate=gate
+        )[0]
         if reason
         else None
     )

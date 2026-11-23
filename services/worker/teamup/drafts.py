@@ -93,6 +93,27 @@ def state(conn: Conn, draft_id: str, user_id: str) -> dict[str, Any]:
     return merge_request_json(conn, req, user_id)
 
 
+def _gate_ask(conn: Conn, draft_id: str, code: str, body: dict[str, Any], note: str) -> adapters.Gate | None:
+    """BLD-F100 (BLD-C234): lane C's gatekeeper asked for the ask before `ask` opens its transaction and takes lane
+    C's lock on both ideas. Only when this person may send it: the draft is theirs (`load_draft`, 404 to anyone
+    else) and still a draft, the other idea is one they may see (`load_idea_for`), is open and is not led by them,
+    and the note is long enough; otherwise nothing goes to the gatekeeper and the refusal comes under the lock as
+    before, in the same order. Everything is read again under the lock. The ask is hidden under the draft, trimmed,
+    so the gate is asked for that very text on the draft."""
+    if rules.check_note(note, adapters.note_min()) is not None:
+        return None
+    try:
+        draft = load_draft(conn, draft_id, code)
+        other = load_idea_for(conn, str(body.get("other_idea_id") or ""), code)
+    except Refused:
+        return None
+    if draft["status"] != "draft" or draft["archived_at"] is not None or is_closed(str(other["status"])):
+        return None
+    if lead_code(conn, other) == code:
+        return None
+    return adapters.gate(conn, str(draft["id"]), note.strip())
+
+
 def ask(
     conn: Conn, draft_id: str, user_id: str, body: dict[str, Any], idempotency_key: str | None = None
 ) -> dict[str, Any]:
@@ -106,6 +127,8 @@ def ask(
     if made is not None:
         return merge_request_json(conn, load_request(conn, made), user_id)
     note = str(body.get("note") or "")
+    # BLD-F100: the gatekeeper before the transaction and lane C's lock, so no lock waits on the model
+    first = _gate_ask(conn, draft_id, code, body, note)
     with audited(conn), conn.transaction():
         draft = load_draft(conn, draft_id, code)
         other = load_idea_for(conn, str(body.get("other_idea_id") or ""), code)
@@ -140,7 +163,7 @@ def ask(
         # sees the ask, under the draft (its owner typed it) and the merge request's id, made first
         rid = str(uuid.uuid4())
         masked, _ = adapters.hide(
-            conn, str(draft["id"]), note.strip(), by=user_id, source_id=adapters.ask_id(rid)
+            conn, str(draft["id"]), note.strip(), by=user_id, source_id=adapters.ask_id(rid), gate=first
         )
         try:
             with conn.transaction():
