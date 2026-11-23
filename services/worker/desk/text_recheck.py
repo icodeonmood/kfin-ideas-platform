@@ -148,9 +148,9 @@ def _failed(conn: Conn, t: Text, code: str) -> bool:
             "system",
             "hide.recheck_gave_up",
             t.idea_uuid,
-            {"source": "desk", "text": t.table, "source_id": t.row_id, "code": code},
+            {"source": "desk", "table": t.table, "source_id": t.row_id, "code": code},
         )
-    log.info("desk.text_recheck_gave_up", idea_id=t.idea_uuid, text_code=t.table, error_code=code)
+    log.info("desk.text_recheck_gave_up", idea_id=t.idea_uuid, table_code=t.table, error_code=code)
     return True
 
 
@@ -208,13 +208,13 @@ def check_one(conn: Conn, t: Text) -> int:
                 t.idea_uuid,
                 {
                     "source": "desk",
-                    "text": t.table,
+                    "table": t.table,
                     "source_id": t.row_id,
                     "hidden": len(values),
                     "copies": copies,
                 },
             )
-    log.info("desk.text_rechecked", idea_id=t.idea_uuid, text_code=t.table, hidden_count=len(values))
+    log.info("desk.text_rechecked", idea_id=t.idea_uuid, table_code=t.table, hidden_count=len(values))
     return len(values)
 
 
@@ -232,7 +232,7 @@ def run(conn: Conn, payload: dict[str, Any]) -> None:
             hidden += check_one(conn, t)
         except RecheckFailed as exc:
             failed.append(str(exc))
-    log.info("desk.text_recheck_run", text_count=len(texts), hidden_count=hidden, failed_count=len(failed))
+    log.info("desk.text_recheck_run", item_count=len(texts), hidden_count=hidden, failed_count=len(failed))
     if failed:
         raise RecheckFailed(failed[0])
 

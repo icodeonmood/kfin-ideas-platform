@@ -358,7 +358,7 @@ def test_BLD_B278_a_text_the_gateway_can_never_check_gives_up_after_five_failed_
     assert [dict(r) for r in gave_up] == [
         {
             "actor": "system",
-            "after": {"source": "desk", "text": "idea_decisions", "source_id": ids["idea_decisions"],
+            "after": {"source": "desk", "table": "idea_decisions", "source_id": ids["idea_decisions"],
                       "code": "schema_invalid"},
         }
     ]  # fmt: skip
