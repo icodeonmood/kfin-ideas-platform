@@ -6,6 +6,9 @@
  * version." The page and the shell are real; the idea's own API answers are synthetic and served by `page.route`, so
  * the screen is checked whatever the seed holds. The journeys (J-RECOVER/7–10 and /15 on S-06B) walk the real routes.
  */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, test, type Page } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
@@ -261,4 +264,150 @@ test("S-06B.rules/5 V-ACC: on a phone the edit page is one column with Save chan
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Save changes" })).toBeVisible();
   await expectNoSeriousAxeIssues(page);
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-c241-phone-1, never merged: S-06B's phone dock as the shared Dock (BLD-C241 on
+ * BLD-D028) at 360 and 320 px. Screenshots and measures the dock in each of its lines (Cancel's confirm, saved,
+ * failed, closed with its conversation link) and the page's end against it. Synthetic data only.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+type QaBox = { top: number; bottom: number; height: number; width: number; right: number };
+async function qaGeo(page: Page, line?: string) {
+  return page.evaluate((sel) => {
+    const box = (el: Element | null) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, height: r.height, width: r.width, right: r.right };
+    };
+    const html = document.documentElement;
+    const dock = document.querySelector(".dock.ed-dock");
+    const msg = sel ? dock?.querySelector(sel) : null;
+    // The token's colour as the browser paints it, to compare with the line's own background
+    const paint = (v: string) => {
+      const probe = document.createElement("i");
+      probe.style.background = `var(${v})`;
+      document.body.append(probe);
+      const c = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return c;
+    };
+    const heads = [...document.querySelectorAll("main#main h2")];
+    return {
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+      sideways: html.scrollWidth - html.clientWidth,
+      inSlot: !!dock?.parentElement?.matches("main#main > .dock-root"),
+      dockH: html.style.getPropertyValue("--dock-h"),
+      dock: box(dock) as QaBox | null,
+      lastHead: box(heads.at(-1) ?? null) as QaBox | null,
+      lastText: heads.at(-1)?.textContent ?? "",
+      msg: box(msg ?? null) as QaBox | null,
+      msgBg: msg ? getComputedStyle(msg).backgroundColor : "",
+      tokens: { ok: paint("--okW"), warn: paint("--warnW"), bad: paint("--badW") },
+    };
+  }, line ?? "");
+}
+
+test("QA (lane D, never merged): S-06B's phone dock is the shared Dock at 360 and 320, in each of its lines (BLD-C241)", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone-360", "phone only");
+  test.setTimeout(120_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+  const snap = async (name: string, line?: string) => {
+    const g = await qaGeo(page, line);
+    log[name] = g;
+    await page.screenshot({ path: join(QA_SHOTS, `${name}.png`) });
+    expect.soft(g.inSlot, `${name}: the dock is in the shell's slot`).toBe(true);
+    expect.soft(Math.abs((g.dock?.bottom ?? 0) - g.vh), `${name}: on the screen's foot`).toBeLessThan(1);
+    expect.soft(g.dockH, `${name}: --dock-h is its height`).toBe(`${Math.ceil(g.dock?.height ?? 0)}px`);
+    expect.soft(g.sideways, `${name}: no sideways scroll`).toBeLessThanOrEqual(0);
+    return g;
+  };
+  const toEnd = () => page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+
+  for (const [w, h] of [
+    [360, 740],
+    [320, 640],
+  ] as const) {
+    await page.setViewportSize({ width: w, height: h });
+    await openEdit(page);
+    await expect(page.locator("html[data-dock]")).toHaveCount(1);
+    await snap(`01-arrive-${w}`);
+    await toEnd();
+    const end = await snap(`02-end-${w}`);
+    expect
+      .soft(end.lastHead!.bottom, `${w}: "${end.lastText}" ends above the dock`)
+      .toBeLessThanOrEqual(end.dock!.top);
+  }
+
+  // Cancel's confirm (warn), then Saved (ok) at 360
+  await page.setViewportSize({ width: 360, height: 740 });
+  await openEdit(page);
+  await page.getByRole("button", { name: "Change title" }).click();
+  await page.getByRole("textbox", { name: "Title" }).fill("Investors call about a redemption not processed");
+  await page.getByRole("textbox", { name: "Title" }).press("Enter");
+  await page.locator(".ed-dock").getByRole("link", { name: "Cancel" }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Nothing changes for anyone else until you save." }),
+  ).toBeVisible();
+  const warn = await snap("03-confirm-360", ".bmsg.warn");
+  expect.soft(warn.msgBg, "the confirm takes the warn fill").toBe(warn.tokens.warn);
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByRole("status").filter({ hasText: SAVED })).toBeVisible();
+  const ok = await snap("04-saved-360", ".bmsg.ok");
+  expect.soft(ok.msgBg, "the saved line takes the ok fill").toBe(ok.tokens.ok);
+
+  // Failed (bad)
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await openEdit(page, PAGE, {
+    status: 500,
+    json: { error: { code: "internal", message: "Something went wrong. Try again." } },
+  });
+  await page.getByRole("button", { name: "Change title" }).click();
+  await page.getByRole("textbox", { name: "Title" }).fill("Investors call about a redemption not processed");
+  await page.getByRole("textbox", { name: "Title" }).press("Enter");
+  await page.getByRole("button", { name: "Save changes" }).click();
+  await expect(page.locator(".ed-dock .bmsg.bad")).toBeVisible();
+  const bad = await snap("05-failed-360", ".bmsg.bad");
+  expect.soft(bad.msgBg, "the failed line takes the bad fill").toBe(bad.tokens.bad);
+
+  // Closed (bad, with Open the conversation) at 360, then 320
+  for (const [w, h] of [
+    [360, 740],
+    [320, 640],
+  ] as const) {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.setViewportSize({ width: w, height: h });
+    await openEdit(page, PAGE, {
+      status: 409,
+      json: {
+        error: {
+          code: "edit_window_closed",
+          message:
+            "The review desk has just opened it, so it can’t be changed now. Your changes are kept below. Send them as a message instead.",
+          opened_by_desk_at: "2026-11-16T10:00:00+05:30",
+          to: `/ideas/${REF}/conversation`,
+        },
+      },
+    });
+    await page.getByRole("button", { name: "Change title" }).click();
+    await page
+      .getByRole("textbox", { name: "Title" })
+      .fill("Investors call about a redemption not processed");
+    await page.getByRole("textbox", { name: "Title" }).press("Enter");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    const go = page.locator(".ed-dock").getByRole("link", { name: "Open the conversation" });
+    await go.scrollIntoViewIfNeeded();
+    await expect(go).toBeVisible();
+    const closed = await snap(`06-closed-${w}`, ".bmsg.bad");
+    expect.soft(closed.msgBg, `${w}: the closed line takes the bad fill`).toBe(closed.tokens.bad);
+    expect
+      .soft(closed.dock!.height, `${w}: the dock stays within 45% of the screen`)
+      .toBeLessThanOrEqual(closed.vh * 0.45 + 1);
+    await expectNoSeriousAxeIssues(page);
+  }
+  writeFileSync(join(QA_SHOTS, "c241-phone.json"), JSON.stringify(log, null, 2));
 });
