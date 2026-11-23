@@ -107,7 +107,12 @@ def test_l_hide_bld_c231_the_watch_asks_the_sweep_and_survives_it_failing(
     from hide import recheck
 
     asked: list[Any] = []
-    monkeypatch.setattr(recheck, "queue_unchecked", lambda conn: asked.append(conn) or 3)
+
+    def queue_unchecked(conn: Any) -> int:
+        asked.append(conn)
+        return 3
+
+    monkeypatch.setattr(recheck, "queue_unchecked", queue_unchecked)
     assert watch.Watch.unchecked_texts(cast(Any, "conn")) is True and asked == ["conn"]
 
     def broken(conn: Any) -> int:
@@ -130,7 +135,12 @@ def test_l_hide_bld_c231_the_desk_texts_sweep_is_nothing_until_lane_bs_module_is
     assert desk._sweep_desk_texts(cast(Any, None), "idea", "value", "name", "reviewer") == 0
     called: list[Any] = []
     fake = types.ModuleType("c231_fake_desk_texts")
-    fake.sweep_value = lambda conn, idea, value, kind, *, found_by: called.append((idea, kind, found_by)) or 2
+
+    def sweep_value(conn: Any, idea: str, value: str, kind: str, *, found_by: str) -> int:
+        called.append((idea, kind, found_by))
+        return 2
+
+    fake.sweep_value = sweep_value
     monkeypatch.setitem(sys.modules, "c231_fake_desk_texts", fake)
     monkeypatch.setattr(desk, "DESK_TEXTS", ("c231_fake_desk_texts", "sweep_value"))
     assert desk._sweep_desk_texts(cast(Any, None), "idea", "value", "name", "reviewer") == 2
@@ -146,9 +156,12 @@ def test_l_hide_bld_c231_lane_bs_desk_text_job_is_queued_only_where_its_handler_
     from jobs import runner
 
     queued: list[tuple[str, Any]] = []
-    monkeypatch.setattr(
-        runner, "enqueue", lambda conn, kind, payload, dedupe_key=None: queued.append((kind, dedupe_key)) or 9
-    )
+
+    def enqueue(conn: Any, kind: str, payload: Any, dedupe_key: str | None = None) -> int:
+        queued.append((kind, dedupe_key))
+        return 9
+
+    monkeypatch.setattr(runner, "enqueue", enqueue)
     monkeypatch.delitem(runner.HANDLERS, recheck.DESK_TEXT_RECHECK, raising=False)
     assert recheck._start_desk_texts(cast(Any, None)) is False and queued == []
     monkeypatch.setitem(runner.HANDLERS, recheck.DESK_TEXT_RECHECK, lambda conn, payload: None)
