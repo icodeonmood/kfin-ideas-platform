@@ -22,6 +22,7 @@ from typing import Any
 
 from core.db import Conn
 from core.logging import get_logger
+from hide import core
 from hide.core import (
     RECHECK_JOB,
     SEALED_SOURCES,
@@ -66,11 +67,19 @@ def run(conn: Conn, payload: dict[str, Any]) -> None:
         from jobs.runner import JobWaits
 
         raise JobWaits(WAIT_S, WAITING)  # waits for the switches, its try given back (BLD-C231, as BLD-C225)
+    # The model call before any lock (BLD-C234), then every hide lock this text's copies need, in uuid order and
+    # before any row lock (BLD-C228): a draft's ask is also swept by the desk under its other idea's lock, so a
+    # re-check holding only the draft's could write its copy over the desk's mask (BLD-C239).
+    asked = core.gate(conn, idea_uuid, words, source=source)
+    keys = sorted({idea_uuid.lower(), *_also_locked(conn, idea_uuid, source, source_id)})
     with conn.transaction():
+        for key in keys:
+            core.lock(conn, key)
         before = {str(d["vault_tag"]) for d in details_for(conn, idea_uuid, source, source_id)}
         done, kept = _hide(
-            conn, idea_uuid, words, by=by, source=source, source_id=source_id, gatekeeper=True, recheck=True
-        )
+            conn, idea_uuid, words, by=by, source=source, source_id=source_id, gatekeeper=True, recheck=True,
+            gate=asked,
+        )  # fmt: skip
         if source in ("message", "answer", "conversation"):
             found = desk.load_sealed(conn, idea_uuid, source, source_id)
             if found:
@@ -87,6 +96,20 @@ def run(conn: Conn, payload: dict[str, Any]) -> None:
     log.info(
         "hide.rechecked", idea_id=idea_uuid, source_code=source, hidden_count=len(fresh), other_copies=copies
     )
+
+
+def _also_locked(conn: Conn, idea_uuid: str, source: str, source_id: str) -> list[str]:
+    """The other ideas whose hide lock guards a copy of this text (BLD-C239). A draft's ask ("<merge request id>:ask",
+    lane F's `ask_id`) is kept under the draft but read, and swept by the desk's "Hide this", on the idea it was sent
+    to (`desk.load_teamup`). Every other sealed text lives under its own idea only."""
+    request_id, _, part = source_id.partition(":")
+    if source != "teamup" or part != "ask" or not is_uuid(request_id):
+        return []
+    row = conn.execute(
+        "SELECT other_idea_uuid FROM merge_requests WHERE id = %s AND draft_uuid = %s",
+        (request_id, idea_uuid),
+    ).fetchone()
+    return [str(row["other_idea_uuid"]).lower()] if row and row["other_idea_uuid"] else []
 
 
 def _gatekeeper_on(conn: Conn) -> bool:
