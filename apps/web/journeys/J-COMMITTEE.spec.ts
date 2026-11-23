@@ -12,6 +12,7 @@ import {
   addMonthsIST,
   dayIST,
   decisionWindow,
+  expectNoSeriousAxeIssues,
   ideaUrl,
   nextCloseIST,
   seeded,
@@ -277,8 +278,12 @@ step(
       await expect(admin.getByRole("heading", { level: 1, name: "Review desk" })).toHaveCount(0);
       const notFound = await admin.goto(at);
       expect(notFound?.status()).toBe(404);
-      await expect(admin.getByRole("heading", { name: "This page could not be found." })).toBeVisible();
+      // BLD-B277: the 1% Club's own not-found page in the shell, worded as for an idea that is not there.
+      const nothing = admin.getByRole("heading", { level: 1, name: "We couldn’t find that idea." });
+      await expect(nothing).toBeVisible();
+      await expect(admin.getByText("Check the link, or go back to Home.", { exact: true })).toBeVisible();
       await expect(admin.getByRole("heading", { level: 1, name: f2.title })).toHaveCount(0);
+      await expectNoSeriousAxeIssues(admin);
       const refused = await admin.request.get(`/api/desk/ideas/${ref}/listen`);
       expect(refused.status(), `listen: ${await refused.text()}`).toBe(403);
     } finally {
