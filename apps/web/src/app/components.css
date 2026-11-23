@@ -197,6 +197,69 @@ textarea:is(.fld, .textarea) {
   padding-inline: 0;
 }
 
+/* C-FIELD tools (BLD-D029, C-PROMPT.anatomy/2): the field's own icon buttons at its trailing end, inside its frame, as
+   the Answer board draws the "+" and the mic in its field (S-R3). The frame takes the field's border, fill and states,
+   lit while anything in it has focus (as the board's field is); the control inside draws none, and its text starts
+   where a field's without tools does. On a text area the tools sit at the foot, 4px in */
+.fld-frame {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid var(--fieldBorder);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  transition:
+    border-color var(--mo-quick) ease,
+    box-shadow var(--mo-quick) ease;
+}
+
+.fld-frame.multi {
+  align-items: flex-end;
+}
+
+.fld-frame:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--focus-glow);
+}
+
+.fld-frame.invalid {
+  border-color: var(--badT);
+  box-shadow: 0 0 0 3px var(--bad-glow);
+}
+
+/* The Field gives its control `.fld`; these outrank the control's own states (`:focus`, invalid, read-only) */
+.fld-frame > .fld {
+  flex: 1 1 auto;
+  min-height: calc(var(--ctl) - 2px);
+}
+
+.fld-frame > textarea.fld {
+  min-height: 110px;
+}
+
+.fld-frame > .fld,
+.fld-frame > .fld:focus,
+.fld-frame > .fld[aria-invalid="true"],
+.fld-frame > .fld[readonly] {
+  padding: 12px 0 12px 14px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fld-tools {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+}
+
+.fld-frame.multi > .fld-tools {
+  padding-bottom: 4px;
+}
+
 .help {
   margin: 8px 0 0;
   font-size: 13.5px;

@@ -160,6 +160,43 @@ test("C-FIELD.rules/2–4 and C-FIELD-MSG: the message shows under the field on 
   await expect(msg).toHaveCount(0);
 });
 
+test('C-FIELD, C-PROMPT.anatomy/2 (BLD-D029): a field\'s own "+" sits inside its frame at the foot of the trailing end, after the text in the tab order; the frame lights on focus', async ({
+  page,
+}) => {
+  const field = page.getByRole("textbox", { name: "Your answer to question 1" });
+  const frame = page.locator(".fld-frame").filter({ has: field });
+  const plus = frame.getByRole("button", { name: "Attach files to this answer", exact: true });
+  await expect(plus).toHaveAttribute("title", "Attach files");
+  const [f, p, t] = await Promise.all([frame.boundingBox(), plus.boundingBox(), field.boundingBox()]);
+  // Inside the frame, 4px in from its right and bottom edges (1px border + 4px), right of the text, 44px
+  expect(p!.width).toBe(44);
+  expect(p!.height).toBe(44);
+  expect(f!.x + f!.width - (p!.x + p!.width)).toBeCloseTo(5, 0);
+  expect(f!.y + f!.height - (p!.y + p!.height)).toBeCloseTo(5, 0);
+  expect(p!.x).toBeGreaterThanOrEqual(t!.x + t!.width);
+  // The text starts where a field's without tools does: the other text area on the page
+  const plain = page.getByRole("textbox", { name: /Anything else the desk should know/ });
+  const textLeft = (l: Locator) =>
+    l.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return el.getBoundingClientRect().left + parseFloat(s.borderLeftWidth) + parseFloat(s.paddingLeft);
+    });
+  const outerLeft = async (l: Locator) => (await l.boundingBox())!.x;
+  expect((await textLeft(field)) - (await outerLeft(frame))).toBeCloseTo(
+    (await textLeft(plain)) - (await outerLeft(plain)),
+    0,
+  );
+  // At rest the frame has the field's border; focus in the text, then on the "+", lights it blue
+  await expect(frame).toHaveCSS("border-top-color", "rgb(140, 140, 145)");
+  await expect(field).toHaveCSS("border-top-width", "0px");
+  await field.focus();
+  await expect(frame).toHaveCSS("border-top-color", "rgb(57, 93, 237)");
+  await page.keyboard.press("Tab");
+  await expect(plus).toBeFocused();
+  await expect(frame).toHaveCSS("border-top-color", "rgb(57, 93, 237)");
+  await expectNoSeriousAxeIssues(page);
+});
+
 test("C-TRACK.anatomy: the stages are an ordered list that says each stage's state", async ({ page }) => {
   const track = page.getByRole("list", { name: "Where it is" });
   await expect(track.getByRole("listitem")).toHaveCount(5);
