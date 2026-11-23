@@ -405,7 +405,7 @@ def _hide(
         raise ValueError("unknown hide source")
     idea_row(conn, idea_uuid)
     scope = scope_for(idea_uuid)
-    if gate is not None and gate.text_hash is not None and gate.text_hash != detect.text_hash(text):
+    if gate is not None and detect.usable(gate, text) is None:
         log.info("hide.gate_stale", idea_id=idea_uuid, source_code=source)  # asked again below (BLD-C234)
         gate = None
     if gate is None:

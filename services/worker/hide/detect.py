@@ -343,6 +343,14 @@ def text_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def usable(gate: Gate | None, text: str) -> Gate | None:
+    """`gate` if hide may use it for `text`: one with no hash (a file's pieces, as given) or one asked about this
+    exact text. None otherwise, and hide then asks the gatekeeper itself (BLD-C234)."""
+    if gate is None or gate.text_hash is None or gate.text_hash == text_hash(text):
+        return gate
+    return None
+
+
 def gatekeeper_finds(conn: Conn, text: str, scope: str) -> Gate:
     """The gatekeeper's finds, mapped back to positions in `text`. Empty when the assistant is off or failed: the
     patterns have already run, and the person's draft must not wait on the model."""
