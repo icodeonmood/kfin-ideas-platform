@@ -969,13 +969,19 @@ step(
   },
 );
 
-/** How Home's hint went, by its own way-out animation's clock (czHintOut, compose.css; BLD-C240). */
-type HintRun = { goneAt: number; faded: boolean; moved: boolean };
+/**
+ * How Home's hint went (BLD-C240): when it could no longer be seen, in ms on the page's animation
+ * timeline since it was drawn; whether it faded or moved on the way; and how many way-out clocks it had
+ * (one, unless it was drawn again).
+ */
+type HintRun = { goneAt: number; faded: boolean; moved: boolean; clocks: number };
 
 /**
- * Reads Home's hint in the page, frame by frame, until it is gone: the time on its czHintOut clock when it
- * went, whether it faded on the way out, and whether it moved at any point. The clock is the animation's
- * own, so a slow runner can make neither a late hint pass nor an early one fail.
+ * Reads Home's hint in the page, frame by frame, until its way out (czHintOut, compose.css) has run to
+ * its end and nothing of it can be seen: hidden, or at an opacity under 0.01. Under reduced motion
+ * Chromium ends the 0.01 ms way out (F-MOTION.reduced) a hair short of its last frame, at an opacity of
+ * about 4e-11 with visibility still "visible" (CI 45128423160), so the opacity counts too. The time is
+ * read on the frame that finds it gone, not from the animation's own clock, which stops at its end.
  */
 async function hintRun(page: Page): Promise<HintRun> {
   return page.evaluate(async () => {
@@ -993,14 +999,18 @@ async function hintRun(page: Page): Promise<HintRun> {
     const clocks = new Set<Animation>([out]);
     while (performance.now() < until) {
       if (!hint.isConnected) throw new Error("the hint was drawn again, which starts its clock again");
-      const style = getComputedStyle(hint);
-      const now = Number(out.currentTime);
-      if (style.visibility === "hidden") return { goneAt: now, faded, moved };
-      if (style.transform !== "none") moved = true;
-      if (now >= delay && Number(style.opacity) < 1) faded = true;
       for (const a of hint.getAnimations()) {
         if (isOut(a)) clocks.add(a);
       }
+      const style = getComputedStyle(hint);
+      const opacity = Number(style.opacity);
+      if (out.playState === "finished" && (style.visibility === "hidden" || opacity < 0.01)) {
+        const goneAt = Number(document.timeline.currentTime) - Number(out.startTime);
+        return { goneAt, faded, moved, clocks: clocks.size };
+      }
+      if (style.transform !== "none") moved = true;
+      // A fade is an opacity part way, once the way out has begun (the way in fades too, before 1.25 s).
+      if (Number(out.currentTime) >= delay && opacity > 0.01 && opacity < 0.99) faded = true;
       await frame();
     }
     // What the browser holds for the hint when it has not gone: its way-out clock and the styles in force.
@@ -1052,6 +1062,7 @@ step(
     expect(desk.goneAt, "the hint stays until 5.9 s and fades for 0.45 s").toBeGreaterThanOrEqual(6_349);
     expect(desk.goneAt, "gone by about 6.4 s").toBeLessThan(6_650);
     expect(desk.faded, "it fades on the way out").toBe(true);
+    expect(desk.clocks, "its clock started once, on arrival").toBe(1);
 
     // On a phone (PhoneHome) it goes while the words box has focus, and shows again once the focus leaves.
     await page.setViewportSize({ width: 360, height: 780 });
@@ -1084,6 +1095,7 @@ step(
     expect(still.faded, "it goes at once, with no fade").toBe(false);
     expect(still.goneAt, "it stays until 5.9 s").toBeGreaterThanOrEqual(5_900);
     expect(still.goneAt, "gone by about 6.4 s").toBeLessThan(6_400);
+    expect(still.clocks, "its clock started once, on arrival").toBe(1);
     await expectNoSeriousAxeIssues(page);
   },
 );
