@@ -949,17 +949,18 @@ def test_A_API_files_a_row_that_cannot_be_written_leaves_no_stored_copy(
     assert db.execute("SELECT 1 FROM attachments WHERE store_key = %s", (put[0],)).fetchone() is None
 
 
-def _start_swept(db: Conn) -> None:
-    """A worker start sweep that finished, as `start_sweep` records it: the attachments sweep waits for one
-    (BLD-C242). audit_log is append-only, so the row stays for the rest of the run."""
+def _start_swept(db: Conn, complete: bool = True) -> None:
+    """A worker start sweep's audit row, as `start_sweep` records it: the attachments sweep deletes only while the
+    latest one says it finished (BLD-C242). audit_log is append-only, so a test ends on a finished one."""
     db.execute(
         "INSERT INTO audit_log (actor, action, entity, after) VALUES "
-        "('system:files', 'file.start_sweep', 'files:start_sweep', '{\"count\": 0, \"complete\": true}'::jsonb)"
+        "('system:files', 'file.start_sweep', 'files:start_sweep', %s)",
+        (Jsonb({"count": 0, "complete": complete}),),
     )
 
 
 def test_L_HIDE_files_a_failed_uploads_copy_goes_after_the_retention_period(
-    db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+    db: Conn, cast: dict[str, Any]
 ) -> None:
     kavya = cast["kavya"]
     att = _add(db, kavya, make.pdf(["Synthetic"]), idea_id=cast["idea"]["idea_id"])["id"]
@@ -973,11 +974,12 @@ def test_L_HIDE_files_a_failed_uploads_copy_goes_after_the_retention_period(
         "WHERE id = %s",
         (att,),
     )
-    # BLD-C242: until a worker start sweep has finished once, nothing goes, however old the copy (lane A: the start
-    # sweep brings r3's files back from these copies).
-    monkeypatch.setattr(F, "start_sweep_done", lambda _conn: False)
+    # BLD-C242: while the latest worker start sweep did not finish, nothing goes, however old the copy, even after an
+    # earlier one finished (lane A: the start sweep brings r3's files back from these copies).
+    _start_swept(db, complete=False)
+    assert not F.start_sweep_done(db)
     assert F.sweep_failed_copies(db) == 0 and store.exists(get_settings().s3_bucket_quarantine, key)
-    monkeypatch.undo()
+    _start_swept(db)
     assert F.sweep_failed_copies(db) == 1
     assert not store.exists(get_settings().s3_bucket_quarantine, key)
     assert F.sweep_failed_copies(db) == 0
