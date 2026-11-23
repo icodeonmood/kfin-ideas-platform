@@ -12,6 +12,7 @@ never apply.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
 import shlex
@@ -301,37 +302,70 @@ def test_bld_a248_runbook_is_read_from_the_tag_lane_a_sent() -> None:
     assert "`release/2026-11-20` stays on r3 and has no upgrade section" in first
 
 
+DESK_FILTERS = (  # lane B's `_UNCHECKED` in desk/text_recheck.py (BLD-B278), as a read-only count
+    "JOIN question_sets s ON s.id = q.set_id",
+    "q.gatekeeper_done_at IS NULL AND s.state <> 'queued'",
+    "gatekeeper_done_at IS NULL AND via = 'review_desk' AND note_encrypted IS NOT NULL",
+    "gatekeeper_done_at IS NULL AND by_side = 'reviewer' AND note_encrypted IS NOT NULL",
+)
+DESK_TABLES = {"questions", "idea_decisions", "decision_reversals", "merges", "idea_worth"}
+
+
+def _words_reads() -> tuple[str, list[str]]:
+    section = _section(UAT_DOC.read_text("utf-8"), "Switching to full mode (mode A)")
+    step7 = section.split("\n7. **", 1)[1].split("\n8. **", 1)[0]
+    return step7, re.findall(r'psql -U ideas -d ideas -c "([^"]+)"', step7.split("Words:", 1)[1])
+
+
 def test_bld_a248_full_mode_step_7_waits_for_the_words_and_step_8_waits_for_step_7() -> None:
-    """BLD-C231: the words typed while the assistant was off are re-checked before similar ideas come on."""
+    """BLD-C231 and BLD-B278: the words and the desk's texts typed while the assistant was off are re-checked
+    before similar ideas come on."""
     section = _section(UAT_DOC.read_text("utf-8"), "Switching to full mode (mode A)")
     [step1] = [line for line in section.splitlines() if line.startswith("1. **")]
-    assert "(BLD-C231, with BLD-C234)" in step1 and "the tag that has all four" in step1
-    step7 = section.split("\n7. **", 1)[1].split("\n8. **", 1)[0]
+    assert "(BLD-C231, with BLD-C234)" in step1 and "(BLD-B278)" in step1
+    assert "the tag that has all five" in step1
+    step7, reads = _words_reads()
     order = [
         "FROM jobs WHERE type = 'file.check' GROUP BY 1, 2",
         "Words:",
         "SELECT count(*) FROM idea_words_sealed WHERE gatekeeper_done_at IS NULL",
-        "SELECT state, last_error, run_at <= now() AS due, count(*) FROM jobs WHERE type = 'hide.recheck' "
-        "GROUP BY 1, 2, 3",
+        "SELECT count(*) FROM (SELECT 1 FROM questions q",
+        "SELECT type, state, last_error, run_at <= now() AS due, count(*) FROM jobs "
+        "WHERE type IN ('hide.recheck', 'desk.text_recheck') GROUP BY 1, 2, 3, 4",
         "action = 'kill_switch.set' AND entity IN ('kill_switch:ai.all', 'kill_switch:agent.gatekeeper')",
+        "a.after->>'source' AS source, a.after->>'code' AS code",
         "LEFT JOIN audit_log a ON a.action = 'hide.recheck_gave_up' AND a.at >= s.since",
         "stay at 5 or fewer",
+        "`desk.text_recheck` has at most one row `queued` or `running`",
         "`waiting_gatekeeper` that shows on two reads in a row means a switch is off: go back to step 6",
         "if it is empty, stop and tell lane A",
-        "Step 8 waits until the first count is 0.",
+        "`desk` in the source is a review desk text",
+        "Step 8 waits until the first two counts are both 0",
     ]
     positions = [step7.index(s) for s in order]
     assert positions == sorted(positions)
-    # The reads print counts, states and codes: never an ID, a name or the text itself.
-    words = step7.split("Words:", 1)[1]
-    reads = re.findall(r'psql -U ideas -d ideas -c "([^"]+)"', words)
-    assert len(reads) == 3
+    assert len(reads) == 4
+    # The reads print counts, states, sources and codes: never an ID, a name or the text itself.
+    forbidden = r"\b(id|idea_id|payload|text|words|entity|actor|before|reason|ip|note_encrypted)\b"
     for sql in reads:
-        columns = re.sub(r"count\([^)]*\)", "count", sql.rsplit("SELECT ", 1)[1].split(" FROM ", 1)[0])
-        forbidden = r"\b(id|idea_id|payload|text|words|entity|actor|before|reason|ip)\b"
-        assert not re.search(forbidden, columns), sql
+        for columns in re.findall(r"SELECT (.+?) FROM ", sql):
+            assert not re.search(forbidden, re.sub(r"count\([^)]*\)", "count", columns)), sql
+    desk = reads[1]
+    assert set(re.findall(r"FROM (\w+)", desk)) - {"question_sets"} == DESK_TABLES
+    assert all(f in desk for f in DESK_FILTERS)
     [step8] = [line for line in section.splitlines() if line.startswith("8. **")]
-    assert step8.startswith("8. **Turn on similar ideas**, once step 7's first words count is 0.")
+    assert step8.startswith("8. **Turn on similar ideas**, once step 7's first two counts are both 0.")
+
+
+def test_bld_a248_desk_count_matches_lane_b_filter_once_b278_is_in() -> None:
+    """Once lane B's BLD-B278 is in the build, the runbook's desk count reads the same texts its re-check takes."""
+    if importlib.util.find_spec("desk.text_recheck") is None:
+        pytest.skip("BLD-B278 is not in this build yet")
+    from desk import text_recheck
+
+    assert set(text_recheck.COLUMNS) == DESK_TABLES
+    assert all(f in text_recheck._UNCHECKED for f in DESK_FILTERS)
+    assert text_recheck.JOB == "desk.text_recheck"
 
 
 # ---- BLD-A246: the web container never gets the model route's credentials ------------------------------------------
