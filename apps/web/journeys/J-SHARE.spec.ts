@@ -977,20 +977,22 @@ step(
 type HintRun = { goneAt: number; faded: boolean; moved: boolean; clocks: number };
 
 /**
- * Reads Home's hint in the page, frame by frame, until its way out (czHintOut, compose.css) has run to
- * its end and nothing of it can be seen: hidden, or at an opacity under 0.01. Under reduced motion
- * Chromium ends the 0.01 ms way out (F-MOTION.reduced) a hair short of its last frame, at an opacity of
- * about 4e-11 with visibility still "visible" (CI 45128423160), so the opacity counts too. The time is
- * read on the frame that finds it gone, not from the animation's own clock, which stops at its end.
+ * Reads Home's hint in the page, frame by frame, until its way out (compose.css: czHintOut, or czHintGone
+ * under reduced motion) has run to its end and nothing of it can be seen: hidden, or at an opacity under
+ * 0.01. The opacity ends the wait so that a hint left "visible" at no opacity fails on the step's
+ * toBeHidden, not on a timeout: Chromium ends the 0.01 ms reduced-motion way out (F-MOTION.reduced) a
+ * hair short of its last frame (CI 45128423160), so czHintGone is hidden at both ends. The time is read
+ * on the frame that finds it gone, not from the animation's own clock, which stops at its end.
  */
 async function hintRun(page: Page): Promise<HintRun> {
   return page.evaluate(async () => {
     const hint = document.querySelector(".hm-prompt .vhint");
     if (!hint) throw new Error("Home's hint is on screen");
+    const waysOut = ["czHintOut", "czHintGone"];
     const isOut = (a: Animation): a is CSSAnimation =>
-      a instanceof CSSAnimation && a.animationName === "czHintOut";
+      a instanceof CSSAnimation && waysOut.includes(a.animationName);
     const out = hint.getAnimations().find(isOut);
-    if (!out) throw new Error("the hint has its way out (czHintOut)");
+    if (!out) throw new Error(`the hint has its way out (${waysOut.join(" or ")})`);
     const delay = Number(out.effect?.getTiming().delay ?? 0);
     const frame = () => new Promise((done) => requestAnimationFrame(done));
     const until = performance.now() + 15_000;
@@ -1063,6 +1065,7 @@ step(
     expect(desk.goneAt, "gone by about 6.4 s").toBeLessThan(6_650);
     expect(desk.faded, "it fades on the way out").toBe(true);
     expect(desk.clocks, "its clock started once, on arrival").toBe(1);
+    await expect(hint, "gone means hidden, so a screen reader does not read it either").toBeHidden();
 
     // On a phone (PhoneHome) it goes while the words box has focus, and shows again once the focus leaves.
     await page.setViewportSize({ width: 360, height: 780 });
@@ -1096,6 +1099,7 @@ step(
     expect(still.goneAt, "it stays until 5.9 s").toBeGreaterThanOrEqual(5_900);
     expect(still.goneAt, "gone by about 6.4 s").toBeLessThan(6_400);
     expect(still.clocks, "its clock started once, on arrival").toBe(1);
+    await expect(hint, "hidden, not only see-through (BLD-C240 follow-up, czHintGone)").toBeHidden();
     await expectNoSeriousAxeIssues(page);
   },
 );
