@@ -46,7 +46,7 @@ RECHECK_OUTSTANDING = 5
 # Words still being typed (an answer's autosave) settle before the sweep asks about them.
 SETTLE = "10 minutes"
 # Lane B's job for the review desk's own texts (BLD-B278): queued once per tick while both switches are on, deduped,
-# and run by lane B's handler (a worker without it leaves the one job waiting).
+# and only in a build that registers lane B's handler.
 DESK_TEXT_RECHECK = "desk.text_recheck"
 
 
@@ -129,6 +129,17 @@ def gave_up(conn: Conn, payload: dict[str, Any]) -> None:
     log.info("hide.recheck_gave_up", idea_id=idea_uuid, source_code=source, error_code=code)
 
 
+def _start_desk_texts(conn: Conn) -> bool:
+    """Lane B's re-check of the review desk's own texts (BLD-B278), one at a time, started by the same switch-on.
+    Only when this build registers its handler (the service imports `jobs.handlers` before the watch runs), so a
+    build without BLD-B278 queues nothing for it. Returns whether a job was queued."""
+    from jobs.runner import HANDLERS, enqueue
+
+    if DESK_TEXT_RECHECK not in HANDLERS:
+        return False
+    return enqueue(conn, DESK_TEXT_RECHECK, {}, dedupe_key=DESK_TEXT_RECHECK) is not None
+
+
 def queue_unchecked(conn: Conn, limit: int = RECHECK_OUTSTANDING) -> int:
     """Texts written while the assistant was off get the gatekeeper's check once it is back (DEC-131 (3), BLD-C231).
     Called on every tick of the ticker's watch; does nothing unless `ai.all` and `agent.gatekeeper` are both on.
@@ -142,8 +153,7 @@ def queue_unchecked(conn: Conn, limit: int = RECHECK_OUTSTANDING) -> int:
         return 0
     from jobs.runner import enqueue
 
-    # Lane B's re-check of the review desk's own texts (BLD-B278), one at a time, started by the same switch-on.
-    enqueue(conn, DESK_TEXT_RECHECK, {}, dedupe_key=DESK_TEXT_RECHECK)
+    _start_desk_texts(conn)
     busy = conn.execute(
         "SELECT count(*) AS n FROM jobs WHERE type = %s AND (state = 'running' OR (state = 'queued' AND run_at <= now()))",
         (RECHECK_JOB,),

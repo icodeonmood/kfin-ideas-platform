@@ -135,3 +135,22 @@ def test_l_hide_bld_c231_the_desk_texts_sweep_is_nothing_until_lane_bs_module_is
     monkeypatch.setattr(desk, "DESK_TEXTS", ("c231_fake_desk_texts", "sweep_value"))
     assert desk._sweep_desk_texts(cast(Any, None), "idea", "value", "name", "reviewer") == 2
     assert called == [("idea", "name", "reviewer")]
+
+
+def test_l_hide_bld_c231_lane_bs_desk_text_job_is_queued_only_where_its_handler_is(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLD-B278: the switch-on queues `desk.text_recheck` only in a build that registers lane B's handler, so a build
+    without it never holds a row no worker will run."""
+    from hide import recheck
+    from jobs import runner
+
+    queued: list[tuple[str, Any]] = []
+    monkeypatch.setattr(
+        runner, "enqueue", lambda conn, kind, payload, dedupe_key=None: queued.append((kind, dedupe_key)) or 9
+    )
+    monkeypatch.delitem(runner.HANDLERS, recheck.DESK_TEXT_RECHECK, raising=False)
+    assert recheck._start_desk_texts(cast(Any, None)) is False and queued == []
+    monkeypatch.setitem(runner.HANDLERS, recheck.DESK_TEXT_RECHECK, lambda conn, payload: None)
+    assert recheck._start_desk_texts(cast(Any, None)) is True
+    assert queued == [(recheck.DESK_TEXT_RECHECK, recheck.DESK_TEXT_RECHECK)]
