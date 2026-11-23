@@ -72,6 +72,7 @@ const BOX_FILES = fresh(800, "Boxfiles");
 const CAPTURE = fresh(1600, "Capturefirst");
 const HOME_VOICE = fresh(1800, "Homevoice");
 const FILE_WAIT = fresh(1900, "Filewait");
+const HOME_HINT = fresh(1500, "Homehint");
 
 async function signInAsFresh(page: Page, who: Fresh): Promise<void> {
   await signIn(page, who.emp, { email: who.email, name: who.name });
@@ -909,7 +910,9 @@ step(
         return out.stream;
       };
     });
-    // Reduced motion keeps the hint from fading after six seconds (compose.css), so nothing races it.
+    // Reduced motion keeps the hint still (no slide in), so its place reads the same on every frame. It
+    // still goes at 5.9 s (BLD-C240, which v7b times); the checks of its place below come in the first
+    // seconds.
     await page.emulateMedia({ reducedMotion: "reduce" });
     const made: string[] = [];
     page.on("request", (r) => {
@@ -937,7 +940,7 @@ step(
 
     // Lane D's QA: on a phone the hint (about 200 px, two lines) sits over the round button and clear of the
     // "+". While it shows it may cover the box's first line, as the PhoneHome drawing does (lane D, 22 Nov,
-    // BLD-G009); that it goes at 5.9 s under reduced motion too is lane C's BLD-C240, which v7's part 2 pins.
+    // BLD-G009); when it goes, and that it goes while the box has focus, is BLD-C240, which v7b pins.
     await page.setViewportSize({ width: 360, height: 780 });
     await settled(page);
     await expect(round).toBeVisible();
@@ -962,6 +965,99 @@ step(
     await page.waitForURL(/\/share\/[0-9a-f-]{36}$/, { timeout: 30_000 });
     await expect(page.getByText(HEARD).first()).toBeVisible();
     expect(made, "Home makes one draft").toHaveLength(1);
+    await expectNoSeriousAxeIssues(page);
+  },
+);
+
+/** How Home's hint went, by its own way-out animation's clock (czHintOut, compose.css; BLD-C240). */
+type HintRun = { goneAt: number; faded: boolean; moved: boolean };
+
+/**
+ * Reads Home's hint in the page, frame by frame, until it is gone: the time on its czHintOut clock when it
+ * went, whether it faded on the way out, and whether it moved at any point. The clock is the animation's
+ * own, so a slow runner can make neither a late hint pass nor an early one fail.
+ */
+async function hintRun(page: Page): Promise<HintRun> {
+  return page.evaluate(async () => {
+    const hint = document.querySelector(".hm-prompt .vhint");
+    if (!hint) throw new Error("Home's hint is on screen");
+    const isOut = (a: Animation): a is CSSAnimation =>
+      a instanceof CSSAnimation && a.animationName === "czHintOut";
+    const out = hint.getAnimations().find(isOut);
+    if (!out) throw new Error("the hint has its way out (czHintOut)");
+    const delay = Number(out.effect?.getTiming().delay ?? 0);
+    const frame = () => new Promise((done) => requestAnimationFrame(done));
+    const until = performance.now() + 15_000;
+    let faded = false;
+    let moved = false;
+    while (performance.now() < until) {
+      if (!hint.isConnected) throw new Error("the hint was drawn again, which starts its clock again");
+      const style = getComputedStyle(hint);
+      const now = Number(out.currentTime);
+      if (style.visibility === "hidden") return { goneAt: now, faded, moved };
+      if (style.transform !== "none") moved = true;
+      if (now >= delay && Number(style.opacity) < 1) faded = true;
+      await frame();
+    }
+    throw new Error("the hint was still there after 15 s");
+  });
+}
+
+step(
+  "J-SHARE/v7b",
+  "S-03",
+  "Home's hint goes on its own by about 6.4 s, goes while a phone's box has focus, stays away once anything is typed, and under reduced motion goes at once without moving",
+  { needs: ["S-03", "C-PROMPT.voice", "BLD-C220", "BLD-C240"] },
+  async ({ page }, info) => {
+    info.setTimeout(90_000); // three loads of Home and two waits of about 6.4 s for the hint to go
+    await signInAsFresh(page, HOME_HINT);
+    await page.goto("/home");
+    const box = page.getByRole("textbox", { name: "Say it in your own words" });
+    const round = page.getByRole("button", { name: "Tap to start speaking", exact: true });
+    const hint = page.locator(".hm-prompt .vhint");
+
+    // On arrival the hint shows. On the desk the box's focus leaves it there: the focus rule is a phone's.
+    await expect(hint).toBeVisible();
+    await box.focus();
+    await expect(box).toBeFocused();
+    await expect(hint).toBeVisible();
+    // From 5.9 s it fades for 0.45 s, and then it is gone.
+    const desk = await hintRun(page);
+    expect(desk.goneAt, "the hint stays until 5.9 s and fades for 0.45 s").toBeGreaterThanOrEqual(6_349);
+    expect(desk.goneAt, "gone by about 6.4 s").toBeLessThan(6_650);
+    expect(desk.faded, "it fades on the way out").toBe(true);
+
+    // On a phone (PhoneHome) it goes while the words box has focus, and shows again once the focus leaves.
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.reload();
+    await expect(hint).toBeVisible();
+    await box.focus();
+    await expect(hint).toBeHidden();
+    await box.blur();
+    await expect(hint).toBeVisible();
+
+    // Once anything is typed it stays away, even after the box is cleared (the board's `!draft && !typed`),
+    // and the round button is the microphone again, at either width.
+    await box.fill("Forms");
+    await expect(hint).toHaveCount(0);
+    await box.fill("");
+    await box.blur();
+    await expect(round).toBeVisible();
+    await expect(hint).toHaveCount(0);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(round).toBeVisible();
+    await expect(hint).toHaveCount(0);
+
+    // Reduced motion (F-MOTION.reduced) takes the movement, not the hint: it shows, still, for the same 5.9 s
+    // and then goes at once, with no fade.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.reload();
+    await expect(hint).toBeVisible();
+    const still = await hintRun(page);
+    expect(still.moved, "it never moves").toBe(false);
+    expect(still.faded, "it goes at once, with no fade").toBe(false);
+    expect(still.goneAt, "it stays until 5.9 s").toBeGreaterThanOrEqual(5_900);
+    expect(still.goneAt, "gone by about 6.4 s").toBeLessThan(6_400);
     await expectNoSeriousAxeIssues(page);
   },
 );
