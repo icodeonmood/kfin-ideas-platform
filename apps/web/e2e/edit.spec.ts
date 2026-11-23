@@ -6,9 +6,12 @@
  * version." The page and the shell are real; the idea's own API answers are synthetic and served by `page.route`, so
  * the screen is checked whatever the seed holds. The journeys (J-RECOVER/7–10 and /15 on S-06B) walk the real routes.
  */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, signIn } from "./helpers";
 
 const REF = "IDEA-2026-001481";
 const UUID = "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f";
@@ -261,4 +264,165 @@ test("S-06B.rules/5 V-ACC: on a phone the edit page is one column with Save chan
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Save changes" })).toBeVisible();
   await expectNoSeriousAxeIssues(page);
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-nowrap-phone-1, never merged: S-06B's in-page phone dock (`div.dock.ed-dock`, main
+ * before BLD-C241) with lane C's nowrap fix. When the dock's lines are taller than 45% of a short screen, the dock
+ * keeps one column and scrolls inside; nothing wraps into a second column off its right edge. Closed at 320x640 and
+ * 360x640, Cancel's confirm at 320x568, and the dock at rest at 320x568. Synthetic data only.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+type QaBox = { top: number; bottom: number; left: number; right: number; height: number; width: number };
+async function qaDock(page: Page) {
+  return page.evaluate(() => {
+    const box = (el: Element | null | undefined): QaBox | null => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, height: r.height, width: r.width };
+    };
+    const html = document.documentElement;
+    const dock = document.querySelector<HTMLElement>(".dock.ed-dock");
+    const acts = dock?.querySelector(".ed-acts");
+    const cs = dock ? getComputedStyle(dock) : null;
+    // The dock's first line in the flow (an empty live region is absolute and takes no room)
+    const first = dock ? [...dock.children].find((c) => getComputedStyle(c).position !== "absolute") : undefined;
+    return {
+      justify: cs?.justifyContent ?? "",
+      padTop: cs ? parseFloat(cs.paddingTop) + parseFloat(cs.borderTopWidth) : 0,
+      first: box(first),
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+      sideways: html.scrollWidth - html.clientWidth,
+      wrap: cs?.flexWrap ?? "",
+      dir: cs?.flexDirection ?? "",
+      dock: box(dock),
+      inner: dock
+        ? { sw: dock.scrollWidth, cw: dock.clientWidth, sh: dock.scrollHeight, ch: dock.clientHeight, st: dock.scrollTop }
+        : null,
+      acts: box(acts),
+      cancel: box(acts?.querySelector("a")),
+      save: box(acts?.querySelector("button")),
+      msg: box(dock?.querySelector(".bmsg")),
+    };
+  });
+}
+
+async function qaOpen(page: Page, save?: { status: number; json: object }) {
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await serveIdea(page, PAGE, save);
+  await page.goto(`/ideas/${REF}/edit`);
+  await expect(page.getByRole("heading", { level: 1, name: "Edit your problem" })).toBeVisible();
+  // The page's arrival moves its box, which holds main's in-page fixed dock until it ends (BLD-D028's reason)
+  await settleMotion(page);
+}
+
+async function qaChangeTitle(page: Page) {
+  await page.getByRole("button", { name: "Change title" }).click();
+  await page.getByRole("textbox", { name: "Title" }).fill("Investors call about a redemption not processed");
+  await page.getByRole("textbox", { name: "Title" }).press("Enter");
+}
+
+const CLOSED = {
+  status: 409,
+  json: {
+    error: {
+      code: "edit_window_closed",
+      message:
+        "The review desk has just opened it, so it can’t be changed now. Your changes are kept below. Send them as a message instead.",
+      opened_by_desk_at: "2026-11-16T10:00:00+05:30",
+      to: `/ideas/${REF}/conversation`,
+    },
+  },
+};
+
+test("QA (lane D, never merged): S-06B's phone dock keeps one column and scrolls inside on short screens (lane C nowrap)", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone-360", "phone only");
+  test.setTimeout(120_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+
+  /** Measures and shoots the dock, then scrolls it to its end and checks Cancel and Save changes are inside it. */
+  const check = async (name: string) => {
+    await settleMotion(page);
+    await page.locator(".dock.ed-dock").evaluate((el) => el.scrollTo(0, 0));
+    const g = await qaDock(page);
+    log[name] = g;
+    await page.screenshot({ path: join(QA_SHOTS, `${name}.png`) });
+    expect.soft(g.wrap, `${name}: the dock never wraps`).toBe("nowrap");
+    // Overflow goes down, where the dock scrolls to it; never up past its top edge, where nothing can
+    expect
+      .soft(g.first!.top, `${name}: the first line starts inside the dock, under its padding`)
+      .toBeGreaterThanOrEqual(g.dock!.top + g.padTop - 0.5);
+    if (g.msg) {
+      expect.soft(g.msg.top, `${name}: the message's top is in the dock`).toBeGreaterThanOrEqual(g.dock!.top);
+    }
+    expect.soft(Math.abs((g.dock?.bottom ?? 0) - g.vh), `${name}: on the screen's foot`).toBeLessThan(1);
+    expect.soft(g.dock!.height, `${name}: within 45% of the screen`).toBeLessThanOrEqual(g.vh * 0.45 + 1);
+    expect.soft(g.inner!.sw, `${name}: nothing sideways inside the dock`).toBeLessThanOrEqual(g.inner!.cw);
+    expect.soft(g.acts!.left, `${name}: the buttons start inside the dock`).toBeGreaterThanOrEqual(g.dock!.left);
+    expect.soft(g.acts!.right, `${name}: the buttons end inside the dock`).toBeLessThanOrEqual(g.dock!.right + 0.5);
+    expect.soft(g.sideways, `${name}: no sideways scroll on the page`).toBeLessThanOrEqual(0);
+    // Scrolled to its end, the dock shows Cancel and Save changes in full
+    await page.locator(".dock.ed-dock").evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    const e = await qaDock(page);
+    log[`${name}-end`] = e;
+    await page.screenshot({ path: join(QA_SHOTS, `${name}-end.png`) });
+    for (const [what, b] of [
+      ["Cancel", e.cancel],
+      ["Save changes", e.save],
+    ] as const) {
+      if (!b) continue; // Cancel is not there once saved
+      expect.soft(b.top, `${name}: ${what} is in the dock's view at its end`).toBeGreaterThanOrEqual(e.dock!.top - 0.5);
+      expect.soft(b.bottom, `${name}: ${what} is in the dock's view at its end`).toBeLessThanOrEqual(e.dock!.bottom + 0.5);
+      expect.soft(b.right, `${name}: ${what} is not off the dock's right edge`).toBeLessThanOrEqual(e.dock!.right + 0.5);
+    }
+    await expectNoSeriousAxeIssues(page);
+    return g;
+  };
+
+  /** Keyboard: focusing the dock's control brings it into the dock's view (scrolled back to the top first). */
+  const focusSeen = async (name: string, control: "Cancel" | "Save changes") => {
+    await page.locator(".dock.ed-dock").evaluate((el) => el.scrollTo(0, 0));
+    const target =
+      control === "Cancel"
+        ? page.locator(".ed-dock").getByRole("link", { name: "Cancel" })
+        : page.locator(".ed-dock").getByRole("button", { name: "Save changes" });
+    await target.focus();
+    const g = await qaDock(page);
+    const b = control === "Cancel" ? g.cancel : g.save;
+    log[`${name}-focus`] = g;
+    expect.soft(b!.bottom, `${name}: focused ${control} is in the dock's view`).toBeLessThanOrEqual(g.dock!.bottom + 0.5);
+    expect.soft(b!.top, `${name}: focused ${control} is in the dock's view`).toBeGreaterThanOrEqual(g.dock!.top - 0.5);
+  };
+
+  await signIn(page, PERSONAS.contributor);
+
+  // Closed, the tallest line: 320x640 and 360x640
+  for (const [w, h] of [
+    [320, 640],
+    [360, 640],
+  ] as const) {
+    await page.setViewportSize({ width: w, height: h });
+    await qaOpen(page, CLOSED);
+    await qaChangeTitle(page);
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.locator(".ed-dock .bmsg.bad")).toBeVisible();
+    await check(`01-closed-${w}x${h}`);
+    await focusSeen(`01-closed-${w}x${h}`, "Cancel");
+  }
+
+  // At rest, then Cancel's confirm, at 320x568
+  await page.setViewportSize({ width: 320, height: 568 });
+  await qaOpen(page);
+  await check("02-rest-320x568");
+  await qaChangeTitle(page);
+  await page.locator(".ed-dock").getByRole("link", { name: "Cancel" }).click();
+  await expect(page.locator(".ed-dock .bmsg.warn")).toBeVisible();
+  await check("03-confirm-320x568");
+  await focusSeen("03-confirm-320x568", "Save changes");
+
+  writeFileSync(join(QA_SHOTS, "nowrap-phone.json"), JSON.stringify(log, null, 2));
 });
