@@ -22,7 +22,10 @@ describe("BLD-B277 S-R2 not-found", () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain(`<h1 id="nf-title" class="emp-t">${NOT_FOUND_COPY.title}</h1>`);
     expect(html).toContain(`<p class="emp-b">${NOT_FOUND_COPY.body}</p>`);
-    expect(html).toContain(`<a class="back" href="/">${NOT_FOUND_COPY.home}</a>`);
+    const back = /<a ([^>]*)>([^<]*)<\/a>/.exec(html);
+    expect(back?.[2]).toBe(NOT_FOUND_COPY.home);
+    expect(back?.[1]).toContain('href="/"');
+    expect(back?.[1]).toContain('class="back"');
   });
 
   it("is plain words: no code, no idea number, nothing that says an idea is there", () => {
