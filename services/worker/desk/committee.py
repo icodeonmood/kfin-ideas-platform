@@ -183,7 +183,9 @@ def listing(conn: Conn, user_id: str, tab: str = "window", sort: str = "closing"
     t = at or now()
     p = promises.get()
     require_role(conn, user_id, COMMITTEE)  # the worker checks too, not only the web's page rule
-    rows = [dict(r) for r in conn.execute(_ROWS + " ORDER BY w.closes_at").fetchall()]
+    # Windows that close at the same moment (decided together) follow the idea's number, then the window, so the list
+    # is the same on every load; each sort below is stable, so its ties keep this order (BLD-B277)
+    rows = [dict(r) for r in conn.execute(_ROWS + " ORDER BY w.closes_at, i.idea_id, w.id").fetchall()]
     by_tab: dict[str, list[dict[str, Any]]] = {k: [] for k in TABS}
     for r in rows:
         by_tab[_tab(r, t)].append(r)

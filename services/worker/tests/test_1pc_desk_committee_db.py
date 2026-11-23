@@ -262,3 +262,19 @@ def test_S_R4_states_tab_J_COMMITTEE_3c_closed_tabs_list_the_latest_first(
         cast["idea"]["idea_id"],
         later,
     ]  # reversed 12:30, then 12:05
+
+
+def test_S_R4_states_sort_L_COMMITTEE_BLD_B277_ties_follow_the_idea_number_under_every_sort(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """S-R4.states `sort` (BLD-B277): three ideas decided at the same moment close together, in the same area. Under
+    each sort, "Closing soonest", "Decided" and "Area", they list by idea number on every load, whatever order the
+    desk decided them in."""
+    meera, rohan = cast["meera"]["id"], cast["rohan"]["id"]
+    on = f.at(17, 10)
+    ideas = [str(f.idea(db, cast["kavya"], shared_at=on - dt.timedelta(days=1))["idea_id"]) for _ in range(3)]
+    for idea_id in reversed(ideas):  # the newest first, so the windows are written against the idea order
+        decide.send(db, idea_id, meera, {"choice": "not_picked", "reason": REASON}, on)
+    for sort in ("closing", "decided", "area"):
+        items = committee.listing(db, rohan, tab="window", sort=sort, at=f.at(20, 12))["items"]
+        assert [r["idea"]["id"] for r in items if r["idea"]["id"] in ideas] == sorted(ideas), sort
