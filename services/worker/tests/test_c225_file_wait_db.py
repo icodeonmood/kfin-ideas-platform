@@ -632,6 +632,10 @@ def test_l_hide_files_bld_c227_bld_c225_the_failed_copies_sweep_keeps_an_r3_copy
     att = _add(db, cast)
     _r3_dead(db, att)
     key = _row(db, att)["store_key"]
+    db.execute(  # the sweep deletes only while the latest start sweep finished (BLD-C242)
+        "INSERT INTO audit_log (actor, action, entity, after) VALUES "
+        "('system:files', 'file.start_sweep', 'files:start_sweep', '{\"count\": 0, \"complete\": true}'::jsonb)"
+    )
     F.sweep_failed_copies(db)
     assert (s.s3_bucket_quarantine, key) in stood_in["kept"]
     db.execute(

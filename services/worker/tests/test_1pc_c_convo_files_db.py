@@ -480,7 +480,11 @@ def test_the_sweep_removes_only_unsent_conversation_files_older_than_a_day(
     mine = _row(db, idea, kavya, hours_ago=72)
     key = str(_one(db, "SELECT store_key FROM attachments WHERE id = %s", old)["store_key"])
     objects[(s.s3_bucket_clean, key)] = b"%PDF-1.4"
-    assert F.sweep_failed_copies(db) == 1  # the one sweep, run with the draft purge
+    db.execute(  # a worker start sweep that finished: the attachments sweep waits for one (BLD-C242)
+        "INSERT INTO audit_log (actor, action, entity, after) VALUES "
+        "('system:files', 'file.start_sweep', 'files:start_sweep', '{\"count\": 0, \"complete\": true}'::jsonb)"
+    )
+    assert F.sweep_failed_copies(db) == 1  # the one sweep, run every hour by files.sweep
     left = {r["id"] for r in db.execute("SELECT id FROM attachments WHERE idea_uuid = %s", (idea["id"],))}
     assert left == {new, sent, mine}
     assert (s.s3_bucket_clean, key) not in objects

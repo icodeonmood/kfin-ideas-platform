@@ -22,6 +22,17 @@ def archive_drafts(conn: Conn, payload: dict[str, Any]) -> None:
     archive_untouched(conn)
 
 
+@handler("files.sweep")
+def sweep_files(conn: Conn, payload: dict[str, Any]) -> None:
+    """Every hour (BLD-C242, L-HIDE.files): a failed upload's quarantine copy goes once it is past
+    `attachments.rejected_retention_hours`, and a conversation file never put on an entry goes a day after it was
+    added (`attachments.files.sweep_failed_copies`). Their only caller was drafts.purge, retired with drafts.archive
+    (BLD-C074), so neither ran on any build before this. Nothing goes until a worker start sweep has finished once."""
+    from attachments import files as onepc_files
+
+    log.info("files.swept", swept_count=onepc_files.sweep_failed_copies(conn))
+
+
 @handler("drafts.purge")
 def purge_drafts(conn: Conn, payload: dict[str, Any]) -> None:
     """Delete drafts past their retention date (§4.1 step 2, AT-B3-04), and their files from the store.

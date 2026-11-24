@@ -1235,12 +1235,29 @@ def drop(conn: Conn, row: dict[str, Any]) -> None:
     conn.execute("DELETE FROM attachments WHERE id = %s", (row["id"],))
 
 
+def start_sweep_done(conn: Conn) -> bool:
+    """Whether the most recent worker start sweep (`start_sweep`) finished: its audit row, the latest, says
+    `complete` true. Until then the attachments sweep deletes nothing, so a copy the start sweep would bring back is
+    never lost first (lane A, 22 Nov). The latest row, not any row ever: after a rollback to r3, r3 leaves new files
+    of its own shape, and an earlier finished run says nothing about them; a run that stopped part-way pauses the
+    sweep until a later worker start finishes one."""
+    row = conn.execute(
+        "SELECT after->>'complete' AS complete FROM audit_log WHERE entity = 'files:start_sweep' "
+        "AND action = 'file.start_sweep' ORDER BY at DESC, id DESC LIMIT 1"
+    ).fetchone()
+    return row is not None and row["complete"] == "true"
+
+
 def sweep_failed_copies(conn: Conn) -> int:
-    """The attachments sweep (run with the draft purge, `jobs.handlers.purge_drafts`). The quarantine copy of a file
-    that stayed `upload_failed` past the retention period (`rules/thresholds.md`
+    """The attachments sweep, every hour (`files.sweep`, BLD-C242; its old caller, the draft purge, is retired). The
+    quarantine copy of a file that stayed `upload_failed` past the retention period (`rules/thresholds.md`
     `attachments.rejected_retention_hours`) is deleted; Try again then asks for the file again. And a file added for
     the conversation that never went on an entry is removed, every stored copy and its row, a day after it was added
-    (`sweep_unsent_conversation`, BLD-C216). Returns how many of both."""
+    (`sweep_unsent_conversation`, BLD-C216). Nothing is deleted unless the most recent worker start sweep finished
+    (`start_sweep_done`). Returns how many of both, 0 while it waits."""
+    if not start_sweep_done(conn):
+        log.info("files.sweep_waits")  # the latest start sweep did not finish
+        return 0
     return _sweep_failed(conn) + sweep_unsent_conversation(conn)
 
 
