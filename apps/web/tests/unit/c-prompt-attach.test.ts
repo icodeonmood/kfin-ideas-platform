@@ -337,6 +337,32 @@ describe("C-PROMPT.attach on Home (S-03; DEC-124, BLD-C213, C214)", () => {
     expect(document.activeElement).toBe(plus());
   });
 
+  it('BLD-C245 (lane D\'s QA): "+" closing its own picker keeps the focus on "+" and brings it into view, as Escape does', async () => {
+    // jsdom has no layout: record what a browser would scroll into view.
+    const scrolled: { el: Element; opts: unknown }[] = [];
+    const had = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+    Element.prototype.scrollIntoView = function (this: Element, opts?: unknown) {
+      scrolled.push({ el: this, opts });
+    } as Element["scrollIntoView"];
+    try {
+      await showHome();
+      await openPicker();
+      expect(host.querySelector(".cpick")).not.toBeNull();
+      await act(async () => plus()!.click());
+      await act(async () => await new Promise<void>((r) => requestAnimationFrame(() => r())));
+      expect(host.querySelector(".cpick")).toBeNull();
+      expect(plus()!.getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(plus());
+      expect(scrolled).toContainEqual({ el: plus(), opts: { block: "nearest" } });
+      // It opens again from "+" as before.
+      await openPicker();
+      expect(host.querySelector(".cpick")).not.toBeNull();
+    } finally {
+      if (had) Object.defineProperty(Element.prototype, "scrollIntoView", had);
+      else delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
+  });
+
   it('BLD-C224: a pick of only names starting with "." adds nothing, and the picker says so', async () => {
     await showHome();
     await openPicker();
