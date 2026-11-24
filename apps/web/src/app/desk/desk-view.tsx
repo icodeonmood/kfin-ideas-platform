@@ -39,6 +39,7 @@ import {
   noSubscription,
   readSearch,
   replaceAddress,
+  replaceAddressBeforeLeaving,
   writeSearch,
   type SearchList,
 } from "@/lib/search-memory";
@@ -290,7 +291,7 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
     e.preventDefault();
     // The entry Back returns to: its address names the list and the row, its memory the search (DEC-110)
     writeSearch(LIST, query);
-    replaceAddress(deskHref(view, row.idea_id, rowOffset(e.currentTarget)));
+    replaceAddressBeforeLeaving(deskHref(view, row.idea_id, rowOffset(e.currentTarget)));
     router.push(ideaHref(row));
   };
 

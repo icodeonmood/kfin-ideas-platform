@@ -22,6 +22,7 @@ import {
   listOf,
   readSearch,
   replaceAddress,
+  replaceAddressBeforeLeaving,
   SEARCH_MAX,
   writeSearch,
   type SearchList,
@@ -381,7 +382,7 @@ export function MyIdeasScreen({ data }: { data: MyIdeasResponse | null }) {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
     leaving.current = true;
-    replaceAddress(myIdeasHref(cur(), row.id, rowOffset(e.currentTarget)));
+    replaceAddressBeforeLeaving(myIdeasHref(cur(), row.id, rowOffset(e.currentTarget)));
     router.push(to);
   };
 
