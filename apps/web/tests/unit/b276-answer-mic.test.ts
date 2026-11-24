@@ -212,6 +212,34 @@ describe("S-R3, C-PROMPT.voice, BLD-B276: Say your answer", () => {
     expect(fake.start).toHaveBeenCalledTimes(1);
   });
 
+  it('C-PROMPT.anatomy/2, C-FIELD, S-R3, BLD-B279: the "+" and the mic sit inside the box\'s frame after the box; the voice lines and the chooser stay under it', async () => {
+    server();
+    await render();
+    // Lane D's Field slot (BLD-D029): the box, then its tools, in one frame that draws the border; tools at the foot
+    const frame = box().parentElement!;
+    expect(frame.classList.contains("fld-frame")).toBe(true);
+    expect(frame.classList.contains("multi")).toBe(true);
+    expect([...frame.children].map((c) => c.className)).toEqual(["fld textarea", "fld-tools"]);
+    const inFrame = [...frame.querySelectorAll(".fld-tools > .ans-tools > button")];
+    expect(inFrame.map((b) => b.className.split(" ")[0])).toEqual(["attach-btn", "ans-mic"]);
+    // The reading and tab order: the box, the "+", the mic
+    expect(box().compareDocumentPosition(inFrame[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(inFrame[0]!.compareDocumentPosition(inFrame[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Only the buttons go in the frame: the chooser and the three voice lines follow the field in the box's cell,
+    // mounted and empty until something is said (an empty one adds no space)
+    const cell = host.querySelector(".ans-box")!;
+    const under = [...cell.children].slice(1);
+    expect(cell.children[0]!.className).toBe("fld-wrap");
+    expect(under.map((c) => c.getAttribute("type") ?? c.className)).toEqual([
+      "file",
+      "ans-vline",
+      "ans-vlive",
+      "ans-vlive",
+    ]);
+    expect(frame.querySelector('input[type="file"], .ans-vline, .ans-vlive')).toBeNull();
+    expect(under.slice(1).every((c) => c.childNodes.length === 0)).toBe(true);
+  });
+
   it("DEC-108, BLD-B276: the notice before the first recording shows under the box, and the screen says it showed", async () => {
     server();
     fake.state = { status: "idle", notice: VOICE_NOTICE };

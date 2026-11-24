@@ -113,16 +113,14 @@
   display: block;
 }
 
-/* The box's tool row under the answer box (C-PROMPT.anatomy/2, DEC-124, BLD-B275): lane D's "+" (`.attach-btn`, its
-   own 44px target and look); only its place is set here. The same row inside the phone's sheet; the dock is unchanged */
+/* The box's tools (C-PROMPT.anatomy/2, DEC-124, BLD-B279): lane D's Field places them inside the box's frame, at its
+   foot on the right (`.fld-tools`, BLD-D029), with its own gap; this group only names them, so it adds no box. Lane D's
+   "+" (`.attach-btn`) keeps its own 44px target and look. The same inside the phone's sheet; the dock is unchanged */
 .ans-tools {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: -8px; /* the icon in line with the box's edge, as in S-08's box */
+  display: contents;
 }
-/* The mic after the "+" (C-PROMPT.voice, BLD-B276): the tool row's icon button, as lane D's "+" and Share's mic
-   draw it (a 44px round target, --ink2 at rest, the row's hover fill, the 2px blue focus ring); blue with white while
+/* The mic after the "+" (C-PROMPT.voice, BLD-B276): the box's icon button, as lane D's "+" and Share's mic
+   draw it (a 44px round target, --ink2 at rest, the tools' hover fill, the 2px blue focus ring); blue with white while
    a note is on its way, the warning colours when the microphone is blocked. Tokens only */
 .ans-mic {
   display: grid;
@@ -155,13 +153,12 @@
   outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
-/* A paused or failed note's line takes its own line under the row, in line with the box's edge */
-.ans-tools {
-  flex-wrap: wrap;
-}
-.ans-vlive:not(:empty) {
-  flex-basis: 100%;
-  padding-left: 8px;
+/* The voice lines under the box, after its help line: each on its own line, in line with the box's edge; an empty
+   one adds no space (they stay mounted for the screen reader, WCAG 4.1.3) */
+.ans-box > .ans-vline:not(:empty),
+.ans-box > .ans-vlive:not(:empty) {
+  display: block;
+  margin-top: 8px;
 }
 .ans-vline,
 .ans-vnote {
@@ -188,7 +185,7 @@
 .ans-blk-t {
   font-weight: 500;
 }
-/* An answer's files (C-FILE.row), under its tool row */
+/* An answer's files (C-FILE.row), under its box */
 .ans-files .flist {
   margin: 0;
 }

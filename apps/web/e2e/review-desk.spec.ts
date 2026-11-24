@@ -383,6 +383,18 @@ test('S-R3, C-PROMPT.anatomy/2, C-PROMPT.voice, BLD-B276: "Say your answer" foll
   await expect(tools).toHaveCount(2);
   await expect(tools.nth(0)).toHaveAttribute("aria-label", "Attach files to this answer");
   await expect(tools.nth(1)).toHaveAttribute("aria-label", "Say your answer");
+  // BLD-B279: both sit inside the box's frame (lane D's Field slot, BLD-D029), the mic at its foot on the right
+  await expect(s.locator(".fld-frame .fld-tools .ans-tools > button")).toHaveCount(2);
+  const frame = (await s.locator(".ans-box .fld-frame").boundingBox())!;
+  for (const b of [(await tools.nth(0).boundingBox())!, (await tools.nth(1).boundingBox())!]) {
+    expect(b.x).toBeGreaterThanOrEqual(frame.x);
+    expect(b.y).toBeGreaterThanOrEqual(frame.y);
+    expect(b.x + b.width).toBeLessThanOrEqual(frame.x + frame.width);
+    expect(b.y + b.height).toBeLessThanOrEqual(frame.y + frame.height);
+  }
+  const micAt = (await tools.nth(1).boundingBox())!;
+  expect(frame.x + frame.width - (micAt.x + micAt.width)).toBeLessThan(12);
+  expect(frame.y + frame.height - (micAt.y + micAt.height)).toBeLessThan(12);
   await expect(s.getByPlaceholder("Type your answer, or tap the mic and say it")).toBeVisible();
   // DEC-108: before the first recording, the screen says where the voice goes, with no vendor's name
   await expect(
