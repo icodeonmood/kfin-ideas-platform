@@ -55,10 +55,8 @@ TEXT = {
 }
 EICAR_HALVES = ("X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-", "ANTIVIRUS-TEST-FILE!$H+H*")
 LAST_TRY = {"D": "0 seconds", "W": "6 hours"}
-SHAPES = (
-    "r3",
-    "waits",
-)  # FROM's file check: r3 counts a gatekeeper wait as a try; waits gives it back (BLD-C225)
+# FROM's file check while the gatekeeper is off: r3 counts each wait as a try; waits gives the try back (BLD-C225).
+SHAPES = ("r3", "waits")
 # waits: the file waits for the gatekeeper and its job is put back, not failed (the names BLD-C225 pins).
 WAITING = (
     "SELECT EXISTS (SELECT 1 FROM jobs WHERE type = 'file.check' AND payload->>'attachment_id' = %(id)s "
