@@ -19,6 +19,7 @@ import {
   showNameOnWall,
   type IdeaKey,
 } from "./club";
+import { expectHeld, glidingRow, slowGlides } from "./glide";
 import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
 
 type Kind = "problem" | "fix" | "business_idea";
@@ -451,6 +452,36 @@ test.describe("S-WALL", () => {
     );
     await page.keyboard.press("Tab");
     await expect(page.locator(".wl-stage").first().getByRole("link").first()).toBeFocused();
+  });
+
+  test("BLD-D038, F-MOTION.rules/5 (J-BROWSE/4): a press holds the gliding row; the click opens it", async ({
+    page,
+  }, info) => {
+    const phone = isPhone(info.project.name);
+    // Just in as the width shows it: the desktop table or the phone list (S-WALL.phone)
+    const list = phone ? ".wl-jp" : ".wl-jt";
+    await openWall(page);
+    await mockWall(page, "twelve");
+    await pickKind(page, "Problems");
+    await expect(page.locator(`${list} [data-row]`)).toHaveCount(phone ? 3 : 5);
+    await page.locator(".wl-jin").scrollIntoViewIfNeeded();
+    await slowGlides(page);
+
+    // Newest to Popular (V-ACC.browse/2): on a desktop the first row glides three places down, on a phone the third
+    // comes up one. The press lands on a gliding row's link where it is drawn
+    const sorted = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === "/api/wall/just-in" &&
+        new URL(r.url()).searchParams.get("sort") === "popular",
+    );
+    await page.getByRole("button", { name: phone ? "Sorted by newest" : "Popular", exact: true }).click();
+    await sorted;
+    const row = await glidingRow(page, list);
+    await page.mouse.move(row.x, row.y);
+    await page.mouse.down();
+    await expectHeld(page, list, row);
+    await page.mouse.up();
+    await page.waitForURL(new RegExp(`/ideas/${esc(row.id)}\\?`), { timeout: 10_000 });
   });
 });
 
