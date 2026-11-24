@@ -55,8 +55,8 @@ export async function glidingRow(page: Page, list: string, { hit = true } = {}):
 }
 
 /**
- * The press holds: over three frames the row's glide stays "paused", its link moves less than 0.5 px and is still the
- * element under the pointer.
+ * The press holds: once the pause has taken hold, over three frames the row's glide stays "paused", its link moves
+ * less than 0.5 px and is still the element under the pointer.
  */
 export async function expectHeld(page: Page, list: string, at: Gliding): Promise<void> {
   const held = await page.evaluate(
@@ -64,6 +64,13 @@ export async function expectHeld(page: Page, list: string, at: Gliding): Promise
       const row = document.querySelector<HTMLElement>(`${list} [data-flip="${CSS.escape(at.id)}"]`);
       const link = row?.querySelector("a");
       if (!row || !link) return null;
+      // pause() takes hold on the next frame (the Web Animations pending pause); `ready` says when it has
+      await Promise.all(
+        row
+          .getAnimations()
+          .filter((a) => !(a instanceof CSSTransition) && !(a instanceof CSSAnimation))
+          .map((a) => a.ready),
+      );
       const box = () => link.getClientRects()[0]!;
       const was = box();
       for (let i = 0; i < 3; i += 1) await new Promise((r) => requestAnimationFrame(r));
