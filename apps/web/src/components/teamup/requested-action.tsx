@@ -15,7 +15,9 @@
  *   ring, a 24px target that reaches 44px on touch (BLD-D018), and busy as every `Button` is busy. It calls
  *   `DELETE /api/team-up/:id` with the card's request id (either kind) and then `onWithdrawn`. The host draws
  *   "Team up" again in the same place, marked with `teamUpOpener(ideaId)`, and focus moves there; that announces the
- *   change, so the pair needs no live region.
+ *   change, so the pair needs no live region. `onWithdrawn` runs inside `flushSync`, so a host that redraws from its
+ *   own state has drawn "Team up" before focus moves; a host that redraws later is looked for on the next frame
+ *   (BLD-F105).
  *
  * Styles: lane D's shared ones only (`app/offer.css`, BLD-D019, BLD-D018; folded in by BLD-F096), so any host draws
  * the pair the same way; the grid that stacks them is `.tu-req` (`teamup-sheet.css`).
@@ -24,6 +26,7 @@
  * logged (non-negotiable 3).
  */
 import { useRef, useState, type JSX } from "react";
+import { flushSync } from "react-dom";
 
 import { Button, type ButtonSize, type ButtonVariant } from "@/components/ui/button";
 import { FieldMsg } from "@/components/ui/field";
@@ -92,12 +95,20 @@ export function RequestedAction({
       setError(r.error);
       return;
     }
-    onWithdrawn({ kind: request.kind, id: request.id, ideaId, note: "", brought: [], after: r.after });
-    // Once the host has drawn "Team up" again, focus goes to it (WCAG 2.4.3). A host that keeps this pair keeps focus.
-    requestAnimationFrame(() => {
-      if (link.current?.isConnected) return;
-      markedOpener(ideaId)?.focus({ preventScroll: true });
+    // BLD-F105: the host's redraw is committed before focus moves. After the await, React would draw a host's plain
+    // state change in a later task, and a frame that came first found this pair still drawn and left focus nowhere
+    // (J-TEAMUP/3c, Home's crew card). flushSync draws it now.
+    flushSync(() => {
+      onWithdrawn({ kind: request.kind, id: request.id, ideaId, note: "", brought: [], after: r.after });
     });
+    // Once the host has drawn "Team up" again, focus goes to it (WCAG 2.4.3). A host that keeps this pair keeps focus.
+    const toTeamUp = (): boolean => {
+      if (link.current?.isConnected) return false;
+      markedOpener(ideaId)?.focus({ preventScroll: true });
+      return true;
+    };
+    // A host that redraws later (a refresh) is looked for again on the next frame, as before.
+    if (!toTeamUp()) requestAnimationFrame(toTeamUp);
   };
 
   return (
