@@ -15,6 +15,7 @@ import {
   PHONE_TABS,
   signIn,
 } from "./helpers";
+import { esc } from "./club";
 import { expectHeld, expectNoGlideRunning, glidingRow, slowGlides } from "./glide";
 import { carrying, storageCarries, storageNames, watchRequestUrls } from "./search-words";
 
@@ -801,7 +802,8 @@ async function deskByArea(browser: Browser, title: string): Promise<Page> {
 }
 
 /** C-SORTS to `to`, waiting for that list's read: its pressed button on a desktop; on a phone the one cycler steps
- * there (time left, decide by, area, and round). On To review, time left and decide by order the rows alike. */
+ * there through its three sorts (time left, decide by, area). On To review, time left and decide by order the rows
+ * alike. */
 async function deskSort(p: Page, to: "Decide by" | "Area"): Promise<void> {
   const wide = p.getByRole("button", { name: to, exact: true });
   const phone = !(await wide.isVisible());
@@ -837,7 +839,7 @@ test("BLD-D038, F-MOTION.rules/5 (J-BROWSE/4): a press holds the gliding row; th
   await r.mouse.down();
   await expectHeld(r, DESK_ROWS, row);
   await r.mouse.up();
-  await r.waitForURL(new RegExp(`/desk/ideas/${row.id}$`), { timeout: 10_000 });
+  await r.waitForURL(new RegExp(`/desk/ideas/${esc(row.id)}$`), { timeout: 10_000 });
 });
 
 test("BLD-D038, F-MOTION.rules/5 (J-BROWSE/4): a key or the wheel ends the desk's glide at once", async ({
