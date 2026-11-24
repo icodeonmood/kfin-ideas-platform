@@ -315,8 +315,7 @@
   flex: none;
 }
 
-.cz .cfile-x:focus-visible,
-.cz .cpick-folder:focus-visible {
+.cz .cfile-x:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
@@ -403,68 +402,9 @@
 }
 
 /* the picker, between the words and the tool row (Home.md, `attachments=Picker open`) */
+/* The picker: lane D's shared FilePicker (BLD-D031, `.fpick` in app/components.css); only its place here */
 .cz .cpick {
-  display: grid;
-  gap: 10px;
   margin: 4px 12px 0;
-  padding: 12px;
-  border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.6);
-  box-shadow: inset 0 0 0 1px var(--rule2);
-}
-
-.cz .cpick-drop {
-  position: relative;
-}
-
-.cz .cpick-drop .fdrop {
-  padding-top: 64px;
-}
-
-.cz .cpick-folder {
-  position: absolute;
-  top: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: var(--wash);
-  color: var(--blueT);
-  cursor: pointer;
-}
-
-.cz .cpick-link {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.cz .cpick-link .fld {
-  flex: 1;
-  min-width: 0;
-  padding-left: 38px;
-}
-
-.cz .cpick-li {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: grid;
-  color: var(--mute);
-  pointer-events: none;
-}
-
-.cz .cpick-h {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.4;
-  color: var(--mute);
 }
 
 /* ---------- Capture first (DEC-125, BLD-C212): Move to Review after the "+", the readiness line beside it ---------- */

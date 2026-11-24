@@ -11,38 +11,30 @@
  * makes it on the first file (`resolveDraft`), once. The rows and their checks are Check it's own (`useProof`), so a
  * file behaves the same in both places. Links are kept as typed and never fetched (BLD-E001).
  */
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type DragEvent,
-  type KeyboardEvent,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { AttachButton } from "@/components/ui/attach-button";
-import { IconClose, IconFolder, IconLink } from "@/components/compose/icons";
+import { IconClose } from "@/components/compose/icons";
 import { Button } from "@/components/ui/button";
-import { FieldMsg } from "@/components/ui/field";
-import { DropArea, FileRow } from "@/components/ui/file";
+import { FileList, FileRow } from "@/components/ui/file";
+import { FilePicker, PICKER_COPY } from "@/components/ui/file-picker";
 import type { FileItem, UploadConfig } from "@/lib/contracts";
 
 import { api, type Call } from "./[id]/check/client";
 import { CHECK_COPY } from "./[id]/check/copy";
-import { rowView, splitLinks, type ProofItem } from "./[id]/check/model";
+import { rowView, type ProofItem } from "./[id]/check/model";
 import { useProof } from "./[id]/check/use-proof";
 
 /** The Home board's words for the picker and the rows (reference/copy/Home.md, `attachments`). */
 export const BOX_FILES_COPY = {
-  dropTitle: "Drop files or a folder here, or",
-  browse: "browse",
-  folder: "Choose a folder",
-  folderLine: "Tap the folder to add a whole folder.",
-  linkInput: "Or paste a link to a page, file or idea",
-  addLink: "Add link",
-  linkLine: "SharePoint, Teams and 1% Club links are marked internal. Anything else is marked external.",
+  // The picker's own words live with lane D's shared picker (BLD-D031); the same keys, nothing renamed
+  dropTitle: PICKER_COPY.dropTitle,
+  browse: PICKER_COPY.browse,
+  folder: PICKER_COPY.folder,
+  folderLine: PICKER_COPY.folderLine,
+  linkInput: PICKER_COPY.linkInput,
+  addLink: PICKER_COPY.addLink,
+  linkLine: PICKER_COPY.linkLine,
   /** NOT DRAWN: the list's name for screen readers (listed in BUILD_LOG "to confirm later", BLD-C215). */
   rows: "Your files and links",
   removeOf: CHECK_COPY.proof.removeOf,
@@ -54,7 +46,7 @@ export const BOX_FILES_COPY = {
   /** To confirm later (HR, DEC-123; BLD-C224): nothing left to add once names starting with "." are left out. */
   onlyDotFiles: "Nothing was added. Files whose names start with a dot are left out.",
   /** To confirm later (HR, DEC-123; BLD-C224): a folder dropped where the browser gives no way to read it. */
-  useFolder: "Use Choose a folder to add a folder.",
+  useFolder: PICKER_COPY.useFolder,
 } as const;
 
 /** The limit before `GET /api/config/uploads` answers: the web edge's own ceiling; the worker checks the real one. */
@@ -165,9 +157,11 @@ export function useBoxFiles({
   );
 
   const picker = open ? (
-    <Picker
+    <FilePicker
       id={pickerId}
+      className="cpick"
       help={config?.help_text ?? null}
+      linkHelp={BOX_FILES_COPY.linkLine}
       note={note}
       onNote={setNote}
       onFiles={addFiles}
@@ -205,8 +199,8 @@ function Rows({
 }) {
   return (
     <div className="cfiles">
-      {/* Lane D's FileList, drawn here without its aria-live: the status line says what changed (BLD-C224). */}
-      <ul className="flist" aria-label={BOX_FILES_COPY.rows} role="list">
+      {/* Lane D's FileList without its aria-live: the status line says what changed (BLD-C224, BLD-D030). */}
+      <FileList label={BOX_FILES_COPY.rows} live={false}>
         {items.map((p) => {
           const v = rowView(p, limitMb);
           const name = p.item?.name ?? p.name;
@@ -238,169 +232,7 @@ function Rows({
             </FileRow>
           );
         })}
-      </ul>
-    </div>
-  );
-}
-
-function Picker({
-  id,
-  help,
-  note,
-  onNote,
-  onFiles,
-  onLinks,
-  onClose,
-}: {
-  id: string;
-  help: string | null;
-  /** Why nothing was added (only names starting with "." were picked, or a folder the browser cannot read). */
-  note: string | null;
-  onNote(note: string | null): void;
-  onFiles(files: File[]): void;
-  onLinks(links: string[]): Promise<{ left: string[]; problem: "not_a_link" | "failed" | null }>;
-  onClose(): void;
-}) {
-  const [dragging, setDragging] = useState(false);
-  const [text, setText] = useState("");
-  const [bad, setBad] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const files = useRef<HTMLInputElement>(null);
-  const folder = useRef<HTMLInputElement>(null);
-  const first = useRef<HTMLButtonElement>(null);
-  const ids = useId();
-
-  // A folder is picked with the browser's own folder chooser; every file in it is added (BLD-C214). WCAG 2.4.3: the
-  // picker opens with the focus on its first control, "Choose a folder" (BLD-C224).
-  useEffect(() => {
-    folder.current?.setAttribute("webkitdirectory", "");
-    first.current?.focus();
-  }, []);
-
-  const addLinks = async () => {
-    if (adding) return;
-    const { links, typed, bad: wrong } = splitLinks(text);
-    if (wrong) {
-      setBad(true);
-      return;
-    }
-    setBad(false);
-    setFailed(false);
-    setAdding(true);
-    const { left, problem } = await onLinks(links);
-    setAdding(false);
-    setText(typed.filter((_, i) => left.includes(links[i]!)).join(", "));
-    setBad(problem === "not_a_link");
-    setFailed(problem === "failed");
-  };
-
-  const onDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragging(false);
-    onNote(null);
-    const dropped = droppedOf(e.dataTransfer);
-    if (dropped.some((d) => d.entry?.isDirectory)) {
-      // A folder dropped here: its files through the browser's directory entries (BLD-C224).
-      void filesOfDrop(dropped).then(
-        (got) => (got.length ? onFiles(got) : onNote(BOX_FILES_COPY.useFolder)),
-        () => onNote(BOX_FILES_COPY.useFolder),
-      );
-      return;
-    }
-    // No directory entries: a folder arrives as an empty file with no type, which can never upload.
-    const real = dropped.flatMap((d) =>
-      d.file && !(d.entry === null && looksLikeFolder(d.file)) ? [d.file] : [],
-    );
-    if (real.length < dropped.length) onNote(BOX_FILES_COPY.useFolder);
-    if (real.length) onFiles(real);
-  };
-
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== "Escape") return;
-    e.stopPropagation();
-    onClose();
-  };
-
-  const picked = (input: HTMLInputElement) => {
-    const chosen = Array.from(input.files ?? []);
-    input.value = "";
-    if (chosen.length) onFiles(chosen);
-  };
-
-  return (
-    <div
-      id={id}
-      className="cpick"
-      onKeyDown={onKeyDown}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={onDrop}
-    >
-      <div className="cpick-drop">
-        <button
-          ref={first}
-          type="button"
-          className="cpick-folder"
-          aria-label={BOX_FILES_COPY.folder}
-          title={BOX_FILES_COPY.folder}
-          onClick={() => folder.current?.click()}
-        >
-          <IconFolder size={26} />
-        </button>
-        <DropArea
-          title={BOX_FILES_COPY.dropTitle}
-          help={help ? `${help} ${BOX_FILES_COPY.folderLine}` : BOX_FILES_COPY.folderLine}
-          dragging={dragging}
-          browse={
-            <button type="button" className="tb blue" onClick={() => files.current?.click()}>
-              {BOX_FILES_COPY.browse}
-            </button>
-          }
-        />
-      </div>
-      <div className="cpick-link">
-        <span className="cpick-li" aria-hidden="true">
-          <IconLink />
-        </span>
-        <label className="vh" htmlFor={`${ids}-u`}>
-          {BOX_FILES_COPY.linkInput}
-        </label>
-        <input
-          id={`${ids}-u`}
-          className="fld"
-          type="url"
-          inputMode="url"
-          autoComplete="off"
-          placeholder={BOX_FILES_COPY.linkInput}
-          aria-describedby={bad ? `${ids}-m ${ids}-h` : `${ids}-h`}
-          aria-invalid={bad ? true : undefined}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            if (bad) setBad(false);
-          }}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter") return;
-            e.preventDefault();
-            void addLinks();
-          }}
-        />
-        <Button variant="line" size="sm" busy={adding} onClick={() => void addLinks()}>
-          {BOX_FILES_COPY.addLink}
-        </Button>
-      </div>
-      {note ? <FieldMsg>{note}</FieldMsg> : null}
-      {bad ? <FieldMsg id={`${ids}-m`}>{CHECK_COPY.proof.notALink}</FieldMsg> : null}
-      {failed ? <FieldMsg>{CHECK_COPY.failed}</FieldMsg> : null}
-      <p className="cpick-h" id={`${ids}-h`}>
-        {BOX_FILES_COPY.linkLine}
-      </p>
-      <input ref={files} type="file" multiple hidden onChange={(e) => picked(e.target)} />
-      <input ref={folder} type="file" multiple hidden onChange={(e) => picked(e.target)} />
+      </FileList>
     </div>
   );
 }
@@ -446,52 +278,4 @@ const nameOf = (p: ProofItem) => p.item?.name ?? p.name;
 function lineOf(p: ProofItem, limitMb: number): string {
   const v = rowView(p, limitMb);
   return v.message?.text || v.statusText || "";
-}
-
-/** The browser's directory entry API, where it exists (`webkitGetAsEntry`). */
-type Entry = {
-  isFile: boolean;
-  isDirectory: boolean;
-  file?(ok: (f: File) => void, err: (e: unknown) => void): void;
-  createReader?(): { readEntries(ok: (es: Entry[]) => void, err: (e: unknown) => void): void };
-};
-type Dropped = { file: File | null; entry: Entry | null };
-
-/** Each dropped file, with its entry: read during the drop event, which the browser clears once it returns. */
-function droppedOf(data: DataTransfer | null): Dropped[] {
-  const items = Array.from(data?.items ?? []).filter((i) => i.kind === "file");
-  if (!items.length) return Array.from(data?.files ?? []).map((file) => ({ file, entry: null }));
-  return items.map((i) => {
-    const get = (i as { webkitGetAsEntry?: () => Entry | null }).webkitGetAsEntry;
-    return { file: i.getAsFile(), entry: typeof get === "function" ? get.call(i) : null };
-  });
-}
-
-/** The files of a drop with a folder in it: every file in every folder, one level of nesting at a time. */
-async function filesOfDrop(dropped: Dropped[]): Promise<File[]> {
-  const out: File[] = [];
-  for (const d of dropped) {
-    if (d.entry?.isDirectory) out.push(...(await filesOfEntry(d.entry, 0)));
-    else if (d.file) out.push(d.file);
-  }
-  return out;
-}
-
-const FOLDER_DEPTH = 8;
-
-async function filesOfEntry(entry: Entry, depth: number): Promise<File[]> {
-  if (entry.isFile && entry.file) return [await new Promise<File>((ok, err) => entry.file!(ok, err))];
-  if (!entry.isDirectory || !entry.createReader || depth > FOLDER_DEPTH) return [];
-  const reader = entry.createReader();
-  const out: File[] = [];
-  for (;;) {
-    const batch = await new Promise<Entry[]>((ok, err) => reader.readEntries(ok, err));
-    if (!batch.length) return out;
-    for (const e of batch) out.push(...(await filesOfEntry(e, depth + 1)));
-  }
-}
-
-/** A folder dropped where the browser gives no entries: an empty file with no type. */
-function looksLikeFolder(f: File): boolean {
-  return f.size === 0 && f.type === "";
 }
