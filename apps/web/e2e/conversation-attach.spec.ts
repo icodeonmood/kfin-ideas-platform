@@ -8,6 +8,9 @@
  * /api/files/:id/view. The spec answers the screen's calls itself, so it needs no seeded idea and nothing reaches the
  * worker. Synthetic people, words and files only.
  */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, test, type Page } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, signIn } from "./helpers";
@@ -363,4 +366,78 @@ test.describe('S-08\'s "+" at 1440px (Messages.jpg)', () => {
     await expectNoSeriousAxeIssues(page);
     await expect(picker).toBeVisible();
   });
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-c245-1, never merged: lane C's BLD-C245 question for S-08 (lane F's): at 360 and 320,
+ * does the "+" that closes the conversation box's picker stay on screen with the focus? A tap, Enter and Escape.
+ * Screenshots and measures go to test-results/qa-shots. Synthetic data only.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+
+test('QA (lane D, never merged): S-08\'s "+" closing its picker stays on screen with the focus at 360 and 320 (for lane F, after BLD-C245)', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+  await answer(page);
+  const plus = page.getByRole("button", { name: PLUS });
+  const measure = () =>
+    page.evaluate(() => {
+      const b = document.querySelector<HTMLElement>("form.cv-box .attach-btn");
+      const r = b?.getBoundingClientRect();
+      const bar = document.querySelector(".pnav")?.getBoundingClientRect();
+      const form = document.querySelector<HTMLElement>("form.cv-box");
+      return {
+        vh: window.innerHeight,
+        plus: r ? { top: r.top, bottom: r.bottom } : null,
+        focused: !!b && document.activeElement === b,
+        ring: b ? getComputedStyle(b).outlineStyle : "",
+        bar: bar ? bar.bottom : 0,
+        form: form
+          ? {
+              top: form.getBoundingClientRect().top,
+              st: form.scrollTop,
+              sh: form.scrollHeight,
+              ch: form.clientHeight,
+            }
+          : null,
+      };
+    });
+  const seen = async (name: string, ring: boolean) => {
+    await expect(page.locator(".cv-pick")).toHaveCount(0);
+    await settleMotion(page);
+    const g = await measure();
+    log[name] = g;
+    await page.screenshot({ path: join(QA_SHOTS, `${name}.png`) });
+    expect.soft(g.focused, `${name}: the "+" has the focus`).toBe(true);
+    expect.soft(g.plus?.top ?? -1, `${name}: the "+" is below the bar`).toBeGreaterThanOrEqual(g.bar - 0.5);
+    expect.soft(g.plus?.bottom ?? 1e9, `${name}: the "+" is on screen`).toBeLessThanOrEqual(g.vh + 0.5);
+    if (ring) expect.soft(g.ring, `${name}: the "+" shows its ring`).toBe("solid");
+  };
+  for (const [w, h] of [
+    [360, 740],
+    [320, 640],
+  ] as const) {
+    const at = `c245-s08-${w}x${h}`;
+    await page.setViewportSize({ width: w, height: h });
+    await openAsSharer(page);
+    await settleMotion(page);
+    const picker = await openPicker(page);
+    await settleMotion(page);
+    log[`${at}-0-open`] = await measure();
+    await page.screenshot({ path: join(QA_SHOTS, `${at}-0-open.png`) });
+    await plus.click();
+    await seen(`${at}-1-tap`, false);
+    await openPicker(page);
+    await plus.focus();
+    await page.keyboard.press("Enter");
+    await seen(`${at}-2-enter`, true);
+    await openPicker(page);
+    await picker.getByRole("button", { name: "Choose a folder", exact: true }).focus();
+    await page.keyboard.press("Escape");
+    await seen(`${at}-3-escape`, true);
+  }
+  writeFileSync(join(QA_SHOTS, "c245-s08.json"), JSON.stringify(log, null, 2));
 });

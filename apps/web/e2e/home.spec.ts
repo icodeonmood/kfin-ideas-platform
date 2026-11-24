@@ -1,6 +1,9 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, settleMotion, signIn } from "./helpers";
 
 /**
  * S-03 Home (`/home`, BLD-C143 to C147), against the local stack. The question and the box, the sections in order
@@ -138,4 +141,102 @@ test("C-ONES-FAN on Home: the Ones' posts, the arrows and the cheer toggle, axe 
   await cheer.click();
   expect((await unliked).ok()).toBe(true);
   await expect(cheer).toHaveAttribute("aria-pressed", "false");
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-c245-1, never merged: BLD-C245 on Home and Share at 360 and 320. The picker open, the
+ * "+" closes it (a tap, then Enter) and Escape closes it: each time the "+" keeps the focus and is on screen, clear of
+ * the top bar and the tab bar; from the keyboard it shows its ring. Screenshots and measures go to
+ * test-results/qa-shots. Synthetic data only.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+
+async function qaPlus(page: Page) {
+  return page.evaluate(() => {
+    const b = document.querySelector<HTMLElement>(".cbox.prompt .attach-btn");
+    const r = b?.getBoundingClientRect();
+    const top = document.querySelector(".ptop, .pnav")?.getBoundingClientRect();
+    const tabs = [...document.querySelectorAll<HTMLElement>(".ptabs, .dock")].filter(
+      (e) => getComputedStyle(e).position === "fixed",
+    );
+    return {
+      vh: window.innerHeight,
+      plus: r ? { top: r.top, bottom: r.bottom } : null,
+      focused: !!b && document.activeElement === b,
+      ring: b ? getComputedStyle(b).outlineStyle : "",
+      topBar: top ? top.bottom : 0,
+      bottomBar: tabs.length
+        ? Math.min(...tabs.map((t) => t.getBoundingClientRect().top))
+        : window.innerHeight,
+      scrollY: window.scrollY,
+    };
+  });
+}
+
+test('QA (lane D, never merged): BLD-C245, the "+" that closes the box\'s picker stays on screen with the focus, Home and Share at 360 and 320', async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone-360", "phone only");
+  test.setTimeout(240_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+  await signInFresh(page, "K");
+  await page.waitForURL((url) => url.pathname === "/home");
+  const plus = page
+    .locator(".cbox.prompt")
+    .getByRole("button", { name: "Add files, a folder or a link", exact: true });
+  const picker = page.locator(".fpick.cpick");
+  const seen = async (name: string, ring: boolean) => {
+    await expect(picker).toHaveCount(0);
+    await settleMotion(page);
+    const g = await qaPlus(page);
+    log[name] = g;
+    await page.screenshot({ path: join(QA_SHOTS, `${name}.png`) });
+    expect.soft(g.focused, `${name}: the "+" has the focus`).toBe(true);
+    expect
+      .soft(g.plus?.top ?? -1, `${name}: the "+" is below the top bar`)
+      .toBeGreaterThanOrEqual(g.topBar - 0.5);
+    expect
+      .soft(g.plus?.bottom ?? 1e9, `${name}: the "+" is above the tab bar`)
+      .toBeLessThanOrEqual(g.bottomBar + 0.5);
+    if (ring) expect.soft(g.ring, `${name}: the "+" shows its ring`).toBe("solid");
+  };
+  const openPicker = async () => {
+    await plus.click();
+    await expect(picker).toBeVisible();
+    await settleMotion(page);
+  };
+
+  for (const path of ["/home", "/share"] as const) {
+    for (const [w, h] of [
+      [360, 740],
+      [320, 640],
+    ] as const) {
+      const at = `c245${path.replace("/", "-")}-${w}x${h}`;
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto(path);
+      await expect(page.locator(".cbox.prompt textarea")).toBeVisible();
+      await settleMotion(page);
+
+      // A tap on the "+" closes it
+      await openPicker();
+      log[`${at}-0-open`] = await qaPlus(page);
+      await page.screenshot({ path: join(QA_SHOTS, `${at}-0-open.png`) });
+      await plus.click();
+      await seen(`${at}-1-tap`, false);
+
+      // Enter on the "+" closes it, with the ring
+      await openPicker();
+      await plus.focus();
+      await page.keyboard.press("Enter");
+      await seen(`${at}-2-enter`, true);
+
+      // Escape from inside the picker, as before
+      await openPicker();
+      await picker.getByRole("button", { name: "Choose a folder", exact: true }).focus();
+      await page.keyboard.press("Escape");
+      await seen(`${at}-3-escape`, true);
+    }
+  }
+  writeFileSync(join(QA_SHOTS, "c245-box.json"), JSON.stringify(log, null, 2));
 });
