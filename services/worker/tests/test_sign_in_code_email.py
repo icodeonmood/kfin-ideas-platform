@@ -39,7 +39,7 @@ def test_the_code_email_goes_out_at_once_and_nothing_keeps_the_code(
 ) -> None:
     db, user_id, address = person
     sent: list[tuple[str, Any]] = []
-    monkeypatch.setattr("comms.sign_in_code._smtp", lambda to, email: sent.append((to, email)))
+    monkeypatch.setattr("comms.sign_in_code.deliver", lambda to, email: sent.append((to, email)))
     queued = db.execute("SELECT count(*) AS n FROM notifications").fetchone()["n"]
     sign_in_code.send(db, user_id, "481902", 10)
     assert [to for to, _ in sent] == [address]
@@ -54,7 +54,7 @@ def test_the_code_email_goes_out_at_once_and_nothing_keeps_the_code(
 def test_either_switch_off_stops_it(person: Any, monkeypatch: pytest.MonkeyPatch, switch: str) -> None:
     db, user_id, _ = person
     sent: list[str] = []
-    monkeypatch.setattr("comms.sign_in_code._smtp", lambda to, email: sent.append(to))
+    monkeypatch.setattr("comms.sign_in_code.deliver", lambda to, email: sent.append(to))
     db.execute("UPDATE kill_switches SET state = 'off' WHERE name = %s", (switch,))
     killswitch.clear_cache()
     with pytest.raises(sign_in_code.CodeEmailRefused) as refused:
@@ -65,7 +65,7 @@ def test_either_switch_off_stops_it(person: Any, monkeypatch: pytest.MonkeyPatch
 def test_a_leaver_or_a_bad_request_gets_nothing(person: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     db, user_id, _ = person
     sent: list[str] = []
-    monkeypatch.setattr("comms.sign_in_code._smtp", lambda to, email: sent.append(to))
+    monkeypatch.setattr("comms.sign_in_code.deliver", lambda to, email: sent.append(to))
     with pytest.raises(sign_in_code.CodeEmailRefused):
         sign_in_code.send(db, user_id, "48190x", 10)
     with pytest.raises(ValueError):
