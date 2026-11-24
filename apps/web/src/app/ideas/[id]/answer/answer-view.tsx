@@ -584,53 +584,74 @@ export function AnswerView({
             {/* The question in its own element, as the board draws it apart from its number (J-TRACK/4) */}
             <span>{q.text}</span>
           </h2>
-          <Field
-            label={`Your answer to question ${step + 1}`}
-            multiline
-            help={
-              <>
-                <span className="help-l">Press Enter to go on. Shift + Enter adds a new line.</span>
-                {length >= NEAR_LIMIT ? (
-                  <span className="help-l" aria-live="polite">
-                    {length.toLocaleString("en-IN")} of {MAX_ANSWER.toLocaleString("en-IN")} characters
-                  </span>
-                ) : null}
-              </>
-            }
-          >
-            {(p) => (
-              <textarea
-                {...p}
-                rows={5}
-                maxLength={MAX_ANSWER}
-                placeholder={ANSWER_VOICE_COPY.placeholder}
-                // While a note is on its way the box shows the words so far after the answer, and waits for them
-                value={heard ? withSpoken(texts[q.id] ?? "", heard) : (texts[q.id] ?? "")}
-                readOnly={speaking}
-                onChange={(e) => save(q, e.target.value)}
-                onKeyDown={(e) => {
-                  // An IME's Enter picks a word; it never moves on
-                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    go(step + 1);
-                  }
-                }}
-              />
-            )}
-          </Field>
-          {/* The box's tool row (C-PROMPT.anatomy/2, DEC-124): the "+", with the Answer board's name and tooltip, opens
-              the system's file chooser; focus stays on it after picking. Its rows follow, under the box (C-FILE.row). */}
-          <div className="ans-tools">
-            <AttachButton
-              ref={plus}
-              label={ANSWER_FILES_COPY.attach}
-              tooltip={ANSWER_FILES_COPY.attachTip}
-              onClick={() => {
-                files.loadConfig();
-                chooser.current?.click();
-              }}
-            />
+          {/* The answer box and its voice lines in one cell of the sheet, so an empty line adds no space */}
+          <div className="ans-box">
+            <Field
+              label={`Your answer to question ${step + 1}`}
+              multiline
+              // The box's tools inside its frame, at its foot on the right, as the Answer board draws them
+              // (C-PROMPT.anatomy/2, DEC-124, BLD-D029, BLD-B279): the "+", with the board's name and tooltip, opens the
+              // system's file chooser and keeps focus after picking; the mic follows it, pressed while a note is on its
+              // way, where it stops it
+              tools={
+                <span className="ans-tools">
+                  <AttachButton
+                    ref={plus}
+                    label={ANSWER_FILES_COPY.attach}
+                    tooltip={ANSWER_FILES_COPY.attachTip}
+                    onClick={() => {
+                      files.loadConfig();
+                      chooser.current?.click();
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className={`ans-mic${speaking ? " stop" : ""}${blocked ? " blk" : ""}`}
+                    aria-pressed={speaking}
+                    aria-busy={
+                      voiceState.status === "asking" || voiceState.status === "sending" ? true : undefined
+                    }
+                    aria-label={micLabel}
+                    title={micLabel}
+                    onClick={() => (speaking ? voice.stop() : void voice.start())}
+                  >
+                    {blocked ? <IconMicOff /> : <IconMic />}
+                  </button>
+                </span>
+              }
+              help={
+                <>
+                  <span className="help-l">Press Enter to go on. Shift + Enter adds a new line.</span>
+                  {length >= NEAR_LIMIT ? (
+                    <span className="help-l" aria-live="polite">
+                      {length.toLocaleString("en-IN")} of {MAX_ANSWER.toLocaleString("en-IN")} characters
+                    </span>
+                  ) : null}
+                </>
+              }
+            >
+              {(p) => (
+                <textarea
+                  {...p}
+                  rows={5}
+                  maxLength={MAX_ANSWER}
+                  placeholder={ANSWER_VOICE_COPY.placeholder}
+                  // While a note is on its way the box shows the words so far after the answer, and waits for them
+                  value={heard ? withSpoken(texts[q.id] ?? "", heard) : (texts[q.id] ?? "")}
+                  readOnly={speaking}
+                  onChange={(e) => save(q, e.target.value)}
+                  onKeyDown={(e) => {
+                    // An IME's Enter picks a word; it never moves on
+                    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      go(step + 1);
+                    }
+                  }}
+                />
+              )}
+            </Field>
+            {/* The "+"'s file chooser; the files' rows follow under the box (C-FILE.row) */}
             <input
               ref={chooser}
               type="file"
@@ -644,23 +665,11 @@ export function AnswerView({
                 requestAnimationFrame(() => plus.current?.focus());
               }}
             />
-            {/* The mic after the "+" (C-PROMPT.anatomy/2): pressed while a note is on its way, where it stops it */}
-            <button
-              type="button"
-              className={`ans-mic${speaking ? " stop" : ""}${blocked ? " blk" : ""}`}
-              aria-pressed={speaking}
-              aria-busy={voiceState.status === "asking" || voiceState.status === "sending" ? true : undefined}
-              aria-label={micLabel}
-              title={micLabel}
-              onClick={() => (speaking ? voice.stop() : void voice.start())}
-            >
-              {blocked ? <IconMicOff /> : <IconMic />}
-            </button>
             <span className="ans-vline" role="status">
-              {voiceState.status === "recording" ? VOICE_LISTENING : ""}
+              {voiceState.status === "recording" ? VOICE_LISTENING : null}
             </span>
-            {/* Share's voice lines (C-PROMPT.voice): both regions stay mounted, so a line that appears in them is
-                announced (WCAG 4.1.3); in the tool row, so an empty one adds no space to the sheet */}
+            {/* Share's voice lines (C-PROMPT.voice), under the box: all three regions stay mounted, so a line that
+                appears in them is announced (WCAG 4.1.3); in the box's cell, so an empty one adds no space */}
             <div className="ans-vlive" role="status">
               {voiceState.status === "paused" ? <p className="ans-vnote">{voiceState.banner}</p> : null}
             </div>
