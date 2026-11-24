@@ -112,10 +112,17 @@ export function useBoxFiles({
     };
   }, [open, config]);
 
+  // Once the box has drawn without the picker, the "+" is brought into view (BLD-C245, lane D's QA): on a phone the
+  // picker sits over the "+", closing shrinks the box and the page does not follow, and focus() does not scroll a "+"
+  // that already has the focus (the "+" itself closing it).
   const close = (focus: boolean) => {
     setOpen(false);
     setNote(null);
-    if (focus) requestAnimationFrame(() => plus.current?.querySelector("button")?.focus());
+    requestAnimationFrame(() => {
+      const b = plus.current?.querySelector("button");
+      if (focus) b?.focus();
+      b?.scrollIntoView?.({ block: "nearest" });
+    });
   };
 
   const addFiles = (files: File[]) => {
@@ -145,8 +152,12 @@ export function useBoxFiles({
         aria-expanded={open}
         aria-controls={open ? pickerId : undefined}
         onClick={() => {
+          if (open) {
+            close(true); // as Escape: the focus stays on "+", in view
+            return;
+          }
           setNote(null);
-          setOpen((o) => !o);
+          setOpen(true);
         }}
       />
       <span className="vh" role="status">
