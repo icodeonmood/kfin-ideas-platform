@@ -1,4 +1,5 @@
-"""The load test's arithmetic (AT-B8-01): the error rate is per operation, and failed scans count."""
+"""The load test's arithmetic (AT-B8-01): the error rate is per operation, and failed scans count. Since BLD-A242 a
+"scan" is a share's send → sorted on the 1% Club's Share path; the path itself is tested in test_a242_loadtest_1pc."""
 
 from __future__ import annotations
 
@@ -15,6 +16,15 @@ def test_error_rate_is_per_operation_not_per_request() -> None:
     out = s.summary()
     assert out["error_rate"] == 0.05
     assert out["operations"]["submission"] == {"attempted": 100, "failed": 5}
+
+
+def test_notes_are_counted_apart_from_failures() -> None:
+    """A sorting field a person picked, or a title they typed, is not a failure (BLD-A242)."""
+    s = Stats()
+    s.op("submission", True)
+    s.note("typed_title")
+    out = s.summary()
+    assert out["notes"] == {"typed_title": 1} and out["errors"] == {} and out["error_rate"] == 0.0
 
 
 def test_percentiles() -> None:
