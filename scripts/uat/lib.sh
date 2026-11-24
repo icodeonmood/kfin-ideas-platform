@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2034,SC2154
 # Shared by scripts/uat/upgrade.sh and scripts/uat/rollback.sh (BLD-A234), and by scripts/uat/rehearse-upgrade.sh
-# for its verdict and the start-sweep check (BLD-A239, BLD-A240). Sourced, never run on its own.
+# for its verdict, the start-sweep check and the file-waits check (BLD-A239, BLD-A240, BLD-A250). Sourced, never run
+# on its own.
 # The caller sets APP_ENV_FILE and DB_ENV_FILE (absolute paths) first and reads SPEECH_BUILD after uat_env_checks
 # (hence SC2154 and SC2034 off). Bash 3.2 or later: macOS runs the rehearsal.
 
@@ -78,6 +79,15 @@ has_start_sweep() {  # <sha>
   local text
   text="$(git show "$1:services/worker/attachments/files.py" 2>/dev/null)" || return 1
   grep -qE "[\"']file\\.start_sweep[\"']" <<< "$text"
+}
+
+# BLD-A250: whether the tree at <sha> has lane C's file waits (BLD-C225, from launch-2026-11-20-r4 on): the class
+# JobWaits in jobs/runner.py. The upgrade rehearsal reads it from FROM's tree to pick what its file phases expect. The
+# class's name is pinned; nothing else in the file is read.
+has_file_waits() {  # <sha>
+  local text
+  text="$(git show "$1:services/worker/jobs/runner.py" 2>/dev/null)" || return 1
+  grep -qE '^class JobWaits[(:]' <<< "$text"
 }
 
 # BLD-A240: the upgrade rehearsal's last line, and whether it passed. A pass is earned only when the script ended with
