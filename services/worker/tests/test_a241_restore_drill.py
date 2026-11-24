@@ -530,9 +530,14 @@ def test_bld_a241_make_target_and_the_runbook_section() -> None:
     assert '\tscripts/uat/restore-drill.sh "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"' in make
     assert "uat-restore-drill" in make.split(".PHONY:", 1)[1].splitlines()[0]
     doc = (helpers.ROOT / "docs" / "UAT.md").read_text("utf-8")
+    headings = re.findall(r"^## (.+)$", doc, re.M)
+    i = headings.index("Restore drill (BLD-A241)")
+    assert headings[i - 1 : i + 2] == [
+        "Updating the live server (upgrade and rollback)",
+        "Restore drill (BLD-A241)",
+        "Switching to full mode (mode A)",
+    ]
     start = doc.index("## Restore drill (BLD-A241)")
-    assert doc.index("## Updating the live server (upgrade and rollback)") < start
-    assert start < doc.index("## Switching to full mode (mode A)")
     section = doc[start:].split("\n## ", 1)[0]
     for words in (
         "UAT_DATA_DIR=/srv/kfin-ideas-uat make uat-restore-drill APP_ENV_FILE=/secure/.env.uat "
