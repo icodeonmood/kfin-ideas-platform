@@ -4,7 +4,10 @@
  * attach button, DEC-124 and DEC-126). axe at both widths, then each component's keyboard and state rules.
  * The kit exists in dev and test only.
  */
-import { expect, test, type Locator } from "@playwright/test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, signIn } from "./helpers";
 
@@ -403,4 +406,202 @@ test("C-FIELD.kinds: the question box adds on Enter, pinned to the part chosen",
     "often: How many of the 40 calls are about R07?",
   );
   await expect(box).toHaveValue("");
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-train24-1, never merged: train 24 (102c4d45) at the usual sizes, 1440, 1024, 640, 360
+ * and 320. Screenshots and measures go to test-results/qa-shots for lane D to read. Synthetic data only.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+const QA_SIZES = [
+  [1440, 900],
+  [1024, 768],
+  [640, 900],
+  [360, 740],
+  [320, 640],
+] as const;
+type QaBox = { top: number; bottom: number; left: number; right: number; width: number; height: number };
+type QaRow = {
+  row: QaBox;
+  inner: QaBox | null;
+  name: QaBox | null;
+  clipped: boolean;
+  acts: QaBox | null;
+  x: QaBox | null;
+  msg: QaBox | null;
+  isMsg: boolean;
+  spin: boolean;
+  status: string;
+};
+/** The file rows of the list `list` (inside `inSel`) and the page's sideways scroll, measured in the page. */
+async function qaRows(page: Page, list: string, inSel: string) {
+  return page.evaluate(
+    ([listSel, boxSel]) => {
+      const box = (el: Element | null | undefined) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          top: r.top,
+          bottom: r.bottom,
+          left: r.left,
+          right: r.right,
+          width: r.width,
+          height: r.height,
+        };
+      };
+      const ul = document.querySelector(listSel);
+      const rows: QaRow[] = [...(ul?.querySelectorAll(":scope > .frow") ?? [])].map((li) => {
+        const n = li.querySelector<HTMLElement>(".frow-n");
+        return {
+          row: box(li)!,
+          inner: box(li.querySelector(".frow-in")),
+          name: box(n),
+          clipped: n ? n.scrollWidth > n.clientWidth : false,
+          acts: box(li.querySelector(".frow-a")),
+          x: box(li.querySelector(".frow-x, .cfile-x")),
+          msg: box(li.querySelector(".fmsg")),
+          isMsg: li.classList.contains("frow-msg"),
+          spin: !!li.querySelector(".spin"),
+          status: li.querySelector(".frow-st")?.textContent ?? "",
+        };
+      });
+      const html = document.documentElement;
+      return {
+        vw: window.innerWidth,
+        sideways: html.scrollWidth - html.clientWidth,
+        live: ul?.getAttribute("aria-live") ?? null,
+        list: box(ul),
+        within: box(ul?.closest(boxSel)),
+        rows,
+      };
+    },
+    [list, inSel] as const,
+  );
+}
+
+type QaRows = Awaited<ReturnType<typeof qaRows>>;
+/** The rows' checks at one size. Compact rows: 260px at most, one line, the name gives way, Remove 32px. */
+function qaRowChecks(name: string, g: QaRows, compact: boolean) {
+  expect.soft(g.sideways, `${name}: no sideways scroll`).toBeLessThanOrEqual(0);
+  expect.soft(g.rows.length, `${name}: the rows are there`).toBeGreaterThan(0);
+  for (const [i, r] of g.rows.entries()) {
+    const at = `${name} row ${i + 1}`;
+    if (g.list) {
+      expect.soft(r.row.left, `${at}: starts inside the list`).toBeGreaterThanOrEqual(g.list.left - 0.5);
+      expect.soft(r.row.right, `${at}: ends inside the list`).toBeLessThanOrEqual(g.list.right + 0.5);
+    }
+    if (g.within)
+      expect.soft(r.row.right, `${at}: ends inside its box`).toBeLessThanOrEqual(g.within.right + 0.5);
+    if (r.name && r.inner) {
+      expect
+        .soft(r.name.right, `${at}: the name stays inside the row`)
+        .toBeLessThanOrEqual(r.inner.right + 0.5);
+    }
+    if (r.x) {
+      expect.soft(r.x.right, `${at}: Remove ends inside the row`).toBeLessThanOrEqual(r.row.right + 0.5);
+      expect.soft(r.x.width, `${at}: Remove is at least 24px`).toBeGreaterThanOrEqual(24);
+    }
+    if (!compact) continue;
+    if (r.isMsg) {
+      if (g.list)
+        expect
+          .soft(Math.abs(r.row.width - g.list.width), `${at}: a row with a message is the list's width`)
+          .toBeLessThan(1);
+      if (r.msg && r.inner)
+        expect
+          .soft(r.msg.top, `${at}: the message is under the row`)
+          .toBeGreaterThanOrEqual(r.inner.bottom - 0.5);
+    } else {
+      expect.soft(r.row.width, `${at}: 260px at most`).toBeLessThanOrEqual(260.5);
+    }
+    if (r.x) {
+      expect.soft(r.x.width, `${at}: Remove is 32px`).toBeCloseTo(32, 0);
+      expect.soft(r.x.height, `${at}: Remove is 32px`).toBeCloseTo(32, 0);
+    }
+    if (r.name && r.acts) {
+      expect
+        .soft(r.name.right, `${at}: the name gives way before Remove`)
+        .toBeLessThanOrEqual(r.acts.left + 0.5);
+      expect.soft(r.acts.top, `${at}: Remove is on the row's line`).toBeLessThan(r.name.bottom);
+    }
+  }
+}
+
+test("QA (lane D, never merged): train 24 on the kit at 1440, 1024, 640, 360 and 320: BLD-D029's field with its own \"+\" and BLD-D030's compact rows", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "the sizes are set here");
+  test.setTimeout(240_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+  const field = page.getByRole("textbox", { name: "Your answer to question 1" });
+  const frame = page.locator(".fld-frame").filter({ has: field });
+  const list = page.getByRole("list", { name: "Files in your message" });
+  for (const [w, h] of QA_SIZES) {
+    await page.setViewportSize({ width: w, height: h });
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1, name: "Components" })).toBeVisible();
+    await settleMotion(page);
+    // BLD-D029: the "+" inside the frame at its foot's trailing end, right of the words, 44px; the frame in its card
+    const f = await frame.evaluate((el) => {
+      const box = (e: Element | null) => {
+        if (!e) return null;
+        const r = e.getBoundingClientRect();
+        return {
+          top: r.top,
+          bottom: r.bottom,
+          left: r.left,
+          right: r.right,
+          width: r.width,
+          height: r.height,
+        };
+      };
+      const html = document.documentElement;
+      return {
+        sideways: html.scrollWidth - html.clientWidth,
+        frame: box(el)!,
+        text: box(el.querySelector("textarea"))!,
+        plus: box(el.querySelector(".fld-tools button"))!,
+        card: box(el.closest("section"))!,
+      };
+    });
+    const at = `kit-field-${w}x${h}`;
+    log[at] = f;
+    await page
+      .locator("section")
+      .filter({ has: frame })
+      .last()
+      .screenshot({ path: join(QA_SHOTS, `${at}.png`) });
+    expect.soft(f.sideways, `${at}: no sideways scroll`).toBeLessThanOrEqual(0);
+    expect.soft(f.plus.width, `${at}: the "+" is 44px`).toBeCloseTo(44, 0);
+    expect.soft(f.plus.height, `${at}: the "+" is 44px`).toBeCloseTo(44, 0);
+    expect
+      .soft(f.frame.right - f.plus.right, `${at}: the "+" is 5px in from the frame's right`)
+      .toBeCloseTo(5, 0);
+    expect
+      .soft(f.frame.bottom - f.plus.bottom, `${at}: the "+" is 5px up from the frame's foot`)
+      .toBeCloseTo(5, 0);
+    expect
+      .soft(f.plus.left, `${at}: the words stop before the "+"`)
+      .toBeGreaterThanOrEqual(f.text.right - 0.5);
+    expect.soft(f.text.width, `${at}: the words keep room`).toBeGreaterThanOrEqual(150);
+    expect.soft(f.frame.left, `${at}: the frame starts inside its card`).toBeGreaterThanOrEqual(f.card.left);
+    expect.soft(f.frame.right, `${at}: the frame ends inside its card`).toBeLessThanOrEqual(f.card.right);
+    // BLD-D030: the compact rows (Checked, waiting with no spinner, too big with its message on its own line)
+    const r = await qaRows(page, 'ul.flist.compact[aria-label="Files in your message"]', "section");
+    const rn = `kit-rows-${w}x${h}`;
+    log[rn] = r;
+    await page
+      .locator("section")
+      .filter({ has: list })
+      .last()
+      .screenshot({ path: join(QA_SHOTS, `${rn}.png`) });
+    qaRowChecks(rn, r, true);
+    expect.soft(r.rows.length, `${rn}: three rows`).toBe(3);
+    expect.soft(r.rows[1]?.spin, `${rn}: the waiting row has no spinner`).toBe(false);
+    expect.soft(r.rows[2]?.isMsg, `${rn}: the too-big row has its message`).toBe(true);
+    expect.soft(r.live, `${rn}: the list says its changes`).toBe("polite");
+    await expectNoSeriousAxeIssues(page);
+  }
+  writeFileSync(join(QA_SHOTS, "kit.json"), JSON.stringify(log, null, 2));
 });

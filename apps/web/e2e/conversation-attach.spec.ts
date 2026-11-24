@@ -8,6 +8,9 @@
  * /api/files/:id/view. The spec answers the screen's calls itself, so it needs no seeded idea and nothing reaches the
  * worker. Synthetic people, words and files only.
  */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, test, type Page } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, signIn } from "./helpers";
@@ -363,4 +366,244 @@ test.describe('S-08\'s "+" at 1440px (Messages.jpg)', () => {
     await expectNoSeriousAxeIssues(page);
     await expect(picker).toBeVisible();
   });
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-train24-1, never merged: train 24 (102c4d45) at the usual sizes, 1440, 1024, 640, 360
+ * and 320. Screenshots and measures go to test-results/qa-shots for lane D to read. Synthetic data only.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+const QA_SIZES = [
+  [1440, 900],
+  [1024, 768],
+  [640, 900],
+  [360, 740],
+  [320, 640],
+] as const;
+type QaBox = { top: number; bottom: number; left: number; right: number; width: number; height: number };
+type QaRow = {
+  row: QaBox;
+  inner: QaBox | null;
+  name: QaBox | null;
+  clipped: boolean;
+  acts: QaBox | null;
+  x: QaBox | null;
+  msg: QaBox | null;
+  isMsg: boolean;
+  spin: boolean;
+  status: string;
+};
+/** The file rows of the list `list` (inside `inSel`) and the page's sideways scroll, measured in the page. */
+async function qaRows(page: Page, list: string, inSel: string) {
+  return page.evaluate(
+    ([listSel, boxSel]) => {
+      const box = (el: Element | null | undefined) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          top: r.top,
+          bottom: r.bottom,
+          left: r.left,
+          right: r.right,
+          width: r.width,
+          height: r.height,
+        };
+      };
+      const ul = document.querySelector(listSel);
+      const rows: QaRow[] = [...(ul?.querySelectorAll(":scope > .frow") ?? [])].map((li) => {
+        const n = li.querySelector<HTMLElement>(".frow-n");
+        return {
+          row: box(li)!,
+          inner: box(li.querySelector(".frow-in")),
+          name: box(n),
+          clipped: n ? n.scrollWidth > n.clientWidth : false,
+          acts: box(li.querySelector(".frow-a")),
+          x: box(li.querySelector(".frow-x, .cfile-x")),
+          msg: box(li.querySelector(".fmsg")),
+          isMsg: li.classList.contains("frow-msg"),
+          spin: !!li.querySelector(".spin"),
+          status: li.querySelector(".frow-st")?.textContent ?? "",
+        };
+      });
+      const html = document.documentElement;
+      return {
+        vw: window.innerWidth,
+        sideways: html.scrollWidth - html.clientWidth,
+        live: ul?.getAttribute("aria-live") ?? null,
+        list: box(ul),
+        within: box(ul?.closest(boxSel)),
+        rows,
+      };
+    },
+    [list, inSel] as const,
+  );
+}
+
+/** The picker (C-FILE.uploader) inside `inSel`: its box, its controls and the page's sideways scroll. */
+async function qaPicker(page: Page, inSel: string) {
+  return page.evaluate((boxSel) => {
+    const box = (el: Element | null | undefined) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height };
+    };
+    const p = document.querySelector(".fpick");
+    const html = document.documentElement;
+    return {
+      vw: window.innerWidth,
+      sideways: html.scrollWidth - html.clientWidth,
+      within: box(p?.closest(boxSel)),
+      picker: box(p),
+      folder: box(p?.querySelector(".fpick-folder")),
+      browse: box(p?.querySelector(".fpick-drop .tb")),
+      drop: box(p?.querySelector(".fdrop")),
+      input: box(p?.querySelector(".fpick-link .fld")),
+      add: box(p?.querySelector(".fpick-link button")),
+      help: box(p?.querySelector(".fpick-h")),
+      helpText: p?.querySelector(".fpick-h")?.textContent ?? "",
+    };
+  }, inSel);
+}
+
+type QaPick = Awaited<ReturnType<typeof qaPicker>>;
+/** The picker's checks at one size: inside its box, every control inside it, nothing sideways. */
+function qaPickChecks(name: string, g: QaPick) {
+  expect.soft(g.sideways, `${name}: no sideways scroll`).toBeLessThanOrEqual(0);
+  expect.soft(g.picker, `${name}: the picker is there`).not.toBeNull();
+  if (!g.picker || !g.within) return;
+  expect
+    .soft(g.picker.left, `${name}: the picker starts inside its box`)
+    .toBeGreaterThanOrEqual(g.within.left - 0.5);
+  expect
+    .soft(g.picker.right, `${name}: the picker ends inside its box`)
+    .toBeLessThanOrEqual(g.within.right + 0.5);
+  expect.soft(g.picker.right, `${name}: the picker ends on the screen`).toBeLessThanOrEqual(g.vw);
+  for (const [what, b] of [
+    ["Choose a folder", g.folder],
+    ["browse", g.browse],
+    ["the link field", g.input],
+    ["Add link", g.add],
+  ] as const) {
+    expect.soft(b, `${name}: ${what} is there`).not.toBeNull();
+    if (!b) continue;
+    expect
+      .soft(b.left, `${name}: ${what} starts inside the picker`)
+      .toBeGreaterThanOrEqual(g.picker.left - 0.5);
+    expect.soft(b.right, `${name}: ${what} ends inside the picker`).toBeLessThanOrEqual(g.picker.right + 0.5);
+    expect.soft(b.height, `${name}: ${what} is at least 24px high`).toBeGreaterThanOrEqual(24);
+  }
+  expect.soft(g.folder?.width, `${name}: Choose a folder is 44px`).toBeCloseTo(44, 0);
+  expect.soft(g.folder?.height, `${name}: Choose a folder is 44px`).toBeCloseTo(44, 0);
+  expect.soft(g.input?.width ?? 0, `${name}: the link field keeps room to type`).toBeGreaterThanOrEqual(120);
+  if (g.folder && g.drop) {
+    expect
+      .soft(g.folder.top, `${name}: Choose a folder sits in the drop area`)
+      .toBeGreaterThanOrEqual(g.drop.top - 0.5);
+  }
+}
+
+type QaRows = Awaited<ReturnType<typeof qaRows>>;
+/** The rows' checks at one size. Compact rows: 260px at most, one line, the name gives way, Remove 32px. */
+function qaRowChecks(name: string, g: QaRows, compact: boolean) {
+  expect.soft(g.sideways, `${name}: no sideways scroll`).toBeLessThanOrEqual(0);
+  expect.soft(g.rows.length, `${name}: the rows are there`).toBeGreaterThan(0);
+  for (const [i, r] of g.rows.entries()) {
+    const at = `${name} row ${i + 1}`;
+    if (g.list) {
+      expect.soft(r.row.left, `${at}: starts inside the list`).toBeGreaterThanOrEqual(g.list.left - 0.5);
+      expect.soft(r.row.right, `${at}: ends inside the list`).toBeLessThanOrEqual(g.list.right + 0.5);
+    }
+    if (g.within)
+      expect.soft(r.row.right, `${at}: ends inside its box`).toBeLessThanOrEqual(g.within.right + 0.5);
+    if (r.name && r.inner) {
+      expect
+        .soft(r.name.right, `${at}: the name stays inside the row`)
+        .toBeLessThanOrEqual(r.inner.right + 0.5);
+    }
+    if (r.x) {
+      expect.soft(r.x.right, `${at}: Remove ends inside the row`).toBeLessThanOrEqual(r.row.right + 0.5);
+      expect.soft(r.x.width, `${at}: Remove is at least 24px`).toBeGreaterThanOrEqual(24);
+    }
+    if (!compact) continue;
+    if (r.isMsg) {
+      if (g.list)
+        expect
+          .soft(Math.abs(r.row.width - g.list.width), `${at}: a row with a message is the list's width`)
+          .toBeLessThan(1);
+      if (r.msg && r.inner)
+        expect
+          .soft(r.msg.top, `${at}: the message is under the row`)
+          .toBeGreaterThanOrEqual(r.inner.bottom - 0.5);
+    } else {
+      expect.soft(r.row.width, `${at}: 260px at most`).toBeLessThanOrEqual(260.5);
+    }
+    if (r.x) {
+      expect.soft(r.x.width, `${at}: Remove is 32px`).toBeCloseTo(32, 0);
+      expect.soft(r.x.height, `${at}: Remove is 32px`).toBeCloseTo(32, 0);
+    }
+    if (r.name && r.acts) {
+      expect
+        .soft(r.name.right, `${at}: the name gives way before Remove`)
+        .toBeLessThanOrEqual(r.acts.left + 0.5);
+      expect.soft(r.acts.top, `${at}: Remove is on the row's line`).toBeLessThan(r.name.bottom);
+    }
+  }
+}
+
+const QA_LONG = "branch-call-log-week-47-rejection-sms-codes-and-nominee-screens.md";
+
+test("QA (lane D, never merged): train 24 in S-08's box at 1440, 1024, 640, 360 and 320: BLD-D031's shared picker and BLD-D030's compact rows", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+  await answer(page);
+  // A long name, so the compact row's name has to give way (BLD-D030); added after answer(), so these answer first
+  const long = (state: "checking" | "checked") => ({ ...fileItem(state), name: QA_LONG });
+  await page.route("**/api/files", (route) =>
+    route.request().method() !== "POST"
+      ? route.fallback()
+      : route.fulfill({ status: 201, json: long("checking") }),
+  );
+  await page.route(`**/api/files/${FILE_ID}`, (route) =>
+    route.request().method() === "DELETE"
+      ? route.fulfill({ status: 204 })
+      : route.fulfill({ json: long("checked") }),
+  );
+  for (const [w, h] of QA_SIZES) {
+    await page.setViewportSize({ width: w, height: h });
+    await openAsSharer(page);
+    await settleMotion(page);
+    const picker = await openPicker(page);
+    await settleMotion(page);
+    const pn = `s08-picker-${w}x${h}`;
+    const p = await qaPicker(page, "form.cv-box");
+    log[pn] = p;
+    await page.screenshot({ path: join(QA_SHOTS, `${pn}.png`) });
+    qaPickChecks(pn, p);
+    expect.soft(p.within, `${pn}: the picker is in the box`).not.toBeNull();
+    await expectNoSeriousAxeIssues(page);
+
+    const chooser = page.waitForEvent("filechooser");
+    await picker.getByRole("button", { name: "browse", exact: true }).click();
+    await (
+      await chooser
+    ).setFiles({
+      name: QA_LONG,
+      mimeType: "text/markdown",
+      buffer: Buffer.from("Calls about R07: 40 a day."),
+    });
+    const row = page.getByRole("list", { name: "Your files" }).getByRole("listitem");
+    await expect(row.getByText("Checked", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await settleMotion(page);
+    const rn = `s08-rows-${w}x${h}`;
+    const r = await qaRows(page, 'form.cv-box ul.flist[aria-label="Your files"]', "form.cv-box");
+    log[rn] = r;
+    await page.screenshot({ path: join(QA_SHOTS, `${rn}.png`) });
+    qaRowChecks(rn, r, true);
+    expect.soft(r.rows[0]?.clipped, `${rn}: the long name gives way with an ellipsis`).toBe(true);
+    await expectNoSeriousAxeIssues(page);
+  }
+  writeFileSync(join(QA_SHOTS, "s08.json"), JSON.stringify(log, null, 2));
 });
