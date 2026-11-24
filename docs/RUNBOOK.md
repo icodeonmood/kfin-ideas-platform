@@ -169,16 +169,23 @@ Its down step deletes the delivery attachments' rows but cannot reach the object
 
 Rehearse with `scripts/ops/restore-drill.sh` (dump and bundle instead of point-in-time; same checks). The last drill's time goes into the go/no-go report.
 
-## 6. Load test (AT-B8-01)
+## 6. Load test (AT-B8-01; the Share path since BLD-A242)
 
-From the test Mac or a machine with `uv`, against UAT (needs a sign-in route for the synthetic load accounts, agreed with IT):
+The load test signs synthetic people (SYN-00018 upwards) in through the real OIDC flow against the mock IdP, so it needs a dev-mode stack (`OIDC_MODE=mock`) with the HR directory's synthetic people loaded. Entra-backed UAT needs a sign-in route for load accounts agreed with IT first (§9.1). There is no sign-in bypass. Run it from a machine with `uv`:
 
 ```bash
-cd services/worker && uv run python -m loadtest --base-url https://<uat host>       # the full hour
-uv run python -m loadtest --base-url http://localhost:3000 --scale 0.1               # a 6-minute rehearsal
+cd services/worker
+uv run python -m loadtest --base-url http://<stack>:3000 --scale 0.1   # a 6-minute check at the launch rates
+uv run python -m loadtest --base-url http://<stack>:3000               # the full hour (the go/no-go evidence)
 ```
 
-Pass: scan time p95 15 s or less, page p95 2 s or less, error rate under 0.5%. The report lands in `.data/loadtest/`.
+**What it does.** Sign-ins arrive at the rate of 3,000 over two hours; each person then opens Home (`/home`), the Wall, the Inbox and My ideas. Shares arrive at 150 an hour, each by one of 20 signed-in people, who make the Share screens' own calls in their order (J-SHARE). On Tell it the typed words are saved (`POST /api/drafts`) and the draft's stream is read until the draft is built. On Check it the draft, its sorting, similar ideas and the Send part are read, the sorting is confirmed ("Looks right", L-SORT.rules/2) and Submit is pressed (`POST /api/drafts/{id}/submit`, L-SUBMIT.send). Then the idea's page (S-06) opens and is read again until it no longer says Checking. The module's docstring (`services/worker/loadtest/__main__.py`) lists every call. The words are synthetic; there is no voice and no file.
+
+**Scan time is send → sorted.** It runs from the Submit request until "Checked and matched" (L-SUBMIT.send/3: the last hidden-detail pass and similar ideas) has handed the idea to the review desk (`with_review_desk`, or `needs_you`). An idea still Checking after `--scan-timeout` (120 s), or one that ends in any other state, is a failed share, and its time still counts in the p95. A share that fails before Submit (the draft not built within `--draft-timeout`, or a refused step) is a failed share with no scan time. The report keeps the key `scan`, so `gonogo` reads it as before.
+
+**Pass:** scan time p95 15 s or less, page p95 2 s or less (server response only), error rate under 0.5% per operation (a sign-in, a page, a share). The exit code is 0 only when all four `pass` lines are true (`launch_rate` is true at the default rates). The report lands in `.data/loadtest/report-<UTC time>.json`, with numbers, IDs and codes only, and `settings.flow` reads `share`. `errors` says what failed (`scan_timeout`, `draft_timeout`, `submit_422_<code>` and so on). `notes` counts what people had to do by hand (a sorting field picked, a title typed); many notes mean the assistant left parts empty under load. `gonogo` takes only a report at scale 1.0 and the launch rates as mode A evidence; a 0.1 run reads "a rehearsal".
+
+**A good 6-minute check** shows about 15 shares (`operations.submission.attempted`) and about 170 sign-ins (150 at the rate, plus the 20 people who share), none failed, `scan.p95_s` well under 15, `page.p95_s` under 2 and every `pass` line true.
 
 ## 7. Logs (AT-B8-04, AT-B8-08)
 
