@@ -18,7 +18,7 @@ For: KFin IT and the product team, installing 1% Club with `make uat-deploy`, on
 | Model route decision (D1). With or without it the deploy starts in Mode B: `ai.all` off (BLD-A245). Files wait for the personal-data check, seen only by the person who added them and opened by no one; they are checked as soon as `ai.all` and `agent.gatekeeper` are both on, and files that waited out their tries on earlier builds go back to waiting when the worker starts and are checked then too. At launch, `LLM_MODE=fake` whatever D1 says (see the bold line below this table); the route is set later, in **Switching to full mode (mode A)** | InfoSec | app env file |
 | Not at launch: BGE-M3 (AT-B5-01). The deploy builds the worker without it (the compose files pass no `WITH_BGE` build argument and mount no model folder), so set `EMBEDDINGS_MODE=hash`; the preflight warns that matching quality is not representative. Adding BGE-M3 is an install change after launch: the build argument, the model files mounted at `EMBEDDINGS_MODEL_PATH`, then `EMBEDDINGS_MODE=bge-m3` and a re-index | Product team | app env file |
 | Voice through Sarvam (DEC-108, on at launch): in the **database** env file (worker only), `SARVAM_API_KEY`; the deploy refuses it in the app env file, which the web app also reads, and the web container's copy is blanked. In the app env file, `SPEECH_MODE=sarvam` and `SPEECH_HOSTED_APPROVAL=DEC-108` (the deploy refuses `sarvam` without both). Outbound HTTPS and WSS from the worker to `api.sarvam.ai` only. The speech container and model below are now an optional fallback, not needed for launch | InfoSec (key in the vault), IT (outbound rule) | database env file, app env file |
-| Email through Graph (BLD-A243, DEC-131; needed for full mode, not for the install): an Entra app registration for the worker with Microsoft Graph's `Mail.Send` **application** permission (admin consent), limited to the 1% Club service mailbox by an Exchange application access policy, so it can send as that mailbox and no other. In the app env file: `EMAIL_MODE=graph`, `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_SERVICE_MAILBOX` and `EMAIL_FROM` (its address must be the mailbox's; the preflight checks it). In the **database** env file (worker only): `GRAPH_CLIENT_SECRET`; the deploy and the upgrade refuse it in the app env file, which the web app also reads, and the web container's copy is blanked. Outbound HTTPS from the worker to `login.microsoftonline.com` and `graph.microsoft.com` only. Note the secret's expiry date: when it lapses, every email fails until a new one is set. The steps are in **Email through Graph (BLD-A243)** below | IT (app registration, policy, outbound rule), InfoSec (secret in the vault) | app env file, database env file |
+| Email through Graph (BLD-A243, DEC-131; needed for full mode, not for the install): an Entra app registration for the worker with Microsoft Graph's `Mail.Send` **application** permission (admin consent), limited to the 1% Club service mailbox by an Exchange application access policy, so it can send as that mailbox and no other. The values go in only at step 1 of **Email through Graph (BLD-A243)**: until then `EMAIL_MODE` stays `smtp`, and neither the Graph settings nor the secret are in either env file. There, in the app env file: `EMAIL_MODE=graph`, `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_SERVICE_MAILBOX` and `EMAIL_FROM` (its address must be the mailbox's; the preflight checks it); in the **database** env file (worker only): `GRAPH_CLIENT_SECRET`; the deploy and the upgrade refuse it in the app env file, which the web app also reads, and the web container's copy is blanked. Outbound HTTPS from the worker to `login.microsoftonline.com` and `graph.microsoft.com` only. Note the secret's expiry date: when it lapses, the worker switches `comms.email` off by itself and email waits until a new one is set. The steps are in **Email through Graph (BLD-A243)** below | IT (app registration, policy, outbound rule), InfoSec (secret in the vault) | app env file, database env file |
 | Optional fallback, not needed for launch (DEC-108): voice notes on the isolated speech service (DEC-096, BLD-C012, BLD-C015): its own container (`speech`, compose profile `speech`, built from `services/worker/speech_service/Dockerfile`), started by the deploy when the app env file sets `SPEECH_ENGINE_URL=http://speech:8300`. It runs as uid 10002 with a read-only root filesystem, a 64 MB tmpfs `/tmp`, no capabilities and no published port, on an internal network only the worker shares (no route to Postgres, S3, mail or the internet). On the host: the speech model (faster-whisper, multilingual, CTranslate2 int8) in `SPEECH_MODEL_DIR`, mounted read-only; about 2–3 GB of memory for it (`SPEECH_MEM_LIMIT`, default 3g). In the **database** env file: `SPEECH_SERVICE_TOKEN`, 32 or more random letters and digits, never the same as `INTERNAL_API_TOKEN` (the deploy refuses it in the app env file, which the web app also reads, refuses `INTERNAL_API_TOKEN` in the database env file, and refuses the two if equal). In the app env file: `SPEECH_ENGINE_URL=http://speech:8300` exactly (the deploy and the worker refuse any other host or scheme outside dev and test). The image is pinned by digest and hashes; it needs PyPI and Docker Hub only at build time | IT (host, memory, model folder), InfoSec (token in the vault) | database env file, host folder |
 | Voice notes, KFin's S3 (DEC-096, BLD-C006): on the **quarantine** bucket, a lifecycle rule `voice-notes-expire-1-day` that expires the prefix `voice/` after 1 day, and **no versioning** on that bucket (a kept version would outlive a delete). The worker tries to set the rule itself at start; where the store refuses, IT sets it. The smoke check fails if the quarantine bucket is versioned | IT | the file store |
 
@@ -172,7 +172,7 @@ Before step 5/8 (Migrations) a failure changes nothing: the old version keeps se
 
    Paste back: the switch list, and "Admin page opens" or what they saw instead. Pass: every switch exactly as in step 1 (the upgrade never changes one), and the Admin page opens. If either fails, tell lane A and the product lead before anything else; the way back is the rollback in step 6.
 
-6. Rollback, only when the product lead decides it, from the same new checkout, with the backup the upgrade printed:
+6. Rollback, only when the product lead decides it, from the same new checkout, with the backup the upgrade printed. With `EMAIL_MODE=graph` in the app env file, read **Before a rollback** under **Email through Graph (BLD-A243)** first:
 
    ```bash
    UAT_DATA_DIR=/srv/kfin-ideas-uat make uat-rollback BACKUP=/srv/kfin-ideas-uat/backups/upgrade-<time>-<old>.dump APP_ENV_FILE=/secure/.env.uat DB_ENV_FILE=/secure/.env.uat.db
@@ -208,13 +208,13 @@ Run them about 5 minutes after step 5. Paste back: the three results. Pass: the 
 
 ## Switching to full mode (mode A)
 
-Full mode turns on the assistant, similar ideas and email (DEC-131: go/no-go Wed 25 Nov 2026 at 16:00, switch Thu 26 Nov 2026 at 10:00). It is a hand step on the running server, never part of a deploy or an upgrade: neither of them runs the golden sets on the server's database, in any `APP_ENV` (BLD-A245). The golden sets on the real route run only in `scripts/eval/live.sh`, in a throwaway compose project with its own database. live.sh only reads the install's database, to count its model calls in `llm_calls` before and after.
+Full mode turns on the assistant and similar ideas, and gets email through Graph ready; whether email goes on is the product lead's call at the go/no-go (DEC-131: go/no-go Wed 25 Nov 2026 at 16:00, switch Thu 26 Nov 2026 at 10:00). It is a hand step on the running server, never part of a deploy or an upgrade: neither of them runs the golden sets on the server's database, in any `APP_ENV` (BLD-A245). The golden sets on the real route run only in `scripts/eval/live.sh`, in a throwaway compose project with its own database. live.sh only reads the install's database, to count its model calls in `llm_calls` before and after.
 
 Do the steps in order. After each one, paste to lane A the lines its **Paste back** names, as for an upgrade, and go on only when they match its pass line. Never paste an env file, a key or any line of HR's file. Nothing below prints a secret: the commands print tags, commits, counts, switch names and setting names.
 
 Run every command from the release checkout, the one the server was deployed or last upgraded from.
 
-1. **Check the build.** The build on the server must carry lane C's file wait (A2, BLD-C225 to BLD-C227), `scripts/eval/live.sh` (BLD-C229), lane C's re-check of the words typed while the assistant was off (BLD-C231, with BLD-C234), lane B's re-check of the review desk's own texts (BLD-B278) and this change (BLD-A245). Lane A sends IT the tag that has all five. If the server runs an older one, install the new tag first with **Updating the live server** above.
+1. **Check the build.** The build on the server must carry lane C's file wait (A2, BLD-C225 to BLD-C227), `scripts/eval/live.sh` (BLD-C229), lane C's re-check of the words typed while the assistant was off (BLD-C231, with BLD-C234), lane B's re-check of the review desk's own texts (BLD-B278) and this change (BLD-A245). Lane A sends IT the tag that has all five. If the server runs an older one, install the new tag first with **Updating the live server** above. `EMAIL_MODE` stays `smtp` through that upgrade and every step before 9: the Graph settings and `GRAPH_CLIENT_SECRET` go in only at step 1 of the **Email through Graph** section (step 9 below), once `comms.email` is off, so no restart here sends through Graph before the test message.
 
    ```bash
    git describe --tags --exact-match
@@ -249,7 +249,7 @@ Run every command from the release checkout, the one the server was deployed or 
 
    Paste back: the product lead's go, and the switches switched off, if any.
 
-5. **Set the route and restart the worker and the web app.** IT sets `LLM_MODE=anthropic` (or `LLM_MODE=bedrock`) in `/secure/.env.uat`, then restarts both in the install's compose project, with the same compose wrapper as the BGE-M3 section below. `ai.all` is still off. The web app reads neither `LLM_MODE` nor a model key (BLD-A246 blanks the key for it); its restart keeps its container in step with the env file.
+5. **Set the route and restart the worker and the web app.** IT sets `LLM_MODE=anthropic` (or `LLM_MODE=bedrock`) in `/secure/.env.uat`, then restarts both in the install's compose project, with the same compose wrapper as the BGE-M3 section below. `ai.all` is still off. The web app reads neither `LLM_MODE` nor a model key (BLD-A246 blanks the key for it); its restart keeps its container in step with the env file. `EMAIL_MODE` stays `smtp` at this restart: email through Graph is set only at step 1 of the **Email through Graph** section (step 9).
 
    ```bash
    grep -E '^LLM_MODE=' /secure/.env.uat
@@ -302,7 +302,7 @@ Run every command from the release checkout, the one the server was deployed or 
 
    Paste back: that section's checks, then `docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list`. Pass: as that section says, then `matching.show on`.
 
-9. **Turn on email.** Follow **Email through Graph (BLD-A243)**, its own section of this runbook, with its own paste-backs and pass lines.
+9. **Get email ready.** Follow **Email through Graph (BLD-A243)**, its own section of this runbook, with its own paste-backs and pass lines. Its steps 1 to 3 get email ready and leave `comms.email` off; its step 4 switches it on only if the product lead says so.
 
 10. **Run the smoke checks**, without `--fresh`:
 
@@ -316,7 +316,9 @@ Run every command from the release checkout, the one the server was deployed or 
 
 ## Email through Graph (BLD-A243)
 
-Step 9 of **Switching to full mode (mode A)** comes here. Notifications go out through the KFin service mailbox with Microsoft Graph (DEC-131), not an SMTP relay: the worker signs in as its app registration (client credentials) and sends each email from the mailbox, which keeps a copy in its Sent Items for IT's retention policy. The web app never gets the secret. `comms.email` is off from step 1 until step 4, so nobody gets an email before the test message has passed. An install leaves it on, so step 1 checks it first. You need the Graph row under **What you need first**.
+Step 9 of **Switching to full mode (mode A)** comes here. Notifications go out through the KFin service mailbox with Microsoft Graph (DEC-131), not an SMTP relay: the worker signs in as its app registration (client credentials) and sends each email from the mailbox, which keeps a copy in its Sent Items for IT's retention policy. The web app never gets the secret. You need the Graph row under **What you need first**.
+
+**Steps 1 to 3 get email ready and prove the mailbox with `comms.email` off; they pass on their own. Step 4 runs only when the product lead says so** (the Full go/no-go, Wed 25 Nov 2026 at 16:00, decides it). Until then email stays off and queued, and in-app messages carry on. An install leaves `comms.email` on, so step 1 checks it first.
 
 Never paste an env file, the secret, the tenant ID or a mailbox address to lane A. Nothing below prints one: the commands print setting names, counts, codes and IDs.
 
@@ -328,7 +330,7 @@ Never paste an env file, the secret, the tenant ID or a mailbox address to lane 
 
    If it reads `comms.email on`, an admin switches it off now from the Admin page, with a reason (for example "Email through Graph: off until the test message passes"), and tells the product lead: emails queue meanwhile and in-app messages carry on. Read the list again.
 
-   In the app env file, these lines (with IT's values after the `=`; `EMAIL_FROM` is the display name and the mailbox's own address, for example `1% Club <the mailbox's address>`):
+   Only now do the Graph values go in (until this step `EMAIL_MODE` stays `smtp`). In the app env file, these lines (with IT's values after the `=`; `EMAIL_FROM` is the display name and the mailbox's own address, for example `1% Club <the mailbox's address>`):
 
    ```
    EMAIL_MODE=graph
@@ -357,37 +359,50 @@ Never paste an env file, the secret, the tenant ID or a mailbox address to lane 
    compose up -d --wait worker
    ```
 
-   Paste back: the preflight's `PROBLEM` lines, if any, and its last line; then the `Healthy` line. Pass: `preflight: ok` (its warnings are as before: none of them is about email), and `Healthy` for `kfin-ideas-uat-worker-1`. On `EMAIL_MODE=graph needs …` or `EMAIL_FROM must be the service mailbox's address …`, fix the env file and run this step again.
+   Paste back: the preflight's `PROBLEM` lines, if any, and its last line; then the `Healthy` line. Pass: `preflight: ok` (its warnings are as before: none of them is about email), and `Healthy` for `kfin-ideas-uat-worker-1`. On `EMAIL_MODE=graph needs …`, `EMAIL_FROM must be the service mailbox's address …` or `GRAPH_SERVICE_MAILBOX must be the service mailbox's email address`, fix the env file and run this step again.
 
-3. **Send one test message.** IT names a test mailbox it owns, never an employee's and not in HR's file. The check sends one fixed message, "1% Club email check", with no idea, no person and no template in it, through the same path every email takes. It refuses an address that belongs to anyone in 1% Club, so it can never reach an employee, and it does not need `comms.email`: it sends nobody's email. Each run is written to `audit_log`.
+3. **Send one test message.** IT names its own test mailbox: not an alias, a distribution list or anyone's address, and not in HR's file. The check sends one fixed message, "1% Club email check", with no idea, no person and no template in it, through the same path every email takes. It refuses any address of someone in 1% Club (an exact match on the email 1% Club holds for them); it cannot tell an alias or a list, which is why IT uses its own test mailbox. It does not need `comms.email`: it sends nobody's email. Each run is written to `audit_log`.
 
    ```bash
    docker exec kfin-ideas-uat-worker-1 python -m comms.email_check --to <test mailbox> --actor ops:<staff code>
    docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT id, at, after FROM audit_log WHERE action = 'comms.email_check' ORDER BY id DESC LIMIT 1"
    ```
 
-   The first command prints one line, never the address. Then IT looks in the test mailbox: the message should arrive from the service mailbox within a few minutes. Paste back: the line, the audit row (its ID, time and result) and whether the message arrived (yes or no). Pass: `email check: sent (Graph accepted it, HTTP 202)`, the audit row's `after` reads `{"result": "sent", "http_status": 202}`, and yes. Otherwise the line names what to fix, then restart the worker (step 2) and run the check again:
+   The first command's last line is the result, `email check: …`. Above it the worker's own log lines may show (JSON, codes only, never the address or the token): leave them out. Then IT looks in the test mailbox: the message should arrive from the service mailbox within a few minutes. Paste back: the `email check:` line, the audit row (its ID, time and result) and whether the message arrived (yes or no). Pass: `email check: sent (Graph accepted it, HTTP 202)`, the audit row's `after` reads `{"result": "sent", "http_status": 202}`, and yes. Otherwise fix what the line names, restart the worker (step 2) and run the check again:
    - `email check: failed graph_token_4xx …`: the tenant ID, the client ID or the secret is wrong, or the secret has expired;
    - `email check: failed graph_4xx (HTTP 403)`: the permission has no admin consent, or the access policy does not cover the mailbox;
    - `email check: failed graph_4xx (HTTP 404)`: `GRAPH_SERVICE_MAILBOX` is not the mailbox's address;
-   - `email check: failed graph_timeout` or `graph_unreachable`: the outbound rule to the two hosts is missing (or the proxy: `HTTPS_PROXY` in the app env file, as in step 2 of full mode);
-   - `email check: failed graph_429` or `graph_5xx`: Graph is busy; wait 15 minutes and run it again.
+   - `email check: failed graph_timeout`, `graph_unreachable`, `graph_token_timeout` or `graph_token_unreachable`: the outbound rule to the two hosts is missing, the proxy is not set (`HTTPS_PROXY` in the app env file, as in step 2 of full mode), or a TLS-inspecting proxy presents a certificate the worker does not trust;
+   - `email check: failed graph_429`, `graph_token_429` or `graph_5xx`: Graph is busy; wait 15 minutes and run it again;
+   - any other line (for example `graph_not_configured`, `graph_4xx (HTTP 400)` or `(HTTP 401)`, or the preflight's mailbox line): send it to lane A.
 
    Do not go on to step 4 until the check passes.
 
-4. **Switch `comms.email` on.** First read what is waiting: every email queued while `comms.email` was off goes out once it is on (routine mail in working hours, one a day per person; the rest at once). The product lead sees this count before the switch.
+   **Pass for steps 1 to 3 (email ready, `comms.email` off):** `comms.email off` before the worker restarts, the env lines as step 1 says, `preflight: ok`, the worker `Healthy`, `email check: sent (Graph accepted it, HTTP 202)` with its audit row and the message in the test mailbox, and `comms.email` still off. This section can stop here: email stays off and queued until the product lead says otherwise.
+
+4. **Only on the product lead's word: switch `comms.email` on.** Skip this step unless the product lead has said email goes on. First read what is waiting: every email queued while `comms.email` was off goes out once it is on (routine mail in working hours, one a day per person; the rest at once). The product lead sees this count before the switch.
 
    ```bash
    docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT channel, state, error_code, count(*) FROM notifications WHERE channel IN ('email', 'digest') GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"
    ```
 
-   Then, on the product lead's word, an admin switches `comms.email` on from the Admin page, with a reason (for example "Full mode: email through Graph, the product lead's go of 26 Nov"). The change is audited. Five minutes later, run the count again and `docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list`.
+   Then an admin switches `comms.email` on from the Admin page, with a reason (for example "Email through Graph, the product lead's go"). The change is audited. Five minutes later, run the count again and `docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list`.
 
-   Paste back: both counts and the switch list. Pass: `comms.email on`; `email` `sent` has grown and `queued` has fallen; no `failed` row with a `graph_` code has appeared. A `queued` row with `graph_429` or `graph_5xx` is Graph asking to wait: it goes again by itself within 15 minutes. If `failed` rows with `graph_4xx` or `graph_token_4xx` appear, an admin switches `comms.email` off at once, with a reason, and IT sends the counts to lane A.
+   Paste back: both counts and the switch list. A `queued` row with `graph_429` is Graph asking to wait: it keeps its try and goes again after Graph's wait (at most 15 minutes); one with `graph_5xx`, `graph_timeout` or `graph_unreachable` goes again within 5 minutes. If the list reads `comms.email off`, the worker switched it off itself: see **If email switches itself off** below, and send lane A the counts.
 
-**Pass for this section:** `comms.email off` before the worker restarts, the env lines as step 1 says, `preflight: ok`, the worker `Healthy`, `email check: sent (Graph accepted it, HTTP 202)` with its audit row and the message in the test mailbox, then `comms.email on` with email being sent and no `graph_` failure.
+   **Pass for step 4 (only if the product lead switched email on):** `comms.email on`, `email` `sent` has grown and `queued` has fallen. A `failed` row with a `graph_` code is one message Graph refused (`graph_4xx`) or one that failed three tries (`graph_5xx`, `graph_timeout`, `graph_unreachable`): the rest go on; send lane A their counts.
 
-**To stop email at any time:** an admin switches `comms.email` off on the Admin page, with a reason. That is instant: emails queue again and in-app messages carry on. Non-delivery reports for addresses that bounce land in the service mailbox's inbox; 1% Club does not read them, so the automatic 5% bounce switch-off does not see them. IT tells lane A if they pile up.
+**If email switches itself off:** when Graph says no email can go at all (the token is refused or out of reach, the Graph settings are missing, or Graph's send answers 401, 403 or 404), the worker stops at once and switches `comms.email` off by itself, audited, with the code in the reason. No email spends a try; they all stay queued. Read the reason (it holds a code and a status, never a value):
+
+```bash
+docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT at, reason FROM audit_log WHERE action = 'kill_switch.set' AND entity = 'kill_switch:comms.email' ORDER BY id DESC LIMIT 1"
+```
+
+IT fixes the cause (step 3's list says which), restarts the worker (step 2) and runs the step 3 check until it passes; then an admin switches `comms.email` back on with a reason, on the product lead's word. Nothing switches it back on by itself.
+
+**To stop email at any time:** an admin switches `comms.email` off on the Admin page, with a reason. The worker reads the switch before each email, so it stops within seconds; an email already being sent finishes first, and that one email goes. Emails then queue again and in-app messages carry on. Non-delivery reports for addresses that bounce land in the service mailbox's inbox; 1% Club does not read them, so the automatic 5% bounce switch-off does not see them. IT tells lane A if they pile up.
+
+**Before a rollback:** with `EMAIL_MODE=graph`, a rollback to a build without BLD-A243 would send by SMTP to nothing (there is no SMTP server on the launch server) and fail every email after three tries. So before such a rollback an admin switches `comms.email` off, with a reason; after it, IT sets `EMAIL_MODE=smtp` in the app env file until the build has BLD-A243 again, and `comms.email` stays off.
 
 ## Rehearsal
 
