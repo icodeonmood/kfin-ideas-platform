@@ -4,6 +4,7 @@
  * Home's crew card (S-03, lane C) drops it in: the inactive but focusable "Requested" marked as the opener, the
  * "Withdraw" link calling `DELETE /api/team-up/:id` for either kind, busy while it goes, `onWithdrawn` with the same
  * `TeamUpSent` the sheet hands over, focus to the host's "Team up" drawn again, and a failed withdraw saying why.
+ * BLD-F105: focus reaches "Team up" whether the next frame or the host's redraw comes first (J-TEAMUP/3c).
  * Both are lane D's shared `Button` (BLD-D019): "Requested" `inactive`, "Withdraw" `variant="quiet"` (BLD-F096).
  * Synthetic people only: the pack's fictional cast (Kavya asks, Ravi leads).
  */
@@ -64,16 +65,22 @@ async function settle(ms = 40) {
   });
 }
 
+/** How the host redraws after a withdraw: from its own state at once (Home, Find your crew), after a while (a host that
+ * refreshes), or not at all (a host that keeps the pair). */
+type Redraw = "now" | "later" | "never";
+
 /** A host card: "Team up" (marked as the opener) until asked; then RequestedAction; back to "Team up" on withdraw. */
 function Card({
   kind = "teamup",
   id = "req-7",
   title,
+  redraw = "now",
   log,
 }: {
   kind?: "teamup" | "merge";
   id?: string;
   title?: string;
+  redraw?: Redraw;
   log: Sent[];
 }) {
   const [asked, setAsked] = useState(true);
@@ -84,7 +91,8 @@ function Card({
         request: { id, kind },
         onWithdrawn: (s: Sent) => {
           log.push(s);
-          setAsked(false);
+          if (redraw === "now") setAsked(false);
+          else if (redraw === "later") setTimeout(() => setAsked(false), 0);
         },
       })
     : createElement(
@@ -94,7 +102,9 @@ function Card({
       );
 }
 
-async function mount(props: { kind?: "teamup" | "merge"; id?: string; title?: string } = {}) {
+type Mount = { kind?: "teamup" | "merge"; id?: string; title?: string; redraw?: Redraw };
+
+async function mount(props: Mount = {}) {
   const log: Sent[] = [];
   await act(async () => root.render(createElement(Card, { ...props, log })));
   return log;
@@ -179,5 +189,60 @@ describe("RequestedAction (DEC-126)", () => {
   it("a request with no id has nothing to withdraw (BLD-F074)", async () => {
     await mount({ id: "" });
     expect(Array.from(document.querySelectorAll("button")).map(text)).toEqual(["Requested"]);
+  });
+});
+
+describe("RequestedAction, J-TEAMUP/3c, WCAG 2.4.3: focus reaches Team up whenever the frame comes (BLD-F105)", () => {
+  it("a frame that comes before the host's redraw still finds Team up: the redraw is drawn before focus moves", async () => {
+    // The frame runs the moment it is asked for, before React draws a change made after an await (J-TEAMUP/3c's race)
+    const frame = vi.fn((cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    vi.stubGlobal("requestAnimationFrame", frame);
+    await mount({ title: TITLE });
+    const withdraw = document.querySelectorAll("button")[1]!;
+    withdraw.focus();
+    await act(async () => withdraw.click());
+    await settle();
+    const teamUp = document.querySelector("button")!;
+    expect(text(teamUp)).toBe("Team up");
+    expect(document.activeElement).toBe(teamUp);
+    expect(frame).not.toHaveBeenCalled(); // focus moved at once; no frame was needed
+  });
+
+  it("a host that redraws later is looked for again on the next frame, as before", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((cb: FrameRequestCallback) => frames.push(cb)),
+    );
+    await mount({ title: TITLE, redraw: "later" });
+    const withdraw = document.querySelectorAll("button")[1]!;
+    withdraw.focus();
+    await act(async () => withdraw.click());
+    await settle(); // the host has drawn "Team up" since; the frame has not come yet
+    expect(frames.length).toBe(1);
+    const teamUp = document.querySelector("button")!;
+    expect(text(teamUp)).toBe("Team up");
+    await act(async () => frames.splice(0).forEach((cb) => cb(0)));
+    expect(document.activeElement).toBe(teamUp);
+  });
+
+  it("a host that keeps the pair keeps focus on Withdraw", async () => {
+    const frame = vi.fn((cb: FrameRequestCallback) => {
+      cb(0);
+      return 1;
+    });
+    vi.stubGlobal("requestAnimationFrame", frame);
+    const log = await mount({ title: TITLE, redraw: "never" });
+    const withdraw = document.querySelectorAll("button")[1]!;
+    withdraw.focus();
+    await act(async () => withdraw.click());
+    await settle();
+    expect(log.length).toBe(1);
+    expect(frame).toHaveBeenCalledTimes(1);
+    expect(text(document.querySelector("button"))).toBe("Requested");
+    expect(document.activeElement).toBe(withdraw);
   });
 });
