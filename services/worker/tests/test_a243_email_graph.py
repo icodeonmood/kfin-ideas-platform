@@ -163,17 +163,25 @@ def test_a243_a1_a_second_401_is_a_mailbox_fault_and_never_a_third_try(
 
 
 @pytest.mark.parametrize(
-    ("answer", "error", "code", "status"),
-    [(httpx.Response(400), graph.MailboxFault, "graph_token_4xx", 400),
-     (httpx.Response(401), graph.MailboxFault, "graph_token_4xx", 401),
-     (httpx.Response(503), graph.MailboxFault, "graph_token_5xx", 503),
-     (httpx.ReadTimeout("timed out"), graph.MailboxFault, "graph_token_timeout", None),
-     (httpx.ConnectError("no route"), graph.MailboxFault, "graph_token_unreachable", None),
-     (httpx.Response(429, headers={"Retry-After": "30"}), graph.EmailRetry, "graph_token_429", 429)],
+    ("answer", "error", "code", "status", "wait", "spends"),
+    [(httpx.Response(400), graph.MailboxFault, "graph_token_4xx", 400, None, None),
+     (httpx.Response(401), graph.MailboxFault, "graph_token_4xx", 401, None, None),
+     (httpx.Response(503), graph.EmailRetry, "graph_token_5xx", 503, 300, True),
+     (httpx.ReadTimeout("timed out"), graph.EmailRetry, "graph_token_timeout", None, 300, True),
+     (httpx.ConnectError("no route"), graph.EmailRetry, "graph_token_unreachable", None, 300, True),
+     (httpx.Response(429, headers={"Retry-After": "30"}), graph.EmailRetry, "graph_token_429", 429, 30, False)],
 )  # fmt: skip
-def test_a243_a1_a_failed_token_stops_everything_but_a_429_waits(
-    fake: Callable[..., FakeGraph], answer: Any, error: type[Exception], code: str, status: int | None
+def test_a243_a1_a_refused_token_stops_everything_an_outage_or_a_429_waits(
+    fake: Callable[..., FakeGraph],
+    answer: Any,
+    error: type[Exception],
+    code: str,
+    status: int | None,
+    wait: int | None,
+    spends: bool | None,
 ) -> None:
+    """Only a refused token (a 4xx) is a mailbox fault. An outage at the login host (5xx, timeout, no connection) is
+    handled as a sendMail outage: 5 minutes, one try; a 429 is a throttle."""
     if isinstance(answer, httpx.Response):
         answer = httpx.Response(
             answer.status_code,
@@ -187,8 +195,7 @@ def test_a243_a1_a_failed_token_stops_everything_but_a_429_waits(
     assert (exc.code, exc.status) == (code, status) and g.to(GRAPH) == []
     assert str(exc) == code  # never Graph's answer
     assert (graph.wait_left() > 0) is (error is graph.EmailRetry)
-    if error is graph.EmailRetry:
-        assert exc.spends_try is False and exc.wait_s == 30
+    assert (getattr(exc, "wait_s", None), getattr(exc, "spends_try", None)) == (wait, spends)
 
 
 @pytest.mark.parametrize(
@@ -539,8 +546,6 @@ def test_a243_a2_a_token_429_waits_too_and_keeps_the_try(fake: Callable[..., Fak
             401,
         ),  # expired secret
         ((ok(),), httpx.Response(400), "graph_token_4xx", 400),
-        ((ok(),), httpx.Response(503), "graph_token_5xx", 503),
-        ((ok(),), httpx.ConnectError("no route"), "graph_token_unreachable", None),
         ((ok(),), httpx.Response(200, json={"access_token": ""}), "graph_token_bad", 200),
         ((httpx.Response(403), ok()), None, "graph_4xx", 403),
         ((httpx.Response(404), ok()), None, "graph_4xx", 404),
@@ -572,6 +577,34 @@ def test_a243_a1_a_mailbox_fault_stops_the_loop_and_switches_email_off_audited(
     assert [a[1] for a in audits] == ["kill_switch:comms.email", "kill_switch:comms.email"]
     assert any(isinstance(a, tuple) and reason in a for a in audits)  # kill_switch.set carries the reason
     assert graph.wait_left() == 0
+
+
+@pytest.mark.parametrize(
+    ("token", "code", "status"),
+    [
+        (httpx.Response(503), "graph_token_5xx", 503),
+        (httpx.ReadTimeout("timed out"), "graph_token_timeout", None),
+        (httpx.ConnectError("no route"), "graph_token_unreachable", None),
+    ],
+)
+def test_a243_a2_an_outage_at_the_login_host_holds_five_minutes_spends_one_try_and_leaves_email_on(
+    fake: Callable[..., FakeGraph], loop: None, token: Any, code: str, status: int | None
+) -> None:
+    """Lane A's narrowing: a short outage at Microsoft's login is handled as a sendMail outage, never a switch-off."""
+    g = fake(ok(), token=token)
+    conn = FakeConn([_row(1), _row(2)])
+    assert send.send_due(conn) == 0  # type: ignore[arg-type]
+    [(sql, params)] = conn.updates()
+    assert "send_after = clock_timestamp() + %s" in sql and params == (
+        "queued",
+        code,
+        FIVE,
+        1,
+    )  # one try spent
+    assert len(g.to(LOGIN)) == 1 and g.to(GRAPH) == [] and conn.picks() == 1 and conn.touching(2) == []
+    assert 299 <= graph.wait_left() <= 300
+    assert not any(s.startswith(("UPDATE kill_switches", "INSERT INTO audit_log")) for s, _ in conn.calls)
+    assert send.send_due(conn) == 0 and conn.picks() == 1  # type: ignore[arg-type]  # held: nothing picked
 
 
 def test_a243_a3_a_503_on_row_2_of_5_keeps_row_1_sent_and_leaves_3_to_5_untouched(

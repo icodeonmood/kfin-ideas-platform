@@ -12,8 +12,8 @@
 - `comms.email`: more than 5% of the email sent in the last hour bounced (the receiving server refused it), with
   at least 20 emails in that hour so one bad address cannot stop all mail. Only refusals the SMTP server gives at
   send time count; the Graph mailbox's delivery reports are not read on day one.
-- `comms.email`: email through Graph cannot go at all (BLD-A243): the token is refused or out of reach, the Graph
-  settings are missing, or Graph's send answers 401 (after a fresh token), 403 or 404. The send loop calls
+- `comms.email`: email through Graph cannot go at all (BLD-A243): the token is refused (a 4xx, or a token that is
+  not one), the Graph settings are missing, or Graph's send answers 401 (after a fresh token), 403 or 404. The send loop calls
   `email_stopped` at once, on the first such answer, with the code and the HTTP status in the reason. Emails stay
   queued, none spends a try; a person fixes the cause and switches `comms.email` back on.
 

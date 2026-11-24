@@ -10,13 +10,14 @@ message goes exactly as `comms.send.build_message` built it (plain text first, H
 
 Every failure is one of three kinds, each with a code (the status family, never Graph's text) and the HTTP status:
 - `EmailRetry`: Graph is busy or out of reach. A 429 (`graph_429`, `graph_token_429`) waits Graph's Retry-After (60 s
-  without one, at most 15 minutes) and never spends a try; a 5xx, a timeout or no connection (`graph_5xx`,
-  `graph_timeout`, `graph_unreachable`) waits 5 minutes and spends one. Either sets the process-wide wait
-  (`wait_left`), which the send loops read before they pick anything.
-- `MailboxFault`: nothing can go until a person fixes the mailbox, the app registration or the settings: every other
-  token failure (`graph_token_4xx`, `_5xx`, `_timeout`, `_unreachable`, `_bad`), no settings
-  (`graph_not_configured`), and a sendMail 401 after one fresh token, 403 or 404 (`graph_4xx`). The send loop stops
-  and switches `comms.email` off (comms/send.py).
+  without one, at most 15 minutes) and never spends a try; a 5xx, a timeout or no connection, from sendMail or the
+  token call (`graph_5xx`, `graph_timeout`, `graph_unreachable`; `graph_token_5xx`, `graph_token_timeout`,
+  `graph_token_unreachable`), waits 5 minutes and spends one. Either sets the process-wide wait (`wait_left`), which
+  the send loops read before they pick anything. `comms.email` is left as it is.
+- `MailboxFault`: nothing can go until a person fixes the mailbox, the app registration or the settings: the token
+  refused (`graph_token_4xx`) or unreadable (`graph_token_bad`), no settings (`graph_not_configured`), and a sendMail
+  401 after one fresh token, 403 or 404 (`graph_4xx`). The send loop stops and switches `comms.email` off
+  (comms/send.py).
 - `EmailRefused`: Graph refused this one message for good (any other answer but 202); the next one goes.
 
 Never the address, the subject, the body, the token or Graph's answer (non-negotiable 3). httpx's own errors are
@@ -201,9 +202,9 @@ def _post(client: httpx.Client, url: str, prefix: str, **kwargs: Any) -> httpx.R
         kind = "timeout"
     except httpx.HTTPError:
         kind = "unreachable"
-    if prefix == "graph_token":
-        raise MailboxFault(f"graph_token_{kind}") from None
-    raise _retry(f"graph_{kind}", None, OUTAGE_S, spends_try=True) from None
+    raise _retry(
+        f"{prefix}_{kind}", None, OUTAGE_S, spends_try=True
+    ) from None  # an outage, token call or not
 
 
 def _failure(prefix: str, resp: httpx.Response) -> GraphError:
@@ -213,10 +214,10 @@ def _failure(prefix: str, resp: httpx.Response) -> GraphError:
     if status == 429:
         wait = _retry_after(resp)
         return _retry(f"{prefix}_429", status, THROTTLE_S if wait is None else wait, spends_try=False)
-    if prefix == "graph_token":
-        return MailboxFault(family, status)
-    if status >= 500:
+    if status >= 500:  # an outage, token call or not
         return _retry(family, status, OUTAGE_S, spends_try=True)
+    if prefix == "graph_token":  # the token refused: the app registration or the secret
+        return MailboxFault(family, status)
     if status in MAILBOX_STATUSES:
         return MailboxFault(family, status)
     return EmailRefused(family, status)
