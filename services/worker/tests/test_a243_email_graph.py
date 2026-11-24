@@ -621,3 +621,32 @@ def test_a243_email_check_runs_only_with_graph(monkeypatch: pytest.MonkeyPatch) 
     rc, line = email_check.check(FakeConn(), "it.mailcheck@kfintech.example", "ops:SYN-0001")  # type: ignore[arg-type]
     assert (rc, line) == (2, "email check: refused: EMAIL_MODE is not graph")
     get_settings.cache_clear()
+
+
+def _graph_section() -> str:
+    doc = (ROOT / "docs" / "UAT.md").read_text("utf-8")
+    return doc.split("\n## Email through Graph (BLD-A243)\n", 1)[1].split("\n## ", 1)[0]
+
+
+def test_a243_runbook_switches_comms_email_off_before_the_worker_restarts_in_graph_mode() -> None:
+    """An install leaves `comms.email` on (the platform migration's default), so the section never assumes it is off:
+    step 1 reads the switch list and has it switched off before step 2 restarts the worker with EMAIL_MODE=graph,
+    and step 4 switches it on only after the test message has passed."""
+    section = _graph_section()
+    step1, rest = section.split("\n2. **Run the preflight, then restart the worker**", 1)
+    assert "An install leaves `comms.email` on" in step1
+    assert step1.index("python -m core.killswitch list") < step1.index("EMAIL_MODE=graph")
+    assert "an admin switches it off now from the Admin page, with a reason" in step1
+    assert "Pass: `comms.email off` on the last read" in step1
+    step3, step4 = rest.split("\n4. **Switch `comms.email` on.**", 1)
+    assert "Do not go on to step 4 until the check passes." in step3
+    assert "**Pass for this section:** `comms.email off` before the worker restarts" in step4
+
+
+def test_a243_runbook_pastes_back_no_secret_no_address_and_no_staff_code() -> None:
+    section = _graph_section()
+    assert "SELECT id, at, after FROM audit_log WHERE action = 'comms.email_check'" in section
+    assert "actor, after" not in section
+    # Setting names only: nothing after the `=` of a Graph or email setting, and no address shape.
+    assert not re.search(r"^\s*(GRAPH_[A-Z_]+|EMAIL_FROM|EMAIL_MODE)=(?!graph$)\S", section, re.M)
+    assert not re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", section)

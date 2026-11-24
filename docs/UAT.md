@@ -306,11 +306,19 @@ Run every command from the release checkout, the one the server was deployed or 
 
 ## Email through Graph (BLD-A243)
 
-Step 9 of **Switching to full mode (mode A)** comes here. Notifications go out through the KFin service mailbox with Microsoft Graph (DEC-131), not an SMTP relay: the worker signs in as its app registration (client credentials) and sends each email from the mailbox, which keeps a copy in its Sent Items for IT's retention policy. The web app never gets the secret. `comms.email` stays off until step 4, so nobody gets an email before the test message has passed. You need the Graph row under **What you need first**.
+Step 9 of **Switching to full mode (mode A)** comes here. Notifications go out through the KFin service mailbox with Microsoft Graph (DEC-131), not an SMTP relay: the worker signs in as its app registration (client credentials) and sends each email from the mailbox, which keeps a copy in its Sent Items for IT's retention policy. The web app never gets the secret. `comms.email` is off from step 1 until step 4, so nobody gets an email before the test message has passed. An install leaves it on, so step 1 checks it first. You need the Graph row under **What you need first**.
 
 Never paste an env file, the secret, the tenant ID or a mailbox address to lane A. Nothing below prints one: the commands print setting names, counts, codes and IDs.
 
-1. **Set the values.** In the app env file, these lines (with IT's values after the `=`; `EMAIL_FROM` is the display name and the mailbox's own address, for example `1% Club <the mailbox's address>`):
+1. **Switch `comms.email` off, then set the values.** An install leaves `comms.email` on unless someone has switched it off since. Read it first:
+
+   ```bash
+   docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list
+   ```
+
+   If it reads `comms.email on`, an admin switches it off now from the Admin page, with a reason (for example "Email through Graph: off until the test message passes"), and tells the product lead: emails queue meanwhile and in-app messages carry on. Read the list again.
+
+   In the app env file, these lines (with IT's values after the `=`; `EMAIL_FROM` is the display name and the mailbox's own address, for example `1% Club <the mailbox's address>`):
 
    ```
    EMAIL_MODE=graph
@@ -327,7 +335,7 @@ Never paste an env file, the secret, the tenant ID or a mailbox address to lane 
    sed -nE 's/^(GRAPH_[A-Z_]+|EMAIL_FROM)=.+$/database env file: \1 set/p' /secure/.env.uat.db
    ```
 
-   Paste back: the lines it prints. Pass: `EMAIL_MODE=graph`; `app env file:` lines for `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_SERVICE_MAILBOX` and `EMAIL_FROM`, and none for `GRAPH_CLIENT_SECRET`; one `database env file: GRAPH_CLIENT_SECRET set` line.
+   Paste back: the `comms.email` line from each switch list read, and the lines the two `sed` commands print. Pass: `comms.email off` on the last read; `EMAIL_MODE=graph`; `app env file:` lines for `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_SERVICE_MAILBOX` and `EMAIL_FROM`, and none for `GRAPH_CLIENT_SECRET`; one `database env file: GRAPH_CLIENT_SECRET set` line.
 
 2. **Run the preflight, then restart the worker**, from the release checkout, with the same compose wrapper as step 5 of full mode. The worker reads its settings only when it starts. The web app reads none of these settings and needs no restart.
 
@@ -345,10 +353,10 @@ Never paste an env file, the secret, the tenant ID or a mailbox address to lane 
 
    ```bash
    docker exec kfin-ideas-uat-worker-1 python -m comms.email_check --to <test mailbox> --actor ops:<staff code>
-   docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT id, at, actor, after FROM audit_log WHERE action = 'comms.email_check' ORDER BY id DESC LIMIT 1"
+   docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT id, at, after FROM audit_log WHERE action = 'comms.email_check' ORDER BY id DESC LIMIT 1"
    ```
 
-   The first command prints one line, never the address. Then IT looks in the test mailbox: the message should arrive from the service mailbox within a few minutes. Paste back: the line, the audit row (its ID, time, actor and result) and whether the message arrived (yes or no). Pass: `email check: sent (Graph accepted it, HTTP 202)`, the audit row's `after` reads `{"result": "sent", "http_status": 202}`, and yes. Otherwise the line names what to fix, then restart the worker (step 2) and run the check again:
+   The first command prints one line, never the address. Then IT looks in the test mailbox: the message should arrive from the service mailbox within a few minutes. Paste back: the line, the audit row (its ID, time and result) and whether the message arrived (yes or no). Pass: `email check: sent (Graph accepted it, HTTP 202)`, the audit row's `after` reads `{"result": "sent", "http_status": 202}`, and yes. Otherwise the line names what to fix, then restart the worker (step 2) and run the check again:
    - `email check: failed graph_token_4xx …`: the tenant ID, the client ID or the secret is wrong, or the secret has expired;
    - `email check: failed graph_4xx (HTTP 403)`: the permission has no admin consent, or the access policy does not cover the mailbox;
    - `email check: failed graph_4xx (HTTP 404)`: `GRAPH_SERVICE_MAILBOX` is not the mailbox's address;
@@ -367,7 +375,7 @@ Never paste an env file, the secret, the tenant ID or a mailbox address to lane 
 
    Paste back: both counts and the switch list. Pass: `comms.email on`; `email` `sent` has grown and `queued` has fallen; no `failed` row with a `graph_` code has appeared. A `queued` row with `graph_429` or `graph_5xx` is Graph asking to wait: it goes again by itself within 15 minutes. If `failed` rows with `graph_4xx` or `graph_token_4xx` appear, an admin switches `comms.email` off at once, with a reason, and IT sends the counts to lane A.
 
-**Pass for this section:** the env lines as step 1 says, `preflight: ok`, the worker `Healthy`, `email check: sent (Graph accepted it, HTTP 202)` with its audit row and the message in the test mailbox, then `comms.email on` with email being sent and no `graph_` failure.
+**Pass for this section:** `comms.email off` before the worker restarts, the env lines as step 1 says, `preflight: ok`, the worker `Healthy`, `email check: sent (Graph accepted it, HTTP 202)` with its audit row and the message in the test mailbox, then `comms.email on` with email being sent and no `graph_` failure.
 
 **To stop email at any time:** an admin switches `comms.email` off on the Admin page, with a reason. That is instant: emails queue again and in-app messages carry on. Non-delivery reports for addresses that bounce land in the service mailbox's inbox; 1% Club does not read them, so the automatic 5% bounce switch-off does not see them. IT tells lane A if they pile up.
 
