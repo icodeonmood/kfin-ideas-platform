@@ -74,6 +74,10 @@ def test_bld_a249_note_gives_the_three_reads_the_timing_and_the_pass_line() -> N
     assert "after the next :30 past the hour" in note
     assert "send the reads to lane A" in note
     assert "Try again asks for the file again" in note
+    # Lane C's rollback check: the database goes back, the file store does not.
+    assert "the database goes back to the backup, but the file store does not" in note
+    assert "comes back in its box without its copy: it does not open, and Remove clears it" in note
+    assert "`attachments.rejected_retention_hours` in the company repo's `rules/thresholds.md`" in note
     # Plain words, no secret, no real address.
     assert not re.search(r"@kfintech\.com|PASSWORD=|SECRET", note)
 
