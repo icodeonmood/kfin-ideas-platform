@@ -3,6 +3,9 @@
  * sharer's Answer screen. Ideas are written straight into this run's database for the seeded sharer, because the
  * share journey is another lane's; everything after that goes through the screens. Synthetic data only.
  */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { Client } from "pg";
@@ -13,6 +16,7 @@ import {
   navLabels,
   PERSONAS,
   PHONE_TABS,
+  settleMotion,
   signIn,
 } from "./helpers";
 import { carrying, storageCarries, storageNames, watchRequestUrls } from "./search-words";
@@ -755,4 +759,296 @@ test("BLD-B272, S-R2.panel, J-REVIEW/A1: a queued question is still there after 
   await r.reload();
   await expect(r.getByRole("button", { name: "Decide on this idea" })).toBeVisible();
   await expect(r.getByRole("button", { name: /^Ask .* first/ })).not.toContainText("ready");
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-b279-1, never merged: BLD-B279 on S-R3, the answer box's "+" then mic inside its frame
+ * in lane D's Field tools slot (BLD-D029). At 1440, 1024 and 640 (desktop) and 360 and 320 (phone-360): the tools at
+ * the frame's foot on the right and the words stopping before them; the frame's focus ring from the box, the "+" and
+ * the mic; a long answer scrolling beside the tools; the mic pressed (blue) with "Listening" under the box, then the
+ * line its stop leaves; the mic blocked with its alert under the box; the "+" opening the system's chooser and the
+ * file's row under the box. A quiet synthetic tone stands in for a microphone and this test answers the note's
+ * routes, so nothing is recorded or sent anywhere. Screenshots and measures go to test-results/qa-shots.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+const QA_BLUE = "rgb(57, 93, 237)";
+
+async function qaAnswerBox(page: Page) {
+  return page.evaluate(() => {
+    const box = (el: Element | null | undefined) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height };
+    };
+    const b = document.querySelector(".ans-box");
+    const frame = b?.querySelector(".fld-frame");
+    const text = frame?.querySelector<HTMLTextAreaElement>("textarea");
+    const mic = b?.querySelector<HTMLElement>(".fld-tools .ans-mic");
+    const lines = [...(b?.querySelectorAll(":scope > .ans-vline, :scope > .ans-vlive") ?? [])]
+      .filter((l) => (l.textContent ?? "").trim() !== "")
+      .map((l) => ({ text: (l.textContent ?? "").trim(), at: box(l)! }));
+    const dock = [...document.querySelectorAll<HTMLElement>(".dock")].find(
+      (d) => getComputedStyle(d).position === "fixed",
+    );
+    const html = document.documentElement;
+    return {
+      vw: window.innerWidth,
+      vh: window.innerHeight,
+      sideways: html.scrollWidth - html.clientWidth,
+      sheet: box(b?.closest(".ans-sheet")),
+      frame: box(frame),
+      ring: frame ? getComputedStyle(frame).borderTopColor : "",
+      text: box(text),
+      scroll: text ? { sh: text.scrollHeight, ch: text.clientHeight, st: text.scrollTop } : null,
+      plus: box(frame?.querySelector(".fld-tools .attach-btn")),
+      mic: box(mic),
+      micBg: mic ? getComputedStyle(mic).backgroundColor : "",
+      micClass: mic?.className ?? "",
+      micPressed: mic?.getAttribute("aria-pressed") ?? "",
+      micName: mic?.getAttribute("aria-label") ?? "",
+      help: box(b?.querySelector(".help")),
+      lines,
+      blk: box(document.querySelector(".ans-blk")),
+      files: box(document.querySelector(".ans-files .flist")),
+      fileRows: [...document.querySelectorAll(".ans-files .frow")].map((r) => box(r)!),
+      dockTop: dock ? dock.getBoundingClientRect().top : null,
+      blue: (() => {
+        const i = document.createElement("i");
+        i.style.background = "var(--blue)";
+        document.body.append(i);
+        const c = getComputedStyle(i).backgroundColor;
+        i.remove();
+        return c;
+      })(),
+    };
+  });
+}
+
+test("QA (lane D, never merged): BLD-B279, S-R3's \"+\" and mic inside the answer box's frame at the usual sizes", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(420_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const project = testInfo.project.name;
+  const sizes =
+    project === "phone-360"
+      ? ([
+          [360, 740],
+          [320, 640],
+        ] as const)
+      : ([
+          [1440, 900],
+          [1024, 768],
+          [640, 900],
+        ] as const);
+  const log: Record<string, unknown> = {};
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const ideaId = await sharedIdea(sharer.code, `QA lane D B279 (${project} ${Date.now()})`);
+  const sent = await reviewer.page.request.post(`/api/desk/ideas/${ideaId}/question-sets`, {
+    data: {
+      questions: [{ part: "often", text: "How many calls a week reach the branch about it?" }],
+      time_to_answer: "3d",
+    },
+  });
+  expect(sent.status()).toBe(201);
+  const s = sharer.page;
+
+  // A quiet synthetic tone for a microphone, or a refusal when the test asks for the blocked look
+  await s.addInitScript(() => {
+    if (!navigator.mediaDevices) return;
+    navigator.mediaDevices.getUserMedia = async () => {
+      let refuse = false;
+      try {
+        refuse = localStorage.getItem("qa-mic") === "refuse";
+      } catch {
+        refuse = false;
+      }
+      if (refuse) throw new DOMException("Permission denied", "NotAllowedError");
+      const ctx = new AudioContext();
+      const tone = ctx.createOscillator();
+      const quiet = ctx.createGain();
+      quiet.gain.value = 0.01;
+      const out = ctx.createMediaStreamDestination();
+      tone.connect(quiet).connect(out);
+      tone.start();
+      return out.stream;
+    };
+  });
+  // The note's routes, answered here: it opens, its chunks are taken, and its end is refused (a line under the box)
+  await s.route("**/api/questions/*/answer/voice/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/start"))
+      return route.fulfill({ status: 201, json: { id: "6c1f6a0e-0000-4000-8000-0000000002f9" } });
+    if (path.endsWith("/chunk")) return route.fulfill({ status: 200, json: {} });
+    return route.fulfill({ status: 503, json: { error: { code: "unavailable", message: "" } } });
+  });
+
+  const field = s.getByRole("textbox", { name: "Your answer to question 1" });
+  const plus = s.getByRole("button", { name: "Attach files to this answer", exact: true });
+  const mic = s.locator(".ans-box .ans-mic");
+  const frameLoc = s.locator(".ans-box .fld-frame");
+  const open = async () => {
+    await s.goto(`/ideas/${ideaId}/answer`);
+    await expect(field).toBeVisible();
+    await settleMotion(s);
+    await frameLoc.evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await settleMotion(s);
+  };
+  /** Measures and shoots; the tools' place is checked every time. */
+  const snap = async (name: string) => {
+    await settleMotion(s);
+    const g = await qaAnswerBox(s);
+    log[name] = g;
+    await s.screenshot({ path: join(QA_SHOTS, `${name}.png`) });
+    expect.soft(g.sideways, `${name}: no sideways scroll`).toBeLessThanOrEqual(0);
+    expect.soft(g.frame, `${name}: the frame is there`).not.toBeNull();
+    if (!g.frame || !g.plus || !g.mic || !g.text) return g;
+    for (const [what, b] of [
+      ['the "+"', g.plus],
+      ["the mic", g.mic],
+    ] as const) {
+      expect.soft(b.width, `${name}: ${what} is 44px`).toBeCloseTo(44, 0);
+      expect.soft(b.height, `${name}: ${what} is 44px`).toBeCloseTo(44, 0);
+      expect.soft(b.left, `${name}: ${what} is inside the frame`).toBeGreaterThanOrEqual(g.frame.left);
+      expect.soft(b.right, `${name}: ${what} is inside the frame`).toBeLessThanOrEqual(g.frame.right);
+      expect.soft(b.top, `${name}: ${what} is inside the frame`).toBeGreaterThanOrEqual(g.frame.top);
+      expect.soft(b.bottom, `${name}: ${what} is inside the frame`).toBeLessThanOrEqual(g.frame.bottom);
+    }
+    expect.soft(g.plus.right, `${name}: the "+" comes before the mic`).toBeLessThanOrEqual(g.mic.left + 0.5);
+    expect
+      .soft(g.frame.right - g.mic.right, `${name}: the mic is 5px in from the frame's right`)
+      .toBeCloseTo(5, 0);
+    expect
+      .soft(g.frame.bottom - g.mic.bottom, `${name}: the mic is 5px up from the frame's foot`)
+      .toBeCloseTo(5, 0);
+    expect
+      .soft(Math.abs(g.plus.bottom - g.mic.bottom), `${name}: the "+" and mic share the foot`)
+      .toBeLessThan(1);
+    expect
+      .soft(g.text.right, `${name}: the words stop before the "+"`)
+      .toBeLessThanOrEqual(g.plus.left + 0.5);
+    expect.soft(g.text.width, `${name}: the words keep room`).toBeGreaterThanOrEqual(120);
+    if (g.sheet) {
+      expect
+        .soft(g.frame.left, `${name}: the frame starts inside its sheet`)
+        .toBeGreaterThanOrEqual(g.sheet.left);
+      expect
+        .soft(g.frame.right, `${name}: the frame ends inside its sheet`)
+        .toBeLessThanOrEqual(g.sheet.right);
+    }
+    for (const l of g.lines) {
+      expect.soft(l.at.top, `${name}: "${l.text}" is under the box`).toBeGreaterThanOrEqual(g.frame.bottom);
+      expect
+        .soft(Math.abs(l.at.left - g.frame.left), `${name}: "${l.text}" is in line with the box`)
+        .toBeLessThan(1);
+    }
+    return g;
+  };
+
+  for (const [w, h] of sizes) {
+    const at = `b279-${w}x${h}`;
+    await s.setViewportSize({ width: w, height: h });
+    await s.evaluate(() => {
+      try {
+        localStorage.removeItem("qa-mic");
+      } catch {
+        // not on the app's page yet
+      }
+    });
+    await open();
+
+    // At rest: the "+" then the mic at the frame's foot on the right; the frame's own border; axe
+    const rest = await snap(`${at}-1-rest`);
+    expect.soft(rest.ring, `${at}: no ring at rest`).not.toBe(QA_BLUE);
+    if (rest.dockTop !== null && rest.frame)
+      expect.soft(rest.frame.bottom, `${at}: the box is clear of the dock`).toBeLessThanOrEqual(rest.dockTop);
+    await expectNoSeriousAxeIssues(s);
+
+    // The frame's ring from the box, then the "+", then the mic (the tab order after the words)
+    await field.focus();
+    await expect(frameLoc).toHaveCSS("border-top-color", QA_BLUE);
+    await s.keyboard.press("Tab");
+    await expect(plus).toBeFocused();
+    await expect(frameLoc).toHaveCSS("border-top-color", QA_BLUE);
+    await s.keyboard.press("Tab");
+    await expect(mic).toBeFocused();
+    await expect(frameLoc).toHaveCSS("border-top-color", QA_BLUE);
+    await expect(mic).toHaveCSS("outline-style", "solid");
+    await snap(`${at}-2-focus-mic`);
+
+    // A long answer scrolls in the box beside the tools, which stay at the foot
+    await field.fill(
+      Array.from({ length: 14 }, (_, i) => `Line ${i + 1}: about 15 calls a week reach the branch.`).join(
+        "\n",
+      ),
+    );
+    await field.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    const long = await snap(`${at}-3-long`);
+    expect
+      .soft(long.scroll?.sh ?? 0, `${at}: the long answer scrolls inside the box`)
+      .toBeGreaterThan(long.scroll?.ch ?? 0);
+    await field.fill("");
+
+    // The mic pressed: blue, "Listening" under the box; then its stop leaves a line under the box
+    await mic.click();
+    await expect
+      .soft(mic, `${at}: the mic is pressed while it listens`)
+      .toHaveAttribute("aria-pressed", "true", {
+        timeout: 10_000,
+      });
+    if ((await mic.getAttribute("aria-pressed")) === "true") {
+      await expect(s.locator(".ans-box > .ans-vline")).not.toBeEmpty();
+      const rec = await snap(`${at}-4-recording`);
+      expect.soft(rec.micBg, `${at}: the pressed mic is blue`).toBe(rec.blue);
+      await expectNoSeriousAxeIssues(s);
+      await mic.click();
+      await expect(mic).toHaveAttribute("aria-pressed", "false", { timeout: 20_000 });
+      await snap(`${at}-5-after-stop`);
+    } else {
+      await snap(`${at}-4-not-recording`); // the capture did not start here: the shot and its lines say why
+    }
+
+    // The mic blocked: the warning look inside the frame, the alert under the box
+    await s.evaluate(() => localStorage.setItem("qa-mic", "refuse"));
+    await open();
+    await mic.click();
+    await expect(s.locator(".ans-blk")).toBeVisible();
+    const blk = await snap(`${at}-6-blocked`);
+    expect.soft(blk.micClass, `${at}: the mic takes the blocked look`).toContain("blk");
+    if (blk.blk && blk.frame)
+      expect.soft(blk.blk.top, `${at}: the alert is under the box`).toBeGreaterThanOrEqual(blk.frame.bottom);
+    await expectNoSeriousAxeIssues(s);
+    await s.evaluate(() => localStorage.removeItem("qa-mic"));
+
+    // The "+" opens the system's chooser; a synthetic file's row follows under the box (once, then it stays)
+    await open();
+    if (!(await s.locator(".ans-files .frow").count())) {
+      const chooser = s.waitForEvent("filechooser");
+      await plus.click();
+      await (
+        await chooser
+      ).setFiles({
+        name: "branch-call-count-week-47.md",
+        mimeType: "text/markdown",
+        buffer: Buffer.from("Synthetic: 15 calls."),
+      });
+      await expect(s.locator(".ans-files .frow")).toHaveCount(1, { timeout: 20_000 });
+    }
+    await frameLoc.evaluate((el) => el.scrollIntoView({ block: "start" }));
+    const files = await snap(`${at}-7-file`);
+    if (files.files && files.frame) {
+      expect
+        .soft(files.files.top, `${at}: the file's row is under the box`)
+        .toBeGreaterThanOrEqual(files.frame.bottom);
+      if (files.sheet)
+        expect
+          .soft(files.files.right, `${at}: the row ends inside the sheet`)
+          .toBeLessThanOrEqual(files.sheet.right + 0.5);
+    }
+    await expectNoSeriousAxeIssues(s);
+  }
+  writeFileSync(join(QA_SHOTS, `b279-${project}.json`), JSON.stringify(log, null, 2));
+  await sharer.page.context().close();
+  await reviewer.page.context().close();
 });
