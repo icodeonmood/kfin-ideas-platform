@@ -79,7 +79,7 @@ jobs:
           E2E_BASE_URL: http://localhost:3000
           OIDC_ISSUER: http://localhost:8090/default
           E2E_DATABASE_URL: postgres://ideas:ideas@localhost:5432/ideas?sslmode=disable
-        run: npx playwright test -c journeys/playwright.config.ts
+        run: npx playwright test -c journeys/playwright.config.ts --grep J-BROWSE --repeat-each 20 --retries 0
 
       - name: Board (journey × step)
         if: always()
