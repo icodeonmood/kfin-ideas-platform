@@ -15,7 +15,8 @@
  *              were kept
  *   failed     `reason` is a code (no copy is drawn for it); typing always works
  *
- * Call `start()` from the mic's click handler. The microphone is allowed only on /share (next.config.ts).
+ * Call `start()` from the mic's click handler. The microphone is allowed on every app page, `microphone=(self)`
+ * (next.config.ts, DEC-128).
  */
 import { useEffect, useState, useSyncExternalStore } from "react";
 
