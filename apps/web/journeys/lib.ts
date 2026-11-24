@@ -226,6 +226,100 @@ export function ideaUrl(idea: { ref: string | null; uuid: string }, sub = ""): s
   return `/ideas/${idea.ref ?? idea.uuid}${sub}`;
 }
 
+/** Mailpit in dev and CI (infra/docker-compose.yml): what a person reads in their email. */
+const MAILPIT = (process.env.MAILPIT_URL || "http://localhost:8025").replace(/\/$/, "");
+
+/** Where the 1% Club's email reaches a seeded person: club_seed's `_email`, first.last.1pc at the seed's
+ * domain. */
+export const CLUB_EMAIL = {
+  pallavi: "pallavi.joshi.1pc@kfintech.example",
+  faisal: "faisal.ansari.1pc@kfintech.example",
+} as const;
+
+/** One email as Mailpit holds it: the plain-text part with LF line ends, and the HTML part. */
+export type Mail = {
+  fromName: string;
+  fromAddress: string;
+  to: string[];
+  subject: string;
+  text: string;
+  html: string;
+};
+
+type MailpitAddress = { Name?: string; Address?: string };
+type MailpitMessage = {
+  From?: MailpitAddress;
+  To?: MailpitAddress[];
+  Subject?: string;
+  Text?: string;
+  HTML?: string;
+};
+
+/**
+ * The newest email to `address` with this subject whose plain text has `has` (an idea's title), polled until
+ * it comes. The worker sends queued email every 20 s and reads `comms.email` through a 10 s cache (BLD-A243),
+ * so 60 s is ample for an `immediate` item, which goes at any hour; a routine one waits for working hours and
+ * is not for a journey.
+ */
+export async function mailTo(page: Page, address: string, subject: string, has: string): Promise<Mail> {
+  const seen: { mail?: Mail } = {};
+  await expect
+    .poll(
+      async () => {
+        const query = encodeURIComponent(`to:${address}`);
+        const res = await page.request.get(`${MAILPIT}/api/v1/search?query=${query}`);
+        const list = (await res.json()) as { messages?: Array<{ ID?: string; Subject?: string }> };
+        for (const m of list.messages ?? []) {
+          if (m.Subject !== subject || !m.ID) continue;
+          const one = await page.request.get(`${MAILPIT}/api/v1/message/${m.ID}`);
+          const full = (await one.json()) as MailpitMessage;
+          const text = (full.Text ?? "").replace(/\r\n/g, "\n");
+          if (!text.includes(has)) continue;
+          seen.mail = {
+            fromName: full.From?.Name ?? "",
+            fromAddress: full.From?.Address ?? "",
+            to: (full.To ?? []).map((t) => t.Address ?? ""),
+            subject: full.Subject ?? "",
+            text,
+            html: full.HTML ?? "",
+          };
+          return true;
+        }
+        return false;
+      },
+      { message: `an email to ${address}: "${subject}"`, timeout: 60_000, intervals: [2_000] },
+    )
+    .toBe(true);
+  if (!seen.mail) throw new Error(`the email to ${address} was not kept`);
+  return seen.mail;
+}
+
+/** The sender on every 1% Club email in dev and CI (comms/send.py; BLD-A243 keeps it as EMAIL_FROM's
+ * default). */
+const CLUB_FROM = { name: "1% Club", address: "onepercentclub@kfintech.example" } as const;
+
+/**
+ * What every 1% Club email holds, whatever it says (DEC-061, BLD-125): it is from the 1% Club, to this
+ * person only, signed by the 1% Club team, and tracks no one: its only images are the 1% Club's mark, one
+ * file for everyone.
+ */
+export function expectClubMail(mail: Mail, to: string): void {
+  expect(mail.fromName).toBe(CLUB_FROM.name);
+  expect(mail.fromAddress).toBe(CLUB_FROM.address);
+  expect(mail.to).toEqual([to]);
+  expect(mail.text).toContain("The 1% Club team");
+  for (const m of mail.html.matchAll(/<img\b[^>]*\bsrc="([^"]*)"/gi)) {
+    expect(m[1], "an image is the 1% Club's mark, never a tracker").toMatch(/^https?:\/\/[^?#\s]+\.png$/);
+  }
+}
+
+/** Where a link in the plain text goes ("Read the decision: https://…"); a step reads its path. */
+export function mailLink(mail: Mail, label: string): URL {
+  const at = mail.text.match(new RegExp(`^${label}: (\\S+)$`, "m"))?.[1];
+  if (!at) throw new Error(`the email has a "${label}" link`);
+  return new URL(at, "http://app.invalid");
+}
+
 /** A draft on Tell it (`S-04B`) or Check it (`sub` = "/check", `S-05`). */
 export function draftUrl(idea: { uuid: string }, sub = ""): string {
   return `/share/${idea.uuid}${sub}`;
