@@ -15,6 +15,7 @@ import {
   PHONE_TABS,
   signIn,
 } from "./helpers";
+import { expectHeld, expectNoGlideRunning, glidingRow, slowGlides } from "./glide";
 import { carrying, storageCarries, storageNames, watchRequestUrls } from "./search-words";
 
 const DATABASE_URL =
@@ -755,4 +756,107 @@ test("BLD-B272, S-R2.panel, J-REVIEW/A1: a queued question is still there after 
   await r.reload();
   await expect(r.getByRole("button", { name: "Decide on this idea" })).toBeVisible();
   await expect(r.getByRole("button", { name: /^Ask .* first/ })).not.toContainText("ready");
+});
+
+/**
+ * BLD-D038: an idea that sorts first by Area ("Accounts") and last by decide-by (20 days out), so a re-sort between the
+ * two moves its row a long way down the desk, from a place on screen.
+ */
+async function glideIdea(code: string, title: string): Promise<string> {
+  return db(async (c) => {
+    const r = await c.query<{ idea_id: string; id: string }>(
+      "INSERT INTO ideas (idea_id, contributor_code, status, title, summary, often, affects, area, city, kind, " +
+        "shared_at, decide_by, edit_closes_at) VALUES (next_idea_ref(), $1, 'with_review_desk', $2, $3, " +
+        "'About 40 calls a day at one branch.', ARRAY['Investors'], 'Accounts', 'Hyderabad', 'problem', " +
+        "now(), now() + interval '20 days', now() + interval '3 days') RETURNING idea_id, id",
+      [code, title, "Branch slips ask for the folio number twice, so investors fill the form again."],
+    );
+    await c.query(
+      "INSERT INTO crew_members (idea_uuid, contributor_code, role, via) VALUES ($1, $2, 'lead', 'shared')",
+      [r.rows[0]!.id, code],
+    );
+    return r.rows[0]!.idea_id;
+  });
+}
+
+/** The desk's rows, desktop table and phone cards alike (S-R1.rules/6). */
+const DESK_ROWS = ".rd-table tbody";
+
+/** The reviewer on To review sorted by Area, with the glide idea on screen. The list read on arrival comes from the
+ * page's own code, so once it lands the page has hydrated and a press is the page's (as BLD-A252's spec waits). */
+async function deskByArea(browser: Browser, title: string): Promise<Page> {
+  const sharer = await person(browser, PERSONAS.contributor);
+  await glideIdea(sharer.code, title);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const r = reviewer.page;
+  const arrived = r.waitForResponse(
+    (res) => new URL(res.url()).pathname === "/api/desk" && res.request().method() === "GET" && res.ok(),
+  );
+  await r.goto("/desk?tab=to_review&sort=area");
+  await arrived;
+  await expect(r.getByRole("heading", { level: 1, name: "Review desk" })).toBeVisible();
+  await expect(r.getByRole("main").getByRole("link", { name: title, exact: true })).toBeVisible();
+  await r.locator(`${DESK_ROWS} tr`).first().scrollIntoViewIfNeeded();
+  return r;
+}
+
+/** C-SORTS to `to`, waiting for that list's read: its pressed button on a desktop; on a phone the one cycler steps
+ * there (time left, decide by, area, and round). On To review, time left and decide by order the rows alike. */
+async function deskSort(p: Page, to: "Decide by" | "Area"): Promise<void> {
+  const wide = p.getByRole("button", { name: to, exact: true });
+  const phone = !(await wide.isVisible());
+  const want = to === "Area" ? "area" : phone ? "time_left" : "decide_by";
+  const listed = p.waitForResponse((res) => {
+    const u = new URL(res.url());
+    return (
+      u.pathname === "/api/desk" &&
+      res.request().method() === "GET" &&
+      res.ok() &&
+      u.searchParams.get("sort") === want
+    );
+  });
+  if (!phone) await wide.click();
+  else
+    for (const from of to === "Area" ? ["time left", "decide by"] : ["area"])
+      await p.getByRole("button", { name: `Sorted by ${from}`, exact: true }).click();
+  await listed;
+}
+
+test("BLD-D038, F-MOTION.rules/5 (J-BROWSE/4): a press holds the gliding row; the click opens it", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const title = `Accounts slips ask for the folio twice (${testInfo.project.name} ${Date.now()})`;
+  const r = await deskByArea(browser, title);
+  await slowGlides(r);
+
+  // Area to Decide by: rows glide to their new places; the press lands on a row's link where it is drawn
+  await deskSort(r, "Decide by");
+  const row = await glidingRow(r, DESK_ROWS);
+  await r.mouse.move(row.x, row.y);
+  await r.mouse.down();
+  await expectHeld(r, DESK_ROWS, row);
+  await r.mouse.up();
+  await r.waitForURL(new RegExp(`/desk/ideas/${row.id}$`), { timeout: 10_000 });
+});
+
+test("BLD-D038, F-MOTION.rules/5 (J-BROWSE/4): a key or the wheel ends the desk's glide at once", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const title = `Accounts slips repeat the PAN box (${testInfo.project.name} ${Date.now()})`;
+  const r = await deskByArea(browser, title);
+  await slowGlides(r);
+
+  // A key (Shift) during the glide: nothing still runs on the next frame
+  await deskSort(r, "Decide by");
+  await glidingRow(r, DESK_ROWS, { hit: false });
+  await r.keyboard.press("Shift");
+  await expectNoGlideRunning(r, DESK_ROWS);
+
+  // A fresh glide, back to Area: the wheel ends it the same way
+  await deskSort(r, "Area");
+  await glidingRow(r, DESK_ROWS, { hit: false });
+  await r.mouse.wheel(0, 1);
+  await expectNoGlideRunning(r, DESK_ROWS);
 });
