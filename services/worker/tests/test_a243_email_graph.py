@@ -69,7 +69,9 @@ def graph_mode(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 class FakeGraph:
     """Answers the token endpoint with tok-1, tok-2, … and sendMail with the queued answers, in order."""
 
-    def __init__(self, *sends: httpx.Response | Exception, token: httpx.Response | None = None) -> None:
+    def __init__(
+        self, *sends: httpx.Response | BaseException, token: httpx.Response | BaseException | None = None
+    ) -> None:
         self.requests: list[httpx.Request] = []
         self.sends = list(sends)
         self.token_answer = token
@@ -78,13 +80,15 @@ class FakeGraph:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if request.url.host == LOGIN:
+            if isinstance(self.token_answer, BaseException):
+                raise self.token_answer
             if self.token_answer is not None:
                 return self.token_answer
             self.tokens += 1
             return httpx.Response(200, json={"access_token": f"tok-{self.tokens}", "expires_in": 3599})
         assert request.url.host == GRAPH  # never any other host
         answer = self.sends.pop(0)
-        if isinstance(answer, Exception):
+        if isinstance(answer, BaseException):
             raise answer
         return answer
 
@@ -94,7 +98,9 @@ class FakeGraph:
 
 @pytest.fixture
 def fake(monkeypatch: pytest.MonkeyPatch, graph_mode: None) -> Callable[..., FakeGraph]:
-    def install(*sends: httpx.Response | Exception, token: httpx.Response | None = None) -> FakeGraph:
+    def install(
+        *sends: httpx.Response | BaseException, token: httpx.Response | BaseException | None = None
+    ) -> FakeGraph:
         g = FakeGraph(*sends, token=token)
         monkeypatch.setattr(graph, "transport", httpx.MockTransport(g))
         return g
@@ -146,29 +152,78 @@ def test_a243_a_401_drops_the_token_and_tries_once_more(fake: Callable[..., Fake
     assert [r.headers["authorization"] for r in g.to(GRAPH)] == ["Bearer tok-1", "Bearer tok-2"]
 
 
-def test_a243_a_second_401_is_final_and_never_a_third_try(fake: Callable[..., FakeGraph]) -> None:
+def test_a243_a1_a_second_401_is_a_mailbox_fault_and_never_a_third_try(
+    fake: Callable[..., FakeGraph],
+) -> None:
     g = fake(httpx.Response(401), httpx.Response(401), ok())
-    with pytest.raises(graph.EmailRefused) as refused:
+    with pytest.raises(graph.MailboxFault) as fault:
         send.deliver(TO, MAIL)
-    assert (refused.value.code, refused.value.status) == ("graph_4xx", 401)
+    assert (fault.value.code, fault.value.status) == ("graph_4xx", 401)
     assert len(g.to(GRAPH)) == 2 and len(g.to(LOGIN)) == 2
 
 
 @pytest.mark.parametrize(
-    ("status", "error", "code"),
-    [(400, graph.EmailRefused, "graph_token_4xx"), (401, graph.EmailRefused, "graph_token_4xx"),
-     (503, graph.EmailRetry, "graph_token_5xx"), (429, graph.EmailRetry, "graph_token_429")],
+    ("answer", "error", "code", "status"),
+    [(httpx.Response(400), graph.MailboxFault, "graph_token_4xx", 400),
+     (httpx.Response(401), graph.MailboxFault, "graph_token_4xx", 401),
+     (httpx.Response(503), graph.MailboxFault, "graph_token_5xx", 503),
+     (httpx.ReadTimeout("timed out"), graph.MailboxFault, "graph_token_timeout", None),
+     (httpx.ConnectError("no route"), graph.MailboxFault, "graph_token_unreachable", None),
+     (httpx.Response(429, headers={"Retry-After": "30"}), graph.EmailRetry, "graph_token_429", 429)],
 )  # fmt: skip
-def test_a243_a_refused_token_follows_the_same_rules_and_nothing_is_sent(
-    fake: Callable[..., FakeGraph], status: int, error: type[Exception], code: str
+def test_a243_a1_a_failed_token_stops_everything_but_a_429_waits(
+    fake: Callable[..., FakeGraph], answer: Any, error: type[Exception], code: str, status: int | None
 ) -> None:
-    g = fake(
-        ok(), token=httpx.Response(status, json={"error": "invalid_client", "error_description": SECRET})
-    )
+    if isinstance(answer, httpx.Response):
+        answer = httpx.Response(
+            answer.status_code,
+            headers={k: v for k, v in answer.headers.items() if k.lower() == "retry-after"},
+            json={"error": "invalid_client", "error_description": SECRET},
+        )
+    g = fake(ok(), token=answer)
     with pytest.raises(error) as raised:
         send.deliver(TO, MAIL)
-    assert getattr(raised.value, "code", None) == code and g.to(GRAPH) == []
-    assert str(raised.value) == code  # never Graph's answer
+    exc: Any = raised.value
+    assert (exc.code, exc.status) == (code, status) and g.to(GRAPH) == []
+    assert str(exc) == code  # never Graph's answer
+    assert (graph.wait_left() > 0) is (error is graph.EmailRetry)
+    if error is graph.EmailRetry:
+        assert exc.spends_try is False and exc.wait_s == 30
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{"access_token": "", "expires_in": 3599}, {"access_token": 1234, "expires_in": 3599}, {"expires_in": 3599},
+     ["tok-1"], None],
+)  # fmt: skip
+def test_a243_a6_a_token_that_is_not_a_string_is_graph_token_bad_and_never_kept(
+    fake: Callable[..., FakeGraph], payload: Any
+) -> None:
+    answer = httpx.Response(200, text="not json") if payload is None else httpx.Response(200, json=payload)
+    g = fake(ok(), ok(), token=answer)
+    for _ in range(2):
+        with pytest.raises(graph.MailboxFault) as fault:
+            send.deliver(TO, MAIL)
+        assert fault.value.code == "graph_token_bad"
+    assert len(g.to(LOGIN)) == 2 and g.to(GRAPH) == []  # asked again each time: nothing was cached
+
+
+def test_a243_a6_one_client_for_the_whole_process(fake: Callable[..., FakeGraph]) -> None:
+    import threading
+
+    fake(ok(), ok())
+    send.deliver(TO, MAIL)
+    first = graph._client
+    send.deliver(TO, MAIL)
+    assert first is not None and graph._client is first
+    assert first.timeout.read == graph.TIMEOUT_S and first.follow_redirects is False
+    seen: list[Any] = []
+    threads = [threading.Thread(target=lambda: seen.append(graph._http())) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert all(c is first for c in seen)
 
 
 # ---- sendMail: the URL, the headers and the MIME body exactly as built ----------------------------------------------
@@ -202,42 +257,63 @@ def test_a243_the_mailbox_is_quoted_in_the_path(
     assert req.url.host == GRAPH and not req.url.query
 
 
-# ---- Graph's answers: 202 sent; 429, 5xx and timeouts retried; any other 4xx final --------------------------------
+# ---- Graph's answers: 202 sent; 429 waits; 5xx and timeouts retried; 401/403/404 stop; any other final ------------
 
 
 @pytest.mark.parametrize(
-    ("answer", "error", "code", "status", "retry_after"),
+    ("answer", "error", "code", "status", "wait", "spends"),
     [
-        (httpx.Response(429, headers={"Retry-After": "120"}), graph.EmailRetry, "graph_429", 429, 120),
-        (httpx.Response(429, headers={"Retry-After": "86400"}), graph.EmailRetry, "graph_429", 429, 900),
-        (httpx.Response(429), graph.EmailRetry, "graph_429", 429, None),
-        (httpx.Response(503, text=f"busy for {TO}"), graph.EmailRetry, "graph_5xx", 503, None),
-        (httpx.Response(500), graph.EmailRetry, "graph_5xx", 500, None),
-        (httpx.Response(400, text=f"bad message {SUBJECT}"), graph.EmailRefused, "graph_4xx", 400, None),
-        (httpx.Response(403), graph.EmailRefused, "graph_4xx", 403, None),
-        (httpx.Response(404), graph.EmailRefused, "graph_4xx", 404, None),
+        (httpx.Response(429, headers={"Retry-After": "120"}), graph.EmailRetry, "graph_429", 429, 120, False),
+        (
+            httpx.Response(429, headers={"Retry-After": "86400"}),
+            graph.EmailRetry,
+            "graph_429",
+            429,
+            900,
+            False,
+        ),
+        (httpx.Response(429, headers={"Retry-After": "5"}), graph.EmailRetry, "graph_429", 429, 5, False),
+        (httpx.Response(429), graph.EmailRetry, "graph_429", 429, 60, False),
+        (httpx.Response(503, text=f"busy for {TO}"), graph.EmailRetry, "graph_5xx", 503, 300, True),
+        (httpx.Response(503, headers={"Retry-After": "900"}), graph.EmailRetry, "graph_5xx", 503, 300, True),
+        (httpx.Response(500), graph.EmailRetry, "graph_5xx", 500, 300, True),
+        (
+            httpx.Response(400, text=f"bad message {SUBJECT}"),
+            graph.EmailRefused,
+            "graph_4xx",
+            400,
+            None,
+            None,
+        ),
+        (httpx.Response(413), graph.EmailRefused, "graph_4xx", 413, None, None),
+        (httpx.Response(403), graph.MailboxFault, "graph_4xx", 403, None, None),
+        (httpx.Response(404), graph.MailboxFault, "graph_4xx", 404, None, None),
     ],
 )
-def test_a243_graphs_answer_decides_retry_or_final(
+def test_a243_graphs_answer_decides_wait_retry_stop_or_final(
     fake: Callable[..., FakeGraph],
     answer: httpx.Response,
     error: type[Exception],
     code: str,
     status: int,
-    retry_after: int | None,
+    wait: int | None,
+    spends: bool | None,
 ) -> None:
     fake(answer)
     with pytest.raises(error) as raised:
         send.deliver(TO, MAIL)
     exc: Any = raised.value
-    assert (exc.code, exc.status, getattr(exc, "retry_after_s", None)) == (code, status, retry_after)
+    assert (exc.code, exc.status) == (code, status)
+    assert (getattr(exc, "wait_s", None), getattr(exc, "spends_try", None)) == (wait, spends)
     assert str(exc) == code and TO not in str(exc) and SUBJECT not in str(exc)
+    assert (graph.wait_left() > 0) is (error is graph.EmailRetry and bool(wait))
 
 
 def test_a243_202_is_sent(fake: Callable[..., FakeGraph]) -> None:
     g = fake(ok())
     send.deliver(TO, MAIL)  # returns: Graph accepted it
     assert [r.url.path for r in g.to(GRAPH)] == [f"/v1.0/users/{MAILBOX}/sendMail"]
+    assert graph.wait_left() == 0
 
 
 @pytest.mark.parametrize(
@@ -254,24 +330,29 @@ def test_a243_a_timeout_or_no_connection_is_retried_and_drops_httpxs_url(
     with pytest.raises(graph.EmailRetry) as retry:
         send.deliver(TO, MAIL)
     assert retry.value.code == code and retry.value.status is None
-    assert retry.value.__suppress_context__ and retry.value.__cause__ is None  # httpx's error names the URL
+    assert (retry.value.wait_s, retry.value.spends_try) == (300, True)
+    assert retry.value.__suppress_context__ or retry.value.__context__ is None  # httpx's error names the URL
+    assert retry.value.__cause__ is None
 
 
-def test_a243_retry_after_as_an_http_date() -> None:
+def test_a243_a6_retry_after_as_an_http_date_or_ascii_digits_only() -> None:
     later = (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=10)).strftime("%a, %d %b %Y %H:%M:%S GMT")
     seconds = graph._retry_after(httpx.Response(429, headers={"Retry-After": later}))
     assert seconds is not None and 590 <= seconds <= 600
-    assert graph._retry_after(httpx.Response(429, headers={"Retry-After": "soon"})) is None
+    for raw in ("soon", "\uff11\uff12\uff10", "\u00b2", "-5", "1e3"):  # fullwidth and superscript digits too
+        headers = [(b"Retry-After", raw.encode())]  # as bytes: what reaches the worker off the wire
+        assert graph._retry_after(httpx.Response(429, headers=headers)) is None, raw
+    assert graph._retry_after(httpx.Response(429, headers={"Retry-After": "120"})) == 120
 
 
-def test_a243_without_its_settings_graph_sends_nothing(
+def test_a243_a1_without_its_settings_graph_sends_nothing(
     fake: Callable[..., FakeGraph], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _settings(monkeypatch, GRAPH_CLIENT_SECRET="")
     g = fake(ok())
-    with pytest.raises(graph.EmailRetry) as retry:
+    with pytest.raises(graph.MailboxFault) as fault:
         send.deliver(TO, MAIL)
-    assert retry.value.code == "graph_not_configured" and g.requests == []
+    assert fault.value.code == "graph_not_configured" and g.requests == []
 
 
 # ---- the send loop: how each answer lands on the notification ------------------------------------------------------
@@ -289,30 +370,64 @@ class _Cursor:
 
 
 class FakeConn:
-    """Records every statement; the due-email select returns the given rows, the users lookup `users`."""
+    """A recording connection. A statement counts as committed only when its transaction block ends without an
+    exception (`committed`); every statement is in `calls`. The due-email pick returns the first given row not yet
+    tried in this call; the users lookup returns `users`; a kill switch reads "on"."""
 
     def __init__(
-        self, rows: list[dict[str, Any]] | None = None, users: list[dict[str, Any]] | None = None
+        self,
+        rows: list[dict[str, Any]] | None = None,
+        users: list[dict[str, Any]] | None = None,
+        digest_people: list[dict[str, Any]] | None = None,
     ) -> None:
         self.rows = rows or []
         self.users = users or []
+        self.digest_people = digest_people or []
         self.calls: list[tuple[str, Any]] = []
+        self.committed: list[tuple[str, Any]] = []
+        self._open: list[list[tuple[str, Any]]] = []
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
-        yield
+        self._open.append([])
+        try:
+            yield
+        except BaseException:
+            self._open.pop()  # rolled back
+            raise
+        done = self._open.pop()
+        (self._open[-1] if self._open else self.committed).extend(done)
 
     def execute(self, sql: str, params: Any = None) -> _Cursor:
         flat = " ".join(sql.split())
         self.calls.append((flat, params))
+        (self._open[-1] if self._open else self.committed).append((flat, params))
         if flat.startswith("SELECT n.id"):
-            return _Cursor(self.rows)
+            return _Cursor([r for r in self.rows if r["id"] not in params[1]][:1])
         if flat.startswith("SELECT 1 FROM users"):
             return _Cursor(self.users)
+        if flat.startswith("SELECT state FROM kill_switches"):
+            return _Cursor([{"state": "on"}])
+        if flat.startswith("SELECT DISTINCT n.user_id"):
+            return _Cursor(self.digest_people)
+        if flat.startswith("SELECT id, event, template, payload FROM notifications"):
+            return _Cursor(
+                [{"id": 900 + params[0], "event": "canvas.nudge", "template": "nudge", "payload": {}}]
+            )
         return _Cursor([])
 
     def updates(self) -> list[tuple[str, Any]]:
         return [(sql, p) for sql, p in self.calls if sql.startswith("UPDATE notifications SET attempts")]
+
+    def picks(self) -> int:
+        return sum(1 for sql, _ in self.calls if sql.startswith("SELECT n.id"))
+
+    def touching(self, row_id: int) -> list[tuple[str, Any]]:
+        return [
+            (sql, p)
+            for sql, p in self.calls
+            if sql.startswith("UPDATE notifications") and p and p[-1] == row_id
+        ]
 
 
 def _row(n: int, attempts: int = 0) -> dict[str, Any]:
@@ -330,71 +445,241 @@ def loop(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 FIVE = dt.timedelta(minutes=5)
+SENT = "UPDATE notifications SET state = 'sent', sent_at = %s WHERE id = %s"
+WAIT_429 = "UPDATE notifications SET error_code = %s, send_after = clock_timestamp() + %s WHERE id = %s"
+KEEP_TRY = "UPDATE notifications SET error_code = %s WHERE id = %s"
 
 
 @pytest.mark.parametrize(
-    ("answer", "attempts", "state", "code", "wait"),
+    ("answer", "attempts", "state", "code"),
     [
-        (httpx.Response(503), 0, "queued", "graph_5xx", FIVE),
+        (httpx.Response(503), 0, "queued", "graph_5xx"),
         (
-            httpx.Response(503, headers={"Retry-After": "600"}),
+            httpx.Response(503, headers={"Retry-After": "900"}),
             0,
             "queued",
             "graph_5xx",
-            dt.timedelta(seconds=600),
-        ),
-        (httpx.Response(429, headers={"Retry-After": "30"}), 0, "queued", "graph_429", FIVE),  # never sooner
-        (httpx.Response(503), 2, "failed", "graph_5xx", FIVE),  # the third try was the last
-        (httpx.Response(400), 0, "failed", "graph_4xx", FIVE),  # final at once
-        (httpx.ReadTimeout("timed out"), 0, "queued", "graph_timeout", FIVE),
+        ),  # 5 minutes, whatever
+        (httpx.Response(503), 2, "failed", "graph_5xx"),  # the third try was the last
+        (httpx.ReadTimeout("timed out"), 0, "queued", "graph_timeout"),
+        (httpx.ConnectError("no route"), 0, "queued", "graph_unreachable"),
     ],
 )
-def test_a243_l_notify_the_loop_records_graphs_answer(
-    fake: Callable[..., FakeGraph], loop: None, answer: Any, attempts: int, state: str, code: str, wait: Any
+def test_a243_a2_graph_down_spends_one_try_and_stops_the_loop_for_five_minutes(
+    fake: Callable[..., FakeGraph], loop: None, answer: Any, attempts: int, state: str, code: str
 ) -> None:
-    fake(answer)
-    conn = FakeConn([_row(1, attempts)])
+    g = fake(answer, ok())
+    conn = FakeConn([_row(1, attempts), _row(2)])
     assert send.send_due(conn) == 0  # type: ignore[arg-type]
-    [(_sql, params)] = conn.updates()
-    assert params == (state, code, wait, 1)
-    assert not any("state = 'sent'" in s for s, _ in conn.calls)
+    [(sql, params)] = conn.updates()
+    assert "send_after = clock_timestamp() + %s" in sql and params == (state, code, FIVE, 1)
+    assert len(g.to(GRAPH)) == 1 and conn.picks() == 1 and conn.touching(2) == []  # row 2 untouched
+    assert 299 <= graph.wait_left() <= 300
+
+
+def test_a243_a1_a_message_graph_refuses_fails_alone_and_the_loop_goes_on(
+    fake: Callable[..., FakeGraph], loop: None
+) -> None:
+    g = fake(httpx.Response(400), ok())
+    conn = FakeConn([_row(1), _row(2)])
+    assert send.send_due(conn) == 1  # type: ignore[arg-type]
+    assert [p for _, p in conn.updates()] == [("failed", "graph_4xx", FIVE, 1)]
+    assert [sql for sql, _ in conn.touching(2)] == [SENT] and len(g.to(GRAPH)) == 2
+    assert graph.wait_left() == 0
 
 
 def test_a243_l_notify_a_202_marks_it_sent(fake: Callable[..., FakeGraph], loop: None) -> None:
     fake(ok())
     conn = FakeConn([_row(1)])
     assert send.send_due(conn) == 1  # type: ignore[arg-type]
-    assert any(s.startswith("UPDATE notifications SET state = 'sent'") and p[1] == 1 for s, p in conn.calls)
+    assert [p[1] for s, p in conn.committed if s == SENT] == [1]
 
 
-def test_a243_l_notify_after_a_429_the_rest_of_the_batch_waits_untried(
-    fake: Callable[..., FakeGraph], loop: None
+@pytest.mark.parametrize(("retry_after", "wait"), [("120", 120), (None, 60), ("5", 5), ("86400", 900)])
+def test_a243_a2_a_429_sets_the_wait_keeps_the_try_and_nothing_is_picked_until_it_passes(
+    fake: Callable[..., FakeGraph],
+    loop: None,
+    monkeypatch: pytest.MonkeyPatch,
+    retry_after: str | None,
+    wait: int,
 ) -> None:
-    g = fake(httpx.Response(429, headers={"Retry-After": "600"}), ok(), ok())
+    clock = [5000.0]
+    monkeypatch.setattr(graph, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    headers = {"Retry-After": retry_after} if retry_after else {}
+    g = fake(httpx.Response(429, headers=headers), ok(), ok())
+    conn = FakeConn([_row(1), _row(2)])
+    assert send.send_due(conn) == 0  # type: ignore[arg-type]
+    assert conn.updates() == []  # no try spent
+    assert conn.touching(1) == [(WAIT_429, ("graph_429", dt.timedelta(seconds=wait), 1))]
+    assert conn.touching(2) == [] and graph.wait_left() == wait and len(g.to(GRAPH)) == 1
+    picks = conn.picks()
+    clock[0] += wait - 1
+    assert send.send_due(conn) == 0 and conn.picks() == picks  # type: ignore[arg-type]
+    clock[0] += 1
+    assert send.send_due(conn) == 2 and len(g.to(GRAPH)) == 3  # type: ignore[arg-type]
+
+
+def test_a243_a2_a_token_429_waits_too_and_keeps_the_try(fake: Callable[..., FakeGraph], loop: None) -> None:
+    g = fake(ok(), token=httpx.Response(429, headers={"Retry-After": "45"}))
+    conn = FakeConn([_row(1), _row(2)])
+    assert send.send_due(conn) == 0  # type: ignore[arg-type]
+    assert conn.updates() == [] and conn.touching(1) == [
+        (WAIT_429, ("graph_token_429", dt.timedelta(seconds=45), 1))
+    ]
+    assert g.to(GRAPH) == [] and 44 <= graph.wait_left() <= 45
+
+
+@pytest.mark.parametrize(
+    ("sends", "token", "code", "status"),
+    [
+        (
+            (ok(),),
+            httpx.Response(401, json={"error": "invalid_client"}),
+            "graph_token_4xx",
+            401,
+        ),  # expired secret
+        ((ok(),), httpx.Response(400), "graph_token_4xx", 400),
+        ((ok(),), httpx.Response(503), "graph_token_5xx", 503),
+        ((ok(),), httpx.ConnectError("no route"), "graph_token_unreachable", None),
+        ((ok(),), httpx.Response(200, json={"access_token": ""}), "graph_token_bad", 200),
+        ((httpx.Response(403), ok()), None, "graph_4xx", 403),
+        ((httpx.Response(404), ok()), None, "graph_4xx", 404),
+        ((httpx.Response(401), httpx.Response(401), ok()), None, "graph_4xx", 401),
+    ],
+)
+def test_a243_a1_a_mailbox_fault_stops_the_loop_and_switches_email_off_audited(
+    fake: Callable[..., FakeGraph],
+    loop: None,
+    sends: tuple[Any, ...],
+    token: Any,
+    code: str,
+    status: int | None,
+) -> None:
+    g = fake(*sends, token=token)
     conn = FakeConn([_row(1), _row(2), _row(3)])
     assert send.send_due(conn) == 0  # type: ignore[arg-type]
-    assert len(g.to(GRAPH)) == 1
-    assert [p for _, p in conn.updates()] == [("queued", "graph_429", dt.timedelta(seconds=600), 1)]
-    held = [
-        p for s, p in conn.calls if s == "UPDATE notifications SET send_after = now() + %s WHERE id = ANY(%s)"
+    assert conn.picks() == 1 and conn.touching(2) == [] and conn.touching(3) == []
+    assert conn.updates() == []  # no try spent, and (below) row 1 is not failed: only its code is noted
+    assert conn.touching(1) == [(KEEP_TRY, (code, 1))]
+    if token is not None:
+        assert len(g.to(LOGIN)) == 1 and g.to(GRAPH) == []  # one token call, then nothing
+    where = f"{code} (HTTP {status})" if status else code
+    reason = f"Email through Graph stopped: {where} (automatic)"
+    flips = [p for s, p in conn.committed if s.startswith("UPDATE kill_switches SET state")]
+    assert flips == [("off", reason, "process:watch", "comms.email")]
+    audits = [p for s, p in conn.committed if s.startswith("INSERT INTO audit_log")]
+    assert [a[0] for a in audits] == ["process:watch", "process:watch"]
+    assert [a[1] for a in audits] == ["kill_switch:comms.email", "kill_switch:comms.email"]
+    assert any(isinstance(a, tuple) and reason in a for a in audits)  # kill_switch.set carries the reason
+    assert graph.wait_left() == 0
+
+
+def test_a243_a3_a_503_on_row_2_of_5_keeps_row_1_sent_and_leaves_3_to_5_untouched(
+    fake: Callable[..., FakeGraph], loop: None
+) -> None:
+    g = fake(ok(), httpx.Response(503), ok(), ok(), ok())
+    conn = FakeConn([_row(n) for n in range(1, 6)])
+    assert send.send_due(conn) == 1  # type: ignore[arg-type]
+    assert [p[1] for s, p in conn.committed if s == SENT] == [1]
+    assert [p for _, p in conn.updates()] == [("queued", "graph_5xx", FIVE, 2)]
+    assert all(conn.touching(n) == [] for n in (3, 4, 5)) and conn.picks() == 2 and len(g.to(GRAPH)) == 2
+
+
+class Crash(BaseException):
+    """The worker dies mid-send (a kill, an out-of-memory)."""
+
+
+def test_a243_a3_a_crash_after_row_1s_202_leaves_row_1_sent(
+    fake: Callable[..., FakeGraph], loop: None
+) -> None:
+    fake(ok(), Crash())
+    conn = FakeConn([_row(1), _row(2)])
+    with pytest.raises(Crash):
+        send.send_due(conn)  # type: ignore[arg-type]
+    assert [p[1] for s, p in conn.committed if s == SENT] == [1]  # committed before row 2 was picked
+    assert conn.picks() == 2  # row 2 was picked, and its transaction rolled back:
+    assert sum(1 for sql, _ in conn.committed if sql.startswith("SELECT n.id")) == 1
+
+
+def test_a243_a4_comms_email_is_read_before_each_email(
+    fake: Callable[..., FakeGraph], loop: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reads: list[str] = []
+    answers = iter(
+        [True, True, False]
+    )  # on at the start and for row 1; an admin switches it off before row 2
+
+    def is_on(name: str, conn: Any) -> bool:
+        reads.append(name)
+        return next(answers)
+
+    monkeypatch.setattr(send.killswitch, "is_on", is_on)
+    g = fake(ok(), ok(), ok())
+    conn = FakeConn([_row(1), _row(2), _row(3)])
+    assert send.send_due(conn) == 1  # type: ignore[arg-type]
+    assert reads == ["comms.email"] * 3 and len(g.to(GRAPH)) == 1 and conn.touching(2) == []
+
+
+@pytest.fixture
+def digests(monkeypatch: pytest.MonkeyPatch, loop: None) -> None:
+    monkeypatch.setattr(send, "next_send_time", lambda now, urgency: now)
+    monkeypatch.setattr(send, "load", lambda template: template)
+    monkeypatch.setattr(send, "variables", lambda *a, **k: {})
+    monkeypatch.setattr(send.email_html, "digest", lambda sections, base: MAIL)
+
+
+def _people(n: int) -> list[dict[str, Any]]:
+    return [{"user_id": i, "email": f"syn.{i}@kfintech.example"} for i in range(1, n + 1)]
+
+
+def test_a243_a5_a_429_stops_the_digests_with_the_same_wait_and_logs_code_and_status(
+    fake: Callable[..., FakeGraph], digests: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    g = fake(ok(), httpx.Response(429, headers={"Retry-After": "90"}), ok())
+    conn = FakeConn(digest_people=_people(3))
+    assert send.send_digests(conn) == 1  # type: ignore[arg-type]
+    assert len(g.to(GRAPH)) == 2 and 89 <= graph.wait_left() <= 90
+    [line] = [
+        klog._JsonFormatter().format(r) for r in caplog.records if r.getMessage() == "comms.batched_failed"
     ]
-    assert held == [(dt.timedelta(seconds=600), [2, 3])]  # no try spent on them
+    assert '"error_code":"graph_429"' in line and '"http_status":429' in line and "syn." not in line
+    calls = len(conn.calls)
+    assert send.send_digests(conn) == 0 and len(conn.calls) == calls  # type: ignore[arg-type]
+
+
+def test_a243_a5_a_mailbox_fault_stops_the_digests_and_switches_email_off(
+    fake: Callable[..., FakeGraph], digests: None
+) -> None:
+    g = fake(httpx.Response(403), ok())
+    conn = FakeConn(digest_people=_people(2))
+    assert send.send_digests(conn) == 0  # type: ignore[arg-type]
+    assert len(g.to(GRAPH)) == 1
+    flips = [p for s, p in conn.committed if s.startswith("UPDATE kill_switches SET state")]
+    assert flips == [
+        (
+            "off",
+            "Email through Graph stopped: graph_4xx (HTTP 403) (automatic)",
+            "process:watch",
+            "comms.email",
+        )
+    ]
+    assert not any(s.startswith("UPDATE notifications SET state = 'sent'") for s, _ in conn.committed)
 
 
 def test_a243_nothing_logged_carries_the_address_the_subject_the_token_or_the_secret(
     fake: Callable[..., FakeGraph], loop: None, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.DEBUG)
-    fake(httpx.Response(401), httpx.Response(503, text=f"{TO} {SUBJECT}"), ok(), httpx.Response(400))
+    fake(httpx.Response(401), ok(), httpx.Response(400), httpx.Response(503, text=f"{TO} {SUBJECT}"))
     conn = FakeConn([_row(1), _row(2), _row(3)])
-    send.send_due(conn)  # type: ignore[arg-type]
+    assert send.send_due(conn) == 1  # type: ignore[arg-type]
     lines = [klog._JsonFormatter().format(r) for r in caplog.records]
-    assert any('"event":"comms.send_failed"' in line for line in lines)
+    assert any('"event":"comms.graph_token_dropped"' in line for line in lines)
     failed = [line for line in lines if '"event":"comms.send_failed"' in line]
-    assert (
-        '"notification_id":1' in failed[0] and '"http_status":503' in failed[0] and '"attempt":1' in failed[0]
-    )
-    assert '"error_code":"graph_4xx"' in failed[1] and '"http_status":400' in failed[1]
+    assert '"notification_id":2' in failed[0] and '"error_code":"graph_4xx"' in failed[0]
+    assert '"http_status":400' in failed[0] and '"attempt":1' in failed[0] and '"try_spent":true' in failed[0]
+    assert '"notification_id":3' in failed[1] and '"http_status":503' in failed[1]
     for line in lines:
         for secret in (TO, "syn.1@", "syn.2@", "syn.3@", SUBJECT, "tok-", SECRET, MAILBOX, "Kavya"):
             assert secret not in line, line
@@ -623,6 +908,36 @@ def test_a243_email_check_runs_only_with_graph(monkeypatch: pytest.MonkeyPatch) 
     get_settings.cache_clear()
 
 
+@pytest.mark.parametrize(
+    ("answer", "users", "rc", "last"),
+    [
+        (httpx.Response(202), [], 0, "email check: sent (Graph accepted it, HTTP 202)"),
+        (httpx.Response(403), [], 1, "email check: failed graph_4xx (HTTP 403)"),
+        (httpx.Response(202), [{"?column?": 1}], 2, "email check: refused: that address belongs to someone in "
+         "1% Club; use IT's own test mailbox"),
+    ],
+)  # fmt: skip
+def test_a243_b3_main_prints_the_result_as_its_last_line_and_exits_with_its_code(
+    fake: Callable[..., FakeGraph],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    answer: httpx.Response,
+    users: list[dict[str, Any]],
+    rc: int,
+    last: str,
+) -> None:
+    import contextlib
+
+    fake(answer)
+    conn = FakeConn(users=users)
+    monkeypatch.setattr(email_check, "connect", lambda autocommit=False: contextlib.nullcontext(conn))
+    assert email_check.main(["--to", "it.mailcheck@kfintech.example", "--actor", "ops:SYN-0001"]) == rc
+    out = capsys.readouterr().out
+    assert out.splitlines()[-1] == last
+    # Any other line on the terminal is the worker's JSON log, IDs and codes only, never the address.
+    assert all(line.startswith("{") for line in out.splitlines()[:-1]) and "it.mailcheck@" not in out
+
+
 def _graph_section() -> str:
     doc = (ROOT / "docs" / "UAT.md").read_text("utf-8")
     return doc.split("\n## Email through Graph (BLD-A243)\n", 1)[1].split("\n## ", 1)[0]
@@ -638,9 +953,12 @@ def test_a243_runbook_switches_comms_email_off_before_the_worker_restarts_in_gra
     assert step1.index("python -m core.killswitch list") < step1.index("EMAIL_MODE=graph")
     assert "an admin switches it off now from the Admin page, with a reason" in step1
     assert "Pass: `comms.email off` on the last read" in step1
-    step3, step4 = rest.split("\n4. **Switch `comms.email` on.**", 1)
+    step3, _step4 = rest.split("\n4. **Only on the product lead's word: switch `comms.email` on.**", 1)
     assert "Do not go on to step 4 until the check passes." in step3
-    assert "**Pass for this section:** `comms.email off` before the worker restarts" in step4
+    assert (
+        "**Pass for steps 1 to 3 (email ready, `comms.email` off):** `comms.email off` before the worker restarts"
+        in step3
+    )
 
 
 def test_a243_runbook_pastes_back_no_secret_no_address_and_no_staff_code() -> None:
@@ -650,3 +968,89 @@ def test_a243_runbook_pastes_back_no_secret_no_address_and_no_staff_code() -> No
     # Setting names only: nothing after the `=` of a Graph or email setting, and no address shape.
     assert not re.search(r"^\s*(GRAPH_[A-Z_]+|EMAIL_FROM|EMAIL_MODE)=(?!graph$)\S", section, re.M)
     assert not re.search(r"[\w.+-]+@[\w-]+\.[\w.]+", section)
+
+
+def _full_mode_section() -> str:
+    doc = (ROOT / "docs" / "UAT.md").read_text("utf-8")
+    return doc.split("\n## Switching to full mode (mode A)\n", 1)[1].split("\n## ", 1)[0]
+
+
+def test_a243_c6_email_goes_on_only_on_the_product_leads_word() -> None:
+    """C6: whether `comms.email` goes on is the lead's call at the Full go/no-go. Steps 1 to 3 pass on their own with
+    email off; step 4 and its pass line are only for the lead's go; nothing reads as if email will be on."""
+    section = _graph_section()
+    intro = section.split("\n1. **Switch `comms.email` off", 1)[0]
+    assert (
+        "Steps 1 to 3 get email ready and prove the mailbox with `comms.email` off; they pass on their own."
+        in intro
+    )
+    assert "Step 4 runs only when the product lead says so" in intro
+    assert "Until then email stays off and queued" in intro
+    step4 = section.split("\n4. **Only on the product lead's word: switch `comms.email` on.**", 1)[1]
+    assert step4.lstrip().startswith("Skip this step unless the product lead has said email goes on.")
+    assert "**Pass for step 4 (only if the product lead switched email on):**" in step4
+    assert "**Pass for this section:**" not in section  # two pass lines now, never one that needs email on
+    full = _full_mode_section()
+    assert "9. **Get email ready.**" in full and "Turn on email" not in full
+    assert "its step 4 switches it on only if the product lead says so" in full
+    assert "Full mode turns on the assistant and similar ideas, and gets email through Graph ready" in full
+    assert "whether email goes on is the product lead's call at the go/no-go" in full
+
+
+def test_a243_c1_email_mode_stays_smtp_until_the_graph_section_step_1() -> None:
+    doc = (ROOT / "docs" / "UAT.md").read_text("utf-8")
+    row = next(line for line in doc.splitlines() if line.startswith("| Email through Graph (BLD-A243"))
+    assert (
+        "The values go in only at step 1 of **Email through Graph (BLD-A243)**: until then `EMAIL_MODE` stays `smtp`"
+        in row
+    )
+    full = _full_mode_section()
+    step1 = full.split("\n1. **Check the build.**", 1)[1].split("\n2. **", 1)[0]
+    step5 = full.split("\n5. **Set the route and restart the worker and the web app.**", 1)[1].split(
+        "\n6. **", 1
+    )[0]
+    assert "`EMAIL_MODE` stays `smtp` through that upgrade and every step before 9" in step1
+    assert "`EMAIL_MODE` stays `smtp` at this restart" in step5
+    graph_step1 = _graph_section().split("\n2. **Run the preflight", 1)[0]
+    off = graph_step1.index("an admin switches it off now from the Admin page")
+    assert off < graph_step1.index("Only now do the Graph values go in")
+    assert graph_step1.index("Only now do the Graph values go in") < graph_step1.index("EMAIL_MODE=graph")
+
+
+def test_a243_c2_the_step_3_list_has_a_catch_all_and_the_tls_proxy() -> None:
+    step3 = _graph_section().split("\n3. **Send one test message.**", 1)[1].split("\n4. **", 1)[0]
+    assert (
+        "- any other line (for example `graph_not_configured`, `graph_4xx (HTTP 400)` or `(HTTP 401)`, or the preflight's mailbox line): send it to lane A."
+        in step3
+    )
+    assert "a TLS-inspecting proxy presents a certificate the worker does not trust" in step3
+    # B1 and B2: what IT sees, and what the guard can and cannot tell.
+    assert "The first command's last line is the result, `email check: …`." in step3
+    assert "never the address or the token" in step3
+    assert "not an alias, a distribution list or anyone's address" in step3
+    assert "it can never reach an employee" not in step3
+
+
+def test_a243_c3_c4_stopping_email_the_automatic_switch_off_and_a_rollback() -> None:
+    section = _graph_section()
+    stop = section.split("**To stop email at any time:**", 1)[1].split("\n\n", 1)[0]
+    assert "an email already being sent finishes first, and that one email goes" in stop
+    auto = section.split("**If email switches itself off:**", 1)[1].split(
+        "**To stop email at any time:**", 1
+    )[0]
+    assert "switches `comms.email` off by itself, audited, with the code in the reason" in auto
+    assert "No email spends a try; they all stay queued." in auto
+    assert (
+        "SELECT at, reason FROM audit_log WHERE action = 'kill_switch.set' AND entity = 'kill_switch:comms.email'"
+        in auto
+    )
+    assert "runs the step 3 check until it passes; then an admin switches `comms.email` back on" in auto
+    assert "Nothing switches it back on by itself." in auto
+    rollback = section.split("**Before a rollback:**", 1)[1]
+    assert "a rollback to a build without BLD-A243 would send by SMTP to nothing" in rollback
+    assert "before such a rollback an admin switches `comms.email` off, with a reason" in rollback
+    doc = (ROOT / "docs" / "UAT.md").read_text("utf-8")
+    assert (
+        "With `EMAIL_MODE=graph` in the app env file, read **Before a rollback** under **Email through Graph (BLD-A243)** first:"
+        in doc
+    )
