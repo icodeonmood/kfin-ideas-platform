@@ -12,6 +12,12 @@ on:
   pull_request:
     paths-ignore: ["docs/**", "*.md"]  # docs and top-level notes only; seed and agent Markdown still run it
   workflow_dispatch:
+    # BLD-A242 load hour (throwaway branch a/load-hour-1, never landed): the share of the hour the load test runs.
+    inputs:
+      scale:
+        description: "Load test scale: 1.0 is the full hour at the launch rates, 0.1 a 6-minute check"
+        type: string
+        default: "1.0"
 
 concurrency:
   # On main every commit gets its own check, so a new push never cancels the one already running (BLD-A184:
@@ -23,11 +29,13 @@ jobs:
   # The journey suite is a gate too (BLD-A230; the Thu 19 Nov 14:00 gates in SHIP_PLAN_1PC.md, added from 09:30 at
   # lane G's ask): every run off main walks every journey (apps/web/journeys) on its own runner, beside the gates,
   # with no retries. On main the suite runs from journeys.yml's own push trigger instead, and lane G reads those runs.
+  # Off on this throwaway branch: a run here is the load hour only (BLD-A242).
   journeys:
-    if: github.ref != 'refs/heads/main'
+    if: false
     uses: ./.github/workflows/journeys.yml
 
   gates:
+    if: false  # off on this throwaway branch: a run here is the load hour only (BLD-A242)
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     env:
@@ -106,3 +114,146 @@ jobs:
           path: container.log
           retention-days: 7
           if-no-files-found: ignore
+
+  # BLD-A242 load hour (throwaway branch a/load-hour-1, never landed): the Full go/no-go's load test (ARCHITECTURE
+  # §9.3 mode A, AT-B8-01) on a GitHub runner, as the product lead chose. By hand only:
+  #   gh workflow run ci.yml --ref a/load-hour-1 -f scale=1.0    (the full hour; 0.1 is a 6-minute check)
+  # A throwaway dev-mode stack on this runner (LLM_MODE=fake, EMBEDDINGS_MODE=hash, OIDC_MODE=mock), the synthetic
+  # HR directory from make seed, ai.all on, then services/worker/loadtest against the runner's own :3000.
+  # Numbers and codes only in the log (non-negotiable 3); the people and their words are synthetic.
+  load-hour:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    # The stack's start (about 5 minutes) + 60 × scale minutes + the last shares' draft and scan timeouts (4 minutes)
+    # + margin: about 70 minutes at scale 1.0.
+    timeout-minutes: 120
+    env:
+      SCALE: ${{ inputs.scale || '1.0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.27"
+
+      # The web app builds inside Docker, so the runner needs only the worker's Python: make up's health check, the
+      # seed, the switch and the load test. No Node, no browsers.
+      - name: Install the worker's dependencies
+        run: cd services/worker && uv sync --frozen
+
+      - name: Runner size (read the report against the UAT host's)
+        run: |
+          cpus=$(nproc)
+          mem=$(awk '/^MemTotal:/ { printf "%.1f", $2 / 1048576 }' /proc/meminfo)
+          echo "runner: ${cpus} CPUs, ${mem} GiB memory"
+          echo "Runner: ${cpus} CPUs, ${mem} GiB memory" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Start the local stack (fake model, hash embeddings, mock sign-in)
+        # As the gates job does. The worker runs as the runner's user so it and the host-side seed share ./.data.
+        run: |
+          make .env
+          sed -i -E 's/^LLM_MODE=.*/LLM_MODE=fake/; s/^EMBEDDINGS_MODE=.*/EMBEDDINGS_MODE=hash/; s/^OIDC_MODE=.*/OIDC_MODE=mock/' .env
+          grep -qx 'LLM_MODE=fake' .env
+          grep -qx 'EMBEDDINGS_MODE=hash' .env
+          grep -qx 'OIDC_MODE=mock' .env
+          grep -E '^(APP_ENV|LLM_MODE|EMBEDDINGS_MODE|OIDC_MODE)=' .env | sed -E 's/[[:space:]]*#.*//'
+          printf 'WORKER_UID=%s\nWORKER_GID=%s\n' "$(id -u)" "$(id -g)" >> .env
+          make up
+
+      # make seed loads the synthetic HR directory (bootstrap/seed.py, bootstrap/synthetic_hr.py: 200 people,
+      # SYN-00001 to SYN-00200); the load test signs in as SYN-00018 to SYN-00197 (--people 180). The 1% Club demo
+      # set (make demo DEMO_SET=1pc) is not loaded: its people are SYN-10001 upwards, and the load test needs none.
+      - name: Seed the company repo and the synthetic HR directory
+        run: make seed
+
+      - name: Switch the assistant (ai.all) on; the switch list (names and states only)
+        run: make killswitch NAME=ai.all STATE=on REASON="load hour (BLD-A242)" ACTOR=process:lane-a
+
+      # --not-the-demo: :3000 on this runner is the throwaway stack started above, never the demo. Exit 0 only when
+      # all four pass lines are true; the steps below print and upload the report either way.
+      - name: Load test (AT-B8-01, the Share path; scale from the run's input)
+        id: loadtest
+        working-directory: services/worker
+        run: uv run --frozen python -m loadtest --base-url http://localhost:3000 --not-the-demo --scale "$SCALE"
+
+      - name: The report (numbers and codes only)
+        if: always() && steps.loadtest.outcome != 'skipped'
+        run: |
+          python3 -I - <<'PY'
+          import glob, json, os, re
+
+          CODE = re.compile(r"^[a-z][a-z0-9_.]{0,63}$")
+
+          def code(k):
+              return k if isinstance(k, str) and CODE.match(k) else "other"
+
+          def num(v):
+              if isinstance(v, bool) or not isinstance(v, (int, float)):
+                  return "-"
+              return f"{v:.3f}" if isinstance(v, float) else str(v)
+
+          paths = sorted(glob.glob(".data/loadtest/report-*.json"))
+          if not paths:
+              print("no load test report was written")
+              raise SystemExit(0)
+          with open(paths[-1], encoding="utf-8") as f:
+              r = json.load(f)
+          s = r.get("settings") or {}
+          keys = ("scale", "length_s", "submissions_per_hour", "sign_ins", "sign_in_hours",
+                  "scan_timeout_s", "draft_timeout_s", "poll_s")
+          lines = ["settings: " + " ".join(f"{k}={num(s.get(k))}" for k in keys) + f" flow={code(s.get('flow'))}"]
+          p = r.get("pass") or {}
+          lines += [f"pass.{k}: {p.get(k) is True}" for k in ("scan_p95", "page_p95", "error_rate", "launch_rate")]
+          for kind in ("scan", "page", "draft", "sign_in", "api", "poll"):
+              t = r.get(kind)
+              if isinstance(t, dict):
+                  lines.append(f"{kind}: n={num(t.get('count'))} p50_s={num(t.get('p50_s'))} "
+                               f"p95_s={num(t.get('p95_s'))} max_s={num(t.get('max_s'))}")
+          lines.append(f"error_rate: {num(r.get('error_rate'))} (target under 0.005); requests: {num(r.get('requests'))}")
+          for name, o in sorted((r.get("operations") or {}).items()):
+              if isinstance(o, dict):
+                  lines.append(f"operations.{code(name)}: attempted={num(o.get('attempted'))} failed={num(o.get('failed'))}")
+          for key in ("errors", "notes"):
+              d = r.get(key) or {}
+              lines.append(f"{key}: " + (" ".join(f"{code(k)}={num(v)}" for k, v in sorted(d.items())) or "none"))
+          print("\n".join(lines))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write("### Load test report (BLD-A242)\n\n```\n" + "\n".join(lines) + "\n```\n")
+          PY
+
+      - name: Switches after the run (names and states only; an automatic switch-off shows here)
+        if: always() && steps.loadtest.outcome != 'skipped'
+        run: cd services/worker && uv run --frozen python -m core.killswitch list
+
+      - name: Container logs carry no idea text or personal data
+        id: logcheck
+        if: always()
+        run: |
+          docker compose -f infra/docker-compose.yml --project-directory . --env-file .env \
+            logs --no-color --no-log-prefix worker web > container.log
+          cd services/worker && uv run --frozen python ../../scripts/ci/check_logs.py ../../container.log
+
+      # Numbers, IDs and codes only (the load test's own rule). .data is a hidden folder, which upload-artifact
+      # skips unless told; the report files themselves are not hidden.
+      - name: Keep the load test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loadtest-report
+          path: .data/loadtest/
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Keep the container logs of a failed run
+        if: failure() && steps.logcheck.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-logs
+          path: container.log
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Tear the stack down
+        if: always()
+        run: if [ -f .env ]; then make down; fi
