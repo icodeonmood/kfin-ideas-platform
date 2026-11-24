@@ -14,10 +14,11 @@ For: KFin IT and the product team, installing 1% Club with `make uat-deploy`, on
 | Four random secrets of at least 32 characters each: `INTERNAL_API_TOKEN`, `SESSION_SECRET`, `CONTRIBUTOR_HMAC_SECRET`, `VAULT_ENCRYPTION_KEY` | InfoSec (vault) | app env file |
 | Three database passwords of at least 20 random letters and digits (no symbols: they go into connection URLs): `POSTGRES_PASSWORD`, `DB_WEB_PASSWORD`, `DB_WORKER_PASSWORD` | InfoSec (vault) | database env file |
 | The worker-only pseudonym vault key: `PSEUDONYM_VAULT_KEY`, at least 32 random letters and digits, different from `VAULT_ENCRYPTION_KEY`. It must never be in the app env file, which the web app also reads | InfoSec (vault) | database env file |
-| KFin's file store and scanner: `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `CLAMAV_HOST`, `CLAMAV_PORT` (required; the deploy refuses to fall back to the local stand-ins), and the Graph service mailbox or `SMTP_URL`. If KFin's scanner is not on 3310, set `WORKER_CLAMAV_PORT` in the app env file (`CLAMAV_PORT` alone is ignored) | IT | app env file |
+| KFin's file store and scanner: `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `CLAMAV_HOST`, `CLAMAV_PORT` (required; the deploy refuses to fall back to the local stand-ins), and the Graph service mailbox (the Graph row below) or `SMTP_URL`. If KFin's scanner is not on 3310, set `WORKER_CLAMAV_PORT` in the app env file (`CLAMAV_PORT` alone is ignored) | IT | app env file |
 | Model route decision (D1). With or without it the deploy starts in Mode B: `ai.all` off (BLD-A245). Files wait for the personal-data check, seen only by the person who added them and opened by no one; they are checked as soon as `ai.all` and `agent.gatekeeper` are both on, and files that waited out their tries on earlier builds go back to waiting when the worker starts and are checked then too. At launch, `LLM_MODE=fake` whatever D1 says (see the bold line below this table); the route is set later, in **Switching to full mode (mode A)** | InfoSec | app env file |
 | Not at launch: BGE-M3 (AT-B5-01). The deploy builds the worker without it (the compose files pass no `WITH_BGE` build argument and mount no model folder), so set `EMBEDDINGS_MODE=hash`; the preflight warns that matching quality is not representative. Adding BGE-M3 is an install change after launch: the build argument, the model files mounted at `EMBEDDINGS_MODEL_PATH`, then `EMBEDDINGS_MODE=bge-m3` and a re-index | Product team | app env file |
 | Voice through Sarvam (DEC-108, on at launch): in the **database** env file (worker only), `SARVAM_API_KEY`; the deploy refuses it in the app env file, which the web app also reads, and the web container's copy is blanked. In the app env file, `SPEECH_MODE=sarvam` and `SPEECH_HOSTED_APPROVAL=DEC-108` (the deploy refuses `sarvam` without both). Outbound HTTPS and WSS from the worker to `api.sarvam.ai` only. The speech container and model below are now an optional fallback, not needed for launch | InfoSec (key in the vault), IT (outbound rule) | database env file, app env file |
+| Email through Graph (BLD-A243, DEC-131; needed for full mode, not for the install): an Entra app registration for the worker with Microsoft Graph's `Mail.Send` **application** permission (admin consent), limited to the 1% Club service mailbox by an Exchange application access policy, so it can send as that mailbox and no other. In the app env file: `EMAIL_MODE=graph`, `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_SERVICE_MAILBOX` and `EMAIL_FROM` (its address must be the mailbox's; the preflight checks it). In the **database** env file (worker only): `GRAPH_CLIENT_SECRET`; the deploy and the upgrade refuse it in the app env file, which the web app also reads, and the web container's copy is blanked. Outbound HTTPS from the worker to `login.microsoftonline.com` and `graph.microsoft.com` only. Note the secret's expiry date: when it lapses, every email fails until a new one is set. The steps are in **Email through Graph (BLD-A243)** below | IT (app registration, policy, outbound rule), InfoSec (secret in the vault) | app env file, database env file |
 | Optional fallback, not needed for launch (DEC-108): voice notes on the isolated speech service (DEC-096, BLD-C012, BLD-C015): its own container (`speech`, compose profile `speech`, built from `services/worker/speech_service/Dockerfile`), started by the deploy when the app env file sets `SPEECH_ENGINE_URL=http://speech:8300`. It runs as uid 10002 with a read-only root filesystem, a 64 MB tmpfs `/tmp`, no capabilities and no published port, on an internal network only the worker shares (no route to Postgres, S3, mail or the internet). On the host: the speech model (faster-whisper, multilingual, CTranslate2 int8) in `SPEECH_MODEL_DIR`, mounted read-only; about 2–3 GB of memory for it (`SPEECH_MEM_LIMIT`, default 3g). In the **database** env file: `SPEECH_SERVICE_TOKEN`, 32 or more random letters and digits, never the same as `INTERNAL_API_TOKEN` (the deploy refuses it in the app env file, which the web app also reads, refuses `INTERNAL_API_TOKEN` in the database env file, and refuses the two if equal). In the app env file: `SPEECH_ENGINE_URL=http://speech:8300` exactly (the deploy and the worker refuse any other host or scheme outside dev and test). The image is pinned by digest and hashes; it needs PyPI and Docker Hub only at build time | IT (host, memory, model folder), InfoSec (token in the vault) | database env file, host folder |
 | Voice notes, KFin's S3 (DEC-096, BLD-C006): on the **quarantine** bucket, a lifecycle rule `voice-notes-expire-1-day` that expires the prefix `voice/` after 1 day, and **no versioning** on that bucket (a kept version would outlive a delete). The worker tries to set the rule itself at start; where the store refuses, IT sets it. The smoke check fails if the quarantine bucket is versioned | IT | the file store |
 
@@ -28,7 +29,7 @@ For: KFin IT and the product team, installing 1% Club with `make uat-deploy`, on
 Two files, both readable only by the deploy account (`chmod 600`), never committed:
 
 - **App env file** (`.env.uat`): start from `.env.example`, set `APP_ENV=prod` on the launch server (`uat` on a UAT host) and every value above. Leave `DATABASE_URL` out; each service gets its own login. Set `KFIN_EMAIL_DOMAINS=kfintech.com` in the app env file (add any other KFin email domain), whether or not Entra releases the employeeId claim: without it the web app refuses every sign-in by email. On the launch server the preflight then warns that `kfintech.example` is missing; that warning is about UAT's synthetic people and does not apply with `APP_ENV=prod`.
-- **Database env file** (`.env.uat.db`): only `POSTGRES_PASSWORD`, `DB_WEB_PASSWORD`, `DB_WORKER_PASSWORD`, `PSEUDONYM_VAULT_KEY` and `SARVAM_API_KEY` (voice through Sarvam, DEC-108; never in the app env file, which the web app also reads), plus `SPEECH_SERVICE_TOKEN` only with the optional speech service. It builds each service's own settings and is never handed to a container as a whole.
+- **Database env file** (`.env.uat.db`): only `POSTGRES_PASSWORD`, `DB_WEB_PASSWORD`, `DB_WORKER_PASSWORD`, `PSEUDONYM_VAULT_KEY` and `SARVAM_API_KEY` (voice through Sarvam, DEC-108; never in the app env file, which the web app also reads), plus `GRAPH_CLIENT_SECRET` once email goes through Graph (BLD-A243; never in the app env file either) and `SPEECH_SERVICE_TOKEN` only with the optional speech service. It builds each service's own settings and is never handed to a container as a whole.
 
 ## Deploy
 
@@ -41,7 +42,7 @@ The script stops at the first problem and says which. Its eight steps:
 
 | Step | What happens | Stops when |
 |---|---|---|
-| 1 Preflight | Checks the settings without printing any secret | dev values, short secrets, mock sign-in, missing Entra or model settings, a privacy notice version that differs from the build's |
+| 1 Preflight | Checks the settings without printing any secret | dev values, short secrets, mock sign-in, missing Entra or model settings, a privacy notice version that differs from the build's, `GRAPH_CLIENT_SECRET` in the app env file, `EMAIL_MODE=graph` without every Graph setting |
 | 2 Empty database | Starts Postgres; checks there are no tables and no company repo yet | anything already exists (a fresh deploy only) |
 | 3 Migrations | `dbmate up`, then `dbmate status` | anything pending |
 | 4 Service logins | Creates `ideas_web` and `ideas_worker` with their own passwords | — |
@@ -312,6 +313,73 @@ Run every command from the release checkout, the one the server was deployed or 
     Paste back: the whole output. Pass: `smoke: all checks passed`.
 
 **Back to Capture first** (at any time): an admin switches `ai.all` off on the Admin page, with a reason. That is instant: the assistant stops for everyone. Then IT sets `LLM_MODE=fake` in the app env file and restarts the worker and the web app (`compose up -d --wait worker web`, with the wrapper from step 5). Always in this order, so `ai.all` is never on while `LLM_MODE=fake`. An upgrade stops if it finds `ai.all` on while `LLM_MODE=fake`.
+
+## Email through Graph (BLD-A243)
+
+Step 9 of **Switching to full mode (mode A)** comes here. Notifications go out through the KFin service mailbox with Microsoft Graph (DEC-131), not an SMTP relay: the worker signs in as its app registration (client credentials) and sends each email from the mailbox, which keeps a copy in its Sent Items for IT's retention policy. The web app never gets the secret. `comms.email` stays off until step 4, so nobody gets an email before the test message has passed. You need the Graph row under **What you need first**.
+
+Never paste an env file, the secret, the tenant ID or a mailbox address to lane A. Nothing below prints one: the commands print setting names, counts, codes and IDs.
+
+1. **Set the values.** In the app env file, these lines (with IT's values after the `=`; `EMAIL_FROM` is the display name and the mailbox's own address, for example `1% Club <the mailbox's address>`):
+
+   ```
+   EMAIL_MODE=graph
+   GRAPH_TENANT_ID=
+   GRAPH_CLIENT_ID=
+   GRAPH_SERVICE_MAILBOX=
+   EMAIL_FROM=
+   ```
+
+   In the **database** env file, one line: `GRAPH_CLIENT_SECRET=`, with the secret from the vault. Never put it in the app env file: the web app reads that file, and the upgrade stops if it finds it there. Check without printing a value:
+
+   ```bash
+   sed -nE '/^EMAIL_MODE=/p; s/^(GRAPH_[A-Z_]+|EMAIL_FROM)=.+$/app env file: \1 set/p' /secure/.env.uat
+   sed -nE 's/^(GRAPH_[A-Z_]+|EMAIL_FROM)=.+$/database env file: \1 set/p' /secure/.env.uat.db
+   ```
+
+   Paste back: the lines it prints. Pass: `EMAIL_MODE=graph`; `app env file:` lines for `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_SERVICE_MAILBOX` and `EMAIL_FROM`, and none for `GRAPH_CLIENT_SECRET`; one `database env file: GRAPH_CLIENT_SECRET set` line.
+
+2. **Run the preflight, then restart the worker**, from the release checkout, with the same compose wrapper as step 5 of full mode. The worker reads its settings only when it starts. The web app reads none of these settings and needs no restart.
+
+   ```bash
+   export UAT_APP_ENV_FILE=/secure/.env.uat UAT_DATA_DIR=/srv/kfin-ideas-uat
+   compose() { docker compose -p kfin-ideas-uat -f infra/docker-compose.yml -f infra/uat/compose.uat.yml --project-directory . \
+     --env-file /secure/.env.uat --env-file /secure/.env.uat.db "$@"; }
+   compose run --rm --no-deps -T worker python -m bootstrap.preflight
+   compose up -d --wait worker
+   ```
+
+   Paste back: the preflight's `PROBLEM` lines, if any, and its last line; then the `Healthy` line. Pass: `preflight: ok` (its warnings are as before: none of them is about email), and `Healthy` for `kfin-ideas-uat-worker-1`. On `EMAIL_MODE=graph needs …` or `EMAIL_FROM must be the service mailbox's address …`, fix the env file and run this step again.
+
+3. **Send one test message.** IT names a test mailbox it owns, never an employee's and not in HR's file. The check sends one fixed message, "1% Club email check", with no idea, no person and no template in it, through the same path every email takes. It refuses an address that belongs to anyone in 1% Club, so it can never reach an employee, and it does not need `comms.email`: it sends nobody's email. Each run is written to `audit_log`.
+
+   ```bash
+   docker exec kfin-ideas-uat-worker-1 python -m comms.email_check --to <test mailbox> --actor ops:<staff code>
+   docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT id, at, actor, after FROM audit_log WHERE action = 'comms.email_check' ORDER BY id DESC LIMIT 1"
+   ```
+
+   The first command prints one line, never the address. Then IT looks in the test mailbox: the message should arrive from the service mailbox within a few minutes. Paste back: the line, the audit row (its ID, time, actor and result) and whether the message arrived (yes or no). Pass: `email check: sent (Graph accepted it, HTTP 202)`, the audit row's `after` reads `{"result": "sent", "http_status": 202}`, and yes. Otherwise the line names what to fix, then restart the worker (step 2) and run the check again:
+   - `email check: failed graph_token_4xx …`: the tenant ID, the client ID or the secret is wrong, or the secret has expired;
+   - `email check: failed graph_4xx (HTTP 403)`: the permission has no admin consent, or the access policy does not cover the mailbox;
+   - `email check: failed graph_4xx (HTTP 404)`: `GRAPH_SERVICE_MAILBOX` is not the mailbox's address;
+   - `email check: failed graph_timeout` or `graph_unreachable`: the outbound rule to the two hosts is missing (or the proxy: `HTTPS_PROXY` in the app env file, as in step 2 of full mode);
+   - `email check: failed graph_429` or `graph_5xx`: Graph is busy; wait 15 minutes and run it again.
+
+   Do not go on to step 4 until the check passes.
+
+4. **Switch `comms.email` on.** First read what is waiting: every email queued while `comms.email` was off goes out once it is on (routine mail in working hours, one a day per person; the rest at once). The product lead sees this count before the switch.
+
+   ```bash
+   docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT channel, state, error_code, count(*) FROM notifications WHERE channel IN ('email', 'digest') GROUP BY 1, 2, 3 ORDER BY 1, 2, 3"
+   ```
+
+   Then, on the product lead's word, an admin switches `comms.email` on from the Admin page, with a reason (for example "Full mode: email through Graph, the product lead's go of 26 Nov"). The change is audited. Five minutes later, run the count again and `docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list`.
+
+   Paste back: both counts and the switch list. Pass: `comms.email on`; `email` `sent` has grown and `queued` has fallen; no `failed` row with a `graph_` code has appeared. A `queued` row with `graph_429` or `graph_5xx` is Graph asking to wait: it goes again by itself within 15 minutes. If `failed` rows with `graph_4xx` or `graph_token_4xx` appear, an admin switches `comms.email` off at once, with a reason, and IT sends the counts to lane A.
+
+**Pass for this section:** the env lines as step 1 says, `preflight: ok`, the worker `Healthy`, `email check: sent (Graph accepted it, HTTP 202)` with its audit row and the message in the test mailbox, then `comms.email on` with email being sent and no `graph_` failure.
+
+**To stop email at any time:** an admin switches `comms.email` off on the Admin page, with a reason. That is instant: emails queue again and in-app messages carry on. Non-delivery reports for addresses that bounce land in the service mailbox's inbox; 1% Club does not read them, so the automatic 5% bounce switch-off does not see them. IT tells lane A if they pile up.
 
 ## Rehearsal
 
