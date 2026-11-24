@@ -10,10 +10,14 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 import {
   addMonthsIST,
+  CLUB_EMAIL,
   dayIST,
   decisionWindow,
+  expectClubMail,
   expectNoSeriousAxeIssues,
   ideaUrl,
+  mailLink,
+  mailTo,
   nextCloseIST,
   seeded,
   signInAs,
@@ -25,6 +29,9 @@ const EXPLANATION =
   "The review desk decides on the committee’s behalf, and the sharer hears at once. For 30 days after, you can " +
   "reverse a decision, with a note the sharer reads. Extend a window 30 days at a time, up to 3 months. Then it " +
   "expires and the decision stands.";
+
+/** The committee's note when it reverses F1 (J-COMMITTEE/3b): Faisal reads it on the page, never by email. */
+const REVERSE_NOTE = "We want to try this at two branches on pension days before deciding for every branch.";
 
 async function openCommittee(page: Page) {
   await signInAs(page, "manoj");
@@ -163,7 +170,7 @@ step(
   { needs: ["S-R4", "L-COMMITTEE", "S-06", "L-NOTIFY"], changes: ["F1"] },
   async ({ page, browser }) => {
     const f1 = await seeded("F1");
-    const note = "We want to try this at two branches on pension days before deciding for every branch.";
+    const note = REVERSE_NOTE;
     await openCommittee(page);
     await rowFor(page, f1.title).getByRole("button", { name: "Review" }).click();
     await page.getByRole("button", { name: "Reverse the decision" }).click();
@@ -200,6 +207,35 @@ step(
     ).toBeVisible();
     await expect(sharer.getByText(/^This is final\./)).toBeVisible();
     await sharer.context().close();
+  },
+);
+
+step(
+  "J-COMMITTEE/3e",
+  "S-06",
+  "Faisal's email: the reversal comes at once from the Ones Committee as one, never the note, and the link opens it",
+  { needs: ["S-06", "L-COMMITTEE", "L-NOTIFY"], after: ["J-COMMITTEE/3b"] },
+  async ({ page }) => {
+    const f1 = await seeded("F1");
+    // L-NOTIFY/1, /3 (DEC-131 (1), BLD-G007): a reversal always goes outside the app, at once, and says what
+    // happened with a link; the words are HR's (comms/templates/inbox/decision_reversed.md).
+    const mail = await mailTo(page, CLUB_EMAIL.faisal, "The Ones Committee reversed a decision", f1.title);
+    expectClubMail(mail, CLUB_EMAIL.faisal);
+    expect(mail.text).toContain("Hi Faisal,");
+    // DEC-113: the sharer reads the Ones Committee as one, never a member's name.
+    expect(mail.text).toContain(`The Ones Committee reversed a decision on your idea: ${f1.title}.`);
+    expect(mail.text).not.toContain("Manoj");
+    expect(mail.html).not.toContain("Manoj");
+    expect(mail.text).toContain("Read the note and the new decision in the app. This is final.");
+    // The note is read in the app, never in an email (L-NOTIFY/3, BLD-E004).
+    expect(mail.text).not.toContain(REVERSE_NOTE);
+    expect(mail.html).not.toContain(REVERSE_NOTE);
+    const link = mailLink(mail, "Read the note");
+    expect(link.pathname).toBe(ideaUrl(f1));
+    await signInAs(page, "faisal");
+    await page.goto(link.pathname);
+    await expect(page.getByText("The Ones Committee changed the decision to picked")).toBeVisible();
+    await expect(page.locator("blockquote").filter({ hasText: REVERSE_NOTE })).toBeVisible();
   },
 );
 

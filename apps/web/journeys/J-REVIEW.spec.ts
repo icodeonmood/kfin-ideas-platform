@@ -19,9 +19,13 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 
 import {
+  CLUB_EMAIL,
+  expectClubMail,
   expectDeskCard,
   expectNoSeriousAxeIssues,
   ideaUrl,
+  mailLink,
+  mailTo,
   seeded,
   signInAs,
   snap,
@@ -424,6 +428,34 @@ step(
     const row = rowFor(page, p1.title);
     await expect(row).toContainText(/Picked, \d{1,2} [A-Z][a-z]+/);
     await expect(row).toContainText(`Ones Committee can review it until ${until}`);
+  },
+);
+
+step(
+  "J-REVIEW/6e",
+  "S-06",
+  "Pallavi's email: the decision comes at once with the idea's title and a link, never the reason, and the link opens it",
+  { needs: ["S-06", "L-NOTIFY", "L-DECIDE"], after: ["J-REVIEW/6"] },
+  async ({ page }) => {
+    const p1 = await seeded("P1");
+    // L-NOTIFY/1, /3 (DEC-131 (1), BLD-G007): a decision always goes outside the app, at once, whatever
+    // Pallavi's settings, and says what happened with a link; the words are HR's (inbox/decision.md).
+    const mail = await mailTo(page, CLUB_EMAIL.pallavi, "A decision on your idea", p1.title);
+    expectClubMail(mail, CLUB_EMAIL.pallavi);
+    expect(mail.text).toContain("Hi Pallavi,");
+    // DEC-111: the review desk as one, as on S-06, never the reviewer's name.
+    expect(mail.text).toContain(`The review desk picked your idea: ${p1.title}.`);
+    expect(mail.text).not.toContain("Lavanya");
+    expect(mail.text).toContain("Read the decision and the reason in the app.");
+    // The reason is read in the app, never in an email (L-NOTIFY/3, BLD-E004).
+    expect(mail.text).not.toContain(REASON);
+    expect(mail.html).not.toContain(REASON);
+    const link = mailLink(mail, "Read the decision");
+    expect(link.pathname).toBe(ideaUrl(p1));
+    await signInAs(page, "pallavi");
+    await page.goto(link.pathname);
+    await expect(page.getByText("Picked. A team is being chosen to build it.").first()).toBeVisible();
+    await expect(page.getByText(REASON).first()).toBeVisible();
   },
 );
 
