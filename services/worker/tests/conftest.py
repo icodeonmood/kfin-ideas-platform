@@ -27,6 +27,17 @@ def pytest_configure(config: pytest.Config) -> None:
     logging.getLogger().addHandler(handler)
 
 
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """BLD-A251: a test that uses `test_database`, directly or through `db`, `world` or any fixture built on it, needs
+    the running stack. Its database is created on the stack's Postgres (localhost) and migrated with the stack's dbmate
+    container. Such a test gets the `stack` mark here, before `-m` deselects, so a local `-m "not stack"` run never
+    reaches that Postgres, which is the live demo's. `make test` and CI select every test, as before."""
+    for item in items:
+        if "test_database" in getattr(item, "fixturenames", ()) and item.get_closest_marker("stack") is None:
+            item.add_marker(pytest.mark.stack)
+
+
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     """Fail the run if any log line emitted by real code paths broke the log rules."""
     from pii.log_rules import scan_log_lines
