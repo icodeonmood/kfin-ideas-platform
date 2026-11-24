@@ -371,3 +371,25 @@ def test_a242_report_keeps_the_keys_gonogo_reads_and_carries_no_words(
     for text in (path.read_text(), printed):
         assert "synthetic" not in text and "SYN-" not in text and "Load test" not in text
         assert not any(w in text for w in lt.WORDS if len(w) > 3 and w != "report")  # report-*.json is a name
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["http://localhost:3000", "http://127.0.0.1:3000/", "http://[::1]:3000", "http://0.0.0.0:3000"],
+)
+def test_a242_never_the_demo_a_local_3000_is_refused_without_not_the_demo(
+    url: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """BLD-A242 (lane E's review): no default target, and this machine's :3000, the live demo on the developer Mac, is
+    refused unless --not-the-demo says it is a throwaway stack (a CI runner)."""
+    with pytest.raises(SystemExit) as no_url:
+        lt.parse([])
+    assert no_url.value.code == 2
+    assert "--base-url" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as refused:
+        lt.parse(["--base-url", url])
+    assert refused.value.code == 2
+    assert "never runs against the demo" in capsys.readouterr().err
+    assert lt.parse(["--base-url", url, "--not-the-demo"]).base_url == url
+    assert lt.parse(["--base-url", "http://loadtest-stack.internal:3000"]).not_the_demo is False
+    assert lt.parse(["--base-url", "http://localhost:3001"]).base_url == "http://localhost:3001"

@@ -4,6 +4,9 @@ a running stack.
     uv run python -m loadtest --base-url http://<stack>:3000 --scale 0.1      # a 6-minute check
     uv run python -m loadtest --base-url http://<stack>:3000                  # the full hour
 
+`--base-url` has no default. This machine's :3000 is refused (on the developer Mac it is the live demo, and a load
+test never runs against the demo) unless `--not-the-demo` says that :3000 is a throwaway stack, as on a CI runner.
+
 Targets (AT-B8-01): 150 shares an hour for one hour, plus 3,000 sign-ins spread over two hours (run here at the same
 rate for the test's length); scan time at the 95th percentile 15 s or less; page load at the 95th percentile 2 s or
 less (server response for the 1% Club's pages); error rate under 0.5%. `--scale` shortens the run and keeps the
@@ -554,7 +557,14 @@ def parse(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    parser.add_argument("--base-url", default="http://localhost:3000")
+    parser.add_argument(
+        "--base-url", required=True, help="the stack to load; never the demo (see --not-the-demo)"
+    )
+    parser.add_argument(
+        "--not-the-demo",
+        action="store_true",
+        help="allow a local :3000 target: only on a machine whose :3000 is a throwaway stack (a CI runner)",
+    )
     parser.add_argument(
         "--scale", type=float, default=1.0, help="share of the hour to run; rates stay the same"
     )
@@ -570,7 +580,22 @@ def parse(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--poll", type=float, default=POLL_S, help="seconds between reads while Checking")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--out", type=Path, default=Path("../../.data/loadtest"))
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if local_demo_port(args.base_url) and not args.not_the_demo:
+        parser.error(
+            "--base-url is this machine's :3000, where the dev stack and the demo run: a load test never runs "
+            "against the demo (the product lead's rule). On a throwaway stack (a CI runner) add --not-the-demo."
+        )
+    return args
+
+
+def local_demo_port(base_url: str) -> bool:
+    """BLD-A242: whether `base_url` is this machine's port 3000, where the dev stack, and on the developer Mac the
+    live demo, listen."""
+    url = httpx.URL(base_url)
+    port = url.port or (443 if url.scheme == "https" else 80)
+    local = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # noqa: S104 - host names compared, never bound
+    return url.host in local and port == 3000
 
 
 def main(argv: Sequence[str] | None = None, transport: httpx.AsyncBaseTransport | None = None) -> int:
