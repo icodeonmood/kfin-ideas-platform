@@ -373,7 +373,7 @@ Never paste an env file, the secret, the tenant ID or a mailbox address to lane 
    - `email check: failed graph_4xx (HTTP 403)`: the permission has no admin consent, or the access policy does not cover the mailbox;
    - `email check: failed graph_4xx (HTTP 404)`: `GRAPH_SERVICE_MAILBOX` is not the mailbox's address;
    - `email check: failed graph_timeout`, `graph_unreachable`, `graph_token_timeout` or `graph_token_unreachable`: the outbound rule to the two hosts is missing, the proxy is not set (`HTTPS_PROXY` in the app env file, as in step 2 of full mode), or a TLS-inspecting proxy presents a certificate the worker does not trust;
-   - `email check: failed graph_429`, `graph_token_429` or `graph_5xx`: Graph is busy; wait 15 minutes and run it again;
+   - `email check: failed graph_429`, `graph_token_429`, `graph_5xx` or `graph_token_5xx`: Graph is busy; wait 15 minutes and run it again;
    - any other line (for example `graph_not_configured`, `graph_4xx (HTTP 400)` or `(HTTP 401)`, or the preflight's mailbox line): send it to lane A.
 
    Do not go on to step 4 until the check passes.
@@ -388,11 +388,11 @@ Never paste an env file, the secret, the tenant ID or a mailbox address to lane 
 
    Then an admin switches `comms.email` on from the Admin page, with a reason (for example "Email through Graph, the product lead's go"). The change is audited. Five minutes later, run the count again and `docker exec kfin-ideas-uat-worker-1 python -m core.killswitch list`.
 
-   Paste back: both counts and the switch list. A `queued` row with `graph_429` is Graph asking to wait: it keeps its try and goes again after Graph's wait (at most 15 minutes); one with `graph_5xx`, `graph_timeout` or `graph_unreachable` goes again within 5 minutes. If the list reads `comms.email off`, the worker switched it off itself: see **If email switches itself off** below, and send lane A the counts.
+   Paste back: both counts and the switch list. A `queued` row with `graph_429` is Graph asking to wait: it keeps its try and goes again after Graph's wait (at most 15 minutes); one with `graph_5xx`, `graph_timeout` or `graph_unreachable` (or their `graph_token_` forms, an outage at Microsoft's login) goes again within 5 minutes; neither switches email off. If the list reads `comms.email off`, the worker switched it off itself: see **If email switches itself off** below, and send lane A the counts.
 
-   **Pass for step 4 (only if the product lead switched email on):** `comms.email on`, `email` `sent` has grown and `queued` has fallen. A `failed` row with a `graph_` code is one message Graph refused (`graph_4xx`) or one that failed three tries (`graph_5xx`, `graph_timeout`, `graph_unreachable`): the rest go on; send lane A their counts.
+   **Pass for step 4 (only if the product lead switched email on):** `comms.email on`, `email` `sent` has grown and `queued` has fallen. A `failed` row with a `graph_` code is one message Graph refused (`graph_4xx`) or one that failed three tries (`graph_5xx`, `graph_timeout`, `graph_unreachable` or their `graph_token_` forms): the rest go on; send lane A their counts.
 
-**If email switches itself off:** when Graph says no email can go at all (the token is refused or out of reach, the Graph settings are missing, or Graph's send answers 401, 403 or 404), the worker stops at once and switches `comms.email` off by itself, audited, with the code in the reason. No email spends a try; they all stay queued. Read the reason (it holds a code and a status, never a value):
+**If email switches itself off:** when Graph says no email can go at all (the token is refused, the Graph settings are missing, or Graph's send answers 401, 403 or 404), the worker stops at once and switches `comms.email` off by itself, audited, with the code in the reason. No email spends a try; they all stay queued. Read the reason (it holds a code and a status, never a value):
 
 ```bash
 docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT at, reason FROM audit_log WHERE action = 'kill_switch.set' AND entity = 'kill_switch:comms.email' ORDER BY id DESC LIMIT 1"
