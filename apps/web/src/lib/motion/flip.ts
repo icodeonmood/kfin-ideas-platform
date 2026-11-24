@@ -137,6 +137,9 @@ export async function flip(
   let seen = 0;
   for (const el of get()) {
     if (seen++ >= FLIP_LIMIT) break;
+    // A glide still running from a quick earlier change (a press holds it mid-glide) ends first, so the new one
+    // starts from where elements really are (BLD-D038)
+    el.getAnimations().forEach((a) => a.finish());
     const k = key(el);
     if (k) first.set(k, el.getBoundingClientRect());
   }

@@ -7,7 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
-import { HOLD_MAX_MS, PRESS_GRACE_MS, yieldToInput } from "@/lib/motion/flip";
+import { flip, HOLD_MAX_MS, PRESS_GRACE_MS, yieldToInput } from "@/lib/motion/flip";
 
 type Glide = {
   playState: AnimationPlayState;
@@ -213,5 +213,67 @@ describe("BLD-D038 yieldToInput (lib/motion/flip)", () => {
   it("BLD-D038, F-MOTION.rules/5: nothing to hold resolves at once", async () => {
     await expect(yieldToInput([])).resolves.toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("BLD-D038 flip (lib/motion/flip)", () => {
+  it("BLD-D038, F-MOTION.rules/5: flip() ends a glide still running on its elements before it measures them", async () => {
+    // A press on My ideas' sort button holds the earlier sort's glide mid-way, then its click calls flip()
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q }) as MediaQueryList);
+    const list = document.createElement("ul");
+    let moved = 0; // the new order lands 100 px lower
+    const rows = ["a", "b"].map((k, i) => {
+      const el = document.createElement("li");
+      el.dataset.flip = k;
+      const old = glide();
+      old.pause();
+      // Held mid-glide, the row is drawn 37 px from where the earlier sort puts it
+      const rect = vi.fn(
+        () =>
+          ({
+            left: 0,
+            top: i * 40 + moved + (old.playState === "finished" ? 0 : 37),
+            width: 200,
+            height: 40,
+          }) as DOMRect,
+      );
+      const animate = vi.fn(() => {
+        const g = glide();
+        g.finish();
+        return g as unknown as Animation;
+      });
+      Object.assign(el, {
+        getAnimations: () => (old.playState === "finished" ? [] : [old as unknown as Animation]),
+        getBoundingClientRect: rect,
+        animate,
+      });
+      list.append(el);
+      return { old, rect, animate };
+    });
+    document.body.append(list);
+    try {
+      await flip(
+        () => list.querySelectorAll<HTMLElement>("[data-flip]"),
+        () => {
+          moved = 100;
+        },
+      );
+      for (const { old, rect, animate } of rows) {
+        expect(old.finish).toHaveBeenCalledTimes(1);
+        expect(old.finish.mock.invocationCallOrder[0]).toBeLessThan(rect.mock.invocationCallOrder[0] ?? 0);
+        // The new glide starts from where the row really ended, not from the held mid-glide place
+        expect(animate).toHaveBeenCalledTimes(1);
+        expect(animate.mock.calls[0]).toEqual([
+          [
+            { transform: "translate(0px, -100px)", transformOrigin: "0 0" },
+            { transform: "none", transformOrigin: "0 0" },
+          ],
+          expect.anything(),
+        ]);
+      }
+    } finally {
+      list.remove();
+      vi.unstubAllGlobals();
+    }
   });
 });
