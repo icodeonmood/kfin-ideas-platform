@@ -226,7 +226,8 @@ function crewDeck(cards: CrewCard[], total = cards.length): CrewDeckResponse {
   };
 }
 
-type Routes = Record<string, (init?: RequestInit) => { status: number; body?: unknown }>;
+type Answer = { status: number; body?: unknown };
+type Routes = Record<string, (init?: RequestInit) => Answer | Promise<Answer>>;
 
 function fakeFetch(routes: Routes) {
   const calls: { url: string; init?: RequestInit }[] = [];
@@ -236,7 +237,7 @@ function fakeFetch(routes: Routes) {
     const hit = Object.entries(routes).find(
       ([k]) => url === k || url.startsWith(`${k}?`) || url.startsWith(k),
     );
-    const out = hit ? hit[1](init) : { status: 404, body: { error: "not_found" } };
+    const out = hit ? await hit[1](init) : { status: 404, body: { error: "not_found" } };
     return new Response(out.body === undefined ? null : JSON.stringify(out.body), {
       status: out.status,
       headers: { "Content-Type": "application/json" },
@@ -1368,6 +1369,50 @@ describe("S-03 C-PROMPT.voice: the round voice button in Home's empty box (WF-02
     expect(d.keys[0]).toBe(d.messages[0]!.client_id);
     expect(d.keys[1]).toBe(d.messages[1]!.client_id);
     expect(d.keys[0]).not.toBe(d.keys[1]);
+    expect(push).toHaveBeenCalledWith(`/share/${NEW_DRAFT}`);
+  });
+
+  it("BLD-C220 review fix, L-DRAFT.voice: while a note goes in, a second note adds nothing and the microphone does not start", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const messages: unknown[] = [];
+    const routes = baseRoutes({
+      [`/api/drafts/${NEW_DRAFT}/messages`]: async (init) => {
+        messages.push(JSON.parse(String(init?.body)));
+        await held; // the first note's message is still going in
+        const message = { id: `m-${messages.length}` };
+        return { status: 202, body: { run_id: "r-1", message, draft: { id: NEW_DRAFT, messages: [] } } };
+      },
+      "/api/drafts": () => ({ status: 201, body: { draft: { id: NEW_DRAFT, messages: [] }, run_id: null } }),
+    });
+    await show(routes);
+    await tap("Tap to start speaking");
+    voice.start.mockClear();
+    await hear({ status: "done", note: NOTE });
+    expect(messages).toHaveLength(1);
+    await hear({ status: "done", note: { ...NOTE, streamId: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e" } });
+    expect(messages).toHaveLength(1); // the second note added nothing
+    await act(async () => button("Speak instead")?.click());
+    expect(voice.start).not.toHaveBeenCalled(); // no new capture while one goes in
+    release();
+    await settle();
+    expect(push).toHaveBeenCalledTimes(1);
+  });
+
+  it("BLD-C220 review fix, L-DRAFT.voice: after a note fails back into the box, the next note is taken as usual", async () => {
+    let first = true;
+    const d = draftRoutes(() => {
+      if (!first) return undefined as never; // the route's usual answer
+      first = false;
+      return { status: 422, body: { error: { code: "too_long", message: "That message is too long." } } };
+    });
+    await show(d.routes);
+    await tap("Tap to start speaking");
+    await hear({ status: "done", note: NOTE });
+    expect(box().value).toBe(NOTE.text);
+    expect(push).not.toHaveBeenCalled();
+    await hear({ status: "done", note: { ...NOTE, streamId: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e" } });
+    expect(d.messages.length).toBeGreaterThan(1); // taken: not stuck behind the failed one
     expect(push).toHaveBeenCalledWith(`/share/${NEW_DRAFT}`);
   });
 
