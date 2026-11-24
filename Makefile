@@ -78,15 +78,18 @@ demo-remove: ## Dev only: remove the demo without loading it again; run before e
 
 test: up migrate test-py test-web ## Unit and integration tests
 
+# BLD-A244: with TEST_RESULTS set (an absolute folder; CI sets it), the test targets also write JUnit XML there, the
+# CI report for the go/no-go. Unset, they run exactly as before.
+TEST_RESULTS ?=
 test-py:
-	$(PY) pytest -q
+	$(PY) pytest -q $(if $(TEST_RESULTS),--junitxml=$(TEST_RESULTS)/pytest.xml)
 
 test-web:
-	$(WEB) npx vitest run
+	$(WEB) npx vitest run $(if $(TEST_RESULTS),--reporter=default --reporter=junit --outputFile.junit=$(TEST_RESULTS)/vitest.xml)
 
 e2e: up seed ## Playwright end-to-end and accessibility checks (signs in as the seeded personas)
 	$(PY) python -m bootstrap.demo --set 1pc
-	$(WEB) E2E_BASE_URL="$(E2E_BASE_URL)" OIDC_ISSUER="$(OIDC_ISSUER)" \
+	$(WEB) E2E_BASE_URL="$(E2E_BASE_URL)" OIDC_ISSUER="$(OIDC_ISSUER)" $(if $(TEST_RESULTS),E2E_JUNIT_FILE="$(TEST_RESULTS)/e2e.xml") \
 		E2E_DATABASE_URL="postgres://ideas:ideas@localhost:$(POSTGRES_PORT)/ideas?sslmode=disable" npx playwright test
 
 eval: up ## Golden sets for every agent (model gates enforced on a real route only, BLD-076)
