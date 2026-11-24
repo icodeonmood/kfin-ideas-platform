@@ -294,6 +294,8 @@ describe("C-PROMPT.attach on Home (S-03; DEC-124, BLD-C213, C214)", () => {
     expect(b.getAttribute("aria-expanded")).toBe("true");
     const picker = document.getElementById(b.getAttribute("aria-controls")!)!;
     expect(picker.classList.contains("cpick")).toBe(true);
+    // BLD-C243: the prompt says the picker is open, so Home hides its hint without :has().
+    expect(host.querySelector(".hm-prompt")!.classList.contains("picking")).toBe(true);
     expect(picker.textContent).toContain("Drop files or a folder here, or browse");
     expect(picker.textContent).toContain(`${CONFIG.help_text} Tap the folder to add a whole folder.`);
     expect(picker.textContent).toContain(
@@ -315,6 +317,7 @@ describe("C-PROMPT.attach on Home (S-03; DEC-124, BLD-C213, C214)", () => {
     });
     await act(async () => await new Promise<void>((r) => requestAnimationFrame(() => r())));
     expect(host.querySelector(".cpick")).toBeNull();
+    expect(host.querySelector(".hm-prompt")!.classList.contains("picking")).toBe(false);
     expect(document.activeElement).toBe(plus());
   });
 

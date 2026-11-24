@@ -1514,7 +1514,8 @@ describe("S-03 C-PROMPT.voice: the round voice button in Home's empty box (WF-02
     const css = readFileSync(path.resolve(__dirname, "../../src/app/home/home.css"), "utf8");
     const phone = css.slice(css.indexOf("@media (max-width: 640px)"));
     expect(phone).toMatch(/\.hm \.cz \.hm-prompt \.vhint \{\s*display: flex;/);
-    expect(css).toMatch(/\.hm \.cz \.hm-prompt:has\(\.cpick\) \.vhint \{\s*display: none;/);
+    expect(css).toMatch(/\.hm \.cz \.hm-prompt\.picking \.vhint \{\s*display: none;/);
+    expect(css).not.toMatch(/:has\(\.cpick/); // BLD-C243: no :has(), Firefox 111, the floor, drops it
   });
 
   it("BLD-C240, C-PROMPT.voice: once typed, the hint never comes back, even after the box is cleared; the round button is still the microphone", async () => {

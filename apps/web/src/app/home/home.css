@@ -63,8 +63,9 @@
 }
 
 /* WF-02 (BLD-C220, C-PROMPT.voice): "Tap to start speaking" over the round button, as both Home boards draw it, but
-   never over the open picker (Home.dc.html). */
-.hm .cz .hm-prompt:has(.cpick) .vhint {
+   never over the open picker (Home.dc.html). The prompt carries `picking` while the picker is open (BLD-C243): no
+   :has(), which Firefox 111, the floor, drops. */
+.hm .cz .hm-prompt.picking .vhint {
   display: none;
 }
 
