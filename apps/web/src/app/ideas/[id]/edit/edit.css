@@ -201,6 +201,22 @@
   flex-basis: 100%;
 }
 
+/* The saved line: its words wrap beside the tick, never under it (lane D's QA of BLD-C241, at 360 px). `.bmsg` wraps,
+   so a span wider than the room beside the 14 px tick dropped whole to a line of its own */
+.ed-live > .bmsg.ok {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+}
+
+.ed-live > .bmsg.ok > svg {
+  flex: none;
+  margin-top: 3px;
+}
+
+.ed-live > .bmsg.ok > span {
+  min-width: 0;
+}
+
 /* The saved line's live region, and the files' one for a file removed while uploading that could not be deleted, are
    always on the page (WCAG 4.1.3); while they are empty they take no room. */
 .ed-live:empty,
@@ -218,12 +234,14 @@
   margin-left: auto;
 }
 
-.ck .bmsg.ok {
+.ck .bmsg.ok,
+.ed-dock .bmsg.ok {
   background: var(--okW);
   color: var(--okT);
 }
 
-.ed .bmsg .tb {
+.ed .bmsg .tb,
+.ed-dock .bmsg .tb {
   min-height: 24px;
   margin-left: auto;
   color: inherit;
@@ -291,10 +309,8 @@
 }
 
 @media (max-width: 640px) {
-  /* The dock is fixed at the foot: the page keeps room for it. */
-  .ed-phone {
-    padding-bottom: 200px;
-  }
+  /* The dock is the shared one (BLD-C241): the shell keeps the page's room under it from its own height
+     (`--dock-h`, shell.css), so the page sets none of its own. */
 
   /* The dock reads top to bottom here: the declaration, then Cancel and Save changes (PhoneEdit). */
   .ed-dock {
