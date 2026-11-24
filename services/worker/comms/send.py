@@ -1,6 +1,11 @@
 """Send email and digests (§3.7 steps 6–7). Each email carries a plain-text part and a branded HTML part (DEC-061,
 BLD-125): no tracking pixels, no open tracking, links to the app. `comms.email` off: emails stay queued; in-app messages carry on. A failing send retries three times, then
-the notification is marked failed (the in-app copy is already there)."""
+the notification is marked failed (the in-app copy is already there).
+
+Every email leaves through `deliver` (BLD-A243): `EMAIL_MODE=smtp` is the SMTP path (Mailpit in dev and CI), `graph` the
+KFin service mailbox through Microsoft Graph (`comms/graph.py`). Graph's answers decide the retry: 429 and 5xx wait for
+Graph's Retry-After (5 to 15 minutes), any other refusal fails the message at once, and after a 429 the rest of the
+batch waits as long without spending a try."""
 
 from __future__ import annotations
 
@@ -10,7 +15,7 @@ from email.message import EmailMessage
 from typing import Any
 from urllib.parse import urlparse
 
-from comms import email_html
+from comms import email_html, graph
 from comms.render import variables
 from comms.route import IST, next_send_time
 from comms.templates import load, render
@@ -21,8 +26,8 @@ from core.logging import get_logger
 from rules import load_rule
 
 log = get_logger("comms.send")
-FROM = "1% Club <onepercentclub@kfintech.example>"
 MAX_ATTEMPTS = 3
+RETRY = dt.timedelta(minutes=5)  # the wait before the next try, unless Graph asks for longer
 # Sent whole and only while their switches are on: never folded into a digest (Ember review).
 NO_DIGEST = ("ember.issue", "ones.announced")
 
@@ -40,16 +45,38 @@ def build_message(to: str, email: email_html.Email) -> EmailMessage:
     """multipart/alternative: the plain-text part first, the HTML part second (mail apps show the last one they
     can render)."""
     msg = EmailMessage()
-    msg["From"], msg["To"], msg["Subject"] = FROM, to, email.subject
+    msg["From"], msg["To"], msg["Subject"] = get_settings().email_from, to, email.subject
     msg.set_content(email.text)
     msg.add_alternative(email.html, subtype="html")
     return msg
+
+
+def deliver(to: str, email: email_html.Email) -> None:
+    """The one way an email leaves the worker (BLD-A243): every sender calls this, and nothing else sends."""
+    mode = get_settings().email_mode.strip()
+    if mode == "graph":
+        graph.send(build_message(to, email))
+    elif mode == "smtp":
+        _smtp(to, email)
+    else:
+        raise ValueError("EMAIL_MODE must be smtp or graph")
 
 
 def _smtp(to: str, email: email_html.Email) -> None:
     url = urlparse(get_settings().smtp_url)
     with smtplib.SMTP(url.hostname or "localhost", url.port or 25, timeout=10) as s:
         s.send_message(build_message(to, email))
+
+
+def _failure(exc: Exception) -> tuple[str, dt.timedelta, bool]:
+    """(error code, wait before the next try, final) for a failed send. Graph's answers carry their own code and
+    status family (never Graph's text); anything else, the SMTP path included, is recorded as before: the
+    exception's type, tried again in 5 minutes."""
+    if isinstance(exc, graph.EmailRefused):
+        return exc.code, RETRY, True
+    if isinstance(exc, graph.EmailRetry):
+        return exc.code, max(RETRY, dt.timedelta(seconds=exc.retry_after_s or 0)), False
+    return type(exc).__name__.lower()[:60], RETRY, False
 
 
 def compose(
@@ -110,7 +137,7 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
             "AND n.send_after <= %s AND u.active ORDER BY n.send_after, n.id LIMIT %s FOR UPDATE OF n SKIP LOCKED",
             (now, limit),
         ).fetchall()
-        for r in rows:
+        for i, r in enumerate(rows):
             if paused(conn, r["event"]):  # the message waits instead of failing
                 conn.execute(
                     "UPDATE notifications SET send_after = %s WHERE id = %s",
@@ -127,15 +154,32 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
                         (r["id"],),
                     )
                     continue
-                _smtp(r["email"], message)
+                deliver(r["email"], message)
             except Exception as exc:
-                failed = r["attempts"] + 1 >= MAX_ATTEMPTS
+                code, wait, final = _failure(exc)
+                failed = final or r["attempts"] + 1 >= MAX_ATTEMPTS
                 conn.execute(
                     "UPDATE notifications SET attempts = attempts + 1, state = %s, error_code = %s, "
-                    "send_after = now() + interval '5 minutes' WHERE id = %s",
-                    ("failed" if failed else "queued", type(exc).__name__.lower()[:60], r["id"]),
+                    "send_after = now() + %s WHERE id = %s",
+                    ("failed" if failed else "queued", code, wait, r["id"]),
                 )
-                log.warning("comms.send_failed", notification_id=r["id"], error_type=type(exc).__name__)
+                log.warning(
+                    "comms.send_failed",
+                    notification_id=r["id"],
+                    error_type=type(exc).__name__,
+                    error_code=code,
+                    http_status=getattr(exc, "status", None),
+                    attempt=r["attempts"] + 1,
+                )
+                # Graph is throttling the mailbox: the rest of the batch waits as long, without spending a try.
+                if code == "graph_429":
+                    rest = [x["id"] for x in rows[i + 1 :]]
+                    if rest:
+                        conn.execute(
+                            "UPDATE notifications SET send_after = now() + %s WHERE id = ANY(%s)",
+                            (wait, rest),
+                        )
+                    break
                 continue
             conn.execute(
                 "UPDATE notifications SET state = 'sent', sent_at = %s WHERE id = %s", (now, r["id"])
@@ -229,7 +273,7 @@ def _send_digest(conn: Conn, u: dict[str, Any]) -> int:
     sections = [
         (load(it["template"]), variables(conn, str(u["user_id"]), it["event"], it["payload"])) for it in items
     ]
-    _smtp(u["email"], email_html.digest(sections, get_settings().app_base_url))
+    deliver(u["email"], email_html.digest(sections, get_settings().app_base_url))
     conn.execute(
         "UPDATE notifications SET state = 'sent', sent_at = now() WHERE id = ANY(%s)",
         ([it["id"] for it in items],),

@@ -92,6 +92,7 @@ services:
       # Shared with the speech service only, never the web app (BLD-C015). Dev value; UAT and prod set their own.
       SPEECH_SERVICE_TOKEN: ${SPEECH_SERVICE_TOKEN:-dev-speech-service-token-0000000}
       SARVAM_API_KEY: ${SARVAM_API_KEY:-}   # worker only (DEC-108); empty in dev, where SPEECH_MODE is fake
+      GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}   # worker only (BLD-A243); empty in dev, where EMAIL_MODE is smtp
       # The API listens on the default network (the one postgres is on) and 127.0.0.1 only: never on the speech
       # network, so the speech service cannot reach it (BLD-C017).
       WORKER_API_BIND_PEER: postgres
@@ -126,6 +127,7 @@ services:
       WORKER_URL: http://worker:8000
       SPEECH_SERVICE_TOKEN: ""   # never the web app's, even if someone puts it in .env (BLD-C031)
       SARVAM_API_KEY: ""   # never the web app's, even if someone puts it in .env (DEC-108, BLD-C115)
+      GRAPH_CLIENT_SECRET: ""   # never the web app's, even if someone puts it in .env (BLD-A243)
       # The model route's credentials are never the web app's, even if someone puts them in .env: model calls are the
       # worker's gateway (non-negotiable 1, BLD-A246).
       ANTHROPIC_API_KEY: ""

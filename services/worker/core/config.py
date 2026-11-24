@@ -109,7 +109,17 @@ class Settings(BaseSettings):
 
     clamav_host: str = "localhost"
     clamav_port: int = 3310
+    # Email (BLD-A243, DEC-131). `smtp` (Mailpit in dev and CI) or `graph`: the KFin service mailbox through Microsoft
+    # Graph, application permission, client credentials (comms/graph.py). With `graph`, EMAIL_FROM's address is the
+    # service mailbox (the preflight checks it). The client secret is the worker's alone: the database env file in UAT
+    # and prod, never the web app's (compose blanks it there; deploy.sh refuses it in the app env file).
+    email_mode: str = "smtp"  # smtp | graph
+    email_from: str = "1% Club <onepercentclub@kfintech.example>"
     smtp_url: str = "smtp://localhost:1025"
+    graph_tenant_id: str = ""
+    graph_client_id: str = ""
+    graph_service_mailbox: str = ""
+    graph_client_secret: str = ""
     app_base_url: str = "http://localhost:3000"
     # The daily decide-by digest to the review desk (L-REVIEW.clock/3, BLD-A203). Built but off at launch: lane B's
     # BLD-B241 mails nothing about overdue ideas. DECIDE_BY_DIGEST=true and a worker restart switch it on.
