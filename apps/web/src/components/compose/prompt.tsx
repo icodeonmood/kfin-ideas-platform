@@ -222,7 +222,8 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
   ) : null;
 
   return (
-    <div className={`cbox prompt${className ? ` ${className}` : ""}`}>
+    // `picking` while the picker is open, so a screen can style around it without :has() (Firefox 111, the floor).
+    <div className={`cbox prompt${picker ? " picking" : ""}${className ? ` ${className}` : ""}`}>
       {files}
       <div className="tx">
         {/* The mirror sizes the box: with no words yet it holds the placeholder, so the example is never cut. */}
