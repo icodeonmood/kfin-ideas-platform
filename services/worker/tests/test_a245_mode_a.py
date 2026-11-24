@@ -256,7 +256,11 @@ def test_a245_runbook_full_mode_section_in_order_with_paste_backs_and_no_secret(
     doc = UAT_DOC.read_text("utf-8")
     headings = re.findall(r"^## (.+)$", doc, re.M)
     i = headings.index("Switching to full mode (mode A)")
-    assert headings[i - 1] == "Updating the live server (upgrade and rollback)"
+    # BLD-A241: the restore drill, run before the Full go/no-go, sits between the upgrade and full mode.
+    assert headings[i - 2 : i] == [
+        "Updating the live server (upgrade and rollback)",
+        "Restore drill (BLD-A241)",
+    ]
     section = _section(doc, "Switching to full mode (mode A)")
     assert re.findall(r"^ ?(\d+)\. \*\*", section, re.M) == [str(n) for n in range(1, 11)]
     order = [

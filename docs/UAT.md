@@ -206,6 +206,42 @@ Run them about 5 minutes after step 5. Paste back: the three results. Pass: the 
 
 **Rehearse first:** before each upgrade of the server, lane A runs `make uat-rehearsal-upgrade FROM=<the installed tag> REHEARSE_APP_ENV=prod` on a developer machine, at the new tag. It installs FROM with FROM's own deploy in production mode (no people), then does what IT did after the install, on synthetic people only (`@kfintech.example`): a synthetic HR file of 20 through stdin, `admin` for one of them, `core_committee` for another, and the smoke checks without `--fresh`. With a checkout that has the start sweep, it then adds three synthetic files on FROM through FROM's own code (one that reads "Didn't upload" after its waits, one still waiting on its last try, and the antivirus test file), and checks them by ID after each later phase (`files-upgrade`, `files-rollback`, `files-again`); without the sweep the summary says `files-from SKIPPED`. From `launch-2026-11-20-r4` on, FROM has lane C's file waits: a file waiting for the personal-data check no longer uses up its tries. So on such a FROM the first file waits for the check instead of reading "Didn't upload", the antivirus test file waits too (nothing is scanned while AI is off), and the upgrade moves 0 files back (`file checks: 0 files back to waiting for the personal-data check (none opened)`). The rehearsal picks what to expect from FROM's code and says which in one line before the install: `file phases: shape waits` (r4 and later) or `file phases: shape r3`. Then it upgrades to the checkout, rolls back, upgrades again, prints a summary (`== Summary (upgrade rehearsal, APP_ENV=prod)`, one PASS line per phase) and tears it all down (`KEEP=1` keeps it). Its last line is `rehearsal: upgrade, rollback and upgrade again all passed` only when every phase has its PASS line; otherwise `rehearsal: FAILED (exit N)`, or `rehearsal: STOPPED (TERM) after <phase>` when it was stopped, which also stops the runs it started. Ones Committee, which only the Admin page gives, is not rehearsed: nobody can sign in there. Without `REHEARSE_APP_ENV=prod` it rehearses a UAT host (`APP_ENV=uat`, with synthetic people loaded at install). It refuses while the dev stack runs and never starts or stops it: run `make down` from the main checkout first and `make up` there after.
 
+## Restore drill (BLD-A241)
+
+The Full go/no-go needs "Restore drill completed inside 4 hours" (ARCHITECTURE §9.3, mode A; check: IT). The drill proves that a backup of the live database restores whole on this server. It takes a fresh backup of the database `ideas`, restores it into a scratch database `ideas_restore_drill` on the same Postgres, compares the two table by table, then drops the scratch database and deletes its own backup. It reads the live database and changes nothing in it: no service stops, no kill switch changes, and people can keep using the 1% Club while it runs. IT's own point-in-time restore from the WAL archive stays as `docs/RUNBOOK.md` §5 describes; this drill does not replace it.
+
+**When:** once before the Full go/no-go (Wed 25 Nov 2026, 16:00), in a quiet window; tell the review desk first. Lane A rehearses it on the rehearsal stack before IT runs it, and sends IT the tag to run it from. It never runs at the same time as an upgrade or a rollback: all three take the lock `ops/.lock`, and the second one stops at its step 1 (an upgrade then says "another upgrade or rollback holds": wait for the drill to end). Run it inside `tmux` or `screen`.
+
+**Run on real Docker first (24 Nov 2026):** lane A ran it on a GitHub runner with Postgres 16.12 (CI run 45371104620), on a rehearsal stack upgraded from r5: 116 tables, counts equal, 2 s on that small synthetic database, then a refusal with the scratch database already there (it stopped and dropped nothing) and a second pass. On the server it takes longer: the backup and the restore grow with the database.
+
+**Command,** from the release checkout, with the install's data folder and env files (as for an upgrade):
+
+```bash
+UAT_DATA_DIR=/srv/kfin-ideas-uat make uat-restore-drill APP_ENV_FILE=/secure/.env.uat DB_ENV_FILE=/secure/.env.uat.db
+```
+
+**How long:** a few minutes at today's size (one backup and one restore of the database); the target is under 4 hours. It needs free disk for one backup under `backups/`, and room for the copy where Postgres keeps its data; step 1 checks both.
+
+| Step | What happens | Stops when |
+|---|---|---|
+| 1 Checks | The env files; takes the lock; Postgres runs and `ideas` has its migrations; the scratch database is `ideas_restore_drill` (never `ideas`) and does not exist yet; free disk for the backup and the copy. A backup an earlier drill left in `backups/` is named, with the command that deletes it | anything fails. If `ideas_restore_drill` exists, an earlier drill stopped half-way: it prints the one command that drops it and drops nothing |
+| 2 Backup | One read-only snapshot of `ideas`: every table is counted in it, and `pg_dump` takes the backup from the same snapshot, to `backups/restore-drill-<time>.dump` (mode 600), checked with `pg_restore --list` | the backup fails or is empty |
+| 3 Restore | Creates `ideas_restore_drill` (the services' logins cannot connect to it) and restores the backup into it, as a rollback restores `ideas` | the restore fails. It prints only the names of the entries it stopped at, never its messages: they can quote a row |
+| 4 Compare | Every table in schema `public`, from the catalog: the same tables in both, every row count equal, `schema_migrations` at the same version | any difference (it prints the table and both counts) |
+| 5 Clean up | Drops `ideas_restore_drill` and deletes the drill's own backup. No other backup is touched | — |
+| 6 Record | `ops/restore-drill-<time>.json` (`passed`, `seconds`, `where`, `at`), the record the go/no-go report reads | over 4 hours |
+
+Whatever stops the drill after step 1, Ctrl-C included, it still drops `ideas_restore_drill`, deletes its backup and writes a record with `"passed": false`. Its last line is then `restore drill: FAILED (<step>)`.
+
+**What to paste back:** the six `==` lines, the `compare:` line, the `recorded:` line and the last line. Never paste an env file, a secret or HR's file, or any line of them. The drill prints table names, counts, paths and times only, never a row. The backup holds personal data: it never leaves this server, and the drill deletes it at the end.
+
+**Pass:**
+- `compare: N tables, the same in both; every count equal; schema_migrations at <version> in both`;
+- `recorded: /srv/kfin-ideas-uat/ops/restore-drill-<time>.json {"passed": true, "seconds": N, "where": "launch server", "at": "<time>"}`;
+- the last line `restore drill: passed in Ns (N tables, counts equal)`.
+
+If it stops with `ideas_restore_drill already exists`, check with lane A that no drill is running, run the command it printed, then run the drill again. If it stops for any other reason, send the output to lane A before running it again.
+
 ## Switching to full mode (mode A)
 
 Full mode turns on the assistant and similar ideas, and gets email through Graph ready; whether email goes on is the product lead's call at the go/no-go (DEC-131: go/no-go Wed 25 Nov 2026 at 16:00, switch Thu 26 Nov 2026 at 10:00). It is a hand step on the running server, never part of a deploy or an upgrade: neither of them runs the golden sets on the server's database, in any `APP_ENV` (BLD-A245). The golden sets on the real route run only in `scripts/eval/live.sh`, in a throwaway compose project with its own database. live.sh only reads the install's database, to count its model calls in `llm_calls` before and after.

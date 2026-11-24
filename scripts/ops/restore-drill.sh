@@ -16,7 +16,9 @@ cd "$ROOT"
 COMPOSE=(docker compose -f infra/docker-compose.yml --project-directory . --env-file .env)
 WORK="$ROOT/.data/restore-drill"
 DRILL_DB=ideas_restore_drill
-TABLES=(ideas idea_links review_items corrections users role_grants pseudonym_vault notifications audit_log sla_timers outbox repo_files)
+# Every table in schema public, from the catalog (BLD-A241; the fixed list of 12 tables was the old canvas schema's):
+# one line "<table>=<rows>" each, by name, in one read.
+COUNTS_SQL="SELECT format('SELECT %L || ''='' || count(*) FROM public.%I', c.relname, c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') ORDER BY c.relname"
 WHERE="$(tr -cd 'A-Za-z0-9 ._-' <<<"${DRILL_WHERE:-local dev stack}")"
 # One value from .env, without running it as shell code.
 env_value() { { grep -E "^$1=" .env || true; } | tail -1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//; s/^"(.*)"$/\1/'; }
@@ -35,12 +37,10 @@ record() {  # the result for the go/no-go report, pass or fail
 fail() { printf 'DRILL FAILED: %s\n' "$*" >&2; record false; exit 1; }
 psql_q() { "${COMPOSE[@]}" exec -T postgres psql -v ON_ERROR_STOP=1 -U ideas -tAq "$@"; }
 counts() {
-  local out="" n t
-  for t in "${TABLES[@]}"; do
-    n="$(psql_q -d "$1" -c "SELECT count(*) FROM $t")" || fail "could not count $t in $1"
-    out+="$t=$n "
-  done
-  printf '%s' "$out"
+  local out
+  out="$(psql_q -d "$1" <<< "$COUNTS_SQL \\gexec")" || fail "could not count the tables in $1"
+  [[ -n "$out" ]] || fail "found no tables in $1"
+  tr '\n' ' ' <<< "$out"
 }
 reconcile() {  # the drift lines; exit 0 (none) or 1 (some) are both answers, anything else is a failure
   local out code=0
