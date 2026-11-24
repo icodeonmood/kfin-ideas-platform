@@ -170,35 +170,43 @@ test.describe("BLD-A252 on My ideas (S-07)", () => {
   const titleLink = (page: Page, title: string) =>
     page.getByRole("main").getByRole("link", { name: new RegExp(`^${esc(title)}$`) });
 
+  /** My ideas' sorts in the order the phone's one cycler steps through them (ideapage/mine.py SORTS). */
+  const SORTS = ["latest", "shared", "stage"] as const;
+  type Sort = (typeof SORTS)[number];
+  const LABEL: Record<Sort, string> = { latest: "Latest activity", shared: "Date shared", stage: "Stage" };
+  const address = (sort: Sort) => (sort === "latest" ? "/my-ideas" : `/my-ideas?sort=${sort}`);
+
   /**
-   * C-SORTS on My ideas: the button for `label` on a desktop; on a phone the one cycler, which names the sort now
-   * ("Sorted by latest activity") and moves to the other of the two.
+   * C-SORTS on My ideas, the control that picks `to` from the sort on screen: its button on a desktop; on a phone the
+   * one cycler, which names the sort before it ("Sorted by stage") and moves to the next.
    */
-  async function sortTo(
-    page: Page,
-    label: "Date shared" | "Latest activity",
-    phone: boolean,
-  ): Promise<Locator> {
-    if (!phone) return page.getByRole("button", { name: label, exact: true });
-    const now = label === "Date shared" ? "latest activity" : "date shared";
-    return page.getByRole("button", { name: `Sorted by ${now}`, exact: true });
+  function sortTo(page: Page, to: Sort, phone: boolean): Locator {
+    if (!phone) return page.getByRole("button", { name: LABEL[to], exact: true });
+    const before = SORTS[(SORTS.indexOf(to) + SORTS.length - 1) % SORTS.length]!;
+    return page.getByRole("button", { name: `Sorted by ${LABEL[before].toLowerCase()}`, exact: true });
   }
 
-  /** Signs Tanvi in on My ideas sorted by date shared, and waits for that view's answer. The address takes the sort
-   * from the page's own code, so once it has, the page has hydrated. */
-  async function openSortedByShared(page: Page, phone: boolean): Promise<void> {
+  /** Signs Tanvi in on My ideas sorted by `sort` and waits for that view's answer. The address takes each sort from
+   * the page's own code, so once it has, the page has hydrated. On a phone the cycler steps there one sort at a time. */
+  async function openSorted(page: Page, sort: Exclude<Sort, "latest">, phone: boolean): Promise<void> {
     await signIn(page, CLUB.tanvi);
     await page.goto("/my-ideas");
     await expect(page.getByRole("heading", { level: 1, name: "My ideas" })).toBeVisible();
     const answered = page.waitForResponse(
-      (r) => new URL(r.url()).pathname === "/api/me/ideas" && r.request().method() === "POST" && r.ok(),
+      (r) =>
+        new URL(r.url()).pathname === "/api/me/ideas" &&
+        r.request().method() === "POST" &&
+        r.ok() &&
+        (JSON.parse(r.request().postData() ?? "{}") as { sort?: string }).sort === sort,
     );
-    const shared = await sortTo(page, "Date shared", phone);
-    // A click before the page has hydrated does nothing: it is tried again until the address takes the sort
-    await expect(async () => {
-      if (here(page) !== "/my-ideas?sort=shared") await shared.click({ timeout: 5_000 });
-      expect(here(page)).toBe("/my-ideas?sort=shared");
-    }).toPass({ timeout: 30_000 });
+    const path = phone ? SORTS.slice(1, SORTS.indexOf(sort) + 1) : [sort];
+    for (const step of path) {
+      // A click before the page has hydrated does nothing: it is tried again until the address takes the sort
+      await expect(async () => {
+        if (here(page) !== address(step)) await sortTo(page, step, phone).click({ timeout: 5_000 });
+        expect(here(page)).toBe(address(step));
+      }).toPass({ timeout: 30_000 });
+    }
     await answered;
   }
 
@@ -208,9 +216,10 @@ test.describe("BLD-A252 on My ideas (S-07)", () => {
     const phone = isPhone(info.project.name);
     const t5 = await seededIdea("T5");
     const link = titleLink(page, t5.title);
-    await openSortedByShared(page, phone);
+    // From the sort just before "Latest activity" in the phone's cycle, so one press of either control gets there
+    await openSorted(page, "stage", phone);
     await expect(link).toBeVisible();
-    const latest = await sortTo(page, "Latest activity", phone);
+    const latest = sortTo(page, "latest", phone);
 
     // The sort writes My ideas' address in place; the row is clicked before its list comes back
     await latest.click();
@@ -236,7 +245,7 @@ test.describe("BLD-A252 on My ideas (S-07)", () => {
     );
     const t5 = await seededIdea("T5");
     const link = titleLink(page, t5.title);
-    await openSortedByShared(page, false);
+    await openSorted(page, "shared", false);
     const box = page.getByRole("searchbox", { name: /^Search/ });
 
     // The search writes My ideas' address in place and fades the list through loading rows; the row's link is
