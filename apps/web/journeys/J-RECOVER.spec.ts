@@ -425,8 +425,9 @@ step(
   async ({ page }) => {
     await checkPart(page, "Sorting");
     await page.getByRole("button", { name: "Confirm sorting" }).click();
-    // L-SORT.rules/2: Confirm sorting saves, then moves on by itself; this wait is that move-on. Since BLD-C233 a
-    // late reply no longer pulls someone off a part they opened (it once replaced Submit, CI run 44648378064).
+    // L-SORT.rules/2: Confirm sorting saves, then moves on by itself; this wait is that move-on. Since
+    // BLD-C233 a late reply no longer pulls someone off a part they opened (it once replaced Submit, CI run
+    // 44648378064).
     await expect(page.getByRole("heading", { level: 1, name: "Is it sorted right?" })).toHaveCount(0);
     await page.getByRole("button", { name: /^(?:\d )?Send it\b/ }).click();
     await page.route(SUBMIT, (route) =>
