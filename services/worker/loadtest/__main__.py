@@ -56,6 +56,7 @@ import json
 import random
 import re
 import statistics
+import sys
 import time
 import uuid
 from collections.abc import Sequence
@@ -181,6 +182,21 @@ class Waits:
     recover: float = RECOVER_S
 
 
+
+_DIAG_N = 0
+
+
+def _where(r: Any) -> str:
+    """BLD-A242 diagnostic (throwaway branch): a redirect's scheme, host and path only, never its query."""
+    if r is None:
+        return "-"
+    loc = r.headers.get("location", "")
+    if not loc:
+        return "no-location"
+    u = httpx.URL(loc) if loc.startswith("http") else None
+    return f"{u.scheme}://{u.host}:{u.port}{u.path}" if u else f"rel:{loc.split('?')[0]}"
+
+
 class Session:
     """One person's browser: keeps cookies itself (session cookies are Secure, which httpx won't send to http), and
     its own opaque device id, as the browser keeps one (lib/compose/client.ts; random, never a person's detail)."""
@@ -269,7 +285,12 @@ class Session:
         return ok
 
     async def _sign_in(self, employee_id: str) -> bool:
+        global _DIAG_N
+        _DIAG_N += 1
+        diag = _DIAG_N <= 8
         start = await self.request("GET", "/auth/login?next=/", "sign_in")
+        if diag:
+            print(f"diag {_DIAG_N} start {None if start is None else start.status_code} {_where(start)}", file=sys.stderr)
         if start is None or start.status_code not in (302, 307):
             self.stats.error("sign_in")
             return False
@@ -279,11 +300,21 @@ class Session:
                 data={"username": employee_id, "claims": ""},
                 follow_redirects=False,
             )
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            if diag:
+                print(f"diag {_DIAG_N} idp error {type(exc).__name__}", file=sys.stderr)
             self.stats.error("sign_in")
             return False
+        if diag:
+            print(
+                f"diag {_DIAG_N} idp {form.status_code} {_where(form)} type={form.headers.get('content-type', '')[:40]}"
+                f" len={len(form.content)}",
+                file=sys.stderr,
+            )
         self.stats.requests += 1
         callback = await self.request("GET", form.headers.get("location", ""), "sign_in")
+        if diag:
+            print(f"diag {_DIAG_N} cb {None if callback is None else callback.status_code} {_where(callback)}", file=sys.stderr)
         if callback is None or callback.status_code not in (302, 303, 307):
             self.stats.error("sign_in")
             return False
