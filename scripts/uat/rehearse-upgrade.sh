@@ -12,7 +12,9 @@
 #
 # Files (BLD-A239, prod only, when this checkout has lane C's start sweep): phase files-from plants three synthetic
 # files on FROM through FROM's own code (scripts/uat/rehearse_files.py), and a check follows each later phase
-# (files-upgrade, files-rollback, files-again). A checkout without the sweep gets the row "files-from SKIPPED".
+# (files-upgrade, files-rollback, files-again). What they expect follows FROM's shape (BLD-A250), read once from FROM's
+# tree: `r3` without lane C's file waits, `waits` with them (launch-2026-11-20-r4 and later). A checkout without the
+# sweep gets the row "files-from SKIPPED".
 # The last line (BLD-A240) is the pass line only when every expected phase has its row and each reads PASS. TERM or
 # INT stops the run this script started (and what it started), prints STOPPED and still tears everything down.
 #
@@ -23,7 +25,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 # shellcheck source=scripts/uat/lib.sh
-. "$ROOT/scripts/uat/lib.sh"   # fail, has_start_sweep, rehearsal_verdict
+. "$ROOT/scripts/uat/lib.sh"   # fail, has_start_sweep, has_file_waits, rehearsal_verdict
 WORK="${UPGRADE_REHEARSAL_WORK:-$ROOT/.data-uat-upgrade-rehearsal}"   # the tests point it at a temporary folder
 PROJECT=kfin-ideas-uat-rehearsal
 DEV_PROJECT=kfin-ideas
@@ -49,6 +51,18 @@ TO_SHA="$(git rev-parse HEAD)"
 FILES=0
 if [[ "$REHEARSE_APP_ENV" == "prod" ]] && has_start_sweep "$TO_SHA"; then
   FILES=1
+fi
+# BLD-A250: FROM's shape for the file phases, decided once, from FROM's tree: `waits` when FROM has lane C's file waits
+# (class JobWaits), `r3` otherwise. Each file phase below reads it; the driver checks it against FROM's running worker.
+FILES_SHAPE=""
+if [[ $FILES -eq 1 ]]; then
+  if has_file_waits "$FROM_SHA"; then
+    FILES_SHAPE=waits
+    echo "file phases: shape waits (FROM $FROM at $FROM_SHA has lane C's file waits, class JobWaits)"
+  else
+    FILES_SHAPE=r3
+    echo "file phases: shape r3 (FROM $FROM at $FROM_SHA has no file waits, no class JobWaits)"
+  fi
 fi
 # What a pass needs (BLD-A240): one row for each of these phases, in this mode, each PASS. files-from may be SKIPPED
 # only when TO has no start sweep.
@@ -235,15 +249,21 @@ people_prod() {
   docker exec "$worker" python -m bootstrap.smoke --web-url http://web:3000
 }
 
-# ---- Files (BLD-A239): what the launch server holds while AI is off, and what each later phase leaves of it --------
-# r3's file check waits on the gatekeeper while ai.all is off, counts each wait as a failed try, and after its last
-# try ends the file "Didn't upload". Lane C's A2 (in TO) stops counting the waits and, at worker start, moves those
-# files back to waiting. files-from plants, on FROM, D (dead by waits), W (waiting on its last try) and V (a real
-# failure: infected) through FROM's own code; each check below reads them by ID (read-only, through Postgres), after
-# the switch is read off. Nothing prints a file's text, its name or a person's name.
-# A2's names, pinned here and not parsed: TO's check raises jobs.runner.JobWaits; the runner puts the job back
-# (`queued`, the claim's +1 undone, last_error `waiting_gatekeeper`, run_at in 300 s); the file's checks get
-# `waiting_for: gatekeeper`; the log events jobs.waiting and jobs.waits_reset are not read.
+# ---- Files (BLD-A239, BLD-A250): what the launch server holds while AI is off, and what each later phase leaves of it
+# files-from plants, on FROM, D (dead by waits), W (waiting on its last try) and V (a real failure: the antivirus test
+# file) through FROM's own code; each check below reads them by ID (read-only, through Postgres), after the switch is
+# read off. Nothing prints a file's text, its name or a person's name. What they expect follows FILES_SHAPE:
+# - r3 (FROM without the waits): the file check waits on the gatekeeper while ai.all is off, counts each wait as a
+#   failed try, and after its last try ends the file "Didn't upload" (D); the virus scan comes first, so V ends
+#   infected. Lane C's A2 (in TO) stops counting the waits and, at worker start, moves D back to waiting: the upgrade
+#   prints 1 file back, and D gets a new job at 0 tries. The rollback brings back D upload_failed and V infected.
+# - waits (FROM with A2, launch-2026-11-20-r4 and later): a wait is not a try, so D never dies of it and stays
+#   checking, waiting for the gatekeeper, on its old job; the gatekeeper's wait comes before the virus scan, so V is
+#   never scanned with AI off and waits too. The upgrade prints 0 files back. The rollback brings back D and V checking.
+#   FROM's two source checks already allow teamup (20261122301100_hide_teamup_source).
+# A2's names, pinned here and not parsed: the check raises jobs.runner.JobWaits (FROM's tree has `class JobWaits` from
+# r4 on); the runner puts the job back (`queued`, the claim's +1 undone, last_error `waiting_gatekeeper`, run_at in
+# 300 s); the file's checks get `waiting_for: gatekeeper`; the log events jobs.waiting and jobs.waits_reset are not read.
 FILES_IDS="$WORK/files-ids.txt"
 SOURCE_CHECKS="SELECT conname || ': ' || pg_get_constraintdef(oid) FROM pg_constraint WHERE conname IN ('hidden_details_source_check', 'idea_words_sealed_source_check') ORDER BY conname"
 pg() { docker exec "$PROJECT-postgres-1" psql -v ON_ERROR_STOP=1 -U ideas -d ideas -tAq -c "$1"; }
@@ -291,40 +311,59 @@ job_of() {  # <file id>: the SQL condition for its file.check jobs
 files_from() {  # on FROM, after people-prod
   local out
   ai_off || return 1
-  out="$(docker exec -i "$PROJECT-worker-1" python - plant < "$ROOT/scripts/uat/rehearse_files.py")" \
+  out="$(docker exec -i "$PROJECT-worker-1" python - plant "$FILES_SHAPE" < "$ROOT/scripts/uat/rehearse_files.py")" \
     || { printf '%s\n' "$out"; echo "STOPPED: the three files were not planted on $FROM"; return 1; }
   printf '%s\n' "$out"
   printf '%s\n' "$out" | sed -nE 's/^files: ([DWV]) (ATT-[0-9]{4}-[0-9]{6}) on draft .*/\1=\2/p' > "$FILES_IDS"
   [[ "$(grep -c . "$FILES_IDS")" -eq 3 ]] || { echo "STOPPED: files-from did not name three files"; return 1; }
   pg "$SOURCE_CHECKS" > "$WORK/source-checks-from.txt" || { echo "STOPPED: could not read the source checks"; return 1; }
-  if [[ "$(grep -c . "$WORK/source-checks-from.txt")" -ne 2 ]] || grep -q teamup "$WORK/source-checks-from.txt"; then
+  # Both of them, always; r3's without teamup (BLD-A250: r4 and later already allow it).
+  if [[ "$(grep -c . "$WORK/source-checks-from.txt")" -ne 2 ]] \
+    || { [[ "$FILES_SHAPE" == r3 ]] && grep -q teamup "$WORK/source-checks-from.txt"; }; then
     echo "STOPPED: $FROM's hidden_details and idea_words_sealed source checks are not the two expected"
     return 1
   fi
-  echo "kept: $FROM's hidden_details_source_check and idea_words_sealed_source_check (no teamup)"
+  if [[ "$FILES_SHAPE" == r3 ]]; then
+    echo "kept: $FROM's hidden_details_source_check and idea_words_sealed_source_check (no teamup)"
+  else
+    echo "kept: $FROM's hidden_details_source_check and idea_words_sealed_source_check"
+  fi
 }
 
 files_after_upgrade() {  # <upgrade phase>: after upgrade and after upgrade-again
-  local log="$WORK/$1.log" d w v t
+  local log="$WORK/$1.log" d w v t n=1
   ai_off || return 1
   d="$(file_id D)" && w="$(file_id W)" && v="$(file_id V)" || return 1
   grep -qx "migrations applied now: $NEW_MIGRATIONS" "$log" \
     || { echo "STOPPED: $1 did not print \"migrations applied now: $NEW_MIGRATIONS\" (TO's migration files that FROM lacks)"; return 1; }
   echo "ok: migrations applied now: $NEW_MIGRATIONS (TO's migration files that FROM lacks)"
-  # D only: r3's live waiters such as W are reset too, but not counted.
-  if ! grep -qx 'file checks: 1 files back to waiting for the personal-data check (none opened)' "$log"; then
-    echo "STOPPED: $1 did not print \"file checks: 1 files back to waiting …\"; it printed:"
+  # r3: D only (r3's live waiters such as W are reset too, but not counted). waits: none, nothing died of its waits.
+  [[ "$FILES_SHAPE" == r3 ]] || n=0
+  if ! grep -qx "file checks: $n files back to waiting for the personal-data check (none opened)" "$log"; then
+    echo "STOPPED: $1 did not print \"file checks: $n files back to waiting …\"; it printed:"
     grep '^file checks: ' "$log" || echo "(no file checks line)"
     return 1
   fi
-  echo "ok: file checks: 1 files back to waiting (D)"
-  # D: the sweep's new job, claimed by TO's worker and put back to wait with the claim undone.
-  holds 180 "D $d checking, waiting for the gatekeeper; its job queued at 0 tries, waiting_gatekeeper, due later" \
-    "SELECT EXISTS (SELECT 1 FROM jobs WHERE $(job_of "$d") AND state = 'queued' AND attempts = 0 AND last_error = 'waiting_gatekeeper' AND run_at > now()) AND EXISTS (SELECT 1 FROM attachments WHERE id = '$d' AND file_state = 'checking' AND checks->>'waiting_for' = 'gatekeeper')" \
-    || { describe "$d"; return 1; }
-  describe "$d"
-  holds 0 "V $v still infected" "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '$v' AND file_state = 'infected')" \
-    || { describe "$v"; return 1; }
+  if [[ "$FILES_SHAPE" == r3 ]]; then
+    echo "ok: file checks: 1 files back to waiting (D)"
+    # D: the sweep's new job, claimed by TO's worker and put back to wait with the claim undone.
+    holds 180 "D $d checking, waiting for the gatekeeper; its job queued at 0 tries, waiting_gatekeeper, due later" \
+      "SELECT EXISTS (SELECT 1 FROM jobs WHERE $(job_of "$d") AND state = 'queued' AND attempts = 0 AND last_error = 'waiting_gatekeeper' AND run_at > now()) AND EXISTS (SELECT 1 FROM attachments WHERE id = '$d' AND file_state = 'checking' AND checks->>'waiting_for' = 'gatekeeper')" \
+      || { describe "$d"; return 1; }
+    describe "$d"
+    holds 0 "V $v still infected" "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '$v' AND file_state = 'infected')" \
+      || { describe "$v"; return 1; }
+  else
+    echo "ok: file checks: 0 files back to waiting (FROM has the waits: no file died of them)"
+    # D: its own job from FROM (on its last try), never dead, put back to wait each time it is claimed.
+    holds 180 "D $d checking, waiting for the gatekeeper; its newest job queued under its last try, waiting_gatekeeper, due later, never dead" \
+      "SELECT EXISTS (SELECT 1 FROM (SELECT state, attempts, max_attempts, last_error, run_at FROM jobs WHERE $(job_of "$d") ORDER BY id DESC LIMIT 1) j WHERE j.state = 'queued' AND j.attempts < j.max_attempts AND j.last_error = 'waiting_gatekeeper' AND j.run_at > now()) AND NOT EXISTS (SELECT 1 FROM jobs WHERE $(job_of "$d") AND state = 'dead') AND EXISTS (SELECT 1 FROM attachments WHERE id = '$d' AND file_state = 'checking' AND checks->>'waiting_for' = 'gatekeeper')" \
+      || { describe "$d"; return 1; }
+    describe "$d"
+    holds 0 "V $v still checking, waiting for the gatekeeper (not scanned with AI off), its job never dead" \
+      "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '$v' AND file_state = 'checking' AND checks->>'waiting_for' = 'gatekeeper') AND NOT EXISTS (SELECT 1 FROM jobs WHERE $(job_of "$v") AND state = 'dead')" \
+      || { describe "$v"; return 1; }
+  fi
   holds 0 "W $w still checking, its job never dead" \
     "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '$w' AND file_state = 'checking') AND NOT EXISTS (SELECT 1 FROM jobs WHERE $(job_of "$w") AND state = 'dead')" \
     || { describe "$w"; return 1; }
@@ -344,11 +383,20 @@ files_after_rollback() {  # the backup's states again, and FROM's source checks
   local d w v
   ai_off || return 1
   d="$(file_id D)" && w="$(file_id W)" && v="$(file_id V)" || return 1
-  holds 0 "D $d upload_failed again (check_failed), as in the backup" \
-    "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '$d' AND file_state = 'upload_failed' AND checks->>'result' = 'check_failed')" \
-    || { describe "$d"; return 1; }
-  holds 0 "V $v infected" "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '$v' AND file_state = 'infected')" \
-    || { describe "$v"; return 1; }
+  if [[ "$FILES_SHAPE" == r3 ]]; then
+    holds 0 "D $d upload_failed again (check_failed), as in the backup" \
+      "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '$d' AND file_state = 'upload_failed' AND checks->>'result' = 'check_failed')" \
+      || { describe "$d"; return 1; }
+    holds 0 "V $v infected" "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '$v' AND file_state = 'infected')" \
+      || { describe "$v"; return 1; }
+  else
+    holds 0 "D $d checking again, waiting for the gatekeeper, as in the backup" \
+      "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '$d' AND file_state = 'checking' AND checks->>'waiting_for' = 'gatekeeper')" \
+      || { describe "$d"; return 1; }
+    holds 0 "V $v checking again, waiting for the gatekeeper, as in the backup" \
+      "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '$v' AND file_state = 'checking' AND checks->>'waiting_for' = 'gatekeeper')" \
+      || { describe "$v"; return 1; }
+  fi
   holds 0 "W $w checking" "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '$w' AND file_state = 'checking')" \
     || { describe "$w"; return 1; }
   pg "$SOURCE_CHECKS" > "$WORK/source-checks-rollback.txt" || { echo "STOPPED: could not read the source checks"; return 1; }
@@ -356,7 +404,11 @@ files_after_rollback() {  # the backup's states again, and FROM's source checks
     echo "STOPPED: hidden_details_source_check or idea_words_sealed_source_check is not as on $FROM"
     return 1
   fi
-  echo "ok: hidden_details_source_check and idea_words_sealed_source_check as on $FROM (no teamup)"
+  if [[ "$FILES_SHAPE" == r3 ]]; then
+    echo "ok: hidden_details_source_check and idea_words_sealed_source_check as on $FROM (no teamup)"
+  else
+    echo "ok: hidden_details_source_check and idea_words_sealed_source_check as on $FROM"
+  fi
 }
 
 git worktree add --detach "$WORK/from" "$FROM_SHA"

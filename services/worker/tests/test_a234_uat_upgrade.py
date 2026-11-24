@@ -6,6 +6,7 @@ Lane A rehearses the scripts on real Docker (`make uat-rehearsal-upgrade FROM=<r
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import os
 import re
@@ -15,6 +16,7 @@ import stat
 import subprocess
 import sys
 import time
+import types
 from pathlib import Path
 
 import pytest
@@ -55,21 +57,30 @@ if c is not None and k is not None: print(c, json.dumps(k))' "$FAKE_SWEEP_AFTER"
       esac
     fi ;;
   *" python - plant"*)
+    # BLD-A250: the driver's last word is FROM's shape (r3 or waits); D and V end as FROM's code ends them.
     cat > "$FAKE_STATE/driver.py"
     [[ -n "${FAKE_PLANT_FAIL:-}" ]] && { echo "STOPPED: files-from: D ATT-2026-000001: still checking after 180 s"; exit 1; }
     printf 'files: D ATT-2026-000001 on draft 00000000-0000-4000-8000-000000000001 of SYN-00010\n'
     printf 'files: W ATT-2026-000002 on draft 00000000-0000-4000-8000-000000000002 of SYN-00011\n'
     printf 'files: V ATT-2026-000003 on draft 00000000-0000-4000-8000-000000000003 of SYN-00012\n'
-    printf 'files: D ATT-2026-000001 upload_failed (check_failed, no gatekeeper key, quarantine copy kept)\n' ;;
+    if [[ "${a##* }" == waits ]]; then
+      printf 'files: D ATT-2026-000001 checking (waiting for the gatekeeper; FROM has the waits)\n'
+    else
+      printf 'files: D ATT-2026-000001 upload_failed (check_failed, no gatekeeper key, quarantine copy kept)\n'
+    fi ;;
   *"pg_get_constraintdef"*)
-    t=""; [[ -f "$FAKE_STATE/migrated" ]] && t=", 'teamup'"
-    printf "hidden_details_source_check: CHECK (source IN ('file'%s))\nidea_words_sealed_source_check: CHECK (source IN ('edit'%s))\n" "$t" "$t" ;;
+    # Both take teamup after TO's migrations, and on a FROM with the waits (r4 on: 20261122301100_hide_teamup_source).
+    t=""; [[ -f "$FAKE_STATE/migrated" || -n "${FAKE_WAITS_FROM:-}${FAKE_TEAMUP_FROM:-}" ]] && t=", 'teamup'"
+    printf "hidden_details_source_check: CHECK (source IN ('file'%s))\n" "$t"
+    [[ -n "${FAKE_ONE_SOURCE_CHECK:-}" ]] || printf "idea_words_sealed_source_check: CHECK (source IN ('edit'%s))\n" "$t" ;;
   *"WITH due AS (UPDATE jobs SET run_at = now()"*) echo t ;;
   *"SELECT EXISTS"*)
-    # D waits on TO (the sweep's job) and is upload_failed on FROM's schema; everything else holds.
+    # r3: D waits on TO (the sweep's job) and is upload_failed on FROM's schema, V infected. A FROM with the waits
+    # (FAKE_WAITS_FROM, BLD-A250): D never fails and has no new job at 0 tries, V is never scanned. All else holds.
     if [[ -n "${FAKE_CHECK_FAIL:-}" && "$a" == *"$FAKE_CHECK_FAIL"* ]]; then echo f
-    elif [[ "$a" == *"'ATT-2026-000001' AND state = 'queued' AND attempts = 0"* ]]; then [[ -f "$FAKE_STATE/migrated" ]] && echo t || echo f
-    elif [[ "$a" == *"id = 'ATT-2026-000001' AND file_state = 'upload_failed'"* ]]; then [[ -f "$FAKE_STATE/migrated" ]] && echo f || echo t
+    elif [[ "$a" == *"'ATT-2026-000001' AND state = 'queued' AND attempts = 0"* ]]; then [[ -f "$FAKE_STATE/migrated" && -z "${FAKE_WAITS_FROM:-}" ]] && echo t || echo f
+    elif [[ "$a" == *"id = 'ATT-2026-000001' AND file_state = 'upload_failed'"* ]]; then [[ -f "$FAKE_STATE/migrated" || -n "${FAKE_WAITS_FROM:-}" ]] && echo f || echo t
+    elif [[ "$a" == *"id = 'ATT-2026-000003' AND file_state = 'infected'"* ]]; then [[ -n "${FAKE_WAITS_FROM:-}" ]] && echo f || echo t
     else echo t; fi ;;
   *"to_regclass"*) echo "${FAKE_REGCLASS:-t}" ;;
   *"FROM kill_switches"*) printf 'ai.all off\nsubmissions on\n' ;;
@@ -115,6 +126,7 @@ case "$*" in
   "show "*":apps/web/src/content/privacy-notice.ts") echo "  version: \"$FAKE_NOTICE\"," ;;
   "show $FAKE_TO:services/worker/attachments/files.py") [[ -n "${FAKE_SWEEP:-}" ]] && echo '    "file.start_sweep",' || echo 'JOB = "file.check"' ;;
   "show "*":services/worker/attachments/files.py") [[ -n "${FAKE_SWEEP_FROM:-}" ]] && echo '    "file.start_sweep",' || echo 'JOB = "file.check"' ;;
+  "show $FAKE_FROM:services/worker/jobs/runner.py") [[ -n "${FAKE_WAITS_FROM:-}" ]] && echo 'class JobWaits(Exception):' || echo 'class Other(Exception):' ;;
   "show "*) echo "services: {}" ;;
   "worktree add --detach "*)
     set -- $*; mkdir -p "$4/scripts/uat"
@@ -864,13 +876,16 @@ def _summary(out: str) -> str:
 
 
 def _rehearse_prod(tmp_path: Path, **extra: str) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """FROM r3 in production mode, unless `extra` says otherwise (BLD-A250 passes FROM r5)."""
     work = tmp_path / "w"
     env = _env(
         tmp_path,
-        FROM="launch-2026-11-20-r3",
-        REHEARSE_APP_ENV="prod",
-        UPGRADE_REHEARSAL_WORK=str(work),
-        **extra,
+        **{
+            "FROM": "launch-2026-11-20-r3",
+            "REHEARSE_APP_ENV": "prod",
+            "UPGRADE_REHEARSAL_WORK": str(work),
+            **extra,
+        },
     )
     shutil.rmtree(tmp_path / "data")
     return _run(["bash", str(REHEARSE)], env), work
@@ -1010,6 +1025,350 @@ def test_a239_the_rehearsal_driver_uses_r3s_own_code_and_prints_no_file_text_or_
     assert len(whole) == 68 and whole.startswith("X5O!P%@AP")
     for path in (driver, REHEARSE, UPGRADE, LIB, Path(__file__)):
         assert whole not in path.read_text("utf-8"), path
+
+
+# ---- BLD-A250: the file phases follow FROM's shape, r3 or waits (lane C's file waits, r4 and later) ----------------
+
+WAITS_LINE = (
+    "file phases: shape waits (FROM launch-2026-11-20-r5 at {} has lane C's file waits, class JobWaits)"
+)
+R3_LINE = "file phases: shape r3 (FROM launch-2026-11-20-r3 at {} has no file waits, no class JobWaits)"
+RUNNER_AT = "git show {}:services/worker/jobs/runner.py"
+D_NEWEST_JOB = (
+    "SELECT EXISTS (SELECT 1 FROM (SELECT state, attempts, max_attempts, last_error, run_at FROM jobs "
+    "WHERE type = 'file.check' AND payload->>'attachment_id' = 'ATT-2026-000001' ORDER BY id DESC LIMIT 1) j "
+    "WHERE j.state = 'queued' AND j.attempts < j.max_attempts AND j.last_error = 'waiting_gatekeeper' "
+    "AND j.run_at > now()) AND NOT EXISTS (SELECT 1 FROM jobs WHERE type = 'file.check' "
+    "AND payload->>'attachment_id' = 'ATT-2026-000001' AND state = 'dead') AND EXISTS (SELECT 1 FROM attachments "
+    "WHERE id = 'ATT-2026-000001' AND file_state = 'checking' AND checks->>'waiting_for' = 'gatekeeper')"
+)
+WAITING_AGAIN = (
+    "SELECT EXISTS (SELECT 1 FROM attachments WHERE id = '{}' AND file_state = 'checking' "
+    "AND checks->>'waiting_for' = 'gatekeeper')"
+)
+
+
+def _rehearse_waits(tmp_path: Path, **extra: str) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """FROM r5 (it has the waits); TO has the start sweep, and its sweep finds nothing to move."""
+    return _rehearse_prod(
+        tmp_path,
+        FROM="launch-2026-11-20-r5",
+        FAKE_WAITS_FROM="1",
+        FAKE_SWEEP="1",
+        **{"FAKE_SWEEP_AFTER": '{"count": 0, "complete": true}', **extra},
+    )
+
+
+def test_bld_a250_from_with_the_waits_plants_waits_checks_them_and_can_pass(tmp_path: Path) -> None:
+    run, work = _rehearse_waits(tmp_path)
+    out = run.stdout
+    assert run.returncode == 0, out + run.stderr
+    summary = _summary(out)
+    rows = [m.group(1) for m in re.finditer(r"^([a-z-]+)\s+PASS\b", summary, re.M)]
+    assert rows == list(FILE_PHASES), summary
+    assert "rehearsal: upgrade, rollback and upgrade again all passed" in out
+    # The shape is read once, from FROM's tree (never TO's), and said once, before anything is installed.
+    calls = _calls(tmp_path)
+    assert calls.count(RUNNER_AT.format(FROM_SHA)) == 1 and RUNNER_AT.format(TO_SHA) not in calls
+    assert out.count("file phases: ") == 1 and WAITS_LINE.format(FROM_SHA) + "\n" in out
+    assert out.index(WAITS_LINE.format(FROM_SHA)) < out.index("######## install-from")
+    # The driver is told the shape; the source checks may already take teamup on FROM.
+    worker = "kfin-ideas-uat-rehearsal-worker-1"
+    (plant,) = [c for c in calls if " python - plant" in c]
+    assert plant == f"docker exec -i {worker} python - plant waits"
+    for line in (
+        "files: D ATT-2026-000001 checking (waiting for the gatekeeper; FROM has the waits)",
+        "kept: launch-2026-11-20-r5's hidden_details_source_check and idea_words_sealed_source_check\n",
+        COUNT_LINE.format(0),
+        "ok: file checks: 0 files back to waiting (FROM has the waits: no file died of them)",
+        "ok: D ATT-2026-000001 checking, waiting for the gatekeeper; its newest job queued under its last try",
+        "ok: V ATT-2026-000003 still checking, waiting for the gatekeeper (not scanned with AI off)",
+        "ok: W ATT-2026-000002 claimed after that and back to waiting for the gatekeeper",
+        "ok: D ATT-2026-000001 checking again, waiting for the gatekeeper, as in the backup",
+        "ok: V ATT-2026-000003 checking again, waiting for the gatekeeper, as in the backup",
+        "ok: hidden_details_source_check and idea_words_sealed_source_check as on launch-2026-11-20-r5\n",
+    ):
+        assert line in out, line
+    assert "(no teamup)" not in out and "upload_failed again" not in out and "still infected" not in out
+    # files-upgrade and files-again: D's own job, never a new one at 0 tries; the reads are read-only.
+    psql = [c for c in calls if c.startswith("docker exec kfin-ideas-uat-rehearsal-postgres-1 psql ")]
+    assert sum(D_NEWEST_JOB in c for c in psql) == 2
+    assert not any("attempts = 0" in c or "'upload_failed'" in c or "'infected'" in c for c in psql)
+    v_waits = [c for c in psql if "id = 'ATT-2026-000003' AND file_state = 'checking'" in c]
+    assert len(v_waits) == 3 and sum("state = 'dead'" in c for c in v_waits) == 2
+    assert sum(c.endswith(WAITING_AGAIN.format("ATT-2026-000001")) for c in psql) == 1
+    writes = [c for c in psql if re.search(r"\b(INSERT|UPDATE|DELETE)\b", c)]
+    assert len(writes) == 2 and all("WITH due AS (UPDATE jobs SET run_at = now()" in c for c in writes)
+    assert not work.exists()
+    _only_rehearsal_targets(calls, work)
+
+
+def test_bld_a250_from_without_the_waits_tells_the_driver_r3(tmp_path: Path) -> None:
+    run, _ = _rehearse_prod(tmp_path, FAKE_SWEEP="1", FAKE_SWEEP_AFTER='{"count": 1, "complete": true}')
+    out = run.stdout
+    assert run.returncode == 0, out + run.stderr
+    calls = _calls(tmp_path)
+    (plant,) = [c for c in calls if " python - plant" in c]
+    assert plant == "docker exec -i kfin-ideas-uat-rehearsal-worker-1 python - plant r3"
+    assert out.count("file phases: ") == 1 and R3_LINE.format(FROM_SHA) + "\n" in out
+    assert calls.count(RUNNER_AT.format(FROM_SHA)) == 1 and RUNNER_AT.format(TO_SHA) not in calls
+
+
+@pytest.mark.parametrize("extra", [{"FAKE_SWEEP_FROM": "1"}, {"REHEARSE_APP_ENV": "uat"}])
+def test_bld_a250_no_file_phases_no_shape(tmp_path: Path, extra: dict[str, str]) -> None:
+    run, _ = _rehearse_prod(tmp_path, FAKE_WAITS_FROM="1", **extra)
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert "file phases: " not in run.stdout
+    assert not any("jobs/runner.py" in c for c in _calls(tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("extra", "row", "stopped"),
+    [
+        (
+            {"FAKE_SWEEP_AFTER": '{"count": 1, "complete": true}'},
+            "files-upgrade",
+            'STOPPED: upgrade did not print "file checks: 0 files back to waiting …"; it printed:\n'
+            + COUNT_LINE.format(1),
+        ),
+        (
+            {"FAKE_CHECK_FAIL": "id = 'ATT-2026-000003' AND file_state = 'checking'"},
+            "files-upgrade",
+            "STOPPED: expected: V ATT-2026-000003 still checking, waiting for the gatekeeper",
+        ),
+        (
+            {"FAKE_CHECK_FAIL": WAITING_AGAIN.format("ATT-2026-000001")},
+            "files-rollback",
+            "STOPPED: expected: D ATT-2026-000001 checking again, waiting for the gatekeeper, as in the backup",
+        ),
+        (
+            {"FAKE_ONE_SOURCE_CHECK": "1"},
+            "files-from",
+            "STOPPED: launch-2026-11-20-r5's hidden_details and idea_words_sealed source checks are not the two",
+        ),
+    ],
+)
+def test_bld_a250_from_with_the_waits_stops_on_a_failed_file_check_and_tears_down(
+    tmp_path: Path, extra: dict[str, str], row: str, stopped: str
+) -> None:
+    run, work = _rehearse_waits(tmp_path, **extra)
+    out = run.stdout
+    assert run.returncode == 1, out + run.stderr
+    assert stopped in out
+    assert re.search(rf"^{row}\s+FAIL\b", _summary(out), re.M), out
+    assert "rehearsal: FAILED (exit 1)" in out and "all passed" not in out
+    assert not work.exists()
+    _only_rehearsal_targets(_calls(tmp_path), work)
+
+
+def test_bld_a250_from_without_the_waits_still_refuses_teamup_on_from(tmp_path: Path) -> None:
+    run, work = _rehearse_prod(
+        tmp_path, FAKE_SWEEP="1", FAKE_SWEEP_AFTER='{"count": 1, "complete": true}', FAKE_TEAMUP_FROM="1"
+    )
+    out = run.stdout
+    assert run.returncode == 1, out + run.stderr
+    assert (
+        "STOPPED: launch-2026-11-20-r3's hidden_details and idea_words_sealed source checks are not the two"
+        in out
+    )
+    assert re.search(r"^files-from\s+FAIL\b", _summary(out), re.M), out
+    assert not any("dbmate up" in c for c in _calls(tmp_path)) and not work.exists()
+
+
+def test_bld_a250_has_file_waits_reads_the_class_from_the_tree_at_a_sha(tmp_path: Path) -> None:
+    """Real git on a synthetic repo: no runner.py, a runner that only names JobWaits, and one with the class."""
+    repo = tmp_path / "repo"
+    runner = repo / "services" / "worker" / "jobs" / "runner.py"
+    runner.parent.mkdir(parents=True)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "XDG_"))}
+    env.update(
+        HOME=str(tmp_path),
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_AUTHOR_NAME="SYN-00001",
+        GIT_AUTHOR_EMAIL="syn-00001@kfintech.example",
+        GIT_COMMITTER_NAME="SYN-00001",
+        GIT_COMMITTER_EMAIL="syn-00001@kfintech.example",
+    )
+
+    def git(*args: str) -> str:
+        done = subprocess.run(
+            ["git", "-C", str(repo), "-c", "commit.gpgsign=false", *args],
+            capture_output=True, text=True, env=env, check=True,
+        )  # fmt: skip
+        return done.stdout.strip()
+
+    def commit(text: str | None) -> str:
+        if text is None:
+            (repo / "README.md").write_text("synthetic\n")
+        else:
+            runner.write_text(text)
+        git("add", "-A")
+        git("commit", "-q", "-m", "synthetic")
+        return git("rev-parse", "HEAD")
+
+    git("init", "-q")
+    shas = {
+        "no runner": commit(None),
+        "r3": commit(
+            '"""Jobs. Not JobWaits yet: class JobWaits comes with BLD-C225."""\n\n'
+            "class JobWaitsLater(Exception):\n    pass\n\n\n    class JobWaits(Exception):\n        pass\n"
+        ),
+        "waits": commit('"""Jobs."""\n\n\nclass JobWaits(Exception):\n    pass\n'),
+    }
+
+    def has(sha: str) -> int:
+        return subprocess.run(
+            ["bash", "-c", '. "$1"; has_file_waits "$2"', "_", str(LIB), sha],
+            capture_output=True, text=True, env=env, cwd=repo, check=False,
+        ).returncode  # fmt: skip
+
+    assert {name: has(sha) for name, sha in shas.items()} == {"no runner": 1, "r3": 1, "waits": 0}
+    assert has("0" * 40) == 1
+
+
+def _module(name: str, **attrs: object) -> types.ModuleType:
+    module = types.ModuleType(name)
+    module.__dict__.update(attrs)
+    return module
+
+
+class _Device:
+    @staticmethod
+    def of(*_: object) -> str:
+        return "synthetic-device"
+
+
+def _driver(monkeypatch: pytest.MonkeyPatch, *, waits: bool, calls: list[str]) -> types.ModuleType:
+    """The driver loaded on stubs of FROM's modules, so nothing reaches a database: `connect` records the call and
+    raises, and `jobs.runner` has JobWaits only when `waits`."""
+
+    def connect(**_: object) -> None:
+        calls.append("connect")
+        raise ConnectionRefusedError("no database in this test")
+
+    def get_settings() -> object:
+        calls.append("get_settings")
+        return types.SimpleNamespace(s3_bucket_quarantine="quarantine")
+
+    runner = _module("jobs.runner", **({"JobWaits": type("JobWaits", (Exception,), {})} if waits else {}))
+    for name, module in {
+        "attachments": _module("attachments", files=object(), store=object()),
+        "core.config": _module("core.config", get_settings=get_settings),
+        "core.db": _module("core.db", connect=connect),
+        "desk.store": _module("desk.store", code_of=lambda *_, **__: None),
+        "draft.store": _module("draft.store", Device=_Device, Owner=tuple, create=lambda *_, **__: None),
+        "identity.codes": _module("identity.codes", emp_id_hash=lambda *_, **__: ""),
+        "jobs": _module("jobs", runner=runner),
+        "jobs.runner": runner,
+    }.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    spec = importlib.util.spec_from_file_location("rehearse_files_a250", UAT / "rehearse_files.py")
+    assert spec is not None and spec.loader is not None
+    driver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(driver)
+    return driver
+
+
+def test_bld_a250_the_driver_takes_exactly_the_two_shapes(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    driver = _driver(monkeypatch, waits=True, calls=[])
+    asked: list[str] = []
+    monkeypatch.setattr(driver, "plant", asked.append)
+    for argv in (
+        [],
+        ["plant"],
+        ["plant", "r4"],
+        ["plant", "WAITS"],
+        ["plant", "r3", "waits"],
+        ["check", "r3"],
+    ):
+        assert driver.main(argv) == 2, argv
+        assert "usage: python - plant <r3|waits> < scripts/uat/rehearse_files.py" in capsys.readouterr().err
+    assert driver.main(["plant", "r3"]) == 0 and driver.main(["plant", "waits"]) == 0
+    assert asked == ["r3", "waits"]
+
+
+@pytest.mark.parametrize(("waits", "shape", "running"), [(False, "waits", "r3"), (True, "r3", "waits")])
+def test_bld_a250_the_driver_stops_before_planting_when_from_runs_the_other_shape(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    waits: bool,
+    shape: str,
+    running: str,
+) -> None:
+    calls: list[str] = []
+    driver = _driver(monkeypatch, waits=waits, calls=calls)
+    assert driver.main(["plant", shape]) == 1
+    assert capsys.readouterr().out == (
+        f"STOPPED: files-from: the rehearsal asked for shape {shape}, but FROM's running worker has shape "
+        f"{running}\n"
+    )
+    assert calls == []  # nothing read, nothing planted
+    # The same shape as FROM's running worker goes on to the database (here a stub that refuses).
+    with pytest.raises(ConnectionRefusedError):
+        driver.main(["plant", running])
+    assert calls == ["get_settings", "connect"]
+
+
+def test_bld_a250_the_driver_waits_lines_name_ids_and_states_only() -> None:
+    driver = UAT / "rehearse_files.py"
+    text = driver.read_text("utf-8")
+    tree = ast.parse(text)
+    shapes = next(
+        ast.literal_eval(n.value)
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", None) == "SHAPES"
+    )
+    assert shapes == ("r3", "waits")
+    # jobs.runner is read where the shape is checked, never at the top: r3's other imports are all FROM needs.
+    top = {n.module for n in tree.body if isinstance(n, ast.ImportFrom)} | {
+        a.name for n in tree.body if isinstance(n, ast.Import) for a in n.names
+    }
+    assert not any(str(m).startswith("jobs") for m in top), top
+    assert 'hasattr(jobs.runner, "JobWaits")' in text
+    plant = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "plant")
+    assert ast.unparse(plant.body[0]) == "_check_shape(shape)"
+    # The names lane C's waits pin, in the one read the driver polls for D and V.
+    waiting = next(
+        ast.literal_eval(n.value)
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", None) == "WAITING"
+    )
+    for words in (
+        "state = 'queued' AND attempts < max_attempts AND last_error = 'waiting_gatekeeper' AND run_at > now()",
+        "state = 'dead'",
+        "file_state = 'checking' AND checks->>'waiting_for' = 'gatekeeper'",
+    ):
+        assert words in waiting, words
+    assert not re.search(r"\b(INSERT|UPDATE|DELETE)\b", waiting)
+    for line in (
+        'f"files: D {att} checking (waiting for the gatekeeper; FROM has the waits)"',
+        'f"files: V {att} checking (waiting for the gatekeeper, not scanned; FROM has the waits)"',
+        'f"the rehearsal asked for shape {shape}, but FROM\'s running worker has shape {running}"',
+    ):
+        assert line in text, line
+    # r3's lines are unchanged.
+    for line in (
+        'f"files: D {att} upload_failed (check_failed, no gatekeeper key, quarantine copy kept)"',
+        'f"files: V {att} infected"',
+    ):
+        assert line in text, line
+
+
+def test_bld_a250_the_runbook_says_the_rehearsal_follows_froms_shape() -> None:
+    doc = (helpers.ROOT / "docs" / "UAT.md").read_text("utf-8")
+    para = doc.split("**Rehearse first:**", 1)[1].split("\n\n", 1)[0]
+    for words in (
+        "From `launch-2026-11-20-r4` on, FROM has lane C's file waits",
+        'the first file waits for the check instead of reading "Didn\'t upload"',
+        "the antivirus test file waits too",
+        "`file checks: 0 files back to waiting for the personal-data check (none opened)`",
+        "`file phases: shape waits` (r4 and later) or `file phases: shape r3`",
+    ):
+        assert words in para, words
+    script = REHEARSE.read_text("utf-8")
+    assert 'echo "file phases: shape waits (' in script and 'echo "file phases: shape r3 (' in script
 
 
 # ---- BLD-A240: the rehearsal never reports a pass it did not earn ---------------------------------------------------
