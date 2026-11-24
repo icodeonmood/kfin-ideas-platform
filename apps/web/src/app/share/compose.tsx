@@ -88,8 +88,8 @@ import {
   type InterviewQuestion,
 } from "@/lib/flags";
 import { flagEvent } from "@/lib/flags-client";
-import { BANNERS } from "@/lib/killswitch-routes";
 import { useVoiceCapture } from "@/lib/use-voice-capture";
+import { useIsPhone, VOICE_COPY, voiceFailedLine } from "@/lib/voice-copy";
 import type { VoiceCaptureState, VoiceNote } from "@/lib/voice-capture";
 
 import { boxFilesOf, useBoxFiles } from "./box-files";
@@ -122,10 +122,8 @@ export const COMPOSE_COPY = {
   emailNote: "We turned it into this draft. Nothing has been sent.",
   queued: "Queued. Goes in once the one above is done.",
   tooLong: "That's a lot for one go. Send this part, then carry on.",
-  /** A note paused or unavailable: every voice-off line reads the same, the product lead's decision of 18 Nov (BLD-C149). */
-  voicePaused: BANNERS["capture.voice"], // the voice-off line from the one source (BLD-157)
-  /** A note that failed because the session ended: L-AUTH.states "Session expired mid-draft" (SignIn.md). */
-  signInAgain: "Sign in again to carry on",
+  voicePaused: VOICE_COPY.voicePaused, // shared with Home (lib/voice-copy.ts, BLD-C232)
+  signInAgain: VOICE_COPY.signInAgain,
   enough: "Enough to work with",
   moreChars: (n: number) => `${n} more ${n === 1 ? "character" : "characters"}`,
   /** S3 "Voice first": the dock while listening (PhoneCompose.md, state Speaking; "Stop" before any words are
@@ -168,14 +166,9 @@ export function countLine(chars: number, min: number = MIN_CHARS): string {
   return chars >= min ? COMPOSE_COPY.enough : COMPOSE_COPY.moreChars(min - chars);
 }
 
-/** C-PROMPT.voice, a note that failed (BLD-C127): signed out → the sign-in line; paused or unavailable → the paused
- * line; any other reason (no microphone, an old browser, audio suspended, too many this hour, a lost stream) has no
- * line in the pack, so nothing is invented and the mic is simply ready again (listed for HR). */
-export function voiceFailedLine(reason: string): "sign_in" | "paused" | null {
-  if (reason === "signed_out") return "sign_in";
-  if (["paused", "unavailable", "voice_paused", "voice_unavailable"].includes(reason)) return "paused";
-  return null;
-}
+// C-PROMPT.voice's failed-note line lives in lib/voice-copy.ts with the lines it picks (BLD-C232); kept here too for
+// the code and tests that import it from Share.
+export { voiceFailedLine };
 
 const MIN_CHARS = 30; // V-FIELDS.tellit/1
 const MAX_MESSAGE = 5000; // V-FIELDS.tellit/2
@@ -191,18 +184,6 @@ const RECOVER_TRIES = 20; // …for about a minute
 const handedOver = new Set<string>();
 
 type Pending = Outgoing & { queued: boolean };
-
-function useIsPhone(): boolean {
-  const [phone, setPhone] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 640px)");
-    const on = () => setPhone(mq.matches);
-    on();
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, []);
-  return phone;
-}
 
 function isEditable(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;

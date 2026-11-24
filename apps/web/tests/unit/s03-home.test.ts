@@ -1392,6 +1392,8 @@ describe("S-03 C-PROMPT.voice: the round voice button in Home's empty box (WF-02
     expect(messages).toHaveLength(1);
     await hear({ status: "done", note: { ...NOTE, streamId: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e" } });
     expect(messages).toHaveLength(1); // the second note added nothing
+    expect(button("Speak instead")!.getAttribute("aria-disabled")).toBe("true"); // and it says so (BLD-C232)
+    expect(button("Speak instead")!.classList.contains("dim")).toBe(true);
     await act(async () => button("Speak instead")?.click());
     expect(voice.start).not.toHaveBeenCalled(); // no new capture while one goes in
     release();
@@ -1414,6 +1416,46 @@ describe("S-03 C-PROMPT.voice: the round voice button in Home's empty box (WF-02
     await hear({ status: "done", note: { ...NOTE, streamId: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e" } });
     expect(d.messages.length).toBeGreaterThan(1); // taken: not stuck behind the failed one
     expect(push).toHaveBeenCalledWith(`/share/${NEW_DRAFT}`);
+  });
+
+  it("BLD-C232 (review nit 3): when the tap cannot make a draft, its error is said once and no voice-off line goes over it", async () => {
+    // A refusal, not a busy server: the client sends a 503 again after 0.4, 1.2 and 3 s, so its error would come
+    // after this test reads the page.
+    const routes = baseRoutes({
+      "/api/drafts": () => ({
+        status: 403,
+        body: { error: { code: "forbidden", message: "Not allowed." } },
+      }),
+    });
+    await show(routes);
+    await tap("Tap to start speaking");
+    await hear({ status: "failed", reason: "unavailable", text: "", spans: [] });
+    expect(host.textContent!.split("Not allowed.").length).toBe(2); // the draft's own error, said once
+    expect(host.textContent).not.toContain(BANNERS["capture.voice"]);
+  });
+
+  it("BLD-C232 (review nit 7): on a phone the small microphone reads Say it instead, as the phone boards do", async () => {
+    const before = window.matchMedia;
+    window.matchMedia = vi.fn(() => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })) as never;
+    try {
+      await show(baseRoutes());
+      type(WORDS);
+      await settle();
+      expect(button("Say it instead")).toBeDefined();
+      expect(button("Speak instead")).toBeUndefined();
+    } finally {
+      window.matchMedia = before;
+    }
+  });
+
+  it("BLD-C232 (review nit 4): Home reads its voice lines from lib, never the Share screen's module", () => {
+    const src = readFileSync(path.resolve(__dirname, "../../src/app/home/home.tsx"), "utf8");
+    expect(src).not.toMatch(/from "\.\.\/share\/compose"/);
+    expect(src).toMatch(/from "@\/lib\/voice-copy"/);
   });
 
   it("V-ACC S-03, L-DRAFT.voice: a note that cannot be added keeps its words in the box and says why; nothing opens", async () => {

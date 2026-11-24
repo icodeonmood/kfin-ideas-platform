@@ -53,7 +53,10 @@ test("V-ACC S-03, C-PROMPT.voice: the empty box shows the round voice button and
   await expect(round).toHaveCount(0);
   await expect(hint).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Continue to Share a problem" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Speak instead", exact: true })).toBeVisible();
+  // The small microphone reads "Say it instead" on a phone, as the phone boards draw it (BLD-C232, review nit 7).
+  const phone = (page.viewportSize()?.width ?? 1440) <= 640;
+  const small = phone ? "Say it instead" : "Speak instead";
+  await expect(page.getByRole("button", { name: small, exact: true })).toBeVisible();
 });
 
 test("C-PROMPT.voice on Home: with the microphone refused, a tap shows the blocked warning and typing still works", async ({

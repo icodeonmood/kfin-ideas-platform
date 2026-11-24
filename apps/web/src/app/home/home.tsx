@@ -52,7 +52,7 @@ import {
 } from "@/lib/home/data";
 
 import { useBoxFiles } from "../share/box-files";
-import { COMPOSE_COPY, voiceFailedLine } from "../share/compose";
+import { useIsPhone, VOICE_COPY, voiceFailedLine } from "@/lib/voice-copy";
 
 import { CrewCardView, requestDropped, requestedLast, shownAsColleague } from "./crew-card";
 
@@ -325,6 +325,7 @@ export function HomeScreen({
   const [box, setBox] = useState("");
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<{ text: string; kind: "error" | "warn" } | null>(null);
+  const phone = useIsPhone(); // the small mic reads "Say it instead" on a phone (BLD-C232, review nit 7)
   const createKey = useRef<string>("");
   const boxRef = useRef<HTMLTextAreaElement>(null);
 
@@ -402,7 +403,6 @@ export function HomeScreen({
   // Home starts with no draft: the hook asks for one inside the tap (`draftForFiles`), as Share's S-04 does.
   const voice = useVoiceCapture("", voiceOptions);
   /** One message key per note, so a note is never added twice however it is retried. */
-  const noteKeys = useRef(new Map<string, string>());
   // One take at a time (BLD-C220 review fix): set while a note goes in, cleared when it fails back into the box, kept
   // once the page moves on.
   const taking = useRef(false);
@@ -442,11 +442,9 @@ export function HomeScreen({
           return;
         }
       }
-      let key = noteKeys.current.get(note.streamId);
-      if (!key) {
-        key = newClientId();
-        noteKeys.current.set(note.streamId, key);
-      }
+      // One key per take: a note is taken once (`taking`), and a failed one comes back to the box as words, so there
+      // is no retry of the same note to dedupe (BLD-C232, review nit 5).
+      const key = newClientId();
       try {
         await client.addMessage(id, { clientId: key, text: words, via: "voice", streamId: note.streamId });
       } catch (err) {
@@ -488,7 +486,12 @@ export function HomeScreen({
     }, 0);
     return () => clearTimeout(t);
   }, [voiceState, voiceReset, takeNote]);
-  const failedVoice = voice.state.status === "failed" ? voiceFailedLine(voice.state.reason) : null;
+  // A note that could not get a draft ends "unavailable": the draft's own error is already said, so the voice-off line
+  // is not drawn over it (BLD-C232, review nit 3).
+  const failedVoice =
+    voice.state.status === "failed" && !(voice.state.reason === "unavailable" && problem)
+      ? voiceFailedLine(voice.state.reason)
+      : null;
 
   const pick = (opener: string) => {
     setBox(opener);
@@ -678,7 +681,7 @@ export function HomeScreen({
             label={HOME_COPY.label}
             placeholder={HOME_COPY.placeholder}
             keyHint
-            device="desktop"
+            device={phone ? "phone" : "desktop"}
             sending={sending}
             className="hm-prompt"
             attach={files.button}
@@ -703,10 +706,10 @@ export function HomeScreen({
             </div>
             <div className="vlive" role="alert">
               {failedVoice === "paused" ? (
-                <p className="vnotice">{COMPOSE_COPY.voicePaused}</p>
+                <p className="vnotice">{VOICE_COPY.voicePaused}</p>
               ) : failedVoice === "sign_in" ? (
                 <p className="vnotice">
-                  <a href={HOME_SIGN_IN}>{COMPOSE_COPY.signInAgain}</a>
+                  <a href={HOME_SIGN_IN}>{VOICE_COPY.signInAgain}</a>
                 </p>
               ) : null}
             </div>
