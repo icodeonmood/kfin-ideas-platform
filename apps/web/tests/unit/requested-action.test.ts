@@ -213,7 +213,10 @@ describe("RequestedAction, J-TEAMUP/3c, WCAG 2.4.3: focus reaches Team up whenev
 
   it("a host that redraws later is looked for again on the next frame, as before", async () => {
     const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", vi.fn((cb: FrameRequestCallback) => frames.push(cb)));
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((cb: FrameRequestCallback) => frames.push(cb)),
+    );
     await mount({ title: TITLE, redraw: "later" });
     const withdraw = document.querySelectorAll("button")[1]!;
     withdraw.focus();
