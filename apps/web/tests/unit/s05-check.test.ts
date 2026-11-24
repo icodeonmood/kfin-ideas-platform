@@ -242,7 +242,7 @@ function sendView(extra: Partial<SendViewResponse> = {}): SendViewResponse {
   };
 }
 
-type Answer = { status?: number; body?: unknown; fail?: boolean };
+type Answer = { status?: number; body?: unknown; fail?: boolean; hold?: Promise<void> };
 type Route = (method: string, url: string, body: unknown) => Answer | undefined;
 
 let calls: Array<{ method: string; url: string; body: unknown; headers: Record<string, string> }>;
@@ -261,6 +261,7 @@ function serve(routes: Route[]) {
       for (const r of routes) {
         const a = r(method, url, body);
         if (!a) continue;
+        if (a.hold) await a.hold; // a reply still on its way
         if (a.fail) throw new TypeError("Failed to fetch");
         const status = a.status ?? 200;
         return { ok: status >= 200 && status < 300, status, json: async () => a.body };
@@ -764,6 +765,26 @@ describe("S-05 screen: sorting (BLD-C131, L-SORT)", () => {
     expect(text(document.querySelector(".ck-count"))).toBe("Check it, part 3 of 6");
     expect(buttons().some((b) => /Sorting Suggested, not confirmed yet/.test(nameOf(b)))).toBe(false);
     expect(button(/^Sorting, done Investor service, saves time, saves cost$/)).toBeTruthy();
+  });
+
+  it("BLD-C233, L-SORT, BLD-C176: a late Confirm sorting reply never moves someone who has opened another part", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const slowConfirm: Route = (m, u, b) =>
+      m === "PATCH" && u.endsWith("/sorting") && (b as { confirm?: boolean }).confirm
+        ? { body: sorting(true), hold: held }
+        : undefined;
+    await mount([slowConfirm, ...base()]);
+    await click(button("Looks right"));
+    expect(h1()).toBe("Is it sorted right?");
+    await click(button("Confirm sorting")); // its reply is held
+    await railTo("Send it"); // the person moves on before the reply comes
+    const here = h1();
+    expect(here).not.toBe("Is it sorted right?");
+    release();
+    await settle();
+    expect(h1()).toBe(here); // still where the person is
+    expect(button(/^Sorting, done /)).toBeTruthy(); // and the sorting reads as done
   });
 
   it("J-RECOVER/10: one choice changes the area and is saved at once", async () => {
