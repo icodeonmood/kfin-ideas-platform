@@ -156,11 +156,38 @@ export function writeSearch(list: SearchList, q: string): void {
  * Replaces the address in the same history entry, keeping what the entry holds (its search words among them). The
  * App Router's own keys are left out, so the router takes the new address and copies its keys back in; nothing is
  * fetched and no entry is added. `href` names fixed choices and IDs only; any `q` in it is dropped.
+ *
+ * For a change in place: a tab, sort or filter, `cleanAddress`, the Inbox's own view. When a router push follows at
+ * once (a row opened), use `replaceAddressBeforeLeaving` instead (BLD-A252).
  */
 export function replaceAddress(href: string): void {
+  writeAddress(href, false);
+}
+
+/**
+ * The same as `replaceAddress`, for the list entry a row is opened from just before `router.push` leaves it
+ * (J-BROWSE/4, BLD-A252): the entry's own state is kept (its search words among them) and any `q` in `href` is
+ * dropped, but the App Router's own keys stay in. Next's patched `history.replaceState` then passes the write
+ * straight through to the browser (next 16.4.5, client/components/app-router.js:305-306), so the push is the
+ * router's only action on the click. With the keys left out, as `replaceAddress` does, the click's router work is a
+ * restore of this address and then the push, and a row click was seen to go nowhere now and then (J-BROWSE/4).
+ *
+ * Use it only when a router push follows at once; a change that stays on the page uses `replaceAddress`, so the
+ * router adopts the new address as its own.
+ *
+ * Fail-soft: the router does not adopt this address. If another router action (a sort's or tab's restore, a refresh)
+ * commits between this write and the push's own commit, Next's HistoryUpdater can write its older address over this
+ * entry, and Back then returns to the list without the row and its offset: the list as it was, only the row's place
+ * lost.
+ */
+export function replaceAddressBeforeLeaving(href: string): void {
+  writeAddress(href, true);
+}
+
+function writeAddress(href: string, keepRouterKeys: boolean): void {
   if (typeof window === "undefined") return;
   const own = { ...((window.history.state ?? {}) as Record<string, unknown>) };
-  for (const k of ROUTER_KEYS) delete own[k];
+  if (!keepRouterKeys) for (const k of ROUTER_KEYS) delete own[k];
   try {
     window.history.replaceState(own, "", withoutSearch(href));
   } catch {

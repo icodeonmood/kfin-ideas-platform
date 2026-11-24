@@ -13,6 +13,7 @@ import {
   nextParam,
   readSearch,
   replaceAddress,
+  replaceAddressBeforeLeaving,
   SEARCH_MAX,
   withoutSearch,
   writeSearch,
@@ -136,7 +137,43 @@ describe("DEC-110: addresses never hold the words", () => {
     const state = window.history.state as Record<string, unknown>;
     expect(state.mine).toBe(1);
     expect(state.__NA).toBeUndefined();
+    expect(state.__PRIVATE_NEXTJS_INTERNALS_TREE).toBeUndefined();
     expect(readSearch("/desk")).toBe(WORDS);
+  });
+
+  it("BLD-A252 J-BROWSE/4 replaceAddressBeforeLeaving keeps the router's keys and the entry's own state, drops any q, writes once", () => {
+    const tree = { tree: ["", { children: ["desk", {}] }], renderedSearch: "?tab=decided" };
+    window.history.replaceState({ __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: tree, mine: 1 }, "", "/desk");
+    writeSearch("/desk", WORDS);
+    const write = vi.spyOn(window.history, "replaceState");
+    replaceAddressBeforeLeaving(
+      `/desk?tab=decided&sort=area&q=${encodeURIComponent(WORDS)}&row=IDEA-2026-000502&dy=80`,
+    );
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname + window.location.search).toBe(
+      "/desk?tab=decided&sort=area&row=IDEA-2026-000502&dy=80",
+    );
+    const state = window.history.state as Record<string, unknown>;
+    // Next's patched replaceState passes a state with __NA straight through: no restore, the push alone moves on
+    expect(state.__NA).toBe(true);
+    expect(state.__PRIVATE_NEXTJS_INTERNALS_TREE).toEqual(tree);
+    expect(state.mine).toBe(1);
+    expect(state.kfinSearch).toEqual({ "/desk": WORDS });
+    expect(readSearch("/desk")).toBe(WORDS);
+    expect(window.location.href).not.toContain("Zebra7Kestrel");
+  });
+
+  it("BLD-A252 the plain replaceAddress still leaves the router's keys out, so the router adopts an in-place change", () => {
+    window.history.replaceState(
+      { __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: { tree: [] }, mine: 1 },
+      "",
+      "/desk",
+    );
+    const write = vi.spyOn(window.history, "replaceState");
+    replaceAddress("/desk?tab=waiting&sort=area");
+    expect(write).toHaveBeenCalledTimes(1);
+    const state = window.history.state as Record<string, unknown>;
+    expect(state).toEqual({ mine: 1 });
   });
 
   it("DEC-110 cleanAddress takes an older ?q= out of the address without taking its words", () => {
