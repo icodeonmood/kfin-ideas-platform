@@ -87,8 +87,11 @@ describe("S-08, C-PROMPT.attach, BLD-D030: the conversation box and the prompt b
 
   it("the prompt box's rows are lane D's FileList without aria-live, its status line saying what changed (BLD-C224)", () => {
     const src = readFileSync(resolve(SRC, "app/share/box-files.tsx"), "utf8");
-    expect(src).toMatch(/<FileList label=\{BOX_FILES_COPY\.rows\} live=\{false\}>/);
+    // BLD-C244: compact, as the conversation box, and lane D's FileRemove for "Remove {name}".
+    expect(src).toMatch(/<FileList label=\{BOX_FILES_COPY\.rows\} live=\{false\} compact>/);
+    expect(src).toMatch(/<FileRemove label=\{BOX_FILES_COPY\.removeOf\(name\)\}/);
     expect(src).not.toMatch(/<ul className="flist"/);
+    expect(src).not.toMatch(/cfile-x/);
   });
 });
 
