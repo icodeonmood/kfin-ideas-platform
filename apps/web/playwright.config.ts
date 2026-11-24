@@ -13,5 +13,11 @@ export default defineConfig({
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },
     { name: "phone-360", use: { ...devices["Desktop Chrome"], viewport: { width: 360, height: 740 } } },
+    // BLD-D038 proof only (throwaway branch, as lane A's 31e051d9): the same two widths with reduced motion, so no glide runs
+    { name: "desktop-still", use: { ...devices["Desktop Chrome"], reducedMotion: "reduce" } },
+    {
+      name: "phone-360-still",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 360, height: 740 }, reducedMotion: "reduce" },
+    },
   ],
 });
