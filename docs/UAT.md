@@ -187,6 +187,16 @@ Before step 5/8 (Migrations) a failure changes nothing: the old version keeps se
 
    Pass: the tag from step 1. If step 1 showed a commit with no tag, check out that commit instead and check `git rev-parse HEAD` prints it.
 
+**The first upgrade to a build with the hourly file clean-up (BLD-C242).** Builds before it never delete old file copies. From this build on, the worker runs `files.sweep` once when it starts and then every hour, at :30 past the hour (IST). Each run deletes the stored copy of every file that has read "Didn't upload" for more than 24 hours; Try again then asks the person for the file again. It also removes every file added to a conversation and never sent, a day after it was added. It deletes nothing unless the most recent worker start sweep finished (its audit row says `complete` true). Until then each hourly run only logs that it waits. The three reads below only count:
+
+```bash
+docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT after->>'complete' FROM audit_log WHERE entity = 'files:start_sweep' AND action = 'file.start_sweep' ORDER BY at DESC, id DESC LIMIT 1"
+docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT count(*) FROM attachments WHERE kind = 'file' AND file_state = 'upload_failed' AND store_key IS NOT NULL AND (checks->>'ended_at')::timestamptz < now() - interval '24 hours' AND coalesce(checks->>'copy', '') <> 'gone'"
+docker exec kfin-ideas-uat-postgres-1 psql -U ideas -d ideas -c "SELECT count(*) FROM attachments WHERE purpose = 'conversation' AND conversation_entry_id IS NULL AND answer_id IS NULL AND created_at < now() - interval '24 hours'"
+```
+
+Run them about 5 minutes after step 5. Paste back: the three results. Pass: the first read prints `true`, and both counts are 0 or a handful (a file can pass its 24 hours in between). If a count is higher, read again after the next :30 past the hour and paste back again. If the first read is not `true`, the clean-up is waiting for a finished start sweep: send the reads to lane A. If a count is still more than a handful on the second read, send both sets of reads to lane A. After a rollback, a file whose copy the clean-up deleted reads "Didn't upload", and Try again asks for the file again.
+
 **What a rollback loses:** everything written after the backup. That covers ideas, drafts, messages, decisions, notice acceptances and any kill switch changed on the Admin page. That is why upgrades run in a quiet window.
 
 **Kill switches:** the upgrade never changes a kill switch, and neither does the rollback. The upgrade only reads `ai.all`, and stops if it is on while there is no model route (`LLM_MODE=fake`). A rollback puts the switches back as they were at the backup, because they live in the database.
