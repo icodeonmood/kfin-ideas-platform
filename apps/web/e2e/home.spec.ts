@@ -1,6 +1,9 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, settleMotion, signIn } from "./helpers";
 
 /**
  * S-03 Home (`/home`, BLD-C143 to C147), against the local stack. The question and the box, the sections in order
@@ -138,4 +141,200 @@ test("C-ONES-FAN on Home: the Ones' posts, the arrows and the cheer toggle, axe 
   await cheer.click();
   expect((await unliked).ok()).toBe(true);
   await expect(cheer).toHaveAttribute("aria-pressed", "false");
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-c244-1, never merged: BLD-C244 on Home and Share, the box's rows as lane D's compact
+ * FileList and FileRemove. On a desk (1440, 1024): rows side by side at 260px at most, Remove beside the name, a row
+ * with a message across the list with its message under it. On a phone (360, 320): the buttons under the name at the
+ * right, as in lane D's train 24 pass. One file, two files, then a failed upload (Try again) and a file over the limit,
+ * each with its message on its own line; Remove 32 x 32; axe. The good files really upload to this run's stack; the
+ * failed one is refused here and the limit is lowered here, so nothing else changes. Synthetic files only.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+const QA_LIST = '.cbox.prompt ul.flist[aria-label="Your files and links"]';
+
+async function qaBoxRows(page: Page) {
+  return page.evaluate((sel) => {
+    const box = (el: Element | null | undefined) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height };
+    };
+    const ul = document.querySelector(sel);
+    const html = document.documentElement;
+    return {
+      sideways: html.scrollWidth - html.clientWidth,
+      compact: !!ul?.classList.contains("compact"),
+      live: ul?.getAttribute("aria-live") ?? null,
+      list: box(ul),
+      within: box(ul?.closest(".cbox.prompt")),
+      rows: [...(ul?.querySelectorAll(":scope > .frow") ?? [])].map((li) => {
+        const x = li.querySelector<HTMLElement>(".frow-x");
+        return {
+          cls: li.className,
+          row: box(li)!,
+          inner: box(li.querySelector(".frow-in")),
+          name: box(li.querySelector(".frow-n")),
+          nameText: li.querySelector(".frow-n")?.textContent ?? "",
+          acts: box(li.querySelector(".frow-a")),
+          x: box(x),
+          xName: x?.getAttribute("aria-label") ?? "",
+          xTitle: x?.getAttribute("title") ?? "",
+          retry: box(li.querySelector(".frow-a button:not(.frow-x)")),
+          msg: box(li.querySelector(".fmsg")),
+          msgText: li.querySelector(".fmsg")?.textContent ?? "",
+          isMsg: li.classList.contains("frow-msg"),
+        };
+      }),
+    };
+  }, QA_LIST);
+}
+
+test("QA (lane D, never merged): BLD-C244, the box's rows on Home and Share at 1440, 1024, 360 and 320: one, two, failed and too big", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "the sizes are set here");
+  test.setTimeout(900_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+  await signInFresh(page, "R");
+  await page.waitForURL((url) => url.pathname === "/home");
+  // The limit is 1 MB here, so a 1.3 MB synthetic file is over it; everything else in the answer is the stack's own
+  await page.route("**/api/config/uploads", async (route) => {
+    const res = await route.fetch();
+    const json = (await res.json()) as Record<string, unknown>;
+    return route.fulfill({ response: res, json: { ...json, limit_mb: 1 } });
+  });
+  // The file named upload-fails-… is refused as a server error, so its row offers Try again
+  await page.route("**/api/files", (route) => {
+    const body = route.request().postDataBuffer();
+    if (route.request().method() === "POST" && body && body.includes("upload-fails-"))
+      return route.fulfill({
+        status: 500,
+        json: { error: { code: "internal", message: "Something went wrong." } },
+      });
+    return route.fallback();
+  });
+
+  const plus = page
+    .locator(".cbox.prompt")
+    .getByRole("button", { name: "Add files, a folder or a link", exact: true });
+  const picker = page.locator(".fpick.cpick");
+  const rows = page.locator(`${QA_LIST} > .frow`);
+  const add = async (name: string, buffer: Buffer) => {
+    const before = await rows.count();
+    if (!(await picker.isVisible())) await plus.click();
+    await expect(picker).toBeVisible();
+    const chooser = page.waitForEvent("filechooser");
+    await picker.getByRole("button", { name: "browse", exact: true }).click();
+    await (await chooser).setFiles({ name, mimeType: "text/markdown", buffer });
+    await expect(rows).toHaveCount(before + 1, { timeout: 30_000 });
+  };
+  const snap = async (name: string, phone: boolean) => {
+    await settleMotion(page);
+    await page.locator(QA_LIST).evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await settleMotion(page);
+    const g = await qaBoxRows(page);
+    log[name] = g;
+    await page.screenshot({ path: join(QA_SHOTS, `${name}.png`) });
+    expect.soft(g.sideways, `${name}: no sideways scroll`).toBeLessThanOrEqual(0);
+    expect.soft(g.compact, `${name}: the list is lane D's compact list`).toBe(true);
+    expect.soft(g.live, `${name}: the list is no live region (the status line speaks)`).toBeNull();
+    for (const [i, r] of g.rows.entries()) {
+      const at = `${name} row ${i + 1} (${r.nameText})`;
+      if (g.list) {
+        expect.soft(r.row.left, `${at}: starts inside the list`).toBeGreaterThanOrEqual(g.list.left - 0.5);
+        expect.soft(r.row.right, `${at}: ends inside the list`).toBeLessThanOrEqual(g.list.right + 0.5);
+      }
+      if (g.within)
+        expect.soft(r.row.right, `${at}: ends inside the box`).toBeLessThanOrEqual(g.within.right + 0.5);
+      expect.soft(r.x, `${at}: has Remove`).not.toBeNull();
+      if (r.x) {
+        expect.soft(r.x.width, `${at}: Remove is 32px wide`).toBeCloseTo(32, 0);
+        expect.soft(r.x.height, `${at}: Remove is 32px high`).toBeCloseTo(32, 0);
+        expect.soft(r.x.right, `${at}: Remove ends inside the row`).toBeLessThanOrEqual(r.row.right + 0.5);
+        expect.soft(r.xName, `${at}: Remove is named for its file`).toBe(`Remove ${r.nameText}`);
+        expect.soft(r.xTitle, `${at}: Remove's tooltip`).toBe(`Remove ${r.nameText}`);
+      }
+      if (r.retry) {
+        expect.soft(r.retry.height, `${at}: Try again is at least 24px high`).toBeGreaterThanOrEqual(24);
+        expect
+          .soft(r.retry.right, `${at}: Try again ends inside the row`)
+          .toBeLessThanOrEqual(r.row.right + 0.5);
+      }
+      if (r.name && r.inner)
+        expect
+          .soft(r.name.right, `${at}: the name stays inside the row`)
+          .toBeLessThanOrEqual(r.inner.right + 0.5);
+      if (r.isMsg && r.msg && r.inner)
+        expect
+          .soft(r.msg.top, `${at}: the message is under the row`)
+          .toBeGreaterThanOrEqual(r.inner.bottom - 0.5);
+      if (phone) {
+        if (r.acts && r.name)
+          expect
+            .soft(r.acts.top, `${at}: the buttons are under the name`)
+            .toBeGreaterThanOrEqual(r.name.bottom - 0.5);
+        if (r.x && r.inner)
+          expect.soft(r.inner.right - r.x.right, `${at}: Remove is at the right`).toBeLessThanOrEqual(16);
+      } else {
+        if (r.isMsg) {
+          if (g.list)
+            expect
+              .soft(Math.abs(r.row.width - g.list.width), `${at}: a row with a message is the list's width`)
+              .toBeLessThan(1);
+        } else {
+          expect.soft(r.row.width, `${at}: 260px at most`).toBeLessThanOrEqual(260.5);
+        }
+        if (r.acts && r.name)
+          expect
+            .soft(r.acts.left, `${at}: the buttons are beside the name`)
+            .toBeGreaterThanOrEqual(r.name.right - 0.5);
+      }
+    }
+    return g;
+  };
+
+  for (const path of ["/home", "/share"] as const) {
+    for (const [w, h] of [
+      [1440, 900],
+      [1024, 768],
+      [360, 740],
+      [320, 640],
+    ] as const) {
+      const phone = w <= 640;
+      const at = `c244${path.replace("/", "-")}-${w}x${h}`;
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto(path);
+      await expect(page.locator(".cbox.prompt textarea")).toBeVisible();
+      await settleMotion(page);
+
+      await add("branch-notes.md", Buffer.from("Synthetic: 15 calls a week."));
+      await snap(`${at}-1-one`, phone);
+      await add(
+        "branch-call-log-week-47-rejection-sms-codes-and-nominee-screens.md",
+        Buffer.from("Synthetic: calls about R07, 40 a day."),
+      );
+      await snap(`${at}-2-two`, phone);
+      await expectNoSeriousAxeIssues(page);
+
+      await add("upload-fails-call-log.md", Buffer.from("Synthetic: this upload is refused by the test."));
+      await expect(page.getByRole("button", { name: "Try again" }).first()).toBeVisible({ timeout: 30_000 });
+      await add("rejection-sms-screens-scan.md", Buffer.alloc(1_300_000, "a"));
+      const failed = await snap(`${at}-3-failed-and-too-big`, phone);
+      const withMsg = failed.rows.filter((r) => r.isMsg);
+      expect
+        .soft(withMsg.length, `${at}: the failed and too-big rows carry their messages`)
+        .toBeGreaterThanOrEqual(2);
+      expect
+        .soft(
+          failed.rows.some((r) => r.retry),
+          `${at}: the failed row offers Try again`,
+        )
+        .toBe(true);
+      await expectNoSeriousAxeIssues(page);
+    }
+  }
+  writeFileSync(join(QA_SHOTS, "c244.json"), JSON.stringify(log, null, 2));
 });
