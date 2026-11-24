@@ -186,7 +186,11 @@ describe('F-SPACE.targets/2, C-PROMPT.attach (DEC-124, BLD-D025): the box\'s fil
     // BLD-C244: the rows are lane D's compact FileList and the remove is lane D's FileRemove (`.frow-x`), both in
     // app/components.css (BLD-D030); the box's sheet keeps no copy of either.
     for (const r of rules(read(SHEET)))
-      for (const s of r.selectors) expect(s, `${SHEET}: ${s}`).not.toMatch(/\.cfile-x|\.cfiles \.f/);
+      for (const s of r.selectors) {
+        expect(s, `${SHEET}: ${s}`).not.toMatch(/\.cfile-x|\.frow-x/);
+        // Only the phone's placement (the buttons under the name, as before BLD-C244) touches the rows here.
+        if (r.at !== "@media (max-width: 640px)") expect(s, `${SHEET}: ${s}`).not.toMatch(/\.cfiles \.f/);
+      }
     const x = style(SHARED, ".frow-x");
     expect(px(x.get("width"))).toBe(32);
     expect(px(x.get("height"))).toBe(32);

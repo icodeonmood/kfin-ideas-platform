@@ -322,6 +322,19 @@
   padding: 12px 12px 0;
 }
 
+/* On a phone the box's rows keep the shared phone row they had before BLD-C244: the buttons on their own line under
+   the name, at the right (components.css `.frow-a`), not the compact one-line row. The box is about 240px wide at
+   360 and 200px at 320, too narrow for a name beside Try again and Remove (lane D, 24 Nov). */
+@media (max-width: 640px) {
+  .cz .cfiles .flist.compact .frow-in {
+    flex-wrap: wrap;
+  }
+
+  .cz .cfiles .flist.compact .frow-a {
+    width: 100%;
+  }
+}
+
 /* the picker, between the words and the tool row (Home.md, `attachments=Picker open`) */
 /* The picker: lane D's shared FilePicker (BLD-D031, `.fpick` in app/components.css); only its place here */
 .cz .cpick {

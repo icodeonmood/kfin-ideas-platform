@@ -639,6 +639,10 @@ describe('The "+" and the Capture first layout in CSS (WCAG 2.1 AA; BLD-C212, C2
     expect(shared).toMatch(/\n\.frow-x \{[^}]*width: 32px;[^}]*height: 32px;/);
     expect(css).not.toMatch(/\.cfile-x/);
     expect(css).not.toMatch(/:has\(\.fmsg\)/);
+    // On a phone the box's rows keep the buttons on their own line under the name, as before BLD-C244 (lane D).
+    expect(css).toMatch(
+      /@media \(max-width: 640px\) \{\s*\.cz \.cfiles \.flist\.compact \.frow-in \{\s*flex-wrap: wrap;\s*\}\s*\.cz \.cfiles \.flist\.compact \.frow-a \{\s*width: 100%;\s*\}/,
+    );
   });
 
   it("DEC-125/2, DEC-130, BLD-D032: Capture first on a desk is one column up to 960px, centred; the conversation and the box fill it", () => {
