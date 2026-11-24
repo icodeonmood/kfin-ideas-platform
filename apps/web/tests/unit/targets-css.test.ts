@@ -180,13 +180,18 @@ describe("F-SPACE.targets/2, C-BUTTON.variants (DEC-126): the quiet link is padd
 
 describe('F-SPACE.targets/2, C-PROMPT.attach (DEC-124, BLD-D025): the box\'s file rows and its "+"', () => {
   const SHEET = "share/compose.css";
+  const SHARED = "components.css";
 
   it("the remove button's 32px circle is padded to at least 44px on touch, never reaching the 4px gap to Try again or past the row's 8px padding", () => {
-    const x = style(SHEET, ".cz .cfile-x");
+    // BLD-C244: the rows are lane D's compact FileList and the remove is lane D's FileRemove (`.frow-x`), both in
+    // app/components.css (BLD-D030); the box's sheet keeps no copy of either.
+    for (const r of rules(read(SHEET)))
+      for (const s of r.selectors) expect(s, `${SHEET}: ${s}`).not.toMatch(/\.cfile-x|\.cfiles \.f/);
+    const x = style(SHARED, ".frow-x");
     expect(px(x.get("width"))).toBe(32);
     expect(px(x.get("height"))).toBe(32);
-    expect(style(SHEET, ".cz .cfile-x", COARSE).get("position")).toBe("relative");
-    const pad = style(SHEET, ".cz .cfile-x::after", COARSE);
+    expect(style(SHARED, ".frow-x", COARSE).get("position")).toBe("relative");
+    const pad = style(SHARED, ".frow-x::after", COARSE);
     expect(pad.get("content")).toBe('""');
     expect(pad.get("position")).toBe("absolute");
     const v = (pad.get("inset") ?? "").trim().split(/\s+/).map(px);
@@ -197,10 +202,11 @@ describe('F-SPACE.targets/2, C-PROMPT.attach (DEC-124, BLD-D025): the box\'s fil
     expect(32 - top - bottom).toBeGreaterThanOrEqual(44);
     expect(32 - left - right).toBeGreaterThanOrEqual(44);
     // The row actions sit 4px apart (`.frow-a` gap) and the row pads 8px on the right: the layer stays inside both.
-    expect(px(style(SHEET, ".cz .cfiles .frow-a").get("gap"))).toBeGreaterThanOrEqual(-left);
-    expect(-right).toBeLessThanOrEqual(8);
+    expect(px(style(SHARED, ".flist.compact .frow-a").get("gap"))).toBeGreaterThanOrEqual(-left);
+    const row = (style(SHARED, ".flist.compact .frow-in").get("padding") ?? "").trim().split(/\s+/).map(px);
+    expect(-right).toBeLessThanOrEqual(row[1] ?? row[0] ?? NaN);
     // With a mouse there is no layer.
-    expect(style(SHEET, ".cz .cfile-x::after").size).toBe(0);
+    expect(style(SHARED, ".frow-x::after").size).toBe(0);
   });
 
   it("the \"+\" takes lane D's shared look (BLD-D019): the prompt box's sheet no longer restyles .attach-btn", () => {
