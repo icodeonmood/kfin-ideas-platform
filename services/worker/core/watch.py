@@ -12,6 +12,10 @@
 - `comms.email`: more than 5% of the email sent in the last hour bounced (the receiving server refused it), with
   at least 20 emails in that hour so one bad address cannot stop all mail. Only refusals the SMTP server gives at
   send time count; the Graph mailbox's delivery reports are not read on day one.
+- `comms.email`: email through Graph cannot go at all (BLD-A243): the token is refused or out of reach, the Graph
+  settings are missing, or Graph's send answers 401 (after a fresh token), 403 or 404. The send loop calls
+  `email_stopped` at once, on the first such answer, with the code and the HTTP status in the reason. Emails stay
+  queued, none spends a try; a person fixes the cause and switches `comms.email` back on.
 
 Each flip is audited (`alert.kill_switch_auto`) and logged as an error so the product lead and InfoSec hear of it.
 Nothing switches itself back on: a person checks the cause and flips it back from the Admin page.
@@ -55,6 +59,13 @@ def switch_off(conn: Conn, name: str, reason: str, actor: str = ACTOR) -> bool:
     )
     log.error("watch.switched_off", switch=name)
     return True
+
+
+def email_stopped(conn: Conn, code: str, status: int | None) -> bool:
+    """Email through Graph cannot go (BLD-A243): `comms.email` off, audited, with the code and status as the reason
+    (a code is the status family, never Graph's text). Called by the send loops, not the ticker."""
+    where = f"{code} (HTTP {status})" if status else code
+    return switch_off(conn, "comms.email", f"Email through Graph stopped: {where} (automatic)")
 
 
 class Watch:
