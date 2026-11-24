@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 
 from loadtest import __main__ as lt
 from tests.test_a242_loadtest_1pc import BASE, IDP, FakeClub
@@ -61,34 +62,47 @@ class DevStack(FakeClub):
         return super().handle(request)
 
 
-def test_bld_a253_the_shared_client_keeps_no_cookie() -> None:
+@pytest.mark.parametrize("origin", [BASE, "https://web.test", IDP, "http://localhost:8090"])
+def test_bld_a253_the_shared_client_keeps_no_cookie(origin: str) -> None:
+    """The web app and the identity provider, over http and https: the shared client keeps and sends none."""
+
     def answer(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/set":
-            return httpx.Response(200, headers={"set-cookie": "kfin_session=t1; Path=/"})
+            return httpx.Response(
+                200,
+                headers=[
+                    ("set-cookie", "kfin_session=t1; Path=/"),
+                    ("set-cookie", "ideas_oidc=tx1; Path=/auth; HttpOnly"),
+                    ("set-cookie", "idp_session=i1; Path=/; Secure"),
+                ],
+            )
         return httpx.Response(200, json={"cookie": request.headers.get("cookie")})
 
-    async def go() -> tuple[int, str | None]:
+    async def go() -> tuple[int, list[str | None]]:
         async with lt.shared_client(httpx.MockTransport(answer)) as client:
-            await client.get(f"{BASE}/set")
-            r = await client.get(f"{BASE}/next")
-            return len(client.cookies.jar), r.json()["cookie"]
+            await client.get(f"{origin}/set")
+            sent = [(await client.get(f"{origin}{p}")).json()["cookie"] for p in ("/next", "/auth/callback")]
+            return len(client.cookies.jar), sent
 
     kept, sent = asyncio.run(go())
-    assert kept == 0 and sent is None
+    assert kept == 0 and sent == [None, None]
 
 
 def test_bld_a253_each_person_signs_in_as_themselves_on_the_dev_stack(tmp_path: Path) -> None:
+    """The three authors one after another, then sign-ins arriving while shares run (most of the runner's 169)."""
     app = DevStack()
     argv = ["--base-url", BASE, "--scale", "0.0003", "--submissions-per-hour", "36000", "--authors", "3",
-            "--people", "4", "--poll", "0.01", "--scan-timeout", "2", "--draft-timeout", "2",
+            "--people", "4", "--sign-ins", "60000", "--poll", "0.01", "--scan-timeout", "2", "--draft-timeout", "2",
             "--out", str(tmp_path)]  # fmt: skip
-    assert lt.main(argv, transport=app.transport) == 0
-    report = json.loads(next(tmp_path.glob("report-*.json")).read_text())
-    sign_ins = report["operations"]["sign_in"]
-    assert sign_ins["attempted"] >= 3 and sign_ins["failed"] == 0
-    assert "sign_in" not in report["errors"]
+    code = lt.main(argv, transport=app.transport)
     # nobody started a sign-in carrying someone else's session, and each went to the identity provider
     assert app.logins_already_signed_in == 0
     assert all(not r.headers.get("cookie") for r in app.requests if r.url.path == "/auth/login")
-    assert app.idp_posts == sign_ins["attempted"]
-    assert len(app.sessions) == sign_ins["attempted"]
+    report = json.loads(next(tmp_path.glob("report-*.json")).read_text())
+    sign_ins = report["operations"]["sign_in"]
+    assert (
+        sign_ins["attempted"] > 3 and sign_ins["failed"] == 0
+    )  # more than the authors: arrivals during shares
+    assert "sign_in" not in report["errors"]
+    assert app.idp_posts == sign_ins["attempted"] == len(app.sessions)
+    assert code == 0
