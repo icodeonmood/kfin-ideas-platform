@@ -609,3 +609,80 @@ def test_a235_deploy_next_line_in_production_points_at_the_runbook(
             in run.stdout
         )
         assert "APP_ENV=prod" not in run.stdout
+
+
+# ---- BLD-A243: the Graph client secret is the worker's alone (deploy.sh step 1 and lib.sh, as for Sarvam's key) ----
+
+NOTICE_TS = helpers.ROOT / "apps" / "web" / "src" / "content" / "privacy-notice.ts"
+GRAPH_SECRET = "synthetic-graph-secret-never-real-0002"
+
+
+def _graph_env_checks(
+    tmp_path: Path, script: str, app_extra: str, db_extra: str
+) -> subprocess.CompletedProcess[str]:
+    """Runs only the env file checks: deploy.sh's step 1 up to its build line (from a copy), or lib.sh's
+    `uat_env_checks`. `docker` and `make` on PATH are stubs that refuse, in case."""
+    [notice] = re.findall(r'^\s*version: "([^"]*)",\s*$', NOTICE_TS.read_text("utf-8"), re.M)
+    app, db = tmp_path / "app.env", tmp_path / "db.env"
+    app.write_text(
+        f"APP_ENV=uat\nPRIVACY_NOTICE_VERSION={notice}\nSPEECH_MODE=fake\nINTERNAL_API_TOKEN={'t' * 40}\n{app_extra}"
+    )
+    db.write_text(
+        f"POSTGRES_PASSWORD={'P' * 24}\nDB_WEB_PASSWORD={'W' * 24}\nDB_WORKER_PASSWORD={'K' * 24}\n"
+        f"PSEUDONYM_VAULT_KEY={'V' * 40}\n{db_extra}"
+    )
+    stub = tmp_path / "bin"
+    stub.mkdir()
+    for tool in ("docker", "make"):
+        (stub / tool).write_text(f"#!/bin/sh\necho '{tool} stub' >&2\nexit 97\n")
+        (stub / tool).chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("UAT_", "COMPOSE_", "SPEECH_"))}
+    env["PATH"] = f"{stub}{os.pathsep}{os.environ['PATH']}"
+    env["UAT_DATA_DIR"] = str(tmp_path / "data")
+    if script == "deploy":
+        head = DEPLOY.read_text("utf-8").split("\ncompose build --quiet worker web", 1)[0]
+        copy = tmp_path / "scripts" / "uat" / "deploy.sh"
+        copy.parent.mkdir(parents=True)
+        copy.write_text(head + "\necho 'env checks passed'\n")
+        (tmp_path / NOTICE_TS.relative_to(helpers.ROOT)).parent.mkdir(parents=True)
+        (tmp_path / NOTICE_TS.relative_to(helpers.ROOT)).write_text(NOTICE_TS.read_text("utf-8"))
+        cmd = ["bash", str(copy), str(app), str(db)]
+    else:
+        lib = helpers.ROOT / "scripts" / "uat" / "lib.sh"
+        snippet = (
+            f'set -euo pipefail\nAPP_ENV_FILE="{app}"\nDB_ENV_FILE="{db}"\nsource "{lib}"\n'
+            f'uat_env_checks "{notice}"\necho "env checks passed"\n'
+        )
+        cmd = ["bash", "-c", snippet]
+    return subprocess.run(cmd, capture_output=True, text=True, env=env, check=False, timeout=60)
+
+
+@pytest.mark.parametrize("script", ["deploy", "lib"])
+@pytest.mark.parametrize(
+    ("app_extra", "db_extra", "stop"),
+    [
+        (
+            f"EMAIL_MODE=graph\nGRAPH_CLIENT_SECRET={GRAPH_SECRET}\n",
+            f"GRAPH_CLIENT_SECRET={GRAPH_SECRET}\n",
+            "GRAPH_CLIENT_SECRET belongs in the database env file only: the app env file also reaches the web app",
+        ),
+        (
+            f"EMAIL_MODE=smtp\nGRAPH_CLIENT_SECRET={GRAPH_SECRET}\n",
+            "",
+            "GRAPH_CLIENT_SECRET belongs in the database env file only: the app env file also reaches the web app",
+        ),
+        ("EMAIL_MODE=graph\n", "", "EMAIL_MODE is graph: put GRAPH_CLIENT_SECRET in the database env file"),
+        ("EMAIL_MODE=graph\n", f"GRAPH_CLIENT_SECRET={GRAPH_SECRET}\n", None),
+        ("EMAIL_MODE=smtp\n", "", None),
+    ],
+)
+def test_a243_deploy_and_upgrade_keep_the_graph_secret_out_of_the_app_env_file(
+    tmp_path: Path, script: str, app_extra: str, db_extra: str, stop: str | None
+) -> None:
+    run = _graph_env_checks(tmp_path, script, app_extra, db_extra)
+    out = run.stdout + run.stderr
+    assert "stub" not in out and GRAPH_SECRET not in out
+    if stop is None:
+        assert run.returncode == 0 and "env checks passed" in run.stdout, out
+    else:
+        assert run.returncode == 1 and f"STOPPED: {stop}" in run.stderr, out

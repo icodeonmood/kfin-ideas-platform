@@ -337,6 +337,32 @@ describe("C-PROMPT.attach on Home (S-03; DEC-124, BLD-C213, C214)", () => {
     expect(document.activeElement).toBe(plus());
   });
 
+  it('BLD-C245 (lane D\'s QA): "+" closing its own picker keeps the focus on "+" and brings it into view, as Escape does', async () => {
+    // jsdom has no layout: record what a browser would scroll into view.
+    const scrolled: { el: Element; opts: unknown }[] = [];
+    const had = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+    Element.prototype.scrollIntoView = function (this: Element, opts?: unknown) {
+      scrolled.push({ el: this, opts });
+    } as Element["scrollIntoView"];
+    try {
+      await showHome();
+      await openPicker();
+      expect(host.querySelector(".cpick")).not.toBeNull();
+      await act(async () => plus()!.click());
+      await act(async () => await new Promise<void>((r) => requestAnimationFrame(() => r())));
+      expect(host.querySelector(".cpick")).toBeNull();
+      expect(plus()!.getAttribute("aria-expanded")).toBe("false");
+      expect(document.activeElement).toBe(plus());
+      expect(scrolled).toContainEqual({ el: plus(), opts: { block: "nearest" } });
+      // It opens again from "+" as before.
+      await openPicker();
+      expect(host.querySelector(".cpick")).not.toBeNull();
+    } finally {
+      if (had) Object.defineProperty(Element.prototype, "scrollIntoView", had);
+      else delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
+  });
+
   it('BLD-C224: a pick of only names starting with "." adds nothing, and the picker says so', async () => {
     await showHome();
     await openPicker();
@@ -433,6 +459,9 @@ describe("C-PROMPT.attach on Home (S-03; DEC-124, BLD-C213, C214)", () => {
     const box = host.querySelector(".prompt")!;
     expect(box.querySelector(".cfiles")?.textContent).toContain("Rejection codes reference.pdf");
     expect(named("Remove Rejection codes reference.pdf")?.closest(".prompt")).toBe(box);
+    // BLD-C244: lane D's compact FileList and FileRemove draw the rows, as on the conversation box.
+    expect(box.querySelector(".cfiles ul")?.classList.contains("compact")).toBe(true);
+    expect(named("Remove Rejection codes reference.pdf")?.className).toBe("frow-x");
     // BLD-C224: the list is no live region; the status line, outside the list, says what changed.
     expect(box.querySelector(".cfiles ul")?.hasAttribute("aria-live")).toBe(false);
     expect(box.querySelector(".cfiles ul")?.getAttribute("aria-label")).toBe("Your files and links");
@@ -631,7 +660,15 @@ describe('The "+" and the Capture first layout in CSS (WCAG 2.1 AA; BLD-C212, C2
     expect(shared).toMatch(/\n\.attach-btn \{[^}]*width: var\(--target\);[^}]*height: var\(--target\);/);
     expect(shared).toMatch(/\n\.attach-btn:focus-visible \{[^}]*outline: 2px solid var\(--blue\);/);
     expect(css).not.toMatch(/\.attach-btn/);
-    expect(rule(".cz .cfile-x")).toMatch(/width: 32px;[\s\S]*height: 32px;/);
+    // BLD-C244: the remove is lane D's FileRemove (`.frow-x`, 32 × 32 in app/components.css); the box keeps no copy,
+    // and a row with a message takes its own line by `frow-msg`, not :has() (Firefox 111, the floor).
+    expect(shared).toMatch(/\n\.frow-x \{[^}]*width: 32px;[^}]*height: 32px;/);
+    expect(css).not.toMatch(/\.cfile-x/);
+    expect(css).not.toMatch(/:has\(\.fmsg\)/);
+    // On a phone the box's rows keep the buttons on their own line under the name, as before BLD-C244 (lane D).
+    expect(css).toMatch(
+      /@media \(max-width: 640px\) \{\s*\.cz \.cfiles \.flist\.compact \.frow-in \{\s*flex-wrap: wrap;\s*\}\s*\.cz \.cfiles \.flist\.compact \.frow-a \{\s*width: 100%;\s*\}/,
+    );
   });
 
   it("DEC-125/2, DEC-130, BLD-D032: Capture first on a desk is one column up to 960px, centred; the conversation and the box fill it", () => {

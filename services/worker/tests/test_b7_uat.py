@@ -35,6 +35,8 @@ GOOD = {
     "GRAPH_TENANT_ID": "t",
     "GRAPH_CLIENT_ID": "c",
     "GRAPH_SERVICE_MAILBOX": "garage@kfintech.example",
+    "GRAPH_CLIENT_SECRET": "synthetic-graph-secret-test-only",  # BLD-A243: from the database env file
+    "EMAIL_FROM": "1% Club <garage@kfintech.example>",
     "KFIN_EMAIL_DOMAINS": "kfintech.com,kfintech.example",
 }
 

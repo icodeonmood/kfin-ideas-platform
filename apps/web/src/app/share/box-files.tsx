@@ -14,9 +14,8 @@
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { AttachButton } from "@/components/ui/attach-button";
-import { IconClose } from "@/components/compose/icons";
 import { Button } from "@/components/ui/button";
-import { FileList, FileRow } from "@/components/ui/file";
+import { FileList, FileRemove, FileRow } from "@/components/ui/file";
 import { FilePicker, PICKER_COPY } from "@/components/ui/file-picker";
 import type { FileItem, UploadConfig } from "@/lib/contracts";
 
@@ -113,10 +112,17 @@ export function useBoxFiles({
     };
   }, [open, config]);
 
+  // Once the box has drawn without the picker, the "+" is brought into view (BLD-C245, lane D's QA): on a phone the
+  // picker sits over the "+", closing shrinks the box and the page does not follow, and focus() does not scroll a "+"
+  // that already has the focus (the "+" itself closing it).
   const close = (focus: boolean) => {
     setOpen(false);
     setNote(null);
-    if (focus) requestAnimationFrame(() => plus.current?.querySelector("button")?.focus());
+    requestAnimationFrame(() => {
+      const b = plus.current?.querySelector("button");
+      if (focus) b?.focus();
+      b?.scrollIntoView?.({ block: "nearest" });
+    });
   };
 
   const addFiles = (files: File[]) => {
@@ -146,8 +152,12 @@ export function useBoxFiles({
         aria-expanded={open}
         aria-controls={open ? pickerId : undefined}
         onClick={() => {
+          if (open) {
+            close(true); // as Escape: the focus stays on "+", in view
+            return;
+          }
           setNote(null);
-          setOpen((o) => !o);
+          setOpen(true);
         }}
       />
       <span className="vh" role="status">
@@ -199,8 +209,10 @@ function Rows({
 }) {
   return (
     <div className="cfiles">
-      {/* Lane D's FileList without its aria-live: the status line says what changed (BLD-C224, BLD-D030). */}
-      <FileList label={BOX_FILES_COPY.rows} live={false}>
+      {/* Lane D's compact FileList without its aria-live: the status line says what changed (BLD-C224, BLD-D030).
+          Compact draws the rows as the box always has, and a row with a message takes its own line without :has()
+          (BLD-C244). */}
+      <FileList label={BOX_FILES_COPY.rows} live={false} compact>
         {items.map((p) => {
           const v = rowView(p, limitMb);
           const name = p.item?.name ?? p.name;
@@ -220,15 +232,7 @@ function Rows({
                   {CHECK_COPY.retry}
                 </Button>
               ) : null}
-              <button
-                type="button"
-                className="cfile-x"
-                aria-label={BOX_FILES_COPY.removeOf(name)}
-                title={BOX_FILES_COPY.removeOf(name)}
-                onClick={() => onRemove(p.key)}
-              >
-                <IconClose />
-              </button>
+              <FileRemove label={BOX_FILES_COPY.removeOf(name)} onClick={() => onRemove(p.key)} />
             </FileRow>
           );
         })}
