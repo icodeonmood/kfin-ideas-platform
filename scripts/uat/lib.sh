@@ -60,6 +60,11 @@ uat_env_checks() {
     export SPEECH_HOSTED_APPROVAL="${approval:-DEC-108}"
     [[ -n "$SPEECH_HOSTED_APPROVAL" ]] || fail "SPEECH_MODE is sarvam: SPEECH_HOSTED_APPROVAL must be set (DEC-108)"
   fi
+  [[ -z "$(value GRAPH_CLIENT_SECRET "$APP_ENV_FILE")" ]] \
+    || fail "GRAPH_CLIENT_SECRET belongs in the database env file only: the app env file also reaches the web app"
+  if [[ "$(value EMAIL_MODE "$APP_ENV_FILE")" == "graph" ]]; then
+    [[ -n "$(value GRAPH_CLIENT_SECRET "$DB_ENV_FILE")" ]] || fail "EMAIL_MODE is graph: put GRAPH_CLIENT_SECRET in the database env file"
+  fi
   [[ -z "$(value INTERNAL_API_TOKEN "$DB_ENV_FILE")" ]] \
     || fail "INTERNAL_API_TOKEN belongs in the app env file only: never next to SPEECH_SERVICE_TOKEN"
 }

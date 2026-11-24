@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 
 from comms import email_html
-from comms.send import _smtp
+from comms.send import deliver
 from comms.templates import load
 from core import killswitch
 from core.config import get_settings
@@ -39,5 +39,5 @@ def send(conn: Conn, user_id: str, code: str, valid_minutes: int) -> None:
         raise CodeEmailRefused("no_recipient", 404)
     first = str(row["name"]).split()[0] if row["name"] else "there"
     data = {"recipient": {"first_name": first}, "code": {"value": code, "valid_minutes": valid_minutes}}
-    _smtp(str(row["email"]), email_html.compose(load(TEMPLATE), data, get_settings().app_base_url))
+    deliver(str(row["email"]), email_html.compose(load(TEMPLATE), data, get_settings().app_base_url))
     log.info("auth.code_emailed", user_id=user_id)

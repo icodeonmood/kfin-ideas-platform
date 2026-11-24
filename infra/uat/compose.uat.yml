@@ -45,6 +45,8 @@ services:
       SPEECH_SERVICE_TOKEN: ${SPEECH_SERVICE_TOKEN:-}
       # From the database env file: Sarvam's key, the worker only (DEC-108). Empty: the watch switches voice off.
       SARVAM_API_KEY: ${SARVAM_API_KEY:-}
+      # From the database env file: the Graph client secret for email, the worker only (BLD-A243). Empty with smtp.
+      GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}
       # Voice is on at launch through Sarvam (DEC-108): the route and its approval reference unless the app env file
       # names others (deploy.sh exports the same values).
       SPEECH_MODE: ${SPEECH_MODE:-sarvam}
@@ -60,6 +62,7 @@ services:
       OIDC_INTERNAL_BASE: ""   # dev only; the web app refuses it outside dev
       SPEECH_SERVICE_TOKEN: ""   # never the web app's (BLD-C031)
       SARVAM_API_KEY: ""   # never the web app's (DEC-108, BLD-C115)
+      GRAPH_CLIENT_SECRET: ""   # never the web app's (BLD-A243)
       # The model route's credentials are never the web app's: model calls are the worker's gateway (non-negotiable 1,
       # BLD-A246). The app env file holds them for the worker; the web app reads none of them.
       ANTHROPIC_API_KEY: ""
