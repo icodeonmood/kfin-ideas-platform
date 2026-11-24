@@ -254,6 +254,14 @@ export function KitDemo() {
           >
             {(p) => <textarea {...p} rows={4} defaultValue="Folio ••••89 asked twice this week." />}
           </Field>
+          {/* BLD-D029: a field with its own tools at the trailing end, inside its frame (S-R3's answer field) */}
+          <Field
+            label="Your answer to question 1"
+            multiline
+            tools={<AttachButton label="Attach files to this answer" tooltip="Attach files" />}
+          >
+            {(p) => <textarea {...p} rows={4} placeholder="Type your answer, or tap the mic and say it" />}
+          </Field>
         </div>
       </section>
 
