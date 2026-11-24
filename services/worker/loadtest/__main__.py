@@ -491,6 +491,16 @@ def arrivals(rate_per_s: float, length_s: float, rng: random.Random) -> list[flo
     return out
 
 
+def shared_client(transport: httpx.AsyncBaseTransport | None = None) -> httpx.AsyncClient:
+    """The one HTTP client every person's Session shares. It keeps no cookie: each person's cookies live in their
+    Session (B8 review). The jar goes in as it is (BLD-A253): httpx copies an `httpx.Cookies` into a fresh default
+    jar, which drops this policy, and the first person's session then rode on everyone else's sign-in, so
+    `/auth/login` said "already signed in" and 169 of 170 sign-ins failed on the runner (CI run 45480395541)."""
+    limits = httpx.Limits(max_connections=200, max_keepalive_connections=50)
+    no_jar = CookieJar(policy=DefaultCookiePolicy(allowed_domains=[]))
+    return httpx.AsyncClient(timeout=30, limits=limits, cookies=no_jar, transport=transport)
+
+
 async def run(args: argparse.Namespace, transport: httpx.AsyncBaseTransport | None = None) -> dict[str, Any]:
     rng = random.Random(args.seed)  # noqa: S311 - synthetic traffic, not security
     stats = Stats()
@@ -499,10 +509,7 @@ async def run(args: argparse.Namespace, transport: httpx.AsyncBaseTransport | No
     sign_in_rate = args.sign_ins / (args.sign_in_hours * 3600)  # per second
     submit_rate = args.submissions_per_hour / 3600
     people = [f"SYN-{n:05d}" for n in range(18, 18 + args.people)]
-    limits = httpx.Limits(max_connections=200, max_keepalive_connections=50)
-    # Each person's cookies live in their Session; the shared client must never keep any (B8 review).
-    no_jar = httpx.Cookies(CookieJar(policy=DefaultCookiePolicy(allowed_domains=[])))
-    async with httpx.AsyncClient(timeout=30, limits=limits, cookies=no_jar, transport=transport) as client:
+    async with shared_client(transport) as client:
         authors = [
             await sign_in_and_browse(client, args.base_url, stats, people[i]) for i in range(args.authors)
         ]
