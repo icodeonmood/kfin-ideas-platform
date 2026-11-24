@@ -212,6 +212,8 @@ The Full go/no-go needs "Restore drill completed inside 4 hours" (ARCHITECTURE Â
 
 **When:** once before the Full go/no-go (Wed 25 Nov 2026, 16:00), in a quiet window; tell the review desk first. Lane A rehearses it on the rehearsal stack before IT runs it, and sends IT the tag to run it from. It never runs at the same time as an upgrade or a rollback: all three take the lock `ops/.lock`, and the second one stops at its step 1 (an upgrade then says "another upgrade or rollback holds": wait for the drill to end). Run it inside `tmux` or `screen`.
 
+**Not yet run on real Docker (24 Nov 2026).** The drill has passed its tests on stand-ins only. Do not run it on the server until lane A has run it once on a real Postgres 16 (a GitHub runner or the rehearsal stack) and has taken this line out.
+
 **Command,** from the release checkout, with the install's data folder and env files (as for an upgrade):
 
 ```bash
