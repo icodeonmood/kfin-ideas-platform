@@ -22,7 +22,7 @@ SARVAM_LIVE_PYTHON ?= uv run --frozen python
 EVAL_LIVE_PYTHON ?= uv run --frozen python
 ROUTE := anthropic
 
-.PHONY: help setup build up down health migrate db-users seed demo demo-reset demo-remove test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data uat-deploy uat-rehearsal uat-upgrade uat-rollback uat-rehearsal-upgrade sarvam-live eval-live
+.PHONY: help setup build up down health migrate db-users seed demo demo-reset demo-remove test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data uat-deploy uat-rehearsal uat-upgrade uat-rollback uat-restore-drill uat-rehearsal-upgrade sarvam-live eval-live
 
 help: ## List the commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-12s %s\n", $$1, $$2}'
@@ -141,6 +141,9 @@ uat-upgrade: ## Update a running install to this checkout: make uat-upgrade APP_
 
 uat-rollback: ## Put an install back to an upgrade's backup: make uat-rollback BACKUP=<dump> APP_ENV_FILE=… DB_ENV_FILE=…
 	scripts/uat/rollback.sh "$(BACKUP)" "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"
+
+uat-restore-drill: ## Restore drill on a running install (IT, before the Full go/no-go): make uat-restore-drill APP_ENV_FILE=… DB_ENV_FILE=… (docs/UAT.md)
+	scripts/uat/restore-drill.sh "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"
 
 uat-rehearsal-upgrade: ## Rehearse install FROM, upgrade, rollback, upgrade; stop the dev stack first: make uat-rehearsal-upgrade FROM=<ref> [REHEARSE_APP_ENV=prod]
 	FROM="$(FROM)" REHEARSE_APP_ENV="$(REHEARSE_APP_ENV)" scripts/uat/rehearse-upgrade.sh
