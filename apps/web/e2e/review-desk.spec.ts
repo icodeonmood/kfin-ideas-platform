@@ -3,6 +3,9 @@
  * sharer's Answer screen. Ideas are written straight into this run's database for the seeded sharer, because the
  * share journey is another lane's; everything after that goes through the screens. Synthetic data only.
  */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { Client } from "pg";
@@ -968,4 +971,144 @@ test("BLD-D038, F-MOTION.rules/5 (J-BROWSE/4): a key or the wheel ends the desk'
   await glidingRow(r, DESK_ROWS, { hit: false });
   await r.mouse.wheel(0, 1);
   await expectNoGlideRunning(r, DESK_ROWS);
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-narrow-1, never merged: BLD-D034, D035 and D037 on S-R3 (the sharer's Answer screen).
+ * The desktop project takes 1440 and 640, the phone project 360 and 320. At each size: no sideways scroll; on a phone
+ * the bar's title and Back's label are whole and 8px apart; the Field's tools sit beside the words in a wide frame and
+ * on their own row under them in a frame under 300px, at the end; a Tab-focused tool's ring stays inside the frame;
+ * a fixed dock's buttons share one left edge. Screenshots and measures go to test-results/qa-shots. Synthetic only.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+
+async function qaAnswer(s: Page) {
+  return s.evaluate(() => {
+    const r = (e: Element | null | undefined) => {
+      if (!e) return null;
+      const b = e.getBoundingClientRect();
+      return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width, height: b.height };
+    };
+    const bar = document.querySelector<HTMLElement>(".pnav");
+    const title = bar?.querySelector<HTMLElement>(".pnav-t");
+    const label = bar?.querySelector<HTMLElement>(".pback span");
+    const frame = document.querySelector(".ans-box .fld-frame");
+    const dock = [...document.querySelectorAll<HTMLElement>(".dock")].find(
+      (d) => getComputedStyle(d).position === "fixed",
+    );
+    return {
+      sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      bar: bar && getComputedStyle(bar).display !== "none" ? r(bar) : null,
+      title: title
+        ? { ...r(title)!, scroll: title.scrollWidth, client: title.clientWidth, text: title.textContent }
+        : null,
+      label: label ? { scroll: label.scrollWidth, client: label.clientWidth, text: label.textContent } : null,
+      back: r(bar?.querySelector(".pback")),
+      frame: r(frame),
+      text: r(frame?.querySelector("textarea")),
+      tools: [...(frame?.querySelectorAll(".fld-tools button") ?? [])].map((b) => r(b)!),
+      dock: dock
+        ? {
+            box: r(dock)!,
+            lefts: [...dock.querySelectorAll(":scope > .btn, :scope > button, :scope > a")].map(
+              (b) => r(b)!.left,
+            ),
+          }
+        : null,
+    };
+  });
+}
+
+test("QA (lane D, never merged): BLD-D034, BLD-D035, BLD-D037 on S-R3 at 1440, 640, 360 and 320", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+  const s = await answerAt320(browser, testInfo.project.name);
+  const sizes =
+    testInfo.project.name === "phone-360"
+      ? ([
+          [360, 740],
+          [320, 640],
+        ] as const)
+      : ([
+          [1440, 900],
+          [640, 800],
+        ] as const);
+  for (const [w, h] of sizes) {
+    const at = `d037-sr3-${w}x${h}`;
+    await s.setViewportSize({ width: w, height: h });
+    await settleMotion(s);
+    const g = await qaAnswer(s);
+    log[at] = g;
+    await s.screenshot({ path: join(QA_SHOTS, `${at}.png`) });
+    await s.screenshot({ path: join(QA_SHOTS, `${at}-full.png`), fullPage: true });
+    expect.soft(g.sideways, `${at}: no sideways scroll`).toBeLessThanOrEqual(0);
+    if (w <= 640 && g.bar && g.title && g.label && g.back) {
+      expect.soft(g.title.scroll, `${at}: the title is whole`).toBeLessThanOrEqual(g.title.client);
+      expect.soft(g.label.scroll, `${at}: Back's label is whole`).toBeLessThanOrEqual(g.label.client);
+      expect
+        .soft(g.title.left - g.back.right, `${at}: Back and the title 8px apart`)
+        .toBeGreaterThanOrEqual(7.5);
+    }
+    if (g.frame && g.text && g.tools.length) {
+      const narrow = g.frame.width - 2 < 300;
+      for (const [i, t] of g.tools.entries()) {
+        expect.soft(t.right, `${at} tool ${i + 1}: inside the frame`).toBeLessThanOrEqual(g.frame.right - 2);
+        if (narrow)
+          expect
+            .soft(t.top, `${at} tool ${i + 1}: under the words`)
+            .toBeGreaterThanOrEqual(g.text.bottom - 0.5);
+        else
+          expect
+            .soft(t.left, `${at} tool ${i + 1}: beside the words`)
+            .toBeGreaterThanOrEqual(g.text.right - 0.5);
+      }
+      if (narrow)
+        expect
+          .soft(g.text.width, `${at}: the words take the frame`)
+          .toBeGreaterThanOrEqual(g.frame.width - 3);
+    }
+    if (g.dock && g.dock.lefts.length > 1) {
+      const first = g.dock.lefts[0]!;
+      for (const l of g.dock.lefts)
+        expect.soft(Math.abs(l - first), `${at}: the dock is one column`).toBeLessThan(1);
+    }
+    // Tab from the words to each tool: the ring (outline width + offset) stays inside the frame's border box
+    await s.getByRole("textbox", { name: "Your answer to question 1" }).focus();
+    const rings: unknown[] = [];
+    for (let i = 0; i < g.tools.length; i++) {
+      await s.keyboard.press("Tab");
+      const ring = await s.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        const frame = document.querySelector(".ans-box .fld-frame");
+        if (!el || !frame || !frame.contains(el)) return null;
+        const cs = getComputedStyle(el);
+        const out = (parseFloat(cs.outlineWidth) || 0) + (parseFloat(cs.outlineOffset) || 0);
+        const b = el.getBoundingClientRect();
+        const f = frame.getBoundingClientRect();
+        return {
+          style: cs.outlineStyle,
+          gaps: [
+            b.left - out - f.left,
+            f.right - (b.right + out),
+            b.top - out - f.top,
+            f.bottom - (b.bottom + out),
+          ],
+        };
+      });
+      rings.push(ring);
+      if (ring) {
+        expect.soft(ring.style, `${at} tool ${i + 1}: shows its ring`).toBe("solid");
+        expect
+          .soft(Math.min(...ring.gaps), `${at} tool ${i + 1}: ring inside the frame`)
+          .toBeGreaterThanOrEqual(1.5);
+      }
+      await s.screenshot({ path: join(QA_SHOTS, `${at}-ring-${i + 1}.png`) });
+    }
+    log[`${at}-rings`] = rings;
+    await expectNoSeriousAxeIssues(s);
+  }
+  writeFileSync(join(QA_SHOTS, `d037-sr3-${testInfo.project.name}.json`), JSON.stringify(log, null, 2));
 });

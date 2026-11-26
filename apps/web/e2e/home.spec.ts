@@ -1,3 +1,6 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, test, type Page } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, settleMotion, signIn } from "./helpers";
@@ -176,4 +179,118 @@ test("BLD-D036, C-FILE.picker (C-FILE.uploader), S-03: at 320px Home's picker gi
     "the icon is centred on the field",
   ).toBeLessThanOrEqual(1);
   await expectNoSeriousAxeIssues(page);
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-narrow-1, never merged: BLD-D036 (the shared picker's link row) on Home and Share, and
+ * BLD-D035 (the phone dock) on Share. The desktop project takes 1440 and 640, the phone project 360 and 320. The
+ * picker under 300px stacks the field over a full-width Add link (44px), the icon centred on the field; over 300px
+ * the two share a row. A fixed dock's buttons share one left edge. Screenshots and measures go to
+ * test-results/qa-shots. Synthetic only.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+
+test("QA (lane D, never merged): BLD-D036 picker link row on Home and Share, BLD-D035 Share's dock, at 1440, 640, 360 and 320", async ({
+  page,
+}, info) => {
+  test.setTimeout(300_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+  await signInFresh(page, "N");
+  await page.waitForURL((url) => url.pathname === "/home");
+  const sizes =
+    info.project.name === "phone-360"
+      ? ([
+          [360, 740],
+          [320, 640],
+        ] as const)
+      : ([
+          [1440, 900],
+          [640, 800],
+        ] as const);
+  for (const path of ["/home", "/share"] as const) {
+    for (const [w, h] of sizes) {
+      const at = `d036${path.replace("/", "-")}-${w}x${h}`;
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto(path);
+      await expect(page.locator(".cbox.prompt textarea")).toBeVisible();
+      await page
+        .locator(".cbox.prompt")
+        .getByRole("button", { name: "Add files, a folder or a link", exact: true })
+        .click();
+      await expect(page.getByRole("button", { name: "Add link" })).toBeVisible();
+      await settleMotion(page);
+      await page.locator(".cpick .fpick-link").evaluate((el) => el.scrollIntoView({ block: "center" }));
+      await settleMotion(page);
+      const g = await page.evaluate(() => {
+        const box = (e: Element | null | undefined) => {
+          if (!e) return null;
+          const r = e.getBoundingClientRect();
+          return {
+            left: r.left,
+            right: r.right,
+            top: r.top,
+            bottom: r.bottom,
+            width: r.width,
+            height: r.height,
+          };
+        };
+        const row = document.querySelector(".cpick .fpick-link");
+        const dock = [...document.querySelectorAll<HTMLElement>(".dock")].find(
+          (d) => getComputedStyle(d).position === "fixed",
+        );
+        return {
+          sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          picker: box(document.querySelector(".cpick")),
+          row: box(row),
+          field: box(row?.querySelector("input")),
+          add: box(row?.querySelector(".btn")),
+          icon: box(row?.querySelector(".fpick-li")),
+          dock: dock
+            ? {
+                box: box(dock)!,
+                lefts: [...dock.querySelectorAll(":scope > .btn, :scope > button, :scope > a")].map(
+                  (b) => box(b)!.left,
+                ),
+              }
+            : null,
+        };
+      });
+      log[at] = g;
+      await page.screenshot({ path: join(QA_SHOTS, `${at}.png`) });
+      expect.soft(g.sideways, `${at}: no sideways scroll`).toBeLessThanOrEqual(0);
+      if (g.picker && g.row && g.field && g.add && g.icon) {
+        const stacked = g.picker.width < 300;
+        if (stacked) {
+          expect
+            .soft(g.add.top, `${at}: Add link under the field`)
+            .toBeGreaterThanOrEqual(g.field.bottom - 0.5);
+          expect
+            .soft(Math.abs(g.add.width - g.field.width), `${at}: Add link full width`)
+            .toBeLessThanOrEqual(1);
+          expect
+            .soft(g.field.width, `${at}: the field takes the row`)
+            .toBeGreaterThanOrEqual(g.row.width - 1);
+        } else {
+          expect
+            .soft(g.add.left, `${at}: Add link beside the field`)
+            .toBeGreaterThanOrEqual(g.field.right - 0.5);
+        }
+        expect.soft(g.add.height, `${at}: Add link 44px`).toBeGreaterThanOrEqual(44);
+        expect
+          .soft(
+            Math.abs(g.icon.top + g.icon.height / 2 - (g.field.top + g.field.height / 2)),
+            `${at}: icon centred on the field`,
+          )
+          .toBeLessThanOrEqual(1);
+      }
+      if (g.dock && g.dock.lefts.length > 1) {
+        const first = g.dock.lefts[0]!;
+        for (const l of g.dock.lefts)
+          expect.soft(Math.abs(l - first), `${at}: the dock is one column`).toBeLessThan(1);
+      }
+      await expectNoSeriousAxeIssues(page);
+    }
+  }
+  writeFileSync(join(QA_SHOTS, `d036-${info.project.name}.json`), JSON.stringify(log, null, 2));
 });

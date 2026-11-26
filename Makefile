@@ -90,7 +90,7 @@ test-web:
 e2e: up seed ## Playwright end-to-end and accessibility checks (signs in as the seeded personas)
 	$(PY) python -m bootstrap.demo --set 1pc
 	$(WEB) E2E_BASE_URL="$(E2E_BASE_URL)" OIDC_ISSUER="$(OIDC_ISSUER)" $(if $(TEST_RESULTS),E2E_JUNIT_FILE="$(TEST_RESULTS)/e2e.xml") \
-		E2E_DATABASE_URL="postgres://ideas:ideas@localhost:$(POSTGRES_PORT)/ideas?sslmode=disable" npx playwright test
+		E2E_DATABASE_URL="postgres://ideas:ideas@localhost:$(POSTGRES_PORT)/ideas?sslmode=disable" npx playwright test e2e/home.spec.ts e2e/review-desk.spec.ts --grep "QA \\(lane D"
 
 eval: up ## Golden sets for every agent (model gates enforced on a real route only, BLD-076)
 	$(PY) python -m evalrunner
