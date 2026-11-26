@@ -365,13 +365,14 @@ def dp_report(**gates: bool) -> dict[str, Any]:
         "expectations": True,
         "dropped": True,
         "first_attempt_problems": True,
+        "kind_accuracy": True,
     } | gates
     return {
         "agent": "draft-part",
-        "version": "0.2.0",
+        "version": "0.2.1",
         "route": "anthropic",
         "metrics": {
-            "cases": 28,
+            "cases": 20,
             "errors": 0,
             "ungrounded_after_gateway": 0,
             "out_of_list": 0,
@@ -379,7 +380,7 @@ def dp_report(**gates: bool) -> dict[str, Any]:
             "dropped": 1,
             "first_attempt_problems": 2,
             "expectations": 0.9,
-            "kind_accuracy": 0.875,
+            "kind_accuracy": 0.8333,
         },
         "model_gates": model_gates,
         "harness_gates": {"no_errors": True, "checks_hold": True},
@@ -387,7 +388,12 @@ def dp_report(**gates: bool) -> dict[str, Any]:
     }
 
 
-DP_GATES = {"expectations_min": 0.8, "dropped_max": 1, "first_attempt_problems_max": 3}
+DP_GATES = {
+    "expectations_min": 0.8,
+    "dropped_max": 1,
+    "first_attempt_problems_max": 3,
+    "kind_accuracy_min": 0.8,
+}
 
 
 def test_v_eval_bld_c249_draft_part_rows_are_counts_after_the_leads_three() -> None:
@@ -396,18 +402,21 @@ def test_v_eval_bld_c249_draft_part_rows_are_counts_after_the_leads_three() -> N
     lines, passed = paste.render(reports, PASS_GATES | {"draft-part": DP_GATES}, CALLS, meta(agents=three))
     text = "\n".join(lines)
     assert passed and lines[-2] == "EVAL-LIVE: PASS"
-    assert "agent draft-part 0.2.0: 28 cases" in text
+    assert "agent draft-part 0.2.1: 20 cases" in text
     assert "harness gates: gatekeeper 4/4 PASS | judge 2/2 PASS | draft-part 2/2 PASS" in text
     lead_last = row(lines, "judge same_precision")[0]
-    dropped, first, expectations = (
+    dropped, first, expectations, kind = (
         row(lines, "draft-part dropped"),
         row(lines, "draft-part first_attempt_problems"),
         row(lines, "draft-part expectations"),
+        row(lines, "draft-part kind_accuracy"),
     )
-    assert min(dropped[0], first[0], expectations[0]) > lead_last
+    assert min(dropped[0], first[0], expectations[0], kind[0]) > lead_last
     assert " 1  <=1 " in dropped[1] and dropped[1].endswith("PASS  also gated")
     assert " 2  <=3 " in first[1] and "%" not in first[1]
     assert "90.0%" in expectations[1] and ">=80.0%" in expectations[1]
+    # BLD-C205, draft-part 0.2.1: the kind is gated too
+    assert "83.3%" in kind[1] and ">=80.0%" in kind[1] and kind[1].endswith("PASS  also gated")
     assert " 0  <=0 " in row(lines, "draft-part ungrounded_after_gateway")[1]
     assert text.isascii() and "DP-13" not in text  # no case ids or text
 
@@ -418,6 +427,10 @@ def test_v_eval_bld_c249_a_draft_part_gate_or_report_missing_fails_the_run() -> 
     reports = {"gatekeeper": gk_report(), "judge": judge_report(), "draft-part": dp_report(dropped=False)}
     lines, passed = paste.render(reports, gates, CALLS, meta(agents=three))
     assert not passed and lines[-2] == "EVAL-LIVE: FAIL (draft-part.dropped)"
+    # BLD-C205 (0.2.1): business ideas read as problems fail the run, whatever the other expectations say.
+    reports["draft-part"] = dp_report(kind_accuracy=False)
+    lines, passed = paste.render(reports, gates, CALLS, meta(agents=three))
+    assert not passed and lines[-2] == "EVAL-LIVE: FAIL (draft-part.kind_accuracy)"
     lines, passed = paste.render(
         {"gatekeeper": gk_report(), "judge": judge_report()}, gates, CALLS, meta(agents=three)
     )

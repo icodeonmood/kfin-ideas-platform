@@ -54,6 +54,7 @@ GATES: dict[tuple[str, str], tuple[str | None, str, float]] = {
     ("draft-part", "expectations"): ("expectations_min", ">=", 0.8),
     ("draft-part", "dropped"): ("dropped_max", "<=", 1),
     ("draft-part", "first_attempt_problems"): ("first_attempt_problems_max", "<=", 2),
+    ("draft-part", "kind_accuracy"): ("kind_accuracy_min", ">=", 0.8),  # draft-part 0.2.1 (BLD-C205)
 }
 COUNTS = frozenset(
     ("draft-part", g)
