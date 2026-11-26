@@ -699,6 +699,12 @@
   .cv-pick {
     margin: 0 0 8px;
   }
+  /* The picker in the dock is solid (BLD-F106, lane D's QA): the dock lets 4% of the thread through and the shared
+   * picker's fill another 40% of that, so the thread moved behind the picker's words. --white, not --card: inside the
+   * signed-in shell --card is 78% glass (shell.css). Two classes, so it beats `.fpick` whichever sheet loads last. */
+  .cv-box .cv-pick {
+    background: var(--white);
+  }
   /* Who sees it is under the title on a phone (.cv-seen); the box still names it to a screen reader (describedby) */
   .cv-sees {
     display: none;

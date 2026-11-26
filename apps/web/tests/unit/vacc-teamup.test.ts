@@ -2,8 +2,8 @@
 /**
  * V-ACC.teamup gap tests on the web (J-TEAMUP), from lane F's coverage map of 18 Nov 10:00. Each test names its row.
  * They exercise other lanes' screens and components as they are on main, and change none of them:
- * - /4 "Waiting for Ravi" with Withdraw on every screen that shows the idea: S-09's Team up card (lane E), S-05's
- *   similar tile and its preview (lane C), and what lane F's sheet hands its opener (C-SHEET-TEAMUP.after);
+ * - /4 "Waiting for Ravi" with Withdraw on the cards: S-09's Team up card (lane E), S-05's similar tile (lane C), and
+ *   what lane F's sheet hands its opener (C-SHEET-TEAMUP.after); the preview shows the status only (DEC-140);
  * - /6 no Undo after any of the lead's three answers on S-H2B (lane A's reader);
  * - /7 Find your crew's Next lifts the front card out to the right and tucks it behind the pile (lane D's Deck);
  * - /9 Home's Ones: one card per wheel step, and the page scrolls on at either end (lane D's fan).
@@ -153,7 +153,7 @@ function json(status: number, data: unknown) {
 // =================================================================================================================
 // V-ACC.teamup/4
 // =================================================================================================================
-describe("V-ACC.teamup/4: Waiting for Ravi with Withdraw, the same on every screen that shows that idea", () => {
+describe("V-ACC.teamup/4: Waiting for Ravi with Withdraw on the cards; the preview shows the status only (DEC-140)", () => {
   // Find your crew and Home's crew cards are on f/crew-search-4, not on main yet: covered in crew-screen.test.ts.
   it.todo("V-ACC.teamup/4: S-H2 crew card (after f/crew-search)");
 
@@ -220,16 +220,13 @@ describe("V-ACC.teamup/4: Waiting for Ravi with Withdraw, the same on every scre
     expect(named("Team up", dialog)).toHaveLength(0);
   });
 
-  // Lane C: C-PREVIEW/7 replaces the button with a green status only ("Waiting for Ravi"), so the preview has no
-  // Withdraw; V-ACC.teamup/4 asks for Withdraw on every screen that shows the idea. The pack disagrees with itself:
-  // the product lead rules, then lane C either adds Withdraw or the row names the preview as status-only.
-  it.fails(
-    "V-ACC.teamup/4 C-PREVIEW: lane C — the preview also offers Withdraw (C-PREVIEW/7 draws a status only)",
-    async () => {
-      const dialog = await openPreview();
-      expect(named("Withdraw", dialog)).toHaveLength(1);
-    },
-  );
+  // DEC-140 (the product lead's answer to lane F's Q1, 26 Nov): C-PREVIEW/7 replaces the button with the green status
+  // only; Withdraw is on the card, never in the preview (BLD-F107)
+  it("V-ACC.teamup/4 C-PREVIEW, DEC-140: the preview shows the status only, with no Withdraw", async () => {
+    const dialog = await openPreview();
+    expect(visibleText(dialog)).toContain("Waiting for Ravi");
+    expect(named("Withdraw", dialog)).toHaveLength(0);
+  });
 
   it("V-ACC.teamup/4 C-SHEET-TEAMUP.after: once sent, the sheet hands its opener Waiting for Ravi with Withdraw", async () => {
     vi.stubGlobal(
