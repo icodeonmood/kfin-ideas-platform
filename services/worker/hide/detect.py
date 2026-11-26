@@ -14,6 +14,7 @@ A `Found` carries the value, so it is never logged; callers log counts and kinds
 
 from __future__ import annotations
 
+import hashlib
 import re
 import unicodedata
 from collections.abc import Iterable, Mapping
@@ -326,11 +327,31 @@ def gatekeeper_kind(data_type: str, value: str) -> str | None:
 @dataclass(frozen=True)
 class Gate:
     """The gatekeeper's finds for one text. `skipped` is the gateway's error code when it could not run (the text
-    then goes on with the patterns and names only, and a re-check is queued, BLD-C067)."""
+    then goes on with the patterns and names only, and a re-check is queued, BLD-C067). `text_hash`: the sha256 of
+    the exact text the finds belong to, set by `hide.gate` (BLD-C234), so hide uses them only for that text. It is
+    kept in memory only: never logged, stored or sent. A gate with no hash (a file's pieces, `hide/files.py`) is
+    used as given. `checked`: the gatekeeper's check of this text is complete (it answered, or the text is blank).
+    False while the assistant is off or the gateway failed: the sealed words then wait for the re-check sweep
+    (`hide/recheck.py` `queue_unchecked`, BLD-C231)."""
 
     finds: list[Found]
     skipped: str | None = None
     switched_off: bool = False
+    text_hash: str | None = None
+    checked: bool = False
+
+
+def text_hash(text: str) -> str:
+    """The key that ties a gate to one exact text (BLD-C234). In memory only (non-negotiable 3)."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def usable(gate: Gate | None, text: str) -> Gate | None:
+    """`gate` if hide may use it for `text`: one with no hash (a file's pieces, as given) or one asked about this
+    exact text. None otherwise, and hide then asks the gatekeeper itself (BLD-C234)."""
+    if gate is None or gate.text_hash is None or gate.text_hash == text_hash(text):
+        return gate
+    return None
 
 
 def gatekeeper_finds(conn: Conn, text: str, scope: str) -> Gate:
@@ -338,8 +359,10 @@ def gatekeeper_finds(conn: Conn, text: str, scope: str) -> Gate:
     patterns have already run, and the person's draft must not wait on the model."""
     from core import killswitch
 
-    if not text.strip() or not killswitch.is_on("ai.all", conn):
-        return Gate([])
+    if not text.strip():
+        return Gate([], checked=True)  # nothing to check
+    if not killswitch.is_on("ai.all", conn):
+        return Gate([])  # not checked: the re-check sweep asks once the assistant is back (BLD-C231)
     from gateway import AgentFailed, AgentSwitchedOff, run_agent
     from pii import vault
     from pii.restore import restore
@@ -366,7 +389,7 @@ def gatekeeper_finds(conn: Conn, text: str, scope: str) -> Gate:
         if kind is None:
             continue
         found.extend(Found(s, e, kind, quote, "gatekeeper") for s, e in occurrences(text, quote))
-    return Gate(found)
+    return Gate(found, checked=True)
 
 
 def find(

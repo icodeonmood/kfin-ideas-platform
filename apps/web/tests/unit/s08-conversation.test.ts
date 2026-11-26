@@ -381,14 +381,14 @@ describe("S-08 states", () => {
     expect(textbox().getAttribute("aria-label")).toBe("Message the build team");
   });
 
-  it("S-08 idea=Ravi's idea, after teaming up (J-TEAMUP/6): the approval line, Ravi's welcome, the crew's box; no attach control (BLD-F063, BLD-F064)", async () => {
+  it("S-08 idea=Ravi's idea, after teaming up (J-TEAMUP/6): the approval line, Ravi's welcome, the crew's box; no attach control (BLD-F063, BLD-F095)", async () => {
     await show(afterTeamingUp());
     expect(host.textContent).toContain("Ravi Nair approved your team-up request. Today, 10:05 am");
     expect(host.textContent).toContain("Ravi Nair’s idea, Investor service, Hyderabad");
     expect($(".cv-msg b")?.textContent).toBe("Ravi Nair");
     expect(textbox().getAttribute("aria-label")).toBe("Message the crew");
     expect(host.textContent).toContain("The crew and the review desk see this conversation.");
-    expect(host.querySelector('[aria-label="Attach a file"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Add files, a folder or a link"]')).toBeNull();
     expect(host.querySelector('input[type="file"]')).toBeNull();
   });
 
@@ -1126,5 +1126,36 @@ describe("S-08 DEC-111 the review desk, never the person at it (BLD-F082, BLD-F0
     const msg = $("#entry-m-desk")!;
     expect(msg.querySelector(".cv-who b")?.textContent).toBe("Meera from the review desk");
     expect(msg.querySelector(".av")?.textContent).toBe("MI");
+  });
+});
+
+describe("S-08 DEC-113 the Ones Committee, never the member (BLD-F091, BLD-F092)", () => {
+  const COMMITTEE = { id: "", name: "The Ones Committee", first_name: "The Ones Committee", initials: "" };
+
+  it("a member's files read 'Files in the Ones Committee’s message', in lower case inside the sentence", async () => {
+    const v = yourIdea();
+    v.entries = [
+      ...v.entries,
+      message("m-committee", COMMITTEE, "The Ones Committee", "Adding the committee’s notes.", {
+        files: [
+          {
+            id: "ATT-2026-000602",
+            kind: "file",
+            name: "committee-notes.xlsx",
+            type: "XLSX",
+            size: 2048,
+            state: "checked",
+            added_by: COMMITTEE,
+            added_at: "2026-11-17T10:07:00+05:30",
+            view_url: "/api/attachments/ATT-2026-000602",
+          },
+        ],
+      }),
+    ];
+    await show(v);
+    const msg = $("#entry-m-committee")!;
+    expect(msg.querySelector(".cv-who b")?.textContent).toBe("The Ones Committee");
+    expect(msg.querySelector('[aria-label="Files in the Ones Committee’s message"]')).not.toBeNull();
+    expect(msg.querySelector('[aria-label="Files in The Ones Committee’s message"]')).toBeNull();
   });
 });

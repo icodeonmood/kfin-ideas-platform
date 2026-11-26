@@ -944,7 +944,10 @@
   color: var(--mute2);
 }
 
-.ck .bmsg {
+/* `.ed-dock` too: on a phone S-06B's dock is portalled out of the page (BLD-D028, BLD-C241), so its lines are styled
+   by the dock's own class */
+.ck .bmsg,
+.ed-dock .bmsg {
   margin: 0;
   display: flex;
   flex-wrap: wrap;
@@ -957,17 +960,20 @@
   color: var(--ink);
 }
 
-.ck .bmsg.bad {
+.ck .bmsg.bad,
+.ed-dock .bmsg.bad {
   background: var(--badW);
   color: var(--badT);
 }
 
-.ck .bmsg.warn {
+.ck .bmsg.warn,
+.ed-dock .bmsg.warn {
   background: var(--warnW);
   color: var(--warnT);
 }
 
-.ck .bmsg.info {
+.ck .bmsg.info,
+.ed-dock .bmsg.info {
   background: var(--wash);
   color: var(--blueT);
   font-weight: 400;

@@ -31,6 +31,7 @@ from desk.store import (
     CUSTOMER_DETAIL,
     DESK_SEES,
     FILES_CHECKED,
+    IDEA_OWN,
     Person,
     Refused,
     actor,
@@ -176,13 +177,14 @@ def _answer_text(r: dict[str, Any]) -> str:
 def _files(conn: Conn, answer_ids: Sequence[str]) -> dict[str, list[dict[str, Any]]]:
     """E-ENTITIES FileItem, short form, for the files attached to each answer, in every state: the sharer sees all
     of their own. A link's `type` is "link" (it has no MIME type); a file's is its MIME type. `customer_detail` marks
-    a file in which the scan found a customer detail (DEC-107)."""
+    a file in which the scan found a customer detail (DEC-107). Only the idea's own files (`IDEA_OWN`, BLD-B274):
+    never one added for the conversation."""
     out: dict[str, list[dict[str, Any]]] = {}
     if not answer_ids:
         return out
     for r in conn.execute(
-        "SELECT id, answer_id, kind, name, mime, bytes, pages, file_state, hidden_note FROM attachments "
-        "WHERE answer_id = ANY(%s::uuid[]) ORDER BY created_at, id",
+        "SELECT id, answer_id, kind, name, mime, bytes, pages, file_state, hidden_note FROM attachments "  # noqa: S608 (IDEA_OWN is fixed text)
+        f"WHERE answer_id = ANY(%s::uuid[]) AND {IDEA_OWN} ORDER BY created_at, id",
         (list(answer_ids),),
     ).fetchall():
         out.setdefault(str(r["answer_id"]), []).append(
@@ -208,8 +210,19 @@ def _set_facts(s: dict[str, Any], rows: Sequence[dict[str, Any]]) -> SetFacts:
     )  # fmt: skip
 
 
+def _counts(files: Sequence[dict[str, Any]]) -> bool:
+    """An answer's files count towards answering only when the review desk will see one (DEC-132): checked, hidden,
+    or holding a customer detail (`DESK_SEES`, DEC-107). A file still checking counts once its check ends; one that
+    is infected, locked or failed never does, so an answer whose only file is one of those is not sent and the desk
+    never receives an empty answer. The same states as `_only(..., DESK_SEES)` (`_set_json`, `answers_by_part`): a
+    file from before the cut-over, with no `file_state`, does not count, stricter than S-R2's `reads._questions`,
+    which still shows one the old pipeline marked clean."""
+    return bool(_only(list(files), DESK_SEES))
+
+
 def _has_content(answer: dict[str, Any]) -> bool:
-    return bool(str(answer["text"]).strip()) or bool(answer["files"])
+    """Words, or a file the desk will see (DEC-132): S-R3's "N of M answered" and Send's count."""
+    return bool(str(answer["text"]).strip()) or _counts(answer["files"])
 
 
 def _set_json(
@@ -266,7 +279,8 @@ def _set_json(
 
 
 def _filled(conn: Conn, idea: dict[str, Any]) -> dict[str, bool]:
-    """Which parts of the idea have something in them, for the suggestions (L-QUESTIONS.ask/3)."""
+    """Which parts of the idea have something in them, for the suggestions (L-QUESTIONS.ask/3). A file added for the
+    conversation is not the idea's (`IDEA_OWN`, BLD-B274), so on its own it leaves Attached empty."""
 
     def exists(sql: str) -> bool:
         return conn.execute(sql, (idea["id"],)).fetchone() is not None
@@ -276,16 +290,18 @@ def _filled(conn: Conn, idea: dict[str, Any]) -> dict[str, bool]:
         "often": bool(str(idea.get("often") or "").strip()),
         "who": bool(idea.get("affects")),
         "cost": exists("SELECT 1 FROM idea_worth WHERE idea_uuid = %s LIMIT 1"),
-        "evidence": exists("SELECT 1 FROM attachments WHERE idea_uuid = %s LIMIT 1"),
+        "evidence": exists(f"SELECT 1 FROM attachments WHERE idea_uuid = %s AND {IDEA_OWN} LIMIT 1"),  # noqa: S608 (fixed)
         "fix": exists("SELECT 1 FROM idea_fix WHERE idea_uuid = %s"),
     }
 
 
-def _asked(conn: Conn, idea_uuid: Any) -> list[str]:
+def _asked(conn: Conn, idea_uuid: Any, user_id: str) -> list[str]:
+    """What was asked on the idea, and what this reviewer has queued. Another reviewer's queued set is theirs alone
+    (BLD-B272), so it is never read here."""
     rows = conn.execute(
         "SELECT q.id, q.text_encrypted FROM questions q JOIN question_sets s ON s.id = q.set_id "
-        "WHERE s.idea_uuid = %s",
-        (idea_uuid,),
+        "WHERE s.idea_uuid = %s AND (s.state <> 'queued' OR s.by_user_id = %s)",
+        (idea_uuid, user_id),
     ).fetchall()
     return [_question_text(dict(r)) for r in rows]
 
@@ -295,8 +311,143 @@ def suggested(conn: Conn, ref: str, user_id: str) -> list[dict[str, str]]:
     with audited(conn), conn.transaction():
         idea = load_idea(conn, ref, lock=True)
         refuse_own(conn, user_id, idea, "ask")
-        found = questions.suggestions(_filled(conn, idea), _asked(conn, idea["id"]))
+        found = questions.suggestions(_filled(conn, idea), _asked(conn, idea["id"], user_id))
         return [{"part": s.part, "text": s.text} for s in found]
+
+
+# A save's `base` is the revision its page last knew was stored (BLD-B272): 0 when the reviewer has none, else one
+# the worker returned. Anything that is not a whole number with 0 <= base < REV_MAX is refused, so the revision a save
+# stores (base + 1) always fits the column and a JSON number.
+REV_MAX = 2**53 - 1
+
+
+def _latest_set(conn: Conn, idea_uuid: Any) -> dict[str, Any] | None:
+    """The set the panel works from (`desk.reads._panel`): the latest one sent and not closed."""
+    row = conn.execute(
+        "SELECT id, state FROM question_sets WHERE idea_uuid = %s AND state NOT IN ('queued', 'closed') "
+        "ORDER BY created_at DESC LIMIT 1",
+        (idea_uuid,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def drop_queued(conn: Conn, idea_uuid: Any, user_id: str | None = None) -> list[str]:
+    """Delete the idea's queued sets (only `user_id`'s when given) with their questions, and first, for each of those
+    questions, what hide kept for it (`adapters.forget_question`, lane C's `forget`; BLD-B272, L-HIDE). A reviewer's
+    "Hide this" masks every question on the idea and writes `hidden_details` rows keyed by each question's id, and the
+    sharer's page lists every such row of the idea, so none may outlive its question. `forget` keeps each vault value
+    another row of the idea still holds (the sharer's own words, a sent question). Call it inside the caller's
+    transaction, after lane C's lock on the idea (taken first, BLD-B247): Send, a decision, a merge and `save_queue`
+    do. Returns the deleted sets' ids."""
+    who = {"idea": idea_uuid, "by": user_id}
+    for q in conn.execute(
+        "SELECT q.id FROM questions q JOIN question_sets s ON s.id = q.set_id WHERE s.idea_uuid = %(idea)s "
+        "AND s.state = 'queued' AND (%(by)s::uuid IS NULL OR s.by_user_id = %(by)s::uuid) ORDER BY q.id",
+        who,
+    ).fetchall():
+        adapters.forget_question(conn, str(idea_uuid), str(q["id"]))
+    gone = conn.execute(
+        "DELETE FROM question_sets WHERE idea_uuid = %(idea)s AND state = 'queued' "
+        "AND (%(by)s::uuid IS NULL OR by_user_id = %(by)s::uuid) RETURNING id",
+        who,
+    ).fetchall()
+    return [str(r["id"]) for r in gone]
+
+
+def save_queue(
+    conn: Conn, ref: str, user_id: str, body: dict[str, Any], at: dt.datetime | None = None
+) -> dict[str, Any]:
+    """`PUT /desk/ideas/:id/question-sets/queued` (BLD-B272, amends BLD-B244): the reviewer's whole queue for the idea,
+    stored as their queued set so it is still there when they come back (S-R2.panel Asking, L-QUESTIONS.states).
+    `body`: `{questions: [{part, text, suggested?}], time_to_answer, base, after}`.
+
+    - One queued set per reviewer per idea (`question_sets_one_queued`): a save replaces only this reviewer's set;
+      another reviewer's queue is theirs and is never touched. Send, a decision and a merge drop every queued set on
+      the idea (`drop_queued`).
+    - Compare-and-swap on the reviewer's own revision: `base` is the revision the page last knew was stored (the
+      read's `queued.rev`, 0 when the reviewer has none, then the `rev` each kept save returns). The save is kept only
+      when this reviewer's stored set has that revision (0 when none); it is then replaced and stored as `base + 1`,
+      which is returned. Otherwise it is refused (409 `queue_stale`) and nothing is stored: a stale tab, or a save
+      that overtook one its page never heard back from. The panel stops saving for that page view.
+    - Each question is hidden before it is stored (`adapters.hide_queued`, the same `hide` as Send; L-HIDE): only the
+      masked copy is kept, sealed as Send seals it. A question stored by this reviewer and sent back unchanged (the
+      page shows the masked copy) is already masked and is kept as it is, with no second model call. What hide kept
+      for the replaced set's questions goes with them (`drop_queued`).
+    - A save that comes too late keeps nothing: the idea has left the desk (decided or merged:
+      `review.ensure_on_desk`, 409 `already_decided`); or a set was sent since the panel's read (`after`, the latest
+      set the panel knew, `desk.reads._panel`'s `set_id`; null when none), or one is still waiting on answers (409
+      `queue_stale`).
+    - Audited with IDs, counts and parts only, never the words; nothing is logged (non-negotiable 3)."""
+    t = at or now()
+    p = promises.get()
+    raw = body.get("questions")
+    if not isinstance(raw, list):
+        raise Refused(422, "questions_required", "Add a question first.", "questions")
+    asked: list[dict[str, Any]] = [q if isinstance(q, dict) else {} for q in raw]
+    chosen = body.get("time_to_answer")
+    base = body.get("base")
+    if isinstance(base, bool) or not isinstance(base, int) or not 0 <= base < REV_MAX:
+        raise Refused(422, "base_invalid", None, "base")
+    after_raw = body.get("after")
+    after = after_raw if isinstance(after_raw, str) and after_raw else None  # compared as the worker wrote it
+    with audited(conn), conn.transaction():
+        # lane C's lock before any row lock: the questions are hidden below (BLD-B247), as in `send_set`
+        adapters.lock_refs(conn, ref)
+        idea = load_idea(conn, ref, lock=True)
+        refuse_own(conn, user_id, idea, "ask")
+        review.ensure_on_desk(idea)
+        errors = [e for e in questions.check_set(asked, chosen, p) if e.code != "no_questions"]
+        if errors:
+            raise _refused(errors[0])
+        latest = _latest_set(conn, idea["id"])
+        if (str(latest["id"]) if latest else None) != after or (
+            latest is not None and latest["state"] in OPEN
+        ):
+            raise Refused(409, "queue_stale")
+        current = conn.execute(
+            "SELECT id, queue_rev FROM question_sets WHERE idea_uuid = %s AND state = 'queued' AND by_user_id = %s "
+            "FOR UPDATE",
+            (idea["id"], user_id),
+        ).fetchone()
+        if (int(current["queue_rev"] or 0) if current is not None else 0) != base:
+            raise Refused(409, "queue_stale")
+        rev = base + 1
+        # masked copies this reviewer already stored: one sent back unchanged needs no second pass
+        kept = (
+            {
+                _question_text(dict(r))
+                for r in conn.execute(
+                    "SELECT id, text_encrypted FROM questions WHERE set_id = %s", (current["id"],)
+                ).fetchall()
+            }
+            if current is not None
+            else set()
+        )
+        drop_queued(conn, idea["id"], user_id)  # this reviewer's set, and what hide kept for its questions
+        set_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO question_sets (id, idea_uuid, by_user_id, state, time_to_answer, queue_rev, created_at) "
+            "VALUES (%s, %s, %s, 'queued', %s, %s, %s)",
+            (set_id, idea["id"], user_id, chosen, rev, t),
+        )
+        for seq, q in enumerate(asked, start=1):
+            qid = str(uuid.uuid4())
+            text = str(q["text"]).strip()
+            masked = (
+                text
+                if text in kept
+                else adapters.hide_queued(conn, str(idea["id"]), text, by=user_id, question_id=qid)
+            )
+            conn.execute(
+                "INSERT INTO questions (id, set_id, seq, part, text_encrypted, suggested, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (qid, set_id, seq, q["part"], seal(masked, "questions", "text_encrypted", qid),
+                 bool(q.get("suggested")), t),
+            )  # fmt: skip
+        audit(conn, actor(user_id), "desk.queue_questions", f"idea:{idea['idea_id']}",
+              after={"set_id": set_id, "count": len(asked), "parts": [str(q["part"]) for q in asked],
+                     "time_to_answer": chosen, "rev": rev, "replaced": str(current["id"]) if current else None})  # fmt: skip
+        return {"set_id": set_id, "rev": rev, "count": len(asked)}
 
 
 def send_set(
@@ -336,8 +487,9 @@ def send_set(
         time_to_answer = str(chosen or p.answer_default)
         due = clock.answer_due(t, time_to_answer, p, cal)
         set_id = str(uuid.uuid4())
-        # The body carries the queue; a queued set kept for this idea is now sent, so it goes (one queued per idea).
-        conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (idea["id"],))
+        # The body carries the queue: every queued set on the idea goes, each reviewer's, with what hide kept for
+        # their questions (BLD-B272)
+        drop_queued(conn, idea["id"])
         conn.execute(
             "INSERT INTO question_sets (id, idea_uuid, by_user_id, state, time_to_answer, sent_at, due_at, created_at) "
             "VALUES (%s, %s, %s, 'sent', %s, %s, %s, %s)",
@@ -345,12 +497,13 @@ def send_set(
         )
         for seq, q in enumerate(asked, start=1):
             qid = str(uuid.uuid4())
-            masked, _ = adapters.hide(conn, str(idea["id"]), str(q["text"]).strip(), by=user_id)
+            masked, checked = adapters.hide_checked(conn, str(idea["id"]), str(q["text"]).strip(), by=user_id)
+            # `gatekeeper_done_at` only when the gatekeeper's check is complete; else desk.text_recheck asks (BLD-B278)
             conn.execute(
-                "INSERT INTO questions (id, set_id, seq, part, text_encrypted, suggested, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO questions (id, set_id, seq, part, text_encrypted, suggested, created_at, gatekeeper_done_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, CASE WHEN %s THEN now() END)",
                 (qid, set_id, seq, q["part"], seal(masked, "questions", "text_encrypted", qid),
-                 bool(q.get("suggested")), t),
+                 bool(q.get("suggested")), t, checked),
             )  # fmt: skip
         conn.execute("UPDATE ideas SET status = 'needs_you' WHERE id = %s", (idea["id"],))
         decide_by = idea["decide_by"]
@@ -540,20 +693,29 @@ def open_set_for_sharer(
 def _link_files(conn: Conn, idea: dict[str, Any], answer_id: str, file_ids: Sequence[str]) -> None:
     """Attach `file_ids` to the answer. Only the idea's own files, not on another answer. A file holding a customer
     detail can be attached and sent (DEC-107): it is marked, and only the sharer, the desk and the committee open it.
-    Nothing is detached here: removing a file is the file row's own action."""
+    A file added for the conversation (DEC-124), on an entry or not, is not the idea's own (`IDEA_OWN`), so it is
+    refused like any other file that isn't the idea's (BLD-B274): the desk and the committee add those too, and
+    none of them goes on an answer. Nothing is detached here: removing a file is the file row's own action."""
     ids = sorted({str(i) for i in file_ids})
     if not ids:
         return
     rows = {
         str(r["id"]): dict(r)
         for r in conn.execute(
-            "SELECT id, idea_uuid, file_state, answer_id FROM attachments WHERE id = ANY(%s) FOR UPDATE",
+            "SELECT id, idea_uuid, file_state, answer_id, purpose, conversation_entry_id FROM attachments "
+            "WHERE id = ANY(%s) FOR UPDATE",
             (ids,),
         ).fetchall()
     }
     for fid in ids:
         r = rows.get(fid)
-        if r is None or r["idea_uuid"] != idea["id"] or (r["answer_id"] and str(r["answer_id"]) != answer_id):
+        if (
+            r is None
+            or r["idea_uuid"] != idea["id"]
+            or r["purpose"] != "idea"
+            or r["conversation_entry_id"] is not None
+            or (r["answer_id"] and str(r["answer_id"]) != answer_id)
+        ):
             raise Refused(422, "file_not_found", FILE_CANT_BE_ADDED, "file_ids")
     conn.execute("UPDATE attachments SET answer_id = %s WHERE id = ANY(%s)", (answer_id, ids))
 
@@ -688,7 +850,8 @@ def send_answers(conn: Conn, set_id: str, user_id: str, at: dt.datetime | None =
             r for r in rows if r["answer_id"] is not None and r["sent_at"] is None and r["by_code"] == code
         ]
         files = _files(conn, [str(r["answer_id"]) for r in unsent])
-        ready = [r for r in unsent if _answer_text(r).strip() or files.get(str(r["answer_id"]))]
+        # words, or a file the desk will see (DEC-132): an answer whose only file is infected or failed stays unsent
+        ready = [r for r in unsent if _answer_text(r).strip() or _counts(files.get(str(r["answer_id"]), []))]
         if not ready:
             raise Refused(422, "nothing_answered", NOTHING_ANSWERED)
         _gatekeep(conn, str(idea["id"]), ready, user_id)

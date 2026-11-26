@@ -48,6 +48,7 @@ EMPTY_TITLE = "No messages yet"
 EMPTY_BODY = "If the review desk has a question, it shows here and in your Inbox, and we tell you on Teams."
 EMPTY_BODY_NO_TEAMS = "If the review desk has a question, it shows here and in your Inbox."
 FROM_COMMITTEE = f"From {ONES_COMMITTEE}"  # "In this conversation" (L-CONVO/8)
+FROM_DESK = f"From {REVIEW_DESK}"  # "In this conversation" (L-CONVO/8)
 
 
 def teams_on(conn: Conn) -> bool:
@@ -127,7 +128,11 @@ def conversation(conn: Conn, ref: str, user_id: str, *, at: dt.datetime | None =
     # "No messages yet" is drawn only with the review desk (Messages.md); once the idea has left the desk, an idea
     # with no messages shows its event lines alone (NOT DRAWN default, BLD-F088). A merge line counts as said too,
     # as S-06's "You and the review desk" counts it (lane E's `MERGE_EVENTS`, L-MERGE.effects/6, BLD-F090); the
-    # shared and checked lines and any other event line keep the empty line, as Messages.md draws it
+    # shared and checked lines and any other event line keep the empty line, as Messages.md draws it.
+    # Event rows are never soft-deleted (only messages are, `convo.messages.remove`), so S-06's `deleted_at IS NULL`
+    # on its merge lines and this unfiltered read agree. One known gap: S-06's `entry_count` counts a questions entry
+    # whose set is queued or missing, and this read does not (`_entry` renders no such entry); lane B writes the
+    # entry only once the set is sent, so the two do not differ in practice (f-convo-merge-empty review, BLD-F093).
     said = any(
         e["type"] in ("message", "questions", "answers")
         or (e["type"] == "event" and e["code"] in page_read.MERGE_EVENTS)
@@ -381,7 +386,8 @@ def render_answer(a: dict[str, Any]) -> str:
 
 # ---------------------------------------------------------------------------------------------------------------
 # Files: only checked ones, by ID, never opened here (non-negotiable 8), and only to readers the attachment route
-# lets open them (BLD-F062): other readers get the entry without its files
+# lets open them (BLD-F062): the crew since DEC-129, and only files the files route serves them; other readers get
+# the entry without its files
 # ---------------------------------------------------------------------------------------------------------------
 _FILE_SQL = (
     "SELECT id, kind, name, mime, bytes, pages, item_count, file_state, hidden_note, uploaded_by_code, created_at, "
@@ -390,13 +396,23 @@ _FILE_SQL = (
 )
 
 
+def _view_url(f: dict[str, Any]) -> str:
+    """Where the file opens. A 1% Club file (`file_state` set: every file added since the cut-over, the "+" in S-08's
+    box and every answer's file) opens through lane C's `/api/files/:id/view` under DEC-107's rule; the older
+    `/api/attachments/:id` finds none of them (`accessible()` in apps/web/src/server/attachments.ts), so only a file
+    from before the cut-over still opens there (BLD-F095)."""
+    if f.get("file_state"):
+        return f"/api/files/{f['id']}/view"
+    return f"/api/attachments/{f['id']}"
+
+
 def _file_item(ctx: Ctx, f: dict[str, Any]) -> dict[str, Any]:
     name = str(f["name"])
     ext = name.rsplit(".", 1)[-1].upper() if "." in name else (str(f["mime"] or "").split("/")[-1].upper())
     item: dict[str, Any] = {
         "id": f["id"], "kind": f["kind"], "name": name, "type": ext, "size": int(f["bytes"]),
         "state": f["file_state"] or "checked", "added_by": ctx.people.by_code(f["uploaded_by_code"]).ref(),
-        "added_at": f["created_at"], "view_url": f"/api/attachments/{f['id']}",
+        "added_at": f["created_at"], "view_url": _view_url(f),
     }  # fmt: skip
     if f["pages"] is not None:
         item["pages"] = int(f["pages"])
@@ -405,23 +421,32 @@ def _file_item(ctx: Ctx, f: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+def _listed(ctx: Ctx, f: dict[str, Any]) -> bool:
+    """A file the reader gets. The crew (DEC-129) open a file only through lane C's files route, so they never get
+    one from before the cut-over (no `file_state`), which opens only on the old route (`/api/attachments/:id`, the
+    sharer and the desk)."""
+    return ctx.reader.files or f["file_state"] is not None
+
+
 def _files(conn: Conn, ctx: Ctx, entry_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
     out: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    if not entry_ids or not ctx.reader.files:
+    if not entry_ids or not ctx.reader.checked_files:
         return out
     sql = _FILE_SQL.format(key="conversation_entry_id")
     for f in conn.execute(sql, (entry_ids, list(CLEAN_FILE_STATES))).fetchall():
-        out[str(f["owner"])].append(_file_item(ctx, dict(f)))
+        if _listed(ctx, dict(f)):
+            out[str(f["owner"])].append(_file_item(ctx, dict(f)))
     return out
 
 
 def _answer_files(ctx: Ctx, answer_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
     out: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    if not answer_ids or not ctx.reader.files:
+    if not answer_ids or not ctx.reader.checked_files:
         return out
     sql = _FILE_SQL.format(key="answer_id")
     for f in ctx.conn.execute(sql, (answer_ids, list(CLEAN_FILE_STATES))).fetchall():
-        out[str(f["owner"])].append(_file_item(ctx, dict(f)))
+        if _listed(ctx, dict(f)):
+            out[str(f["owner"])].append(_file_item(ctx, dict(f)))
     return out
 
 
@@ -477,14 +502,15 @@ def _participants(
 ) -> list[dict[str, Any]]:  # fmt: skip
     """'In this conversation' (L-CONVO/8): each person with what they are doing; the reader last, as "You". Outside
     the review desk and the committee, the desk's people are one row, "The review desk" (DEC-111), and the Ones
-    Committee's one row, "The Ones Committee", "From the Ones Committee", however many of its members took part
-    (DEC-113)."""
+    Committee's one row, "The Ones Committee", however many of its members took part (DEC-113): "Mentioned" while its
+    members were only mentioned, "From the Ones Committee" once any member wrote (BLD-F092). The desk's row likewise
+    reads "From the review desk" once its people wrote, unless it is the reviewer's row (BLD-F093)."""
     seen: dict[str, tuple[Person, str]] = {}
 
     def add(p: Person, doing: str) -> None:
         key = "desk" if p.desk else "committee" if p.committee else p.id
         if key and key not in seen:
-            seen[key] = (p, FROM_COMMITTEE if p.committee else doing)
+            seen[key] = (p, doing)
 
     if team:
         if team["lead_user_id"]:
@@ -511,7 +537,12 @@ def _participants(
     for x in rows:
         if x["type"] == "message":
             who = _sender(ctx, x, staff_as)
-            add(who, "From the review desk" if who.desk or who.role_label == DESK else
+            if who.committee and "committee" in seen:  # a member wrote: no longer only mentioned (BLD-F092)
+                seen["committee"] = (seen["committee"][0], FROM_COMMITTEE)
+            # Likewise the desk, only mentioned until now; the reviewer's row ("Reviewing it", "Picked it") stays
+            if who.desk and "desk" in seen and seen["desk"][1] == "Mentioned":  # (BLD-F093)
+                seen["desk"] = (seen["desk"][0], FROM_DESK)
+            add(who, FROM_DESK if who.desk or who.role_label == DESK else
                 FROM_COMMITTEE if who.committee or who.role_label == COMMITTEE else "In the conversation")  # fmt: skip
     me = seen.pop(ctx.reader.user_id, None)
     out = [{"person": p.ref(), "label": p.label, "doing": d, "you": False} for p, d in seen.values()]

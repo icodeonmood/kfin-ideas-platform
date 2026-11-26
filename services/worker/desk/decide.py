@@ -234,14 +234,16 @@ def send(
                                           note_is_reason=True, field="joined_with", notify=False)  # fmt: skip
         joined = other["id"] if other is not None else None
         dates = dates_for(choice, t, return_in, p, cal)  # type: ignore[arg-type]
-        masked, _ = adapters.hide(conn, str(idea["id"]), reason.strip(), by=user_id)
+        masked, checked = adapters.hide_checked(conn, str(idea["id"]), reason.strip(), by=user_id)
         decision_id = str(uuid.uuid4())
+        # `gatekeeper_done_at` only when the gatekeeper's check is complete; else desk.text_recheck asks (BLD-B278)
         conn.execute(
             "INSERT INTO idea_decisions (id, idea_uuid, choice, reason_encrypted, by_user_id, at, joined_with, "
-            "return_in, return_at, team_by) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            "return_in, return_at, team_by, gatekeeper_done_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CASE WHEN %s THEN now() END)",
             (decision_id, idea["id"], choice, seal(masked, "idea_decisions", "reason_encrypted", decision_id),
              user_id, t, joined, (return_in or p.return_default) if choice == "not_now" else None,
-             dates.return_at, dates.team_by),
+             dates.return_at, dates.team_by, checked),
         )  # fmt: skip
         w = open_window(t, p)
         conn.execute(
@@ -253,8 +255,11 @@ def send(
             "opened_by = coalesce(opened_by, %s), edit_closes_at = least(coalesce(edit_closes_at, %s), %s) WHERE id = %s",
             (STATUS_AFTER[str(choice)], user_id, t, user_id, t, t, idea["id"]),
         )
-        # rules/10: open question sets close; queued ones were never sent and are dropped (L-REVIEW.panel)
-        conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (idea["id"],))
+        # rules/10: open question sets close; queued ones were never sent and are dropped (L-REVIEW.panel), every
+        # reviewer's, with what hide kept for their questions (BLD-B272; lane C's lock is held, above)
+        from desk.asking import drop_queued
+
+        drop_queued(conn, idea["id"])
         closed = conn.execute(
             "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed' "
             "RETURNING id",

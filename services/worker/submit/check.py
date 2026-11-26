@@ -11,11 +11,13 @@ When the job gives up after its retries, the idea still goes to the desk: a slow
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import notify
 from core.db import Conn
 from core.logging import get_logger
+from hide import core as hide_core
 from submit import adapters
 
 log = get_logger("submit.check")
@@ -67,6 +69,10 @@ def _final_pass(conn: Conn, idea: dict[str, Any], by: str) -> int:
 
 def run(conn: Conn, idea_uuid: str, *, gave_up: bool = False) -> None:
     with conn.transaction():
+        # L-HIDE's lock first, then the row (BLD-C067, BLD-C228): the final pass reaches hide (`mask_text`), and lane
+        # F's team-up takes hide's lock before the idea's row. Keyed by the lower-case uuid, as hide's own lock is.
+        if hide_core.is_uuid(idea_uuid):
+            hide_core.lock(conn, str(uuid.UUID(str(idea_uuid))))
         row = conn.execute("SELECT * FROM ideas WHERE id = %s FOR UPDATE", (idea_uuid,)).fetchone()
         if row is None or row["status"] != "checking":
             return  # withdrawn meanwhile, or already with the desk

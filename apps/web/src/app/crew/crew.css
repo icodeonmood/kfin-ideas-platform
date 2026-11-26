@@ -340,31 +340,32 @@
   font-size: 16.5px;
 }
 
-/* "Waiting for Ravi": what stands where Team up was; opens the sheet on its sent step */
-.crew-wait {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 54px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: var(--wash);
-  color: var(--blueT);
-  font: 500 15.5px/1 var(--ft);
-  text-align: left;
-  cursor: pointer;
+/* Each card sits in a slot; after a request the card asked about flies to the back of the pile over the next one,
+   with lane D's own flight (components.css `deckToBack`), and with reduced motion it just moves */
+.crew-slot {
+  position: relative;
 }
 
-.crew-wait i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--blue);
+.crew-slot > .crew-card {
+  position: relative;
+  z-index: 2;
 }
 
-.crew-wait:hover {
-  box-shadow: inset 0 0 0 1px var(--blue);
+.crew-fly {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 4;
+  pointer-events: none;
+  animation: deckToBack 0.62s cubic-bezier(0.45, 0, 0.25, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crew-fly {
+    display: none;
+    animation: none;
+  }
 }
 
 /* The end of the deck, nothing yet, filtered to nothing, did not load */

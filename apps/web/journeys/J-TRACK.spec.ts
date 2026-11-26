@@ -8,14 +8,27 @@
  * Cast: Kavya (sharer) is Tanvi, Meera (reviewer) the record's reviewer, Rohan (committee) Manoj, Arjun's build team
  * Gopal's.
  * Seed: T5 (with the desk, not opened, edit open) for the edit window and the withdraw variation; T6 (Harish's three
- * questions, seen, the first answer saved but not sent, a reminder in the Inbox) is answered; T7 (picked 5 days ago)
- * and T8 (not now) for the decision; T9 (not picked, reversed to picked by Manoj) for the committee; A1 (Aparna's,
+ * questions, seen, the first answer saved but not sent, a reminder in the Inbox) is answered, the saved answer with two
+ * files from S-R3's "+" (row 4a, BLD-B275; made here with lib pdfWith) that the desk reads on S-R2 (row 5b); T7
+ * (picked 5 days ago) and T8 (not now) for the decision; T9 (not picked, reversed to picked by Manoj) for the committee; A1 (Aparna's,
  * being built, Gopal asks her to check something) for the build team; V1 (Varun's, shipped, measured) for the end.
  * T7, T8, T9, A1 and V1 are read only.
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { expectWithDesk, ideaCard, ideaUrl, seeded, signInAs, step, type Person } from "./lib";
+import {
+  carriedFor,
+  expectNoSeriousAxeIssues,
+  expectWithDesk,
+  ideaCard,
+  ideaUrl,
+  pdfWith,
+  runSeconds,
+  seeded,
+  signInAs,
+  step,
+  type Person,
+} from "./lib";
 
 // --- Patterns for run-time parts of the copy ----------------------------------------------------------------------------
 
@@ -196,6 +209,93 @@ step(
   },
 );
 
+/** The files Tanvi adds to her saved answer with S-R3's "+" (J-TRACK/4a), which the desk reads (J-TRACK/5b). */
+type AnswerFiles = { counts: string; found: string };
+/** S-R3's "+": the Answer board's name and tooltip, not DEC-124's one name, because it opens files only (BLD-B275,
+ * approved by lane D). */
+const ATTACH_ANSWER = "Attach files to this answer";
+const ATTACH_TIP = "Attach files";
+/** S-R3's mic after the "+" (BLD-B276) and the box's placeholder: the Answer board's words. */
+const SAY_ANSWER = "Say your answer";
+const ANSWER_PLACEHOLDER = "Type your answer, or tap the mic and say it";
+/** DEC-108: before a device's first recording the screen says where the voice goes, naming no vendor. */
+const VOICE_NOTICE =
+  "Your voice note goes to an Indian speech service to turn it into text. You can check the text before you send it.";
+
+step(
+  "J-TRACK/4a",
+  "S-R3",
+  'The "+" and the mic on an answer: the mic follows the "+" and records nothing until pressed; a file that checks and one with a customer detail go with the saved answer',
+  {
+    needs: [
+      "S-R3",
+      "C-PROMPT.attach",
+      "C-PROMPT.voice",
+      "C-FILE",
+      "L-QUESTIONS",
+      "L-HIDE",
+      "BLD-B275",
+      "BLD-B276",
+    ],
+    changes: ["T6"],
+  },
+  async ({ page }, info) => {
+    info.setTimeout(120_000); // two files, each scanned and checked
+    const t6 = await seeded("T6");
+    const carried = carriedFor<AnswerFiles>("J-TRACK");
+    // File names are masked like any words (L-HIDE): a long number beside "folio" reads as a folio number, so the
+    // run's tag is short letters and digits and no name says "folio".
+    const tag = runSeconds().toString(36);
+    const counts = `held-count-october-${tag}.pdf`;
+    const found = `courier-callback-notes-${tag}.pdf`;
+    carried.counts = counts;
+    carried.found = found;
+    const rows = page.getByRole("list", { name: "Your files" }).getByRole("listitem");
+    const plus = page.getByRole("button", { name: ATTACH_ANSWER });
+    /** The "+" under the answer box opens the system's file chooser: files only on S-R3 (BLD-B275 (2)). */
+    async function add(name: string, text: string): Promise<void> {
+      const chooser = page.waitForEvent("filechooser");
+      await plus.click();
+      await (await chooser).setFiles({ name, mimeType: "application/pdf", buffer: pdfWith(text) });
+    }
+
+    await signInAs(page, "tanvi");
+    await page.goto(ideaUrl(t6, "/answer"));
+    await expect(page.getByRole("button", { name: "Question 1, answered" })).toBeVisible();
+    await expect(page.getByText(T6_QUESTIONS[0], { exact: true }).first()).toBeVisible();
+    await expect(plus).toHaveAttribute("title", ATTACH_TIP);
+
+    // The box's tool row reads the "+", then the mic (C-PROMPT.anatomy/2, BLD-B276). Nothing records until
+    // she presses it, and before her first note the screen says where the voice goes (DEC-108). No note is
+    // recorded here: J-TRACK/4 reads her saved answer word for word; lane C tests the capture on its own.
+    const tools = page.locator(".ans-tools > button");
+    await expect(tools).toHaveCount(2);
+    await expect(tools.nth(0)).toHaveAccessibleName(ATTACH_ANSWER);
+    await expect(tools.nth(1)).toHaveAccessibleName(SAY_ANSWER);
+    await expect(tools.nth(1)).toHaveAttribute("aria-pressed", "false");
+    const box = page.getByRole("textbox", { name: "Your answer to question 1" });
+    await expect(box).toHaveAttribute("placeholder", ANSWER_PLACEHOLDER);
+    await expect(box).toHaveValue(SAVED_ANSWER);
+    await expect(page.getByText(VOICE_NOTICE, { exact: true })).toBeVisible();
+
+    // The count she saved, as a file with the saved answer: scanned, then checked (DEC-107).
+    await add(counts, "Held folios by region, October: about 120, mostly in one region.");
+    await expect(rows.filter({ hasText: counts }).getByText("Checked", { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    // A file with a customer detail (a synthetic number, as J-RECOVER/8) is marked with who may open it and stays;
+    // it does not hold back Send (BLD-B275 (6)), which J-TRACK/4 then does.
+    await add(found, "Investor called back on 9800000012 about the held folio.");
+    await expect(
+      rows
+        .filter({ hasText: found })
+        .getByText(/Only you, the review desk and the Ones Committee can open it\./),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("button", { name: "Question 1, answered" })).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+  },
+);
+
 step(
   "J-TRACK/4",
   "S-R3",
@@ -267,6 +367,27 @@ step(
 );
 
 step(
+  "J-TRACK/5b",
+  "S-R2",
+  "The review desk reads the files with Tanvi's answer on S-R2; the one with a customer detail is marked",
+  { needs: ["S-R2", "L-QUESTIONS", "L-HIDE", "BLD-B275"], after: ["J-TRACK/4a", "J-TRACK/4"] },
+  async ({ page }) => {
+    const t6 = await seeded("T6");
+    const { counts, found } = carriedFor<AnswerFiles>("J-TRACK");
+    expect(counts && found, "J-TRACK/4a's files").toBeTruthy();
+    // Harish asked T6's questions; the desk reads an answer's files on S-R2 in DESK_SEES (DEC-107: a file with a
+    // customer detail opens for the sharer, the review desk and the Ones Committee only).
+    await signInAs(page, "harish");
+    await page.goto(`/desk/ideas/${t6.ref ?? t6.uuid}`);
+    const files = page.getByRole("list", { name: "Files with this answer" }).getByRole("listitem");
+    await expect(files.filter({ hasText: counts ?? "" })).toBeVisible();
+    await expect(files.filter({ hasText: counts ?? "" })).not.toContainText("Has a customer detail");
+    await expect(files.filter({ hasText: found ?? "" })).toContainText("Has a customer detail");
+    await expectNoSeriousAxeIssues(page);
+  },
+);
+
+step(
   "J-TRACK/6",
   "S-H5",
   "A reminder before the deadline: the Inbox item says how long is left and leads to Answer the questions",
@@ -276,13 +397,19 @@ step(
     await openInbox(page, "tanvi");
     // L-INBOX.kinds "Answer reminder" (row text NOT DRAWN), from the review desk as a whole (DEC-111); its countdown
     // follows the one rule (BLD-A225): days, or HH:MM under a day.
-    const item = inboxItem(
+    const reminders = inboxItem(
       page,
       "The review desk",
       String.raw`${LEFT} to answer the review desk’s questions`,
       t6.title,
     );
+    // L-QUESTIONS.clock/2 reminds 1 day and 2 hours before the deadline, once each. The seed records the day-before
+    // one at the load (club_seed `_day_before`); a walk that crosses 4 pm or 6 pm office time also meets the sweep's
+    // next one: "2 hours before" at 4 pm for a load just before it, or "1 day before" at 6 pm for a load between 4 and
+    // 6 pm, whose deadline is 6 pm the next day. So Tanvi's Inbox holds one or two, and both lead to the questions.
+    const item = reminders.first();
     await expect(item).toBeVisible();
+    expect(await reminders.count(), "one reminder per threshold").toBeLessThanOrEqual(2);
     await item.click();
     await expect(page.getByRole("link", { name: "Answer the questions" })).toHaveAttribute(
       "href",

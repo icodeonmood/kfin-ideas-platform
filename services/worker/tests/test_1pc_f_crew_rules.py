@@ -3,6 +3,7 @@ filters with live counts (L-CREW/5), and the deck order (L-CREW/3)."""
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 
 from crew import deck
@@ -148,3 +149,55 @@ def test_L_CREW_4_card_json_is_a_crew_card_with_masked_text_only() -> None:
     # Someone who hid their name, or has left, is "A colleague" with no user id (BLD-F042).
     hidden = hidden_person("CTR-0a1b2c")
     assert hidden["name"] == "A colleague" and hidden["id"].startswith("p") and hidden["initials"] == ""
+
+
+# --- DEC-126 (WF-03b, BLD-F094): requested cards sort last; Home's short read keeps the latest one -------------
+def _asked(card: Card, rid: str, hours_ago: float, kind: str = "teamup") -> Card:
+    return dataclasses.replace(card, request=(rid, kind), requested_at=NOW - dt.timedelta(hours=hours_ago))
+
+
+def test_DEC_126_L_CREW_3_requested_cards_come_last_oldest_request_first() -> None:
+    board = [_asked(BOARD[1], "r-new", 1), *BOARD[2:], _asked(BOARD[0], "r-old", 30)]
+    order = [c.ref[-1] for c in sorted(board, key=deck.order_key)]
+    assert order == ["4", "3", "5", "1", "2"]
+
+
+def test_DEC_126_L_CREW_4_a_requested_card_carries_its_request_id_and_kind_only() -> None:
+    body = _asked(BOARD[0], "0b6f2c1e-7d1a-4c55-9a0e-3b8f1d2c4e5a", 2, "merge").as_json()
+    assert body["request"] == {"id": "0b6f2c1e-7d1a-4c55-9a0e-3b8f1d2c4e5a", "kind": "merge"}
+    assert "request" not in BOARD[0].as_json()
+
+
+def test_DEC_126_L_CREW_10_a_short_read_ends_with_the_latest_requested_card() -> None:
+    others = list(BOARD[2:])  # three cards nobody asked about
+    old, new = _asked(BOARD[0], "r-old", 30), _asked(BOARD[1], "r-new", 1)
+    whole = sorted([*others, old, new], key=deck.order_key)
+    assert [c.ref for c in deck.limited(whole, 3)] == [whole[0].ref, whole[1].ref, new.ref]
+    assert deck.limited(whole, None) == whole  # Find your crew: every card, requested ones last
+    assert deck.limited(whole[:3], 3) == whole[:3]  # fits: whole, in order
+    plain = sorted(BOARD, key=deck.order_key)
+    assert deck.limited(plain, 3) == plain[:3]  # nobody asked: the first three
+    mid, older = _asked(BOARD[2], "r-mid", 5), _asked(BOARD[3], "r-4", 8)
+    only_asked = sorted([old, new, mid, older], key=deck.order_key)
+    # BLD-F096: nobody else to show, so the three latest requests, oldest first, the newest last
+    assert [c.ref for c in deck.limited(only_asked, 3)] == [older.ref, mid.ref, new.ref]
+    fits_asked = sorted([BOARD[2], old, new], key=deck.order_key)
+    assert deck.limited(fits_asked, 3) == fits_asked  # a deck of three keeps both requested cards
+
+
+def test_DEC_126_L_CREW_10_BLD_F096_a_short_read_fills_to_the_limit_with_the_latest_requested_cards() -> None:
+    """BLD-F096 (amends BLD-F094): one other card and three requested ones at `limit=3` read three cards, not two:
+    the other card, then the two latest requested cards in deck order, the most recently requested last."""
+    other = BOARD[4]
+    oldest, mid, newest = _asked(BOARD[0], "r-1", 30), _asked(BOARD[1], "r-2", 5), _asked(BOARD[2], "r-3", 1)
+    whole = sorted([newest, other, oldest, mid], key=deck.order_key)
+    assert [c.ref for c in whole] == [other.ref, oldest.ref, mid.ref, newest.ref]
+    short = deck.limited(whole, 3)
+    assert [c.ref for c in short] == [other.ref, mid.ref, newest.ref]
+    assert short[-1].request == ("r-3", "teamup")  # the most recent request stays last
+    # every read holds min(limit, deck) cards
+    for limit in range(1, 6):
+        assert len(deck.limited(whole, limit)) == min(limit, len(whole)), limit
+    assert [c.ref for c in deck.limited(whole, 1)] == [newest.ref]  # a read of one: the latest request
+    assert [c.ref for c in deck.limited(whole, 2)] == [other.ref, newest.ref]
+    assert deck.limited(whole, 4) == whole and deck.limited(whole, None) == whole

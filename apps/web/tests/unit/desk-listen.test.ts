@@ -187,7 +187,7 @@ describe("L-LISTEN/6 voice choice (BLD-B230: local voices only)", () => {
     expect(pickVoice([hi, gb])?.name).toBe("gb");
   });
 
-  it("returns null when there is no local English voice, so the player is hidden", () => {
+  it("returns null when there is no local English voice, so the strip waits for one, then shows L-LISTEN/7’s line (BLD-B271)", () => {
     expect(pickVoice([])).toBeNull();
     expect(pickVoice([{ lang: "en-IN", localService: false }])).toBeNull();
     expect(pickVoice([{ lang: "hi-IN", localService: true }])).toBeNull();

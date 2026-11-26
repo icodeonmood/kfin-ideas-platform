@@ -1,11 +1,12 @@
 /**
  * The core components on the kit page (lane D; C-BUTTON, C-PILL, C-FIELD, C-FIELD-MSG, C-CHIP, C-TABS, C-SORTS,
- * C-TRACK, C-SKELETON, C-EMPTY, C-CARD). axe at both widths, then each component's keyboard and state rules.
+ * C-TRACK, C-SKELETON, C-EMPTY, C-CARD; the walk's shared styles, BLD-D019: "Requested", the quiet link and the "+"
+ * attach button, DEC-124 and DEC-126). axe at both widths, then each component's keyboard and state rules.
  * The kit exists in dev and test only.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, signIn } from "./helpers";
 
 test.beforeEach(async ({ page }) => {
   await signIn(page, PERSONAS.contributor);
@@ -79,6 +80,70 @@ test("C-BUTTON.states/4–5: disabled stays focusable; busy says so and keeps it
   expect(Math.abs((await busy.evaluate(layoutWidth)) - before)).toBeLessThanOrEqual(1);
 });
 
+test("C-BUTTON.states, DEC-126: Requested is aria-disabled, stays focusable and a click does nothing; Withdraw is a quiet link with a visible focus", async ({
+  page,
+}) => {
+  const foot = page.getByRole("group", { name: "A crew card’s foot" });
+  await foot.getByRole("button", { name: "Team up" }).click();
+  // The same button turns to Requested where Team up was, so focus stays on it (J-TEAMUP/3)
+  const requested = foot.getByRole("button", { name: "Requested" });
+  await expect(requested).toHaveAttribute("aria-disabled", "true");
+  await expect(requested).not.toHaveAttribute("disabled");
+  await expect(requested).toBeFocused();
+  // Playwright waits for an aria-disabled button to be enabled, so the click is forced: it must change nothing
+  await requested.click({ force: true });
+  await expect(requested).toHaveText("Requested");
+  await expect(requested).toHaveCSS("background-color", "rgb(228, 228, 224)");
+
+  const withdraw = foot.getByRole("button", { name: "Withdraw" });
+  await page.keyboard.press("Tab");
+  await expect(withdraw).toBeFocused();
+  await expect(withdraw).toHaveCSS("outline-style", "solid");
+  await expect(withdraw).toHaveCSS("outline-width", "2px");
+  await expect(withdraw).toHaveCSS("outline-color", "rgb(57, 93, 237)");
+  await expect(withdraw).toHaveCSS("text-decoration-line", "underline");
+  await expect(withdraw).toHaveCSS("color", "rgb(95, 95, 100)");
+  const box = await withdraw.evaluate((el) => [el.clientWidth, el.clientHeight]);
+  expect(box[0]).toBeGreaterThanOrEqual(24);
+  expect(box[1]).toBeGreaterThanOrEqual(24);
+  await expectNoSeriousAxeIssues(page);
+
+  // Withdraw: back to Team up, focus on it, and Withdraw gone
+  await page.keyboard.press("Enter");
+  await expect(foot.getByRole("button", { name: "Team up" })).toBeFocused();
+  await expect(withdraw).toHaveCount(0);
+});
+
+test("C-PROMPT.anatomy/2, DEC-124: the “+” attach button is first in the tool row, 44px, named exactly, and opens its picker", async ({
+  page,
+}) => {
+  const name = "Add files, a folder or a link";
+  const prompt = page.locator(".cz .prompt");
+  const row = await prompt
+    .locator(".cfoot button")
+    .evaluateAll((els) => els.map((el) => el.getAttribute("aria-label")));
+  expect(row).toEqual([name, "Speak instead", "Start my draft"]);
+
+  const plus = prompt.getByRole("button", { name, exact: true });
+  await expect(plus).toHaveAttribute("title", name);
+  await expect(plus).toHaveAttribute("aria-expanded", "false");
+  await expect(plus).toHaveAttribute("aria-controls", "k-picker");
+  const mic = prompt.getByRole("button", { name: "Speak instead" });
+  const size = (el: Element) => [getComputedStyle(el).width, getComputedStyle(el).height];
+  expect(await plus.evaluate(size)).toEqual(["44px", "44px"]);
+  expect(await plus.evaluate(size)).toEqual(await mic.evaluate(size));
+  await expect(plus).toHaveCSS("color", "rgb(42, 42, 46)");
+
+  await plus.click();
+  await expect(plus).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("group", { name })).toBeVisible();
+  await expect(plus).toHaveCSS("background-color", "rgb(17, 17, 17)");
+  await expectNoSeriousAxeIssues(page);
+  await plus.click();
+  await expect(plus).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("group", { name })).toBeHidden();
+});
+
 test("C-FIELD.rules/2–4 and C-FIELD-MSG: the message shows under the field on blur and goes when fixed", async ({
   page,
 }) => {
@@ -93,6 +158,48 @@ test("C-FIELD.rules/2–4 and C-FIELD-MSG: the message shows under the field on 
   await expectNoSeriousAxeIssues(page);
   await title.fill("Investors call to ask why a redemption was rejected");
   await expect(msg).toHaveCount(0);
+});
+
+test('C-FIELD, C-PROMPT.anatomy/2 (BLD-D029): a field\'s own "+" sits inside its frame at the foot of the trailing end, after the text in the tab order; the frame lights on focus', async ({
+  page,
+}) => {
+  const field = page.getByRole("textbox", { name: "Your answer to question 1" });
+  const frame = page.locator(".fld-frame").filter({ has: field });
+  const plus = frame.getByRole("button", { name: "Attach files to this answer", exact: true });
+  await expect(plus).toHaveAttribute("title", "Attach files");
+  // The kit's arrival scales its cards in; measure once it has finished (CI 45117067515 caught it mid-way at 0.99)
+  await settleMotion(page);
+  const [f, p, t] = await Promise.all([frame.boundingBox(), plus.boundingBox(), field.boundingBox()]);
+  // Inside the frame, 4px in from its right and bottom edges (1px border + 4px), right of the text, 44px
+  expect(await plus.evaluate((el) => [getComputedStyle(el).width, getComputedStyle(el).height])).toEqual([
+    "44px",
+    "44px",
+  ]);
+  expect(p!.width).toBeCloseTo(44, 0);
+  expect(f!.x + f!.width - (p!.x + p!.width)).toBeCloseTo(5, 0);
+  expect(f!.y + f!.height - (p!.y + p!.height)).toBeCloseTo(5, 0);
+  expect(p!.x).toBeGreaterThanOrEqual(t!.x + t!.width);
+  // The text starts where a field's without tools does: the other text area on the page
+  const plain = page.getByRole("textbox", { name: /Anything else the desk should know/ });
+  const textLeft = (l: Locator) =>
+    l.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return el.getBoundingClientRect().left + parseFloat(s.borderLeftWidth) + parseFloat(s.paddingLeft);
+    });
+  const outerLeft = async (l: Locator) => (await l.boundingBox())!.x;
+  expect((await textLeft(field)) - (await outerLeft(frame))).toBeCloseTo(
+    (await textLeft(plain)) - (await outerLeft(plain)),
+    0,
+  );
+  // At rest the frame has the field's border; focus in the text, then on the "+", lights it blue
+  await expect(frame).toHaveCSS("border-top-color", "rgb(140, 140, 145)");
+  await expect(field).toHaveCSS("border-top-width", "0px");
+  await field.focus();
+  await expect(frame).toHaveCSS("border-top-color", "rgb(57, 93, 237)");
+  await page.keyboard.press("Tab");
+  await expect(plus).toBeFocused();
+  await expect(frame).toHaveCSS("border-top-color", "rgb(57, 93, 237)");
+  await expectNoSeriousAxeIssues(page);
 });
 
 test("C-TRACK.anatomy: the stages are an ordered list that says each stage's state", async ({ page }) => {
@@ -145,7 +252,9 @@ test("C-DROPDOWN/2–5: None picked, then a title, then a count; Escape closes t
 test("C-FILE.row: a found detail is a warning under its row, with the row's own action", async ({ page }) => {
   const files = page.getByRole("list", { name: "Your files" });
   await expect(files.getByRole("listitem")).toHaveCount(3);
-  await expect(files.getByRole("alert")).toContainText("Nobody can open it until it’s hidden");
+  await expect(files.getByRole("alert")).toContainText(
+    "Only you, the review desk and the Ones Committee can open it.",
+  );
   await expect(files.getByRole("button", { name: "Hide it for me" })).toBeVisible();
 });
 
@@ -180,7 +289,11 @@ test("C-ONES-FAN.behaviour: the fan spreads and moves by Next and ← →; 'Post
   await expect(fan.getByRole("article")).toContainText("One No. 17");
   const cheer = fan.getByRole("button", { name: /^Cheer One No\. 17’s fix, 24 cheers/ });
   await expect(cheer).toHaveAttribute("aria-pressed", "false");
-  await cheer.click();
+  // On a phone the posts are a snap row. A click's retry scrolls the row sideways with its own inline alignment, the
+  // snap lands back on post 1 and post 2 turns inert, so the click never lands (run 44912206769). Bring it into
+  // view once, then click without scrolling (BLD-D027).
+  await cheer.scrollIntoViewIfNeeded();
+  await cheer.click({ scroll: "none" });
   await expect(fan.getByRole("button", { name: /^Cheer One No\. 17’s fix, 25 cheers/ })).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -190,6 +303,71 @@ test("C-ONES-FAN.behaviour: the fan spreads and moves by Next and ← →; 'Post
   await expect(fan.getByText("Post 3 of 3")).toBeVisible();
   await expect(fan.getByRole("button", { name: "Next post" })).toHaveAttribute("aria-disabled", "true");
   await expectNoSeriousAxeIssues(page);
+});
+
+test("C-ONES-FAN.states (BLD-D020): none, one with its companion and Cheer pressed, several stacked; See details spreads it; axe on each, 44px targets", async ({
+  page,
+}, info) => {
+  const phone = info.project.name === "phone-360";
+  const atLeast44 = async (target: Locator) => {
+    const box = (await target.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.width).toBeGreaterThanOrEqual(44);
+  };
+  await expect(page.getByText("No Ones yet", { exact: true })).toBeVisible();
+  const one = page.getByRole("region", { name: "One post from the Ones" });
+  await expect(one.getByText("The next One could be you", { exact: true })).toBeVisible();
+  await expect(one.getByText("Post 1 of 1")).toBeVisible();
+  await expect(one.getByRole("button", { name: "Next post" })).toHaveCount(0);
+  const cheer = one.getByRole("button", { name: /^Cheer Neha Kapoor’s fix, 99 cheers$/ });
+  await expect(cheer).toHaveAttribute("aria-pressed", "true");
+  const fan = page.getByRole("region", { name: "Posts from the Ones" });
+  const see = fan.getByRole("button", { name: "See details" });
+  // PhoneHome draws no stack and no side panel: the row shows at rest
+  if (phone) await expect(see).toHaveCount(0);
+  else await expect(fan.getByText("3 fixes, 3 people")).toBeVisible();
+  await expectNoSeriousAxeIssues(page); // at rest: several, the one post cheered, and none
+  await atLeast44(cheer);
+  await atLeast44(one.getByRole("link", { name: "Read the thread 12" }));
+  await atLeast44(one.getByRole("link", { name: "Share a problem" }));
+  if (phone) {
+    await fan.getByRole("button", { name: "Next post" }).click();
+    await expect(fan.getByText("Post 2 of 3")).toBeVisible();
+  } else {
+    await atLeast44(see);
+    await see.click();
+    await expect(see).toHaveCount(0);
+    await expect(fan.getByRole("button", { name: "Next post" })).toBeFocused();
+    await expect(fan.getByText("Post 1 of 3")).toBeVisible();
+  }
+  await atLeast44(fan.getByRole("button", { name: "Previous post" }));
+  await atLeast44(fan.getByRole("button", { name: "Next post" }));
+  await expectNoSeriousAxeIssues(page); // spread
+});
+
+test("C-ONES-FAN.behaviour/2, F-MOTION (BLD-D026): See details flies the stack out into the row; once the fly-out settles, axe passes on WCAG 2.1 AA", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name === "phone-360", "PhoneHome draws no stack, so nothing flies out on a phone");
+  const fan = page.getByRole("region", { name: "Posts from the Ones" });
+  // Count the arcs as they start: a card that is finished early still reports its start, so this holds on a slow run
+  await fan.evaluate((el) => {
+    const w = window as unknown as { onesArcs: number };
+    w.onesArcs = 0;
+    el.addEventListener("animationstart", (e) => {
+      if ((e as AnimationEvent).animationName === "oFly") w.onesArcs++;
+    });
+  });
+  await fan.getByRole("button", { name: "See details" }).click();
+  await expect(fan.getByRole("button", { name: "Next post" })).toBeFocused();
+  // Wait for the fly-out the way the arrival animations are waited for, then for the region to drop data-fly
+  await settleMotion(page);
+  await expect(fan).not.toHaveAttribute("data-fly");
+  expect(await page.evaluate(() => (window as unknown as { onesArcs: number }).onesArcs)).toBe(3);
+  await expect(fan.getByRole("button", { name: "See details" })).toHaveCount(0);
+  await expect(fan.locator(".fan-side")).toHaveCount(0);
+  await expect(fan.getByText("Post 1 of 3")).toBeVisible();
+  await expectNoSeriousAxeIssues(page); // settles again, then axe on wcag2a, wcag2aa, wcag21a and wcag21aa
 });
 
 test("C-FIELD.kinds: paste fills the six code boxes; a wrong code is said under them", async ({ page }) => {

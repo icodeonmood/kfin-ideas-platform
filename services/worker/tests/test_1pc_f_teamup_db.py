@@ -546,8 +546,9 @@ def test_V_ACC_similar_3_asking_to_merge_holds_the_draft(
     assert _check_it(db, cast, held)["id"] == asked["id"]
     # L-MERGE.request/4: lane C's Submit reads this to refuse `merge_waiting`
     assert drafts.waiting_merge_request(db, draft["id"]) == asked["id"]
-    # L-MERGE.request/3: the note is masked before it is stored; the draft itself is not shared
-    assert "9876543210" not in asked["note"] and f.status_of(db, draft)["status"] == "draft"
+    # L-MERGE.request/3, BLD-F097: the ask is masked when stored and for the lead (test_1pc_f_teamup_hide_db.py pins
+    # both); its typer, the draft's owner, reads their own words back (DEC-103). The draft itself is not shared
+    assert "9876543210" in asked["note"] and f.status_of(db, draft)["status"] == "draft"
     # V-ACC.similar/7's neighbour for L-AUDIT.metrics
     outcome = db.execute("SELECT outcome FROM similar_links WHERE idea_uuid = %s", (draft["id"],)).fetchone()
     assert outcome["outcome"] == "merge_asked"
@@ -934,6 +935,33 @@ def test_BLD_F028_V_ACC_similar_8_an_inbox_button_is_refused_and_audited_like_th
     assert db.execute("SELECT count(*) AS n FROM merges").fetchone()["n"] == 0
 
 
+def test_BLD_F093_V_ACC_similar_8_a_stale_inbox_item_is_refused_once_its_reader_no_longer_leads(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The lead's item outlives their lead: the crew's live lead row moves to Asha (the sharer stays the fallback
+    only while no live row exists, L-TEAMUP.rules/10). Ravi's old button is refused as not_lead and audited, and
+    nothing is answered; the new lead answers it (f-teamup-5.delta review's stale-lead test)."""
+    monkeypatch.setitem(sys.modules, "notify.inbox", None)  # the route's own refusal
+    sent = _send(db, cast)
+    row = _item(inbox)
+    lead = cast["lead"]
+    db.execute(
+        "UPDATE crew_members SET role = 'crew' WHERE idea_uuid = %s AND contributor_code = %s",
+        (lead["id"], cast["ravi"]["code"]),
+    )
+    db.execute(
+        "UPDATE crew_members SET role = 'lead' WHERE idea_uuid = %s AND contributor_code = %s",
+        (lead["id"], cast["asha"]["code"]),
+    )
+    stale = _refused(inbox_ops.team_only, db, cast["ravi"]["id"], row)
+    assert (stale.status, stale.code) == (403, "not_lead")
+    assert [a["after"]["answer"] for a in f.audit_rows(db, "teamup.answer_refused", sent["id"])] == [
+        "team_only"
+    ]
+    assert requests.read(db, sent["id"], cast["kavya"]["id"])["state"] == "sent"
+    assert inbox_ops.decline(db, cast["asha"]["id"], row)["request"]["state"] == "declined"
+
+
 def test_BLD_F028_the_handlers_register_in_lane_A_registry_when_it_is_there(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -960,7 +988,8 @@ def test_BLD_F028_the_handlers_register_in_lane_A_registry_when_it_is_there(
 
 
 def test_BLD_F028_lane_A_registry_holds_the_three_handlers_once_teamup_has_loaded() -> None:
-    ops = pytest.importorskip("notify.ops")  # lane A's Inbox registry: skipped until it is on main
+    from notify import ops  # lane A's Inbox registry is on main: no skip (BLD-F093)
+
     inbox_ops.register()
     for op in ("decline", "team_only", "merge"):
         assert ops.handler("teamup_request", op) is inbox_ops.HANDLERS[op]
@@ -984,10 +1013,28 @@ def _sql_log(db: Conn, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]
     return log
 
 
+_GATED = "-- the gatekeeper was asked (BLD-F100)"
+
+
+def _gate_marked(log: list[tuple[str, Any]], monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mark in `log` where lane C's gatekeeper ask ends (`adapters.gate`, BLD-F100). The ask runs before the write's
+    transaction, in the gateway's own short one, and writes there (`llm_calls`); the write's locks come after it."""
+    real = adapters.gate
+
+    def gate(conn: Conn, idea_uuid: str, text: str) -> Any:
+        out = real(conn, idea_uuid, text)
+        log.append((_GATED, None))
+        return out
+
+    monkeypatch.setattr(adapters, "gate", gate)
+
+
 def _locks_before_anything_else(log: list[tuple[str, Any]]) -> list[str]:
-    """The ideas `lock_ideas` locked, in the order it locked them, before the first write or any other lock."""
+    """The ideas `lock_ideas` locked, in the order it locked them, before the first write or any other lock. Read
+    from the end of the gatekeeper's ask when there was one (`_gate_marked`): it runs before the transaction."""
+    marks = [i for i, (sql, _) in enumerate(log) if sql == _GATED]
     out: list[str] = []
-    for sql, params in log:
+    for sql, params in log[marks[-1] + 1 :] if marks else log:
         if sql == _LOCK_IDEA:
             out.append(str(params[0]))
         elif "FOR UPDATE" in sql or sql.split(None, 1)[0].upper() in _WRITES:
@@ -1009,9 +1056,11 @@ def test_BLD_F027_answer_send_with_a_draft_and_ask_lock_every_idea_first_in_id_o
     kept = f.draft(db, cast["kavya"])
     f.similar(db, kept, cast["lead"])
     log = _sql_log(db, monkeypatch)
+    _gate_marked(log, monkeypatch)
     sent = requests.send(db, cast["lead"]["idea_id"], cast["kavya"]["id"],
                          {"note": NOTE, "brought_idea_ids": [cast["mine"]["idea_id"]],
                           "draft_id": str(kept["id"])})  # fmt: skip
+    assert (_GATED, None) in log  # the note went to the gatekeeper before the transaction (BLD-F100)
     locked = _locks_before_anything_else(log)
     assert locked == sorted(locked) and set(locked) == {lead, mine, str(kept["id"])}
     # POST /team-up/:id/answer: the lead's idea and every idea brought, then the request row
@@ -1024,6 +1073,7 @@ def test_BLD_F027_answer_send_with_a_draft_and_ask_lock_every_idea_first_in_id_o
     asking = f.draft(db, pradeep)
     log.clear()
     drafts.ask(db, str(asking["id"]), pradeep["id"], {"other_idea_id": cast["lead"]["idea_id"], "note": NOTE})
+    assert (_GATED, None) in log  # the ask, likewise
     locked = _locks_before_anything_else(log)
     assert locked == sorted(locked) and set(locked) == {lead, str(asking["id"])}
 
@@ -1165,6 +1215,48 @@ def test_BLD_F029_DEC_104_the_desk_and_the_committee_and_the_crew_always_see_the
         db, open_idea["idea_id"], cast["kavya"]["id"], {"note": NOTE, "brought_idea_ids": []}
     )
     assert sent["after"]["line"] == "Waiting for Gopal"
+
+
+@pytest.mark.parametrize("how", ["hidden", "inactive"])
+def test_BLD_F029_DEC_104_C_SHEET_TEAMUP_after_a_member_who_left_the_crew_reads_the_lead_again_and_team_up(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox, how: str
+) -> None:
+    """Once off the crew, a requester whose request was approved is a stranger to a lead who is not named again: no
+    name or users.id, and their approved request no longer shows "You’re on the crew" (`after_for`: an `approved_*`
+    request with no crew role gives no `after`, so the screen offers Team up again). BLD-F093 pins it."""
+    ravi, kavya, ref = cast["ravi"], cast["kavya"]["id"], cast["lead"]["idea_id"]
+    _unnamed(db, ravi, how)
+    sent = _send(db, cast)
+    requests.answer(db, sent["id"], ravi["id"], {"answer": "team_only"})
+    assert requests.my_state(db, ref, kavya)["lead"]["name"] == ravi["name"]  # on the crew: named (BLD-F042)
+    crew.leave(db, ref, kavya)
+    gone = requests.my_state(db, ref, kavya)
+    _hidden_lead(gone["lead"])
+    assert gone["me"] is None and gone["request"]["state"] == "approved_team_only"
+    assert gone["after"] is None and gone["can_request"] is True and gone["why_not"] is None
+    read = requests.read(db, sent["id"], kavya)
+    assert read["after"] is None
+    note = requests.draft_note(db, ref, kavya)
+    _hidden_lead(note["lead"])
+    _no_trace_of(ravi, gone, read, note)
+
+
+def test_BLD_F029_DEC_104_a_core_committee_viewer_reads_a_hidden_leads_name(
+    db: Conn, cast: dict[str, Any], inbox: f.Inbox
+) -> None:
+    """`lead_seen_by` names the lead to anyone `similar.preview.Viewer.of(...).desk` counts: DESK_ROLES there are
+    reviewer, committee, core_committee and core_chair, so a core_committee holder reads the name of a lead who hid
+    it, as the review desk and the Ones Committee do (DEC-104, P-PRODUCT.privacy; DEC-121: committee members hold
+    core_committee at launch). Pinned by BLD-F093 beside the reviewer, committee and core_chair cases above."""
+    ravi, ref = cast["ravi"], cast["lead"]["idea_id"]
+    _unnamed(db, ravi, "hidden")
+    core = f.person(db, "Sunita Bhatt", roles=("core_committee",))
+    seen = requests.my_state(db, ref, core["id"])
+    assert (seen["lead"]["id"], seen["lead"]["name"]) == (ravi["id"], ravi["name"])
+    assert requests.draft_note(db, ref, core["id"])["lead"]["first_name"] == "Ravi"
+    # Without the role, the same person reads "the lead"
+    db.execute("UPDATE role_grants SET valid_to = now() WHERE user_id = %s", (core["id"],))
+    _hidden_lead(requests.my_state(db, ref, core["id"])["lead"])
 
 
 def test_BLD_F075_the_lead_still_reads_the_name_of_a_requester_who_hid_theirs_from_the_wall(

@@ -22,6 +22,7 @@ from typing import Any
 
 from core import killswitch
 from core.db import Conn
+from hide.core import own_words
 from onepc.context import open_text
 from similar.matching import MAX_MATCHES, owner_codes, survivor
 from similar.preview import Viewer, find_idea, idea_preview, iso, person_refs
@@ -77,11 +78,15 @@ def my_request(conn: Conn, other_uuid: str, viewer: Viewer) -> dict[str, Any] | 
         ).fetchall()
     ]
     code = str(r["from_code"])
+    # The viewer sent it (`from_code` is theirs), so the note is their own words, from lane F's sealed 'teamup' copy
+    # under the idea asked about (BLD-F097); the masked copy when none was sealed (DEC-103, DEC-104, BLD-F101).
+    masked = open_text("teamup_requests", "note_encrypted", rid, r["note_encrypted"])
+    note = own_words(conn, "teamup", rid, idea_uuid=str(other_uuid)) if masked is not None else None
     out: dict[str, Any] = {
         "id": rid,
         "idea_id": str(r["idea_id"]),
         "from": person_refs(conn, [code], names_always=True)[code],
-        "note": open_text("teamup_requests", "note_encrypted", rid, r["note_encrypted"]) or "",
+        "note": note or masked or "",
         "brought": brought,
         "state": r["state"],
         "sent_at": iso(r["sent_at"]),

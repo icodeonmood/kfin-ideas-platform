@@ -63,7 +63,7 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | Any send that fails | That didn’t go through. Try again. / Your answers didn’t send. Try again. / That didn’t save. Try again. / That didn’t merge. Try again. |
 | The questions card, partly answered (C-QCARD, not drawn) | Carry on answering |
 
-## 3. Added on 17 Nov 2026 with the review screens (BLD-B238)
+## 5. Added on 17 Nov 2026 with the review screens (BLD-B238)
 
 | Where | Wording | Why |
 |---|---|---|
@@ -78,7 +78,7 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | The Answer screen, a save that did not reach the server (tried again on its own) | Couldn’t save that. Try again. | B3: an answer is never lost or misreported on a network error |
 | The Answer screen, an answer near its limit (from 1,800 characters) | 1,850 of 2,000 characters | V-FIELDS.answer/1 "counter near the limit"; not drawn |
 
-## 5. Added on 17 Nov 2026 with "Hide this" on the reviewer's page (BLD-B246)
+## 6. Added on 17 Nov 2026 with "Hide this" on the reviewer's page (BLD-B246)
 
 | Where | Wording | Why |
 |---|---|---|
@@ -90,7 +90,7 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | The same, read out to a screen reader once the words are hidden | Hidden from everyone. | C-HIDDEN's own words for a hidden detail |
 | The reviewer's page, the Attached part, under "… is hidden from everyone." | Folio shown, because it’s an internal reference. (also "it’s a scheme or product code" and "it’s made up for the example") | L-HIDE.rules/6: the desk sees the sharer's reason; the reasons are C-HIDDEN's |
 
-## 6. Added on 18 Nov 2026 with the "Hide this" fixes (BLD-B247)
+## 7. Added on 18 Nov 2026 with the "Hide this" fixes (BLD-B247)
 
 | Where | Wording | Why |
 |---|---|---|
@@ -98,11 +98,11 @@ The boards say "she" and "her" for the demo sharer. With real people that would 
 | The reviewer's page, the name a screen reader reads for each text "Hide this" works on | The problem, text (also "How often, text", "Fix, text", "The title, text", "The answer, text", "Their own words, 1 of 3, text") | WCAG 2.1.1 and 4.1.2: each such text can now take focus from the keyboard, so it needs a name |
 | The reviewer's page, under the text, when the words changed before "Hide this" went through | The page changed. Select again. | Another reviewer hid something in the same text; the page is read again and the reviewer selects once more |
 | The reviewer's page, under the text (and read out), when words are selected in a text the page shows differently from how it was stored | Select again. | "Hide this" is offered only on the exact stored text, so a reviewer is told to try again rather than shown nothing; rare (a line break stored as two characters) |
-| The Answer screen, when an answer could not be stored with its details hidden | Couldn’t save that. Try again. | The line added with the review screens (section 3 of 17 Nov), now also for this case, never a raw error |
+| The Answer screen, when an answer could not be stored with its details hidden | Couldn’t save that. Try again. | The line added with the review screens (section 5, 17 Nov), now also for this case, never a raw error |
 | The Answer screen, when the answers could not be checked for customer details on send | Your answers didn’t send. Try again. | The screen's existing send failure line, never a raw error |
 | The reviewer's page, the Attached part, the kind in "… shown, because …" | Phone shown, because it’s made up for the example. (also "Account", "Email", "Aadhaar", "Name", "Folio", "PAN") | L-HIDE.detect's "Label shown" for each kind; replaces "Phone number shown" and "Account number shown" |
 
-## 7. Lines changed by DEC-111: the review desk, not the reviewer's name (18 Nov)
+## 8. Lines changed by DEC-111: the review desk, not the reviewer's name (18 Nov)
 
 DEC-111: a sharer, and the crew, never see the name of the person at the review desk. Wherever the boards name the reviewer to them, the line names "the review desk" instead, with no avatar or initials beside it. "Meera" stands for the reviewer, "Kavya" for the sharer and "Ravi" for another sharer. The review desk and the Ones Committee still see each other's names, and a committee member who reverses a decision is still named to the sharer.
 
@@ -132,7 +132,7 @@ DEC-111: a sharer, and the crew, never see the name of the person at the review 
 | Email, the answer reminder's subject and first line (template `inbox/answer_reminder.md`) | 1 day left to answer Meera’s questions | 1 day left to answer the review desk’s questions |
 | Email, the old question, reviewed and redirected messages, the sign-off and the sender (templates `question.md`, `reviewed.md`, `redirected.md`) | Meera Iyer, review desk, 1% Club | The review desk, 1% Club |
 
-## 8. Lines changed after lane G's walk (19 Nov, BLD-B264)
+## 9. Lines changed after lane G's walk (19 Nov, BLD-B264)
 
 Before this, every empty part of an idea on the reviewer's page read "Not given.", and a similar idea or a heading whose sharer has no city or area left an empty gap between two commas. The page now uses the board's words for an empty Fix and an empty Attached, and the listen script reads the same words. "Kavya" stands for the sharer and "Ravi" for another sharer.
 
@@ -144,7 +144,7 @@ Before this, every empty part of an idea on the reviewer's page read "Not given.
 | The reviewer's page, the heading, when the idea has no city | Shared Saturday 14 November by Kavya Menon, Investor service, Hyderabad. | Shared Saturday 14 November by Kavya Menon, Investor service. (was "…, Investor service, .") |
 | The Ones Committee, the Idea column, when the idea has no area | IDEA-2026-001433, Swati Kulkarni, Distributor services, Mumbai | IDEA-2026-001433, Swati Kulkarni, Mumbai (was "…, Swati Kulkarni, , Mumbai") |
 
-## 9. Lines changed after lane G's 09:30 walk (19 Nov, BLD-B266 to BLD-B268)
+## 10. Lines changed after lane G's 09:30 walk (19 Nov, BLD-B266 to BLD-B268)
 
 At the 3-month limit the committee's window can no longer be extended, and the button has already given way to "At the 3-month limit". The open line kept saying it could be extended, so at the limit its middle sentence goes; nothing is added. Before the limit the line is unchanged. The listen strip on the reviewer's page now stands from the first paint, with no new words: until the audio is ready, its time is not shown and its play button is announced as "Play the whole idea" without the length.
 
@@ -153,7 +153,7 @@ At the 3-month limit the committee's window can no longer be extended, and the b
 | The Ones Committee, an open decision at the 3-month limit (not drawn; the board draws a window that can still be extended) | Open until Wednesday 16 December. You can extend it 30 days at a time, up to Tuesday 16 February 2027. When it closes, the decision stands. | Open until Tuesday 16 February 2027. When it closes, the decision stands. |
 | The reviewer's page, the listen strip's play button before the audio is ready (heard, not seen; not drawn) | Play the whole idea, 2 minutes 10 seconds | Play the whole idea (then "Play the whole idea, 2 minutes 10 seconds" once the audio is ready) |
 
-## 10. Lines changed for DEC-113 (19 Nov, BLD-B269)
+## 11. Lines changed for DEC-113 (19 Nov, BLD-B269)
 
 DEC-113 extends DEC-111 to the Ones Committee: a sharer, and the crew, never see the name of the committee member who reversed a decision. Where lane B's decision lines named the member to them, they now name the Ones Committee, with no avatar or initials beside it. "Rohan Mehta" stands for the committee member. The lines read the same whoever reads them. The review desk and the Ones Committee still see each other's names, so the committee page and the reviewer's page are unchanged. The committee's message in the conversation, the Inbox and the emails are in lanes E, F and A's lists.
 
@@ -161,3 +161,21 @@ DEC-113 extends DEC-111 to the Ones Committee: a sharer, and the crew, never see
 |---|---|---|
 | The idea page, Reversed by the Ones Committee, the first line of the committee's card (the avatar "RM" goes too) | Rohan Mehta from the Ones Committee, Tuesday 24 November, 5:40 pm | The Ones Committee, Tuesday 24 November, 5:40 pm |
 | The decision as sent to the sharer and the crew, the line under "Now: Not now" (the committee page's words; the idea page does not show this line today) | by Rohan Mehta, Tuesday 24 November | by the Ones Committee, Tuesday 24 November |
+
+## 12. Files on an answer (21 Nov, BLD-B275)
+
+S-R3's "+" adds files to an answer (DEC-124). S-R3's "+" uses the Answer board's own name, "Attach files to this answer", and its tooltip "Attach files", through lane D's button's `label` and `tooltip`: it opens the file chooser only, so the name says what it does (WCAG 2.4.6). Lane D approved it on 21 Nov as an exception to the one name every other prompt box keeps, "Add files, a folder or a link". The rows use Check it's words and lane F's list name "Your files". The one new line is the count of an answer's files in "Check your answers" and in the sent list, built on the Answer board's own "Two screenshots attached, folio hidden.". Recommended text under DEC-123; HR would normally sign it off.
+
+| Where | Board copy | On screen |
+|---|---|---|
+| S-R3, "Check your answers" and the sent list, an answer with files | Two screenshots attached, folio hidden. | The same pattern for any count and type: "One file attached.", "Two files attached.", "One screenshot attached.", "Three screenshots attached, folio hidden." ("screenshot" when every file is an image; the count in words up to ten, then figures; what was hidden from each file's own note) |
+
+## 13. Lines added with lane B's after-launch fixes (23 Nov, BLD-B277)
+
+Two lines the boards do not draw. The first is the review desk's page for an idea that is not there, or that this person may not open: it reads the same in both cases, so it never says an idea exists. The second is how the listen player reads an idea merged into the one under review, after each part of the lead idea. "Ravi" stands for the merged idea's sharer.
+
+| Where | Before | On screen |
+|---|---|---|
+| The reviewer's page when the idea cannot be shown, the heading | Next's own "404 This page could not be found." | We couldn’t find that idea. |
+| The same page, the line under it, with the back link "Home" above | (none) | Check the link, or go back to Home. |
+| Listen, inside a part, after the lead idea's words and answers | (the merged idea was not read) | From Ravi’s idea: (that idea's words for the part, then its answers, "Ravi answered: …") |

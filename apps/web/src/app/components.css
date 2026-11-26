@@ -197,6 +197,69 @@ textarea:is(.fld, .textarea) {
   padding-inline: 0;
 }
 
+/* C-FIELD tools (BLD-D029, C-PROMPT.anatomy/2): the field's own icon buttons at its trailing end, inside its frame, as
+   the Answer board draws the "+" and the mic in its field (S-R3). The frame takes the field's border, fill and states,
+   lit while anything in it has focus (as the board's field is); the control inside draws none, and its text starts
+   where a field's without tools does. On a text area the tools sit at the foot, 4px in */
+.fld-frame {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid var(--fieldBorder);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  transition:
+    border-color var(--mo-quick) ease,
+    box-shadow var(--mo-quick) ease;
+}
+
+.fld-frame.multi {
+  align-items: flex-end;
+}
+
+.fld-frame:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--focus-glow);
+}
+
+.fld-frame.invalid {
+  border-color: var(--badT);
+  box-shadow: 0 0 0 3px var(--bad-glow);
+}
+
+/* The Field gives its control `.fld`; these outrank the control's own states (`:focus`, invalid, read-only) */
+.fld-frame > .fld {
+  flex: 1 1 auto;
+  min-height: calc(var(--ctl) - 2px);
+}
+
+.fld-frame > textarea.fld {
+  min-height: 110px;
+}
+
+.fld-frame > .fld,
+.fld-frame > .fld:focus,
+.fld-frame > .fld[aria-invalid="true"],
+.fld-frame > .fld[readonly] {
+  padding: 12px 0 12px 14px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fld-tools {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding-right: 4px;
+}
+
+.fld-frame.multi > .fld-tools {
+  padding-bottom: 4px;
+}
+
 .help {
   margin: 8px 0 0;
   font-size: 13.5px;
@@ -494,7 +557,7 @@ textarea:is(.fld, .textarea) {
 }
 
 /* Filter chips take the tick on a phone only; above it the ring and wash say which is on (C-CHIP.states) */
-@media (min-width: 641px) {
+@media (width > 640px) {
   .chips.filter .chip .chip-tick {
     display: none;
   }
@@ -845,7 +908,7 @@ textarea:is(.fld, .textarea) {
   }
 }
 
-@media (min-width: 641px) {
+@media (width > 640px) {
   .vtrk.auto {
     display: none;
   }
@@ -898,6 +961,21 @@ textarea:is(.fld, .textarea) {
 
 .kit-surfaces > h2 {
   grid-column: 1 / -1;
+}
+
+/* The kit draws a focused state at rest with the same ring (F-A11Y.rules/2), so it can be seen beside the others */
+.kit .kit-focus {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* A crew card's foot in the kit: the button, and the quiet link under it (DEC-126) */
+.kit-stack {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  max-width: 360px;
 }
 
 /* ---------- C-SEARCH: the bar ---------- */
@@ -1265,6 +1343,57 @@ textarea:is(.fld, .textarea) {
   line-height: 1.45;
 }
 
+/* ---------- C-PROMPT.anatomy/2: the "+" attach button (DEC-124, BLD-D019) ----------
+ * First in a prompt box's tool row, then the mic, then send. The tool row's icon-button look (Compose .mic2, Home
+ * .pt): a 44px round target (F-SPACE.targets), transparent in --ink2 at rest, the row's hover fill, pressed to 0.94,
+ * ink with white while its picker is open (Home .pt[aria-expanded]), and the row's 2px blue focus ring. The "+" takes
+ * the text's colour. React side: components/ui/attach-button.tsx. */
+.attach-btn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-round);
+  background: transparent;
+  color: var(--ink2);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.12s var(--mo-snap);
+}
+
+.attach-btn:hover {
+  background: var(--hover-fill-strong);
+  color: var(--ink);
+}
+
+.attach-btn:active {
+  transform: scale(0.94);
+}
+
+.attach-btn[aria-expanded="true"] {
+  background: var(--ink);
+  color: #ffffff;
+}
+
+.attach-btn:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.attach-btn[aria-disabled="true"] {
+  background: transparent;
+  color: var(--placeholder);
+  cursor: not-allowed;
+  transform: none;
+}
+
 /* ---------- C-FILE: rows and the drop area ---------- */
 .flist {
   display: grid;
@@ -1391,6 +1520,89 @@ textarea:is(.fld, .textarea) {
   gap: 12px;
 }
 
+/* Compact rows (BLD-D030; Messages.md `.cvfile`): the conversation box's files as small rows that wrap, 260px at most.
+   A row with a message under it takes its own line (`frow-msg`, named by FileRow: Firefox 111 has no :has()). Moved
+   here from conversation.css, as drawn there since BLD-F058 */
+.flist.compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+
+.flist.compact > .frow {
+  flex: 0 1 260px;
+  min-width: 0;
+}
+
+.flist.compact > .frow-msg {
+  flex-basis: 100%;
+}
+
+.flist.compact .frow-in {
+  gap: 10px;
+  padding: 8px 8px 8px 10px;
+}
+
+.flist.compact .fbadge {
+  width: 36px;
+  height: 30px;
+  font-size: 11px;
+}
+
+.flist.compact .frow-n {
+  overflow: hidden;
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+
+.flist.compact .frow-s {
+  font-size: 12.5px;
+}
+
+.flist.compact .frow-a {
+  align-items: center;
+  gap: 4px;
+}
+
+/* A compact row's Remove (FileRemove): a 32px round target (F-SPACE.targets/1, 24px at least), padded to 44px on touch
+   by an empty layer 6px above and below, 8px to its right (the row's own padding) and 4px to its left (the gap) */
+.frow-x {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--r-round);
+  background: transparent;
+  color: var(--mute2);
+  cursor: pointer;
+}
+
+.frow-x:hover {
+  background: var(--hover-fill-strong);
+  color: var(--ink);
+}
+
+.frow-x:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .frow-x {
+    position: relative;
+  }
+
+  .frow-x::after {
+    content: "";
+    position: absolute;
+    inset: -6px -8px -6px -4px;
+  }
+}
+
 .fdrop {
   display: grid;
   gap: 6px;
@@ -1422,6 +1634,77 @@ textarea:is(.fld, .textarea) {
   line-height: 1.5;
 }
 
+/* C-FILE.uploader, the picker the "+" opens (BLD-D031; the Home board's `attachments=Picker open`): "Choose a folder"
+   over the drop area, then the link field with its icon. One look for the prompt box and the conversation box, as both
+   drew it (compose.css `.cz .cpick`, conversation.css `.cv-pick`); each screen sets only its place (margin, grid area) */
+.fpick {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 0 0 1px var(--rule2);
+}
+
+.fpick-drop {
+  position: relative;
+}
+
+.fpick-drop .fdrop {
+  padding-top: 64px;
+}
+
+.fpick-folder {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--wash);
+  color: var(--blueT);
+  cursor: pointer;
+}
+
+.fpick-folder:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.fpick-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fpick-link .fld {
+  flex: 1;
+  min-width: 0;
+  padding-left: 38px;
+}
+
+.fpick-li {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  color: var(--mute);
+  pointer-events: none;
+}
+
+.fpick-h {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--mute);
+}
+
 @media (max-width: 640px) {
   .frow-in {
     flex-wrap: wrap;
@@ -1430,6 +1713,15 @@ textarea:is(.fld, .textarea) {
   .frow-a {
     width: 100%;
     justify-content: flex-end;
+  }
+
+  /* A compact row keeps one line on a phone too: the name gives way first (BLD-D030, as S-08's dock drew it) */
+  .flist.compact .frow-in {
+    flex-wrap: nowrap;
+  }
+
+  .flist.compact .frow-a {
+    width: auto;
   }
 }
 
@@ -1604,20 +1896,51 @@ textarea:is(.fld, .textarea) {
   background: #ffffff;
 }
 
-/* ---------- C-ONES-FAN: a fan of the Ones' posts ---------- */
+/* ---------- C-ONES-FAN: the Ones' posts on the dark slab (Home.dc.html .ofan, .ocard, PhoneHome.dc.html; BLD-D020) ---------- */
+/* The look at rest: the stack's angled pose and the row's angled edge. The moves between these poses (the fly out,
+   the hover, the edge straightening, the side panel's exit, cheerPop) are in motion.css (BLD-D026), so this section
+   holds no animation. Tier colour only ever comes from the tokens, through data-tier: --heat is var(--tier-N)
+   (offer.css) and --opost-ring is var(--tier-N-ring) (below). */
 .fan {
   --fan-w: 341px;
+  --fan-h: 511px;
   --fan-gap: 12px;
+  --focus: #8fa8ff;
+  container: fan / inline-size;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
+  margin-top: 20px;
 }
 
+/* PhoneHome.dc.html: the row runs out to the slab's edges (its 20px padding), each card 84% of it and 1.5 times as
+   tall as it is wide */
 @media (max-width: 640px) {
   .fan {
-    --fan-w: min(300px, calc(100vw - 72px));
+    --fan-bleed: 20px;
+    --fan-w: calc((100cqi + 2 * var(--fan-bleed)) * 0.84);
+    --fan-h: calc(var(--fan-w) * 1.5);
+    margin-top: 10px;
   }
+
+  .fan-view {
+    margin-inline: calc(-1 * var(--fan-bleed));
+    padding-inline: var(--fan-bleed);
+    scroll-padding-inline: var(--fan-bleed);
+  }
+}
+
+.fan-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+}
+
+/* Stacked, the side panel sits beside the stack, as wide as the board's (28%, at most 280px) */
+.fan.several:not(.spread) .fan-stage {
+  grid-template-columns: minmax(0, 1fr) min(28%, 280px);
 }
 
 /* The row of cards never sets the page's width: the view clips it and may shrink (WCAG 1.4.10) */
@@ -1635,34 +1958,182 @@ textarea:is(.fld, .textarea) {
   transition: transform var(--mo-move) var(--mo-out);
 }
 
-.fan-view.spread .fan-track {
-  transform: translateX(calc(var(--at) * -1 * (var(--fan-w) + var(--fan-gap))));
+/* Wider than a phone the row is a track the controls move; on a phone it is the view's own scroll (below) */
+@media (width > 640px) {
+  .fan.spread .fan-track {
+    transform: translateX(calc(var(--at) * -1 * (var(--fan-w) + var(--fan-gap))));
+  }
 }
 
 .fan-card {
   position: relative;
   flex: none;
+  display: flex;
   width: var(--fan-w);
-  transition:
-    transform var(--mo-move) var(--mo-out),
-    opacity var(--mo-state) ease;
-}
-
-/* Stacked: every card pulled back over the first, peeking with a slight turn; only three show */
-.fan-view:not(.spread) .fan-card {
-  z-index: calc(10 - var(--i));
-  transform: translateX(calc(var(--i) * -1 * (var(--fan-w) + var(--fan-gap)) + var(--i) * 22px))
-    rotate(calc(var(--i) * 3deg)) scale(calc(1 - var(--i) * 0.04));
-  transform-origin: 50% 100%;
-}
-
-.fan-view:not(.spread) .fan-card:nth-child(n + 4) {
-  opacity: 0;
 }
 
 .fan-card > * {
+  flex: 1;
+  min-width: 0;
   transform: perspective(900px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg));
   transition: transform 0.3s var(--mo-out);
+}
+
+/* One post: the post and the companion card side by side; on a phone the row scrolls by swipe with snap */
+.fan.one .fan-view {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  touch-action: auto;
+}
+
+.fan.one .fan-view::-webkit-scrollbar {
+  display: none;
+}
+
+.fan.one .fan-card {
+  scroll-snap-align: start;
+}
+
+/* Several posts on a phone (PhoneHome.dc.html .ofan.spread): the same native row, a card per snap, whatever moves it
+   (a swipe, Previous and Next, ← →); the position line follows the card it snaps to (C-ONES-FAN.behaviour/7) */
+@media (max-width: 640px) {
+  .fan.several .fan-view {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    touch-action: auto;
+  }
+
+  .fan.several .fan-view::-webkit-scrollbar {
+    display: none;
+  }
+
+  .fan.several .fan-card {
+    scroll-snap-align: start;
+  }
+
+  /* No glide of the track here: narrowed to a phone's width, the desktop's translateX goes at once, so the row is
+     measured where it is (BLD-D026) */
+  .fan-track {
+    transition: none;
+  }
+}
+
+/* Stacked (several posts at rest, wider than a phone): the first card faces you and up to three sit behind it,
+   offset to the right and darker. This flat offset is the pose under reduced motion (F-MOTION.reduced) */
+@media (width > 640px) {
+  .fan.several:not(.spread) .fan-card {
+    z-index: calc(20 - var(--i));
+  }
+
+  .fan.several:not(.spread) .fan-card:not(:first-child) {
+    transform: translateX(calc(var(--i) * -1 * (var(--fan-w) + var(--fan-gap)) + var(--i) * 28px))
+      scale(calc(1 - var(--i) * 0.05));
+    transform-origin: 100% 50%;
+    filter: brightness(calc(1 - var(--i) * 0.15));
+  }
+
+  .fan.several:not(.spread) .fan-card:nth-child(n + 5) {
+    visibility: hidden;
+  }
+
+  .fan.several:not(.spread) .fan-card:first-child > .opost {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+      0 46px 90px -34px rgba(0, 0, 0, 0.85);
+  }
+
+  .fan.several:not(.spread) .fan-card:not(:first-child) > .opost {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+      -30px 30px 60px -24px rgba(0, 0, 0, 0.75);
+  }
+
+  /* Spread: the card coming up at the row's edge, and the ones after it, sit darker */
+  .fan.spread .fan-card.edge {
+    filter: brightness(0.8);
+  }
+
+  .fan.spread .fan-card.far {
+    filter: brightness(0.66);
+  }
+}
+
+/* With motion allowed, the board's pose: the cards behind angled into the page, and the card at the row's edge
+   angled in. The edge and far poses repeat the stack's list of functions (translateX(0) is no move), so a card
+   glides from one pose to the next function by function rather than through a matrix */
+@media (width > 640px) and (prefers-reduced-motion: no-preference) {
+  .fan.several:not(.spread) .fan-card:not(:first-child) {
+    transform: translateX(calc(var(--i) * -1 * (var(--fan-w) + var(--fan-gap)))) perspective(1400px)
+      translateX(calc(var(--fan-w) * 0.6 + 52px * (var(--i) - 1))) translateZ(calc(var(--i) * -70px))
+      rotateY(-24deg);
+    transform-origin: 0% 50%;
+  }
+
+  .fan.spread .fan-card.edge {
+    transform: translateX(0) perspective(1400px) translateX(0) translateZ(-60px) rotateY(-16deg);
+    transform-origin: 0% 50%;
+  }
+
+  .fan.spread .fan-card.far {
+    transform: translateX(0) perspective(1400px) translateX(0) translateZ(-90px) rotateY(-24deg);
+    transform-origin: 0% 50%;
+  }
+}
+
+/* The stack's side panel: how many fixes and people, and See details to spread them; gone once spread */
+.fan-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.fan-side-t {
+  margin: 0;
+  color: #ffffff;
+  font: 500 24px/1.2 var(--fd);
+  letter-spacing: -0.02em;
+}
+
+/* #A9A9B2 on the slab #18191D: 7.5:1 (F-COLOR.contrast/1) */
+.fan-side-p {
+  margin: 0;
+  color: #a9a9b2;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.fan-side-b {
+  margin-top: 10px;
+  padding: 0 18px;
+}
+
+/* Narrower than the stack and the panel side by side, the panel sits under the stack */
+@container fan (max-width: 860px) {
+  .fan.several:not(.spread) .fan-stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fan-side {
+    align-items: flex-start;
+    max-width: 46ch;
+    text-align: start;
+  }
+}
+
+@media (max-width: 640px) {
+  .fan.several:not(.spread) .fan-stage {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fan-side {
+    display: none;
+  }
 }
 
 .fan-ctl {
@@ -1671,8 +2142,20 @@ textarea:is(.fld, .textarea) {
   gap: 10px;
 }
 
+/* On the slab: the position line in the board's quiet grey, the round buttons in white with a light ring
+   (F-COLOR.contrast; WCAG 1.4.3, 1.4.11) */
 .fan-pos {
   margin-right: auto;
+  color: #a9a9b2;
+}
+
+.fan-ctl .round-btn {
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+
+.fan-ctl .round-btn:hover {
+  box-shadow: inset 0 0 0 1px #ffffff;
 }
 
 .fan-ctl .round-btn[aria-disabled="true"] {
@@ -1682,28 +2165,58 @@ textarea:is(.fld, .textarea) {
 
 @media (prefers-reduced-motion: reduce) {
   .fan-track,
-  .fan-card,
   .fan-card > * {
     transition: none;
   }
+
+  /* The phone row still snaps; Previous and Next jump to the card instead of gliding */
+  .fan-view {
+    scroll-behavior: auto;
+  }
 }
 
-/* A One's post on the dark slab, lit by their tier (F-COLOR.tiers/3: the key colour at 32% to nothing) */
+/* A One's post: the dark card, lit by the tier's glows in its media block */
 .opost {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 16px;
   box-sizing: border-box;
-  min-height: 511px;
-  padding: 24px;
+  min-height: var(--fan-h, 511px);
+  padding: 20px 20px 16px;
   border-radius: var(--r-lg);
-  background:
-    radial-gradient(120% 70% at 85% 0%, color-mix(in srgb, var(--heat) 32%, transparent), transparent 62%),
-    var(--slab);
+  background: var(--slab);
   color: #ffffff;
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 40px 80px -40px rgba(17, 17, 17, 0.6);
+    0 30px 60px -34px rgba(0, 0, 0, 0.8);
+}
+
+.opost[data-tier="1"] {
+  --opost-ring: var(--tier-1-ring);
+}
+
+.opost[data-tier="2"] {
+  --opost-ring: var(--tier-2-ring);
+}
+
+.opost[data-tier="3"] {
+  --opost-ring: var(--tier-3-ring);
+}
+
+.opost[data-tier="4"] {
+  --opost-ring: var(--tier-4-ring);
+}
+
+.opost[data-tier="5"] {
+  --opost-ring: var(--tier-5-ring);
+}
+
+.opost[data-tier="6"] {
+  --opost-ring: var(--tier-6-ring);
+}
+
+.opost[data-tier="7"] {
+  --opost-ring: var(--tier-7-ring);
 }
 
 .opost-h {
@@ -1712,79 +2225,183 @@ textarea:is(.fld, .textarea) {
   gap: 12px;
 }
 
+/* The avatar keeps C-AVATAR's tier ring (shell.css .av-tN): the light disc, the conic ring, the white inner ring */
+.opost-av {
+  width: 42px;
+  height: 42px;
+  font-size: 13px;
+}
+
 .opost-who {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 3px;
   min-width: 0;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.74);
 }
 
 .opost-who b {
   color: #ffffff;
-  font: 500 15.5px/1.2 var(--ft);
+  font: 600 15px/1.2 var(--ft);
+}
+
+.opost-who > span {
+  overflow: hidden;
+  color: #a9a9b2;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .opost-ago {
+  align-self: flex-start;
   margin-left: auto;
-  color: rgba(255, 255, 255, 0.74);
+  color: #a9a9b2;
   font-size: 13px;
 }
 
+/* The sentence, five lines at most */
 .opost-s {
-  margin: 0;
-  font: 500 21px/1.3 var(--fd);
-  letter-spacing: -0.014em;
+  display: -webkit-box;
+  flex: none;
+  margin: 14px 0 0;
+  overflow: hidden;
+  color: #f2f2f4;
+  font: 400 17px/1.45 var(--ft);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  line-clamp: 5;
 }
 
-.opost-pills {
+/* The media block: the tier ring blurred low on the right, the key colour blurred high on the left. The top padding
+   keeps the tags clear of the figure when the block is at its smallest. The ring's glow is at 55% (the board: 62%),
+   so the 44px figure holds 3:1 over any tier's brightest stop with no help from the scrim below */
+.opost-m {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 120px;
+  margin-top: 16px;
+  padding: 48px 18px 18px;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+}
+
+.opost-m::before,
+.opost-m::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: 50%;
+}
+
+.opost-m::before {
+  right: -70px;
+  bottom: -110px;
+  width: 240px;
+  height: 240px;
+  background: var(--opost-ring, var(--heat));
+  filter: blur(34px);
+  opacity: 0.55;
+}
+
+.opost-m::after {
+  top: -60px;
+  left: -40px;
+  width: 120px;
+  height: 120px;
+  background: var(--heat);
+  filter: blur(40px);
+  opacity: 0.22;
+}
+
+.opost-tags {
+  position: absolute;
+  top: 14px;
+  left: 14px;
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.opost-fig {
-  display: grid;
   gap: 6px;
-  margin: auto 0 0;
 }
 
-.opost-fig .fig {
-  font-size: 64px;
+.opost-tag {
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  font: 500 12.5px/1.4 var(--ft);
+}
+
+/* "Shipped": the status green, not a tier's */
+.opost-tag.ok {
+  background: rgba(77, 209, 135, 0.18);
+  color: #8df3c1;
+}
+
+/* The figure and its unit line sit on a scrim, above the glows and under the text: a 35% black floor from the
+   block's foot to the top of the unit line (86px is the scrim's 40px top, the phone's 40px figure and the 6px gap),
+   then fading out over the figure, so the glows stay as drawn in the block's upper half. Measured for every tier
+   against its ring's brightest stop at full glow (c-ones-fan.test.ts): the unit line at the board's 82% white
+   holds 4.5:1 and the figure 3:1 (F-COLOR.contrast/1, WCAG 1.4.3) */
+.opost-fig {
+  margin: -40px -18px -18px;
+  padding: 40px 18px 18px;
+  background: linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.35),
+    rgba(0, 0, 0, 0.35) calc(100% - 86px),
+    rgba(0, 0, 0, 0)
+  );
+}
+
+.opost-big {
+  margin: 0;
+  color: #ffffff;
+  font: 600 44px/1 var(--fd);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
 }
 
 .opost-unit {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 14px;
+  margin: 6px 0 0;
+  color: rgba(255, 255, 255, 0.82);
+  font: 500 14px/1.35 var(--ft);
 }
 
+/* The two pills keep their size; on a narrow card or with larger text, Read the thread drops under Cheer */
 .opost-f {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 13.5px;
+  gap: 8px;
+  margin-top: 14px;
 }
 
+.opost-f > * {
+  flex: none;
+}
+
+/* Cheer, left: a pill with the count; pressed, the heart fills in and the pill takes the spark's tint */
 .opost-cheer {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 44px;
   min-height: 44px;
-  padding: 0 10px 0 6px;
-  margin-left: -6px;
+  box-sizing: border-box;
+  padding: 0 14px;
   border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  color: #e4e4ea;
+  font: 600 14px/1 var(--ft);
+  font-variant-numeric: tabular-nums;
 }
 
 button.opost-cheer {
@@ -1792,43 +2409,151 @@ button.opost-cheer {
 }
 
 button.opost-cheer:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--spark) 16%, transparent);
+  color: #ffc2a6;
 }
 
 button.opost-cheer[aria-pressed="true"] {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.14);
+  background: color-mix(in srgb, var(--spark) 20%, transparent);
+  color: #ff9a6e;
 }
 
-/* Pressed is more than a lighter fill: the flame fills in, as on the boards (F-A11Y.rules/4); static, no pop (DEC-109) */
+/* Pressed is more than a tint: the heart fills in, as on the boards (F-A11Y.rules/4). The fill is the pressed state's own;
+   the one pop on the person's own press is in motion.css (.on, BLD-D026) */
 button.opost-cheer[aria-pressed="true"] svg {
   fill: currentColor;
 }
 
-.opost-n {
-  margin-left: 8px;
-  color: rgba(255, 255, 255, 0.8);
+/* Read the thread (right), the companion card's action and See details: the board's quiet pill on the slab */
+.opost-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font: 500 14.5px/1 var(--ft);
+  white-space: nowrap;
   text-decoration: none;
+  cursor: pointer;
+}
+
+.opost-pill:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
 }
 
 .opost-t {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  color: #ffffff;
-  text-decoration: underline;
-  text-underline-offset: 4px;
-  text-decoration-color: rgba(255, 255, 255, 0.5);
+  padding: 0 8px 0 16px;
 }
 
-.opost .av-ring {
-  --avatarInRing: #2a2b30;
-  color: #ffffff;
-  box-shadow: inset 0 0 0 2px var(--slab);
+.opost-n {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.12);
+  font: 600 12.5px/1 var(--ft);
+  font-variant-numeric: tabular-nums;
 }
 
-.fan-empty {
-  max-width: 62ch;
+/* The companion card: an outline on the slab with a soft blue light, its words at the foot */
+.opost.opost-next {
+  justify-content: flex-end;
+  gap: 10px;
+  background: radial-gradient(
+    260px 220px at 80% 20%,
+    color-mix(in srgb, var(--blue) 22%, transparent),
+    transparent 70%
+  );
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.18);
+}
+
+.opost-nt {
+  margin: 0;
+  color: #ffffff;
+  font: 500 24px/1.2 var(--fd);
+  letter-spacing: -0.02em;
+}
+
+.opost-np {
+  margin: 0 0 8px;
+  color: #a9a9b2;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.opost-next .opost-t {
+  align-self: flex-end;
+  padding: 0 18px;
+}
+
+/* PhoneHome.dc.html's card */
+@media (max-width: 640px) {
+  .opost {
+    padding: 18px 16px 14px;
+  }
+
+  .opost-s {
+    font-size: 16px;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+  }
+
+  .opost-big {
+    font-size: 40px;
+  }
+}
+
+/* None: "No Ones yet" on the slab */
+.opost-empty {
+  padding: 26px 28px;
+  border-radius: var(--r-lg);
+  background: var(--slab);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.opost-et {
+  margin: 0;
+  color: #ffffff;
+  font: 500 20px/1.3 var(--fd);
+}
+
+.opost-ep {
+  max-width: 56ch;
+  margin: 8px 0 0;
+  color: #a9a9b2;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* The kit shows the fan on the slab it is drawn for (Home's Ones block) */
+.kit-slab {
+  display: grid;
+  gap: 40px;
+  padding: 44px 48px 48px;
+  border-radius: var(--r-lg);
+  background: var(--slab);
+  color: #ffffff;
+}
+
+.kit-slab-h {
+  margin: 0;
+  color: #ffffff;
+  font: 500 20px/1.3 var(--fd);
+}
+
+@media (max-width: 640px) {
+  .kit-slab {
+    padding: 28px 20px 32px;
+  }
 }
 
 /* ---------- C-FIELD.kinds: the 6-digit code and the question box ---------- */

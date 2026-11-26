@@ -16,6 +16,7 @@ Every detect, show and hide is written to `audit_log` with IDs, kinds and reason
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -36,6 +37,7 @@ SEALED_SOURCES = (
     "answer",
     "conversation",
     "edit",
+    "teamup",
 )  # idea_words_sealed.source (E-ENUMS sealed_source)
 DETAIL_SOURCES = (*SEALED_SOURCES, "file", "desk", "title", "part")  # what hide_into takes (BLD-C062)
 SWEPT_SOURCES = ("fix", "version", "similar", "run")  # hidden_details.source for swept copies only (BLD-C066)
@@ -79,6 +81,10 @@ class Hidden:
     counts: dict[str, int] = field(default_factory=dict)  # hidden (not shown) details by kind
     receipt: str | None = None  # "Hid 3 personal details from everyone but you: …"
     kinds_line: str = ""  # "Folio number, PAN and phone number"
+    # The gatekeeper's check of this text is complete (it answered, or the text is blank). False while the assistant
+    # is off or the gateway failed, so a caller that keeps its own re-check marker (lane B's desk texts, BLD-B278)
+    # never marks such a text done (BLD-C231).
+    gatekeeper_checked: bool = False
 
     @property
     def hidden_count(self) -> int:
@@ -223,7 +229,7 @@ def spans_of(details: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def summary(masked: str, details: list[dict[str, Any]]) -> Hidden:
+def summary(masked: str, details: list[dict[str, Any]], *, gatekeeper_checked: bool = False) -> Hidden:
     hidden = [d for d in details if d["state"] == "hidden"]
     counts = dict(Counter(str(d["kind"]) for d in hidden))
     return Hidden(
@@ -233,6 +239,7 @@ def summary(masked: str, details: list[dict[str, Any]]) -> Hidden:
         counts=counts,
         receipt=detect.receipt([str(d["masked"]) for d in hidden]),
         kinds_line=detect.kinds_line(str(d["kind"]) for d in hidden),
+        gatekeeper_checked=gatekeeper_checked,
     )
 
 
@@ -250,16 +257,39 @@ def sealed_key(idea_uuid: str, source_id: str) -> str:
     return f"{uuid.UUID(idea_uuid)}:{sid}"
 
 
-def _seal_words(conn: Conn, idea_uuid: str, source: str, source_id: str, owner_user: str, text: str) -> None:
-    """Seal the person's own words. A row under the same key for another idea or person is never overwritten."""
+def caller_id(idea_uuid: str, source: str, key: str) -> str:
+    """The caller's source id for a sealed row's key: the inverse of `sealed_key` for every caller today
+    (BLD-C231). Message, answer and conversation ids and a team-up request's id are uuids, kept as they are; lane C's
+    edits already start with the idea's uuid; a team-up decline reason ("<request id>:decline") or a draft's ask
+    ("<merge request id>:ask") was kept under the idea's uuid, which is dropped here."""
+    prefix = f"{uuid.UUID(idea_uuid)}:"
+    if source == "teamup" and key.startswith(prefix) and not is_uuid(key):
+        return key[len(prefix) :]
+    return key
+
+
+def _seal_words(
+    conn: Conn,
+    idea_uuid: str,
+    source: str,
+    source_id: str,
+    owner_user: str,
+    text: str,
+    *,
+    checked: bool = False,
+) -> None:
+    """Seal the person's own words. A row under the same key for another idea or person is never overwritten.
+    `checked`: the gatekeeper's check of these words is complete; when not, `gatekeeper_done_at` stays NULL and the
+    re-check sweep asks once the assistant is back (BLD-C231). New words replace the mark too."""
     key = sealed_key(idea_uuid, source_id)
     row = conn.execute(
-        "INSERT INTO idea_words_sealed (idea_uuid, source, source_id, owner_user_id, text_encrypted) "
-        "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (source, source_id) DO UPDATE SET text_encrypted = EXCLUDED.text_encrypted "
+        "INSERT INTO idea_words_sealed (idea_uuid, source, source_id, owner_user_id, text_encrypted, gatekeeper_done_at) "
+        "VALUES (%s, %s, %s, %s, %s, CASE WHEN %s THEN now() END) ON CONFLICT (source, source_id) DO UPDATE SET "
+        "text_encrypted = EXCLUDED.text_encrypted, gatekeeper_done_at = EXCLUDED.gatekeeper_done_at "
         "WHERE idea_words_sealed.idea_uuid = EXCLUDED.idea_uuid AND idea_words_sealed.owner_user_id = EXCLUDED.owner_user_id "
         "RETURNING id",
         (idea_uuid, source, key, owner_user,
-         seal_text("idea_words_sealed", "text_encrypted", f"{source}:{key}", text, vault=True)),
+         seal_text("idea_words_sealed", "text_encrypted", f"{source}:{key}", text, vault=True), checked),
     ).fetchone()  # fmt: skip
     if row is None:
         raise HideError(409, "conflict")
@@ -339,6 +369,25 @@ def forget(conn: Conn, idea_uuid: str, *, source: str, source_id: str) -> int:
     return removed
 
 
+def gate(conn: Conn, idea_uuid: str, text: str, *, source: str) -> detect.Gate:
+    """The gatekeeper's finds for `text`, asked with no hide lock and no row lock held (BLD-C234, L-HIDE.detect).
+
+    A caller that must take hide's lock first (BLD-C228: the lock before any row lock) asks here BEFORE it opens the
+    transaction that takes the lock, then passes the result as `gate=` to `hide_text`, `hide_message` or
+    `hide_into`. The model call (seconds on the real route) then runs with nothing held, and the lock covers only the
+    writes. Hide uses the finds only if the text is unchanged (`Gate.text_hash`); otherwise it asks again, as it does
+    today. Values the desk hides in between are still applied, because hide reads them under the lock (BLD-C067).
+    Nothing is stored. Call it with no transaction open: inside one, it still works but holds what that transaction
+    holds. With `ai.all` off the gate is empty and no model is called, as in `hide_into`. Check that the caller may
+    write on the idea before asking."""
+    if source not in DETAIL_SOURCES:
+        raise ValueError("unknown hide source")
+    idea_row(conn, idea_uuid)
+    with conn.transaction():  # the gateway's own writes, as in `_hide`
+        found = detect.gatekeeper_finds(conn, text, scope_for(idea_uuid))
+    return dataclasses.replace(found, text_hash=detect.text_hash(text))
+
+
 def hide_into(
     conn: Conn,
     idea_uuid: str,
@@ -353,7 +402,8 @@ def hide_into(
 ) -> Hidden:
     """Detect, store each value sealed, keep earlier "Show it" choices for the same values, and return the result.
     Re-running on an edited text keeps each detail's id where its value is still there. `gate`: the gatekeeper's
-    finds the caller already has (a file's text, asked piece by piece, `hide/files.py`); then no model is called here.
+    finds the caller already has (a file's text, asked piece by piece, `hide/files.py`; or `gate()` before the lock,
+    BLD-C234); then no model is called here, unless the gate belongs to another text.
 
     Call it inside the same transaction as the write that stores the masked copy (see `hide/__init__.py`): the
     idea's lock is held until that transaction ends, so a desk hide cannot land in between. Its own work runs in
@@ -383,6 +433,9 @@ def _hide(
         raise ValueError("unknown hide source")
     idea_row(conn, idea_uuid)
     scope = scope_for(idea_uuid)
+    if gate is not None and detect.usable(gate, text) is None:
+        log.info("hide.gate_stale", idea_id=idea_uuid, source_code=source)  # asked again below (BLD-C234)
+        gate = None
     if gate is None:
         gate = detect.Gate([])
         if gatekeeper:
@@ -424,7 +477,7 @@ def _hide(
         masked, _ = layout(text, kept)
         sealed = seal and source in SEALED_SOURCES and is_uuid(by)
         if sealed:
-            _seal_words(conn, idea_uuid, source, source_id, by, text)
+            _seal_words(conn, idea_uuid, source, source_id, by, text, checked=gate.checked)
         if kept or gone:
             audit(
                 conn,
@@ -442,7 +495,7 @@ def _hide(
         if gate.skipped:
             _gatekeeper_skipped(conn, idea_uuid, by, source, source_id, gate, recheck=sealed)
     log.info("hide.text_hidden", idea_id=idea_uuid, source_code=source, hidden_count=len(kept))
-    return summary(masked, kept), kept
+    return summary(masked, kept, gatekeeper_checked=gate.checked), kept
 
 
 RECHECK_JOB = "hide.recheck"

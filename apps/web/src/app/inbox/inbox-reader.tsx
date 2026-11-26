@@ -55,7 +55,9 @@ const TAB_LABELS: Record<InboxTab, string> = {
 };
 const ORDER: InboxTab[] = ["all", "needs_you", "unread", "archived"];
 const POLL_MS = 30_000;
-const DESKTOP = "(min-width: 760px)";
+/** Pairs with `inbox.css:697` and `components/review/qcard.css:111`, both `(max-width: 759px)`: change all three
+ * together (BLD-D027). */
+const DESKTOP = "(width > 759px)";
 
 type Group = "Today" | "This week" | "Earlier";
 

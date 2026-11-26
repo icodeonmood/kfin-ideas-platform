@@ -18,8 +18,11 @@ PY      := cd services/worker && uv run --frozen
 WEB     := cd apps/web &&
 # The Python that runs `make sarvam-live`; another checkout's worker venv works too (…/services/worker/.venv/bin/python).
 SARVAM_LIVE_PYTHON ?= uv run --frozen python
+# `make eval-live` (BLD-C229): the same choice of Python, and the model route (anthropic or bedrock).
+EVAL_LIVE_PYTHON ?= uv run --frozen python
+ROUTE := anthropic
 
-.PHONY: help setup build up down health migrate db-users seed demo demo-reset demo-remove test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data uat-deploy uat-rehearsal sarvam-live
+.PHONY: help setup build up down health migrate db-users seed demo demo-reset demo-remove test test-py test-web e2e eval lint lint-py lint-web lint-ci verify db-types killswitch clean-data uat-deploy uat-rehearsal uat-upgrade uat-rollback uat-restore-drill uat-rehearsal-upgrade sarvam-live eval-live
 
 help: ## List the commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-12s %s\n", $$1, $$2}'
@@ -75,15 +78,18 @@ demo-remove: ## Dev only: remove the demo without loading it again; run before e
 
 test: up migrate test-py test-web ## Unit and integration tests
 
+# BLD-A244: with TEST_RESULTS set (an absolute folder; CI sets it), the test targets also write JUnit XML there, the
+# CI report for the go/no-go. Unset, they run exactly as before.
+TEST_RESULTS ?=
 test-py:
-	$(PY) pytest -q
+	$(PY) pytest -q $(if $(TEST_RESULTS),--junitxml=$(TEST_RESULTS)/pytest.xml)
 
 test-web:
-	$(WEB) npx vitest run
+	$(WEB) npx vitest run $(if $(TEST_RESULTS),--reporter=default --reporter=junit --outputFile.junit=$(TEST_RESULTS)/vitest.xml)
 
 e2e: up seed ## Playwright end-to-end and accessibility checks (signs in as the seeded personas)
 	$(PY) python -m bootstrap.demo --set 1pc
-	$(WEB) E2E_BASE_URL="$(E2E_BASE_URL)" OIDC_ISSUER="$(OIDC_ISSUER)" \
+	$(WEB) E2E_BASE_URL="$(E2E_BASE_URL)" OIDC_ISSUER="$(OIDC_ISSUER)" $(if $(TEST_RESULTS),E2E_JUNIT_FILE="$(TEST_RESULTS)/e2e.xml") \
 		E2E_DATABASE_URL="postgres://ideas:ideas@localhost:$(POSTGRES_PORT)/ideas?sslmode=disable" npx playwright test
 
 eval: up ## Golden sets for every agent (model gates enforced on a real route only, BLD-076)
@@ -117,6 +123,10 @@ db-types: ## Regenerate Kysely types from the migrated dev database
 sarvam-live: ## Live check of the Sarvam client, your own key loaded in this terminal; never in CI (BLD-C177). ONLY=tts,…
 	cd services/worker && SPEECH_MODE=sarvam $(SARVAM_LIVE_PYTHON) -m speech.sarvam_live --only "$(ONLY)"
 
+# The model key is read from this terminal's environment by the script itself: it never appears on a command line here.
+eval-live: ## Real-model golden sets (gatekeeper, judge) on a throwaway database, your own key loaded in this terminal; never in CI (BLD-C229). ROUTE=bedrock
+	EVAL_LIVE_PYTHON="$(EVAL_LIVE_PYTHON)" scripts/eval/live.sh --route "$(ROUTE)"
+
 killswitch: ## Flip a kill switch: make killswitch NAME=submissions STATE=off REASON="…" ACTOR=REV-0001
 	$(PY) python -m core.killswitch set "$(NAME)" "$(STATE)" --reason "$(REASON)" --actor "$(ACTOR)"
 
@@ -128,3 +138,15 @@ uat-deploy: ## UAT from a clean database: make uat-deploy APP_ENV_FILE=… DB_EN
 
 uat-rehearsal: ## Rehearse the UAT deploy here with throwaway secrets, then tear it down (pauses the dev stack)
 	scripts/uat/rehearse.sh
+
+uat-upgrade: ## Update a running install to this checkout: make uat-upgrade APP_ENV_FILE=… DB_ENV_FILE=… [FROM=<tag or sha>] (docs/UAT.md)
+	FROM="$(FROM)" scripts/uat/upgrade.sh "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"
+
+uat-rollback: ## Put an install back to an upgrade's backup: make uat-rollback BACKUP=<dump> APP_ENV_FILE=… DB_ENV_FILE=…
+	scripts/uat/rollback.sh "$(BACKUP)" "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"
+
+uat-restore-drill: ## Restore drill on a running install (IT, before the Full go/no-go): make uat-restore-drill APP_ENV_FILE=… DB_ENV_FILE=… (docs/UAT.md)
+	scripts/uat/restore-drill.sh "$(APP_ENV_FILE)" "$(DB_ENV_FILE)"
+
+uat-rehearsal-upgrade: ## Rehearse install FROM, upgrade, rollback, upgrade; stop the dev stack first: make uat-rehearsal-upgrade FROM=<ref> [REHEARSE_APP_ENV=prod]
+	FROM="$(FROM)" REHEARSE_APP_ENV="$(REHEARSE_APP_ENV)" scripts/uat/rehearse-upgrade.sh

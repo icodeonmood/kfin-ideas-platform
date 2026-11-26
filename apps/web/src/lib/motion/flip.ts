@@ -37,6 +37,69 @@ export function isStill(t: Inverse): boolean {
 /** A layout morph measures at most this many elements per change (F-MOTION.rules/7). */
 export const FLIP_LIMIT = 180;
 
+/** A press holds a glide at most this long, so a press that never ends cannot leave it paused (BLD-D038). */
+export const HOLD_MAX_MS = 2_000;
+/** After a press ends with no click (dragged off, the right button), the held glide ends this much later. A phone's
+ * tap can send its click a frame after the press ends, so the glide never ends on the release itself (BLD-D038). */
+export const PRESS_GRACE_MS = 250;
+
+/**
+ * Motion never blocks input (F-MOTION.rules/5). A key or the wheel ends a running glide at once. A press holds it
+ * exactly where it is drawn, so the row the person pressed is still under the pointer when they let go, and the click
+ * ends it once the click has reached the row's link (BLD-D038, J-BROWSE/4). Ending the glide on the press moved the
+ * row out from under the pointer and the click landed on the list instead. A press that ends with no click ends the
+ * glide after PRESS_GRACE_MS; a cancelled press or the window losing focus ends it at once; a press holds it at most
+ * HOLD_MAX_MS. Resolves once every animation has settled, however it ended (a new re-sort finishing it included), and
+ * leaves no listener or timer behind.
+ */
+export function yieldToInput(running: readonly Animation[]): Promise<void> {
+  if (running.length === 0 || typeof window === "undefined") return Promise.resolve();
+  let soon: number | undefined; // the click's 0 ms timer or the release's grace
+  let hold: number | undefined; // the longest a press holds the glide
+  const clear = () => {
+    window.clearTimeout(soon);
+    window.clearTimeout(hold);
+    soon = hold = undefined;
+  };
+  const finishAll = () => {
+    clear();
+    running.forEach((a) => a.finish());
+  };
+  const finishIn = (ms: number) => {
+    window.clearTimeout(soon);
+    soon = window.setTimeout(finishAll, ms);
+  };
+  const onPress = () => {
+    clear();
+    // Only a glide still running is held: pausing a finished one would put it back to "paused"
+    running.forEach((a) => {
+      if (a.playState === "running") a.pause();
+    });
+    hold = window.setTimeout(finishAll, HOLD_MAX_MS);
+  };
+  // The click reaches the row's link and its handler first; the glide ends on the next task
+  const onClick = () => finishIn(0);
+  const onRelease = () => finishIn(PRESS_GRACE_MS);
+  // The window losing focus ends it; focus leaving an element inside the page (a press moves it) does not
+  const onBlur = (e: Event) => {
+    if (e.target === e.currentTarget) finishAll();
+  };
+  const on: [string, (e: Event) => void][] = [
+    ["keydown", finishAll],
+    ["wheel", finishAll],
+    ["pointercancel", finishAll],
+    ["blur", onBlur],
+    ["pointerdown", onPress],
+    ["pointerup", onRelease],
+    ["click", onClick],
+  ];
+  on.forEach(([ev, fn]) => window.addEventListener(ev, fn, { capture: true, passive: true }));
+  return Promise.allSettled(running.map((a) => a.finished)).then(() => {
+    on.forEach(([ev, fn]) => window.removeEventListener(ev, fn, { capture: true }));
+    clear();
+  });
+}
+
 export type FlipOptions = {
   /** How an element is matched before and after the change. Default: its data-flip attribute. Rows must keep the
    * same key when the order changes (F-MOTION.inside, "Lists re-sort"). */
@@ -51,8 +114,9 @@ export type FlipOptions = {
 /**
  * First, Last, Invert, Play. Measures the elements `get` returns, runs `change` (which must update the DOM before it
  * resolves: in React, wrap the state update in flushSync), then glides every matched element from where it was to
- * where it is. New elements fade in. Under reduced motion the change simply happens. Any key, click or wheel ends the
- * glide at once, so motion never blocks input (F-MOTION.rules/5).
+ * where it is. New elements fade in. Under reduced motion the change simply happens. A key or the wheel ends the glide
+ * at once; a press holds it where it is and the click ends it, so motion never blocks input (F-MOTION.rules/5,
+ * BLD-D038; see yieldToInput).
  */
 export async function flip(
   get: () => Iterable<HTMLElement>,
@@ -73,6 +137,9 @@ export async function flip(
   let seen = 0;
   for (const el of get()) {
     if (seen++ >= FLIP_LIMIT) break;
+    // A glide still running from a quick earlier change (a press holds it mid-glide) ends first, so the new one
+    // starts from where elements really are (BLD-D038)
+    el.getAnimations().forEach((a) => a.finish());
     const k = key(el);
     if (k) first.set(k, el.getBoundingClientRect());
   }
@@ -107,22 +174,15 @@ export async function flip(
     );
   }
   if (running.length === 0) return;
-
-  const finishAll = () => running.forEach((a) => a.finish());
-  const events = ["keydown", "pointerdown", "wheel"] as const;
-  events.forEach((e) => window.addEventListener(e, finishAll, { capture: true, passive: true }));
-  try {
-    await Promise.allSettled(running.map((a) => a.finished));
-  } finally {
-    events.forEach((e) => window.removeEventListener(e, finishAll, { capture: true }));
-  }
+  await yieldToInput(running);
 }
 
 /**
  * Lists re-sort (F-MOTION.inside): call in a component that renders a list whose order can change. Every row carries
  * data-flip with a key that stays the same when the order changes; when `key` changes (the sort, a filter), rows glide
- * from their old place to their new one (560 ms, the standard curve) and new rows fade in. React only; reduced motion
- * and server render do nothing.
+ * from their old place to their new one (560 ms, the standard curve) and new rows fade in. A key or the wheel ends the
+ * glide at once; a press holds it where it is and the click ends it (F-MOTION.rules/5, BLD-D038; see yieldToInput).
+ * React only; reduced motion and server render do nothing.
  */
 export function useFlipList(container: { current: HTMLElement | null }, key: unknown) {
   // Positions in page coordinates, so scrolling between two sorts never reads as movement
@@ -162,14 +222,8 @@ export function useFlipList(container: { current: HTMLElement | null }, key: unk
       );
     }
     if (running.length === 0) return;
-    // Motion never blocks input: a key, a click or the wheel ends the glide (F-MOTION.rules/5)
-    const finishAll = () => running.forEach((a) => a.finish());
-    const events = ["keydown", "pointerdown", "wheel"] as const;
-    events.forEach((ev) => window.addEventListener(ev, finishAll, { capture: true, passive: true }));
-    const done = Promise.allSettled(running.map((a) => a.finished)).then(() =>
-      events.forEach((ev) => window.removeEventListener(ev, finishAll, { capture: true })),
-    );
-    void done;
+    // Motion never blocks input: a key or the wheel ends the glide, a press holds it and the click ends it
+    void yieldToInput(running);
     // Only a change of `key` should animate; layout moves from scrolling or resizing are not re-sorts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);

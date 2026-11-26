@@ -345,7 +345,10 @@ def test_L_HIDE_files_3_DEC_107_a_customer_detail_marks_the_file_and_keeps_it_fr
 
     mine = F.get_item(db, att, kavya["id"])
     assert mine["state"] == "personal_data_found" and mine["customer_detail"] is True
-    assert mine["problem"] == "Found a PAN on page 2. Nobody can open it until it’s hidden."  # C-FILE.row
+    assert (
+        mine["problem"]
+        == "Found a PAN on page 2. Only you, the review desk and the Ones Committee can open it."
+    )  # C-FILE.row
     assert "hidden_note" not in mine and mine["view_url"]
     for who in ("kavya", "meera", "rohan", "dev"):
         assert F.content(db, att, cast[who]["id"])[0] == data
@@ -393,7 +396,8 @@ def test_L_HIDE_files_values_the_desk_hid_on_the_idea_are_hidden_in_a_file_too(
     row = _row(db, att)
     assert row["checks"]["found"] == [{"kind": "name", "page": None}] and row["hidden_note"] is None
     assert (
-        F.get_item(db, att, kavya["id"])["problem"] == "Found a name. Nobody can open it until it’s hidden."
+        F.get_item(db, att, kavya["id"])["problem"]
+        == "Found a name. Only you, the review desk and the Ones Committee can open it."
     )
 
 
@@ -732,7 +736,7 @@ def test_L_HIDE_files_1_DEC_103_the_gateway_failing_keeps_the_file_checking_then
     FAKE_SCRIPT.append(RouteError("connection"))
     assert run_one(db, "test-files")
     job = _job(db, att)
-    assert (job["state"], job["last_error"]) == ("queued", "CheckWaits")  # it tries again later
+    assert (job["state"], job["last_error"]) == ("queued", "CheckRetry")  # it tries again later (BLD-C236)
     assert _row(db, att)["file_state"] == "checking"
     assert F.get_item(db, att, kavya["id"])["state"] == "checking"
     assert _refused(F.content, db, att, kavya["id"]).code == "not_available"
@@ -764,10 +768,12 @@ def test_L_HIDE_files_1_DEC_103_a_file_never_skips_the_gatekeeper_whoever_switch
     db: Conn, cast: dict[str, Any]
 ) -> None:
     """Non-negotiable 4 (lane E's check, 18 Nov): with `ai.all` switched off by a person, or the gatekeeper held off
-    by the gateway's own switch-off, a file waits in `checking` (the job retries); it is never `checked` on the
-    patterns alone, so the crew never opens it without the gatekeeper."""
+    by the gateway's own switch-off, a file waits in `checking` (`JobWaits` since BLD-C225: the job runs again
+    without using a try); it is never `checked` on the patterns alone, so the crew never opens it without the
+    gatekeeper."""
     from core import killswitch
     from gateway.core import ACTOR as GATEWAY
+    from jobs.runner import JobWaits
 
     idea, kavya = cast["idea"], cast["kavya"]
 
@@ -777,7 +783,7 @@ def test_L_HIDE_files_1_DEC_103_a_file_never_skips_the_gatekeeper_whoever_switch
     )
     killswitch.clear_cache()
     try:
-        with pytest.raises(F.CheckWaits):
+        with pytest.raises(JobWaits):
             F.check(db, by_person)
     finally:
         killswitch.set_switch(db, "ai.all", "on", reason="Testing files: assistant back on", actor="REV-0001")
@@ -790,7 +796,7 @@ def test_L_HIDE_files_1_DEC_103_a_file_never_skips_the_gatekeeper_whoever_switch
     killswitch.set_switch(db, "agent.gatekeeper", "off", reason="Error rate over the limit", actor=GATEWAY)
     killswitch.clear_cache()
     try:
-        with pytest.raises(F.CheckWaits):
+        with pytest.raises(JobWaits):
             F.check(db, waits)
     finally:
         killswitch.set_switch(
@@ -803,15 +809,16 @@ def test_L_HIDE_files_1_DEC_103_a_file_never_skips_the_gatekeeper_whoever_switch
 def test_L_HIDE_files_1_BLD_C107_switched_off_the_check_waits_and_switched_on_it_checks_the_same_file(
     db: Conn, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The 18 Nov rule (BLD-C107): `check` raises `CheckWaits` while `ai.all` is off, then, switched back on, checks
-    the same stored file (no new upload) and records that the gatekeeper ran. A switch-off while the file is read
-    (between two pieces, the second `held()`) waits the same way. A person's switch-off through the job runner
-    leaves the job queued with `CheckWaits` and the file checking, then the next run checks it."""
+    """The 18 Nov rule (BLD-C107, amended by BLD-C225): `check` waits (`JobWaits`) while `ai.all` is off, then,
+    switched back on, checks the same stored file (no new upload) and records that the gatekeeper ran. A switch-off
+    while the file is read (between two pieces, the second `held()`) waits the same way. A person's switch-off
+    through the job runner leaves the job queued with `waiting_gatekeeper` and the file checking, then the next run
+    checks it."""
     from core import killswitch
     from gateway.routes import FAKE_SCRIPT
     from hide import detect
     from jobs import handlers  # noqa: F401 (registers the job types)
-    from jobs.runner import run_one
+    from jobs.runner import JobWaits, run_one
 
     idea, kavya = cast["idea"], cast["kavya"]
 
@@ -825,7 +832,7 @@ def test_L_HIDE_files_1_BLD_C107_switched_off_the_check_waits_and_switched_on_it
     key = _row(db, att)["store_key"]
     switch("off")
     try:
-        with pytest.raises(F.CheckWaits):
+        with pytest.raises(JobWaits):
             F.check(db, att)
     finally:
         switch("on")
@@ -849,7 +856,7 @@ def test_L_HIDE_files_1_BLD_C107_switched_off_the_check_waits_and_switched_on_it
     monkeypatch.setattr(detect, "gatekeeper_finds", then_off)
     FAKE_SCRIPT.append(_gatekeeper_says())
     try:
-        with pytest.raises(F.CheckWaits):
+        with pytest.raises(JobWaits):
             F.check(db, long)
     finally:
         monkeypatch.setattr(detect, "gatekeeper_finds", real)
@@ -868,7 +875,7 @@ def test_L_HIDE_files_1_BLD_C107_switched_off_the_check_waits_and_switched_on_it
     finally:
         switch("on")
     job = _job(db, queued)
-    assert (job["state"], job["last_error"]) == ("queued", "CheckWaits")
+    assert (job["state"], job["last_error"]) == ("queued", "waiting_gatekeeper")
     assert _row(db, queued)["file_state"] == "checking"
     _first_due(db, queued)
     assert run_one(db, "test-files")
@@ -942,6 +949,16 @@ def test_A_API_files_a_row_that_cannot_be_written_leaves_no_stored_copy(
     assert db.execute("SELECT 1 FROM attachments WHERE store_key = %s", (put[0],)).fetchone() is None
 
 
+def _start_swept(db: Conn, complete: bool = True) -> None:
+    """A worker start sweep's audit row, as `start_sweep` records it: the attachments sweep deletes only while the
+    latest one says it finished (BLD-C242). audit_log is append-only, so a test ends on a finished one."""
+    db.execute(
+        "INSERT INTO audit_log (actor, action, entity, after) VALUES "
+        "('system:files', 'file.start_sweep', 'files:start_sweep', %s)",
+        (Jsonb({"count": 0, "complete": complete}),),
+    )
+
+
 def test_L_HIDE_files_a_failed_uploads_copy_goes_after_the_retention_period(
     db: Conn, cast: dict[str, Any]
 ) -> None:
@@ -949,16 +966,51 @@ def test_L_HIDE_files_a_failed_uploads_copy_goes_after_the_retention_period(
     att = _add(db, kavya, make.pdf(["Synthetic"]), idea_id=cast["idea"]["idea_id"])["id"]
     F.gave_up(db, att)
     key = _row(db, att)["store_key"]
+    _start_swept(db)
+    assert F.start_sweep_done(db)
     assert F.sweep_failed_copies(db) == 0 and store.exists(get_settings().s3_bucket_quarantine, key)
     db.execute(
         "UPDATE attachments SET checks = checks || jsonb_build_object('ended_at', now() - interval '25 hours') "
         "WHERE id = %s",
         (att,),
     )
+    # BLD-C242: while the latest worker start sweep did not finish, nothing goes, however old the copy, even after an
+    # earlier one finished (lane A: the start sweep brings r3's files back from these copies).
+    _start_swept(db, complete=False)
+    assert not F.start_sweep_done(db)
+    assert F.sweep_failed_copies(db) == 0 and store.exists(get_settings().s3_bucket_quarantine, key)
+    _start_swept(db)
     assert F.sweep_failed_copies(db) == 1
     assert not store.exists(get_settings().s3_bucket_quarantine, key)
     assert F.sweep_failed_copies(db) == 0
     assert _refused(F.retry, db, att, kavya["id"]).code == "upload_again"
+
+
+def test_BLD_C242_the_hourly_files_sweep_job_deletes_a_failed_copy_past_its_retention(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """The sweep's only caller was drafts.purge, which is retired (BLD-C074): `files.sweep` runs it every hour."""
+    from jobs import handlers  # noqa: F401 - registers the handlers
+    from jobs.runner import HANDLERS, run_one
+    from jobs.schedule import EVERY, RETIRED
+
+    assert EVERY["files.sweep"] == 60 and "files.sweep" in HANDLERS and "files.sweep" not in RETIRED
+    att = _add(db, cast["kavya"], make.pdf(["Synthetic"]), idea_id=cast["idea"]["idea_id"])["id"]
+    F.gave_up(db, att)
+    key = _row(db, att)["store_key"]
+    db.execute(
+        "UPDATE attachments SET checks = checks || jsonb_build_object('ended_at', now() - interval '25 hours') "
+        "WHERE id = %s",
+        (att,),
+    )
+    _start_swept(db)
+    db.execute("DELETE FROM jobs WHERE state = 'queued'")  # only the sweep is there to take
+    db.execute("INSERT INTO jobs (type) VALUES ('files.sweep')")
+    assert run_one(db, "test-worker")
+    assert not store.exists(get_settings().s3_bucket_quarantine, key)
+    assert _row(db, att)["checks"]["copy"] == "gone"
+    job = db.execute("SELECT state FROM jobs WHERE type = 'files.sweep' ORDER BY id DESC").fetchone()
+    assert job["state"] == "done"
 
 
 # ---- the worker's routes (A-API.files behind the internal token) ----------------------------------------------------

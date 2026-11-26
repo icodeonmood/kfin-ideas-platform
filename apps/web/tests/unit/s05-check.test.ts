@@ -242,7 +242,7 @@ function sendView(extra: Partial<SendViewResponse> = {}): SendViewResponse {
   };
 }
 
-type Answer = { status?: number; body?: unknown; fail?: boolean };
+type Answer = { status?: number; body?: unknown; fail?: boolean; hold?: Promise<void> };
 type Route = (method: string, url: string, body: unknown) => Answer | undefined;
 
 let calls: Array<{ method: string; url: string; body: unknown; headers: Record<string, string> }>;
@@ -261,6 +261,7 @@ function serve(routes: Route[]) {
       for (const r of routes) {
         const a = r(method, url, body);
         if (!a) continue;
+        if (a.hold) await a.hold; // a reply still on its way
         if (a.fail) throw new TypeError("Failed to fetch");
         const status = a.status ?? 200;
         return { ok: status >= 200 && status < 300, status, json: async () => a.body };
@@ -484,13 +485,14 @@ describe("S-05 rules (model.ts, BLD-C130)", () => {
     });
     expect(
       v("personal_data_found", {
-        problem: "Found a phone number on page 2. Nobody can open it until it’s hidden.",
+        problem:
+          "Found a phone number on page 2. Only you, the review desk and the Ones Committee can open it.",
       }),
     ).toMatchObject({
       status: "found",
       message: {
         kind: "warn",
-        text: "Found a phone number on page 2. Nobody can open it until it’s hidden.",
+        text: "Found a phone number on page 2. Only you, the review desk and the Ones Committee can open it.",
       },
       actions: ["hide", "remove"],
     });
@@ -511,6 +513,51 @@ describe("S-05 rules (model.ts, BLD-C130)", () => {
       size: "intranet.kfintech.example",
     });
     expect(JSON.stringify(link)).not.toMatch(/couldn/);
+  });
+
+  it("BLD-C225 L-HIDE.files: a check waiting for the gatekeeper reads the worker's waiting line, still checking with Remove", () => {
+    const waiting = "Waiting for the personal details check. It runs when the assistant is back.";
+    const row = model.rowView(
+      {
+        key: "k",
+        name: "branch-call-log-nov.pdf",
+        item: {
+          id: "f1",
+          kind: "file",
+          name: "branch-call-log-nov.pdf",
+          type: "application/pdf",
+          size: 140 * 1024,
+          state: "checking",
+          added_by: KAVYA,
+          added_at: "",
+          problem: waiting,
+        },
+      },
+      25,
+    );
+    expect(row).toMatchObject({ status: "checking", statusText: waiting, actions: ["remove"] });
+    expect(row.message).toBeUndefined();
+    // C-FILE.row BLD-C237 (WCAG 2.2.2): the waiting row asks for no spinner; a check that runs still has one.
+    expect(row.waiting).toBe(true);
+    const running = model.rowView(
+      {
+        key: "k2",
+        name: "branch-call-log-nov.pdf",
+        item: {
+          id: "f2",
+          kind: "file",
+          name: "branch-call-log-nov.pdf",
+          type: "application/pdf",
+          size: 140 * 1024,
+          state: "checking",
+          added_by: KAVYA,
+          added_at: "",
+        },
+      },
+      25,
+    );
+    expect(running.status).toBe("checking");
+    expect(running.waiting).toBeUndefined();
   });
 
   it("C-FILE.row BLD-C139: infected and locked rows say the server's words when sent, else the drawn line, with Remove only", () => {
@@ -718,6 +765,26 @@ describe("S-05 screen: sorting (BLD-C131, L-SORT)", () => {
     expect(text(document.querySelector(".ck-count"))).toBe("Check it, part 3 of 6");
     expect(buttons().some((b) => /Sorting Suggested, not confirmed yet/.test(nameOf(b)))).toBe(false);
     expect(button(/^Sorting, done Investor service, saves time, saves cost$/)).toBeTruthy();
+  });
+
+  it("BLD-C233, L-SORT, BLD-C176: a late Confirm sorting reply never moves someone who has opened another part", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const slowConfirm: Route = (m, u, b) =>
+      m === "PATCH" && u.endsWith("/sorting") && (b as { confirm?: boolean }).confirm
+        ? { body: sorting(true), hold: held }
+        : undefined;
+    await mount([slowConfirm, ...base()]);
+    await click(button("Looks right"));
+    expect(h1()).toBe("Is it sorted right?");
+    await click(button("Confirm sorting")); // its reply is held
+    await railTo("Send it"); // the person moves on before the reply comes
+    const here = h1();
+    expect(here).not.toBe("Is it sorted right?");
+    release();
+    await settle();
+    expect(h1()).toBe(here); // still where the person is
+    expect(button(/^Sorting, done /)).toBeTruthy(); // and the sorting reads as done
   });
 
   it("J-RECOVER/10: one choice changes the area and is saved at once", async () => {
@@ -973,7 +1040,8 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
                 body: {
                   ...uploaded,
                   state: "personal_data_found",
-                  problem: "Found a phone number on page 1. Nobody can open it until it’s hidden.",
+                  problem:
+                    "Found a phone number on page 1. Only you, the review desk and the Ones Committee can open it.",
                 },
               }
             : undefined,
@@ -994,7 +1062,7 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
     await act(async () => vi.advanceTimersByTime(2100));
     await settle();
     expect(document.body.textContent).toContain(
-      "Found a phone number on page 1. Nobody can open it until it’s hidden.",
+      "Found a phone number on page 1. Only you, the review desk and the Ones Committee can open it.",
     );
     await click(button("Hide it for me"));
     expect(document.body.textContent).toContain("Phone hidden");
@@ -1058,6 +1126,26 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
     expect(button(/Proof 1 file$/)).toBeTruthy();
   });
 
+  it("C-PROMPT.attach (DEC-124, BLD-C214): a file added in the prompt box is listed again on Check it under Proof", async () => {
+    // As the draft read sends a file added in the box (draft/store.py `_files`): on the draft, with no message_id.
+    const f = {
+      id: "ATT-2026-000101",
+      kind: "file",
+      name: "Rejection codes reference.pdf",
+      type: "application/pdf",
+      size: 880640,
+      state: "checked",
+      added_by: { id: KAVYA.id },
+      added_at: "2026-11-20T10:00:00.000Z",
+    } as unknown as FileItem;
+    await mount(base({ draft: draft({ files: [f] }) }));
+    await railTo("Proof");
+    expect(h1()).toBe("Anything that shows it?");
+    expect(text(document.querySelector(".ck-proof .flist"))).toContain("Rejection codes reference.pdf");
+    expect(button("Remove Rejection codes reference.pdf")).toBeTruthy();
+    expect(button(/Proof 1 file$/)).toBeTruthy();
+  });
+
   it("J-RECOVER/9 BLD-E001: a link is kept as typed, never opened, with Remove; not a link says what a link looks like", async () => {
     await mount([
       (m, u, b) =>
@@ -1118,7 +1206,8 @@ describe("S-05 screen: proof (BLD-C133, C-FILE)", () => {
   it("DEC-107 BLD-C064: while files.blackout is off, a file with a detail found offers Remove but not Hide it for me", async () => {
     const found = {
       ...checking("f4", "branch-call-log.pdf", "personal_data_found"),
-      problem: "Found a phone number on page 1. Nobody can open it until it’s hidden.",
+      problem:
+        "Found a phone number on page 1. Only you, the review desk and the Ones Committee can open it.",
     };
     await mount(base({ draft: draft({ files: [found] }) }));
     await railTo("Proof");

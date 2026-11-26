@@ -8,8 +8,8 @@
 # PSEUDONYM_VAULT_KEY; it builds each service's own settings and is never handed to a container as a whole.
 #
 # Steps: preflight → build → empty database check → migrations → service logins → company repo seed (no dev
-# overlay outside dev) → start → golden sets on the model route (failing agents switch off), or Mode B if no route
-# is approved → smoke tests. Stops at the first failure.
+# overlay outside dev) → start → Mode B (ai.all off, whatever the model route: golden sets never run in a deployed
+# database, BLD-A245) → smoke tests. Stops at the first failure.
 # Optional: UAT_DATA_DIR (default ./.data-uat), UAT_WEB_PORT (3100), UAT_PROJECT (kfin-ideas-uat).
 set -euo pipefail
 
@@ -86,6 +86,13 @@ if [[ "$SPEECH_MODE" == "sarvam" ]]; then
   export SPEECH_HOSTED_APPROVAL="${approval:-DEC-108}"
   [[ -n "$SPEECH_HOSTED_APPROVAL" ]] || fail "SPEECH_MODE is sarvam: SPEECH_HOSTED_APPROVAL must be set (DEC-108)"
 fi
+# Email through Graph (BLD-A243, DEC-131): the client secret is the worker's alone, in the database env file; the app
+# env file also reaches the web app, so the secret is refused there. The preflight checks the other Graph settings.
+[[ -z "$(value GRAPH_CLIENT_SECRET "$APP_ENV_FILE")" ]] \
+  || fail "GRAPH_CLIENT_SECRET belongs in the database env file only: the app env file also reaches the web app"
+if [[ "$(value EMAIL_MODE "$APP_ENV_FILE")" == "graph" ]]; then
+  [[ -n "$(value GRAPH_CLIENT_SECRET "$DB_ENV_FILE")" ]] || fail "EMAIL_MODE is graph: put GRAPH_CLIENT_SECRET in the database env file"
+fi
 [[ -z "$(value INTERNAL_API_TOKEN "$DB_ENV_FILE")" ]] \
   || fail "INTERNAL_API_TOKEN belongs in the app env file only: never next to SPEECH_SERVICE_TOKEN"
 compose build --quiet worker web $SPEECH_BUILD
@@ -126,17 +133,33 @@ step "6/8 Start the stack"
 compose up -d --wait --wait-timeout 240
 
 step "7/8 Model route"
+# BLD-A245 (the product lead's rule): golden sets never run in a deployed database, in any APP_ENV; real-model calls
+# happen only on a throwaway database. So the deploy starts in Mode B whatever the route: ai.all off, audited. Full
+# mode is a hand step after scripts/eval/live.sh passes (docs/UAT.md, "Switching to full mode (mode A)").
+mode_b_reason="Mode B until InfoSec approves the model route (D1)"
 if compose exec -T worker python -m bootstrap.preflight ai-route-ready; then
-  echo "model route configured: golden sets run on it; an agent that fails switches itself off (§7.6)"
-  compose run --rm -T -v "$ROOT/eval/golden:/app/eval/golden:ro" worker python -m evalrunner --switch-off-failing \
-    || echo "golden sets: at least one agent failed or could not run; any switched off is listed above"
-else
-  compose exec -T worker python -m core.killswitch set ai.all off \
-    --reason "Mode B until InfoSec approves the model route (D1)" --actor ops:uat-deploy
+  echo "model route configured: golden sets are not run on this database; run scripts/eval/live.sh --server (UAT.md, Switching to full mode), then an admin switches ai.all on"
+  mode_b_reason="Mode B until scripts/eval/live.sh passes and the product lead says go (BLD-A245)"
 fi
+compose exec -T worker python -m core.killswitch set ai.all off --reason "$mode_b_reason" --actor ops:uat-deploy
 
 step "8/8 Smoke tests"
 compose exec -T worker python -m bootstrap.smoke --web-url http://web:3000 --fresh
 
+# Record what is installed (BLD-A234): `make uat-upgrade` reads it as the version it upgrades from. A folder the
+# deploy account cannot write only costs the record; the first upgrade then needs FROM=<this tag>.
+installed_sha="$(git rev-parse HEAD 2>/dev/null || true)"
+if [[ -n "$installed_sha" ]] && mkdir -p "$UAT_DATA_DIR/ops" 2>/dev/null && printf '{"sha": "%s", "tag": "%s", "at": "%s"}\n' \
+  "$installed_sha" "$(git describe --tags --exact-match HEAD 2>/dev/null || true)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  2>/dev/null > "$UAT_DATA_DIR/ops/installed.json"; then
+  echo "Recorded $UAT_DATA_DIR/ops/installed.json ($installed_sha)."
+else
+  echo "Could not write $UAT_DATA_DIR/ops/installed.json: the first make uat-upgrade needs FROM=<this tag>."
+fi
 printf '\nUAT stack is up: web on port %s (project %s).\n' "${UAT_WEB_PORT:-3100}" "$PROJECT"
-printf 'Next: grant the first admin with\n  docker compose -p %s ... exec worker python -m identity.grants grant --employee-id <ID> --role admin --reason "…" --actor ops:<code>\n' "$PROJECT"
+# Production mode (BLD-A235): APP_ENV read as preflight reads it (stripped). The install loaded nobody.
+if [[ "$(value APP_ENV "$APP_ENV_FILE" | tr -d '[:space:]')" == "prod" ]]; then
+  printf 'Next (APP_ENV=prod, no people yet): docs/UAT.md After the deploy, 1a to 2b: the first admin signs in, then the HR import through stdin, then the grants.\n'
+else
+  printf 'Next: grant the first admin with\n  docker compose -p %s ... exec worker python -m identity.grants grant --employee-id <ID> --role admin --reason "…" --actor ops:<code>\n' "$PROJECT"
+fi

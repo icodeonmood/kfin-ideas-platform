@@ -150,6 +150,11 @@ export function CheckIt({
   const [config, setConfig] = useState<ConfigResponse | null>(initialConfig);
   const [uploads, setUploads] = useState<UploadConfig | null>(null);
   const [part, setPart] = useState<PartNo>(1);
+  // The part open now, for replies that arrive after an await (BLD-C233): a late answer never moves the page.
+  const partRef = useRef<PartNo>(1);
+  useEffect(() => {
+    partRef.current = part;
+  }, [part]);
   const [dir, setDir] = useState<1 | -1>(1);
   const [done, setDone] = useState<ReadonlySet<PartNo>>(new Set());
   /** BLD-C156: the parts the saved step is past when the draft was read, ticked after a reload as well. */
@@ -449,7 +454,11 @@ export function CheckIt({
     setSorting(r.body);
     if (r.body.confirmed) {
       setTriedUnconfirmed(false);
-      if (!phone) go(nextIn(orderRef.current, 2), { forwardFrom: 2 });
+      if (phone) return;
+      // On to the next part only if the sorting is still open: someone who opened another part while the reply was
+      // on its way stays where they are (BLD-C176's "never move the page under someone who is busy", BLD-C233).
+      if (partRef.current === 2) go(nextIn(orderRef.current, 2), { forwardFrom: 2 });
+      else setDone((d) => new Set([...d, 2]));
     }
   };
 

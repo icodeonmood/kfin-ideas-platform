@@ -331,13 +331,20 @@ def live_merge_into(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
 
 
 def hidden(conn: Conn, idea_uuid: str) -> list[dict[str, Any]]:
-    """Hidden details as their masked form only ("Folio ••••89"); the value stays in the vault (DEC-103)."""
+    """Hidden details as their masked form only ("Folio ••••89"); the value stays in the vault (DEC-103). A file's
+    details only for the idea's own files (`IDEA_OWN`, as `files` below): never those of a file added for the
+    conversation, sent or not, nor of a file on an answer to the review desk, nor its name's (`<id>:name`)
+    (BLD-C223; the answer files as lane F's `checked()` leaves them out, BLD-F103)."""
     return [
         dict(r)
         for r in conn.execute(
             "SELECT h.id, h.kind, h.masked, h.state, h.reason, h.shown_at, h.source, a.name AS file_name "
             "FROM hidden_details h LEFT JOIN attachments a ON h.source = 'file' AND a.id = h.source_id "
-            "WHERE h.idea_uuid = %s ORDER BY h.created_at",
+            "WHERE h.idea_uuid = %s AND h.source <> 'teamup' "
+            "AND NOT (h.source = 'file' AND EXISTS (SELECT 1 FROM attachments c "
+            "WHERE c.id::text = split_part(h.source_id, ':', 1) "
+            "AND NOT (c.purpose = 'idea' AND c.conversation_entry_id IS NULL AND c.answer_id IS NULL))) "
+            "ORDER BY h.created_at",
             (idea_uuid,),
         ).fetchall()
     ]
@@ -350,7 +357,7 @@ def files(conn: Conn, idea_uuid: str) -> list[dict[str, Any]]:
         for r in conn.execute(
             "SELECT id, kind, name, mime, bytes, pages, item_count, file_state, state, link_scope, hidden_note, "
             "uploaded_by_code, created_at FROM attachments WHERE idea_uuid = %s AND parent_id IS NULL "
-            "AND answer_id IS NULL AND conversation_entry_id IS NULL ORDER BY created_at",
+            "AND answer_id IS NULL AND purpose = 'idea' AND conversation_entry_id IS NULL ORDER BY created_at",
             (idea_uuid,),
         ).fetchall()
     ]

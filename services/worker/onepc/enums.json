@@ -656,7 +656,8 @@
         "message",
         "answer",
         "conversation",
-        "edit"
+        "edit",
+        "teamup"
       ]
     },
     "flag_variant": {

@@ -353,7 +353,11 @@ def shared_line(ctx: Ctx) -> str:
 
 def checked(ctx: Ctx) -> tuple[str, dt.datetime] | None:
     """'Checked and matched. 1 folio number hidden, 2 similar ideas found.' (Messages.md), when the idea left the
-    check: the details hidden in what was shared (not in later messages) and the similar ideas found."""
+    check: the details hidden in what was shared (not in later messages) and the similar ideas found. A file's
+    details count only for the idea's own files (`IDEA_OWN`, as ideapage's `hidden()`): never those of a file added
+    for the conversation, sent or not, nor its name's (`<id>:name`), so adding one never changes the line others
+    read (DEC-127 (2), BLD-C223); nor those of a file added with an answer to the desk, which was never shared at the
+    check (BLD-F103)."""
     row = ctx.conn.execute(
         "SELECT min(at) AS at FROM idea_status_history WHERE idea_uuid = %s AND from_status = 'checking'",
         (ctx.idea["id"],),
@@ -361,8 +365,12 @@ def checked(ctx: Ctx) -> tuple[str, dt.datetime] | None:
     if row is None or row["at"] is None:
         return None
     kinds = ctx.conn.execute(
-        "SELECT kind, count(*) AS n FROM hidden_details WHERE idea_uuid = %s AND source IN ('message', 'file') "
-        "AND state = 'hidden' GROUP BY kind ORDER BY count(*) DESC, kind",
+        "SELECT h.kind, count(*) AS n FROM hidden_details h WHERE h.idea_uuid = %s "
+        "AND h.source IN ('message', 'file') AND h.state = 'hidden' "
+        "AND NOT (h.source = 'file' AND EXISTS (SELECT 1 FROM attachments c "
+        "WHERE c.id::text = split_part(h.source_id, ':', 1) "
+        "AND NOT (c.purpose = 'idea' AND c.conversation_entry_id IS NULL AND c.answer_id IS NULL))) "
+        "GROUP BY h.kind ORDER BY count(*) DESC, h.kind",
         (ctx.idea["id"],),
     ).fetchall()
     similar = ctx.conn.execute(

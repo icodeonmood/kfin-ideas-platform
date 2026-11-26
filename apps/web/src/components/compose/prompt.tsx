@@ -5,8 +5,11 @@
  * Enter sends, Shift and Enter adds a line (C-PROMPT.keys). Speaking (C-PROMPT.voice) runs on `useVoiceCapture`:
  * recording starts only when the person presses the mic, the words appear in the box as they are heard, and the
  * blocked warning sits under the box as an alert. Copy is the boards' (reference/copy/Compose.md, PhoneCompose.md).
+ * The tool row reads, from the left: the "+" (`attach`, DEC-124), Move to Review with its readiness line in Capture
+ * first (`move`, DEC-125), the key hint, then the mic and the round button at the right. Files show as rows above the
+ * words (`files`) and the picker opens between the words and the tool row (`picker`), as the Home board draws them.
  */
-import { forwardRef, useEffect, useId, type ReactNode } from "react";
+import { forwardRef, useEffect, useId, useState, type ReactNode } from "react";
 
 import {
   IconArrowUp,
@@ -100,9 +103,14 @@ export type PromptProps = {
   /** The English copy of a voice note in another language, under the box (L-DRAFT.voice/4); one line per note
    * when the box holds several (BLD-C150). */
   english?: string | readonly string[] | null;
-  /** C-PROMPT.anatomy/2: the attach button (C-FILE.uploader), first in the tool row. Mounted by a later round once
-   * POST /api/files lands (c/files-2, BLD-C124); until then the row has the mic and send only. */
+  /** C-PROMPT.anatomy/2: the "+" that opens the attach picker (DEC-124, C-FILE.uploader), first in the tool row. */
   attach?: ReactNode;
+  /** C-PROMPT.attach: the files and links in the box, as rows above the words (the Home board's `attachments`). */
+  files?: ReactNode;
+  /** The attach picker, open between the words and the tool row (Home.md, `attachments=Picker open`). */
+  picker?: ReactNode;
+  /** Capture first (DEC-125): "Move to Review" and its readiness line, after the "+" in the tool row. */
+  move?: ReactNode;
   /** Lines under the box (help, starters), in the screen's words. */
   children?: ReactNode;
   className?: string;
@@ -157,12 +165,17 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
     micFirst,
     english,
     attach,
+    files,
+    picker,
+    move,
     children,
     className,
     sending,
     sendHref,
   } = props;
   const id = useId();
+  // Typed once (BLD-C240): the hint never comes back after the box is cleared, as the board's `!draft && !typed`.
+  const [typed, setTyped] = useState(false);
   const v = voice?.state ?? null;
   const status = v?.status ?? "idle";
   const recording = status === "recording" || status === "sending" || status === "asking";
@@ -184,25 +197,34 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
         ? PROMPT_COPY.sayInstead
         : PROMPT_COPY.speakInstead;
   const roundIsMic = Boolean(voice) && micFirst && !has && !recording && !blocked;
+  // While the words are sending the small mic does nothing, and says so as Send does (lane D, BLD-C232).
+  const micInert = Boolean(sending) && !recording;
   const canSend = has && !recording && !sending;
   const englishLines = english ? (typeof english === "string" ? [english] : english) : [];
 
   const mic = voice ? (
     <button
       type="button"
-      className={`mic2${recording ? " stop" : ""}${blocked ? " blk" : ""}${roundIsMic ? " hid" : ""}`}
+      className={`mic2${recording ? " stop" : ""}${blocked ? " blk" : ""}${roundIsMic ? " hid" : ""}${micInert ? " dim" : ""}`}
       aria-pressed={recording}
       aria-busy={status === "asking" || status === "sending" ? true : undefined}
+      aria-disabled={micInert ? true : undefined}
       aria-label={micLabel}
       title={micLabel}
-      onClick={() => (recording ? voice.stop() : voice.start())}
+      onClick={() => {
+        if (micInert) return;
+        if (recording) voice.stop();
+        else voice.start();
+      }}
     >
       {blocked ? <IconMicOff /> : <IconMic />}
     </button>
   ) : null;
 
   return (
-    <div className={`cbox prompt${className ? ` ${className}` : ""}`}>
+    // `picking` while the picker is open, so a screen can style around it without :has() (Firefox 111, the floor).
+    <div className={`cbox prompt${picker ? " picking" : ""}${className ? ` ${className}` : ""}`}>
+      {files}
       <div className="tx">
         {/* The mirror sizes the box: with no words yet it holds the placeholder, so the example is never cut. */}
         <Mirror
@@ -221,7 +243,10 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
           placeholder={placeholder}
           readOnly={recording}
           aria-describedby={`${id}-help`}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            setTyped(true);
+            onChange(e.target.value);
+          }}
           onKeyDown={(e) => {
             if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
             if (e.metaKey || e.ctrlKey) {
@@ -236,17 +261,19 @@ export const Prompt = forwardRef<HTMLTextAreaElement, PromptProps>(function Prom
           rows={2}
         />
       </div>
-      <div className="cfoot">
+      {picker}
+      <div className={`cfoot${attach || move ? " tools" : ""}`}>
+        {attach}
+        {move}
         <p className="cnt" id={`${id}-help`}>
           {recording ? VOICE_LISTENING : has && keyHint ? PROMPT_COPY.keys : null}
         </p>
         <span className="vh" role="status">
           {status === "recording" ? VOICE_LISTENING : ""}
         </span>
-        {attach}
         {mic}
         <span className="sendw">
-          {roundIsMic ? (
+          {roundIsMic && !typed ? (
             <span className="vhint" aria-hidden="true">
               <b>{PROMPT_COPY.tapToSpeak}</b>
               <span>{PROMPT_COPY.notRecording}</span>

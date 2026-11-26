@@ -657,7 +657,8 @@ export const ONEPC = {
         "message",
         "answer",
         "conversation",
-        "edit"
+        "edit",
+        "teamup"
       ]
     },
     "flag_variant": {

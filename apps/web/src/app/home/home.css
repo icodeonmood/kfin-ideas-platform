@@ -62,6 +62,13 @@
   text-align: left;
 }
 
+/* WF-02 (BLD-C220, C-PROMPT.voice): "Tap to start speaking" over the round button, as both Home boards draw it, but
+   never over the open picker (Home.dc.html). The prompt carries `picking` while the picker is open (BLD-C243): no
+   :has(), which Firefox 111, the floor, drops. */
+.hm .cz .hm-prompt.picking .vhint {
+  display: none;
+}
+
 .hm-pnote {
   margin: 12px 0 0;
   font-size: 13.5px;
@@ -339,7 +346,7 @@
 
 /* Two columns: both start level. globals.css's old `section + section` gap pushed the second column 40px down;
  * stacked (1100px and narrower) that gap stays as it was (BLD-D017). */
-@media (min-width: 1101px) {
+@media (width > 1100px) {
   .hm-grid > section {
     margin-top: 0;
   }
@@ -656,10 +663,9 @@
   letter-spacing: -0.02em;
 }
 
+/* The second line is the heading's size in the board's grey, #9C9CA6 on the slab: 6.5:1 (BLD-D020) */
 .hm-o-title span {
-  font: 400 16px/1.4 var(--ft);
-  letter-spacing: 0;
-  color: #b4b4bd;
+  color: #9c9ca6;
 }
 
 .hm-o-empty {
@@ -681,35 +687,6 @@
   font-size: 15px;
   line-height: 1.5;
   color: #b4b4bd;
-}
-
-.hm-o-next {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.hm-o-nt {
-  margin: 0;
-  font: 500 22px/1.25 var(--fd);
-  color: #ffffff;
-}
-
-.hm-o-np {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.5;
-  color: #b4b4bd;
-}
-
-.hm-o-more {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  font: 500 15px/1 var(--ft);
-  text-decoration: underline;
-  text-underline-offset: 4px;
 }
 
 /* ---------- narrower windows (F-SPACE.breakpoints) ---------- */
@@ -778,6 +755,18 @@
     margin-top: 20px;
   }
 
+  /* PhoneHome.dc.html draws the hint on a phone too; Share's phone layout hides it (compose.css), Home keeps it. */
+  .hm .cz .hm-prompt .vhint {
+    display: flex;
+  }
+
+  /* BLD-C240 (lane D): on a phone the hint goes while the words box has focus, so it never sits over what is typed.
+     No :has() (Firefox 111, the floor, drops it): the textarea is the only focusable thing in `.tx`, a sibling before
+     `.cfoot`, where the hint is. */
+  .hm .cz .hm-prompt .tx:focus-within ~ .cfoot .vhint {
+    display: none;
+  }
+
   .hm-pnote {
     order: 3;
   }
@@ -823,5 +812,9 @@
   .hm-o-head {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .hm-o-title {
+    font-size: 24px;
   }
 }

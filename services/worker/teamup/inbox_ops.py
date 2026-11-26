@@ -35,9 +35,13 @@ def request_id_of(item_row: dict[str, Any]) -> str:
 
 
 def _module(name: str) -> Any:
+    """Lane A's module, or None only when that module itself is not there; any other import error is raised, so a
+    broken lane A module fails loudly instead of reading as "not loaded yet" (f-teamup-5.delta review, BLD-F093)."""
     try:
         return importlib.import_module(name)
-    except ImportError:
+    except ModuleNotFoundError as exc:
+        if exc.name != name:
+            raise
         return None
 
 

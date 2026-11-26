@@ -1,15 +1,17 @@
 import type { NextConfig } from "next";
 
 /*
- * Security headers for every page. The microphone is allowed only on the share pages, where a person can record a
- * voice note in quick capture (DEC-096); every other page keeps it, and the camera and location, switched off for
+ * Security headers for every page. The microphone is allowed for this site's own origin on every page, never for
+ * another origin or anything the site embeds (DEC-128, amending DEC-096's /share-only rule): a Permissions-Policy is
+ * fixed when the document loads, and the app's links and router.push are client-side routes that keep the first
+ * page's document, so a person who lands on Home and goes on to Share a problem, or speaks into Home's own box
+ * (WF-02) or an answer on S-R3, keeps the policy the first page had. The camera and location stay switched off for
  * this site and anything it embeds. Kept in this file (not imported) so the config loads on its own.
  */
 export type Header = { key: string; value: string };
 export type HeaderRule = { source: string; headers: Header[] };
 
-export const PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), interest-cohort=()";
-export const PERMISSIONS_POLICY_SHARE = "camera=(), microphone=(self), geolocation=(), interest-cohort=()";
+export const PERMISSIONS_POLICY = "camera=(), microphone=(self), geolocation=(), interest-cohort=()";
 
 const base: Header[] = [
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -17,11 +19,10 @@ const base: Header[] = [
   { key: "Referrer-Policy", value: "same-origin" },
 ];
 
-/** Next.js applies every matching rule in order, and a later rule's value wins for the same key. */
+/** One rule for every path: Next.js would apply every matching rule in order, a later value winning for a key. */
 export function headerRules(): HeaderRule[] {
   return [
     { source: "/:path*", headers: [...base, { key: "Permissions-Policy", value: PERMISSIONS_POLICY }] },
-    { source: "/share/:path*", headers: [{ key: "Permissions-Policy", value: PERMISSIONS_POLICY_SHARE }] },
   ];
 }
 
@@ -40,7 +41,7 @@ const nextConfig: NextConfig = {
     proxyClientMaxBodySize: "26mb",
   },
   async headers() {
-    return headerRules(); // the microphone only on /share (DEC-096)
+    return headerRules(); // the microphone for this site only, on every page (DEC-128)
   },
 };
 

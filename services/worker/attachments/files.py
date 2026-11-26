@@ -16,8 +16,18 @@ A file's life (`attachments.file_state`, E-ENUMS.file):
    A checked or found file moves to the clean bucket; the scan's verdict, not the bucket, decides who opens it.
    When the scanner, OCR, the store or the gatekeeper does not answer, the file stays `checking` and the job tries
    again; after its last try the file is `upload_failed`, with Try again. It is never `checked` without the
-   gatekeeper: while `ai.all` or `agent.gatekeeper` is switched off, by a person or a process, it waits the same
-   way (non-negotiable 4, DEC-103; BLD-C107).
+   gatekeeper (non-negotiable 4, DEC-103; BLD-C107). While `ai.all` or `agent.gatekeeper` is switched off, by a
+   person or a process, or the day's budget is spent, the check waits without using a try (`JobWaits`, BLD-C225):
+   before the virus scan, so no scan is repeated while it is off, the file stays `checking` with
+   `checks.waiting_for` "gatekeeper", and its row reads `WAITING_LINE`. The ticker's watch runs waiting checks
+   within a tick of the switches coming back on (`requeue_waiting`, BLD-C226); the 300-second step is only the
+   fallback. A spent budget waits too, as `WAITING_BUDGET` every 30 minutes, which the watch leaves alone, so no
+   scan or OCR is repeated each tick until tomorrow's budget (BLD-C236). Each other wait (`CheckRetry`: the scanner,
+   the store, OCR, the gateway failing, kept as "gateway") is still a try, and its reason is kept in
+   `checks.waiting_for`, so a file that gives up says which wait it died of; only the gatekeeper's own wait shows
+   `WAITING_LINE` (BLD-C236).
+   At worker start, files that an earlier build (r3) let die of those waits are put back to waiting
+   (`start_sweep`, BLD-C227): nothing is checked or opened by it.
 4. The old `state` column is kept in step only for the checked states, which are its `clean`; nothing else is ever
    marked clean, so the old `/api/attachments/:id` route never serves a file DEC-107 keeps from people.
 
@@ -28,9 +38,19 @@ path as the boards show it ("kfintech.sharepoint.com/ops/R07").
 Who sees and opens what (DEC-107, P-PRODUCT.privacy; the coordinator's rule of 17 Nov), in `rights`:
 - the person who added it: the row in every state; opens it once checked or found;
 - checked, hidden_checked and ok: the idea's sharers, its crew, the review desk and the Ones Committee;
-- personal_data_found: the review desk and the Ones Committee as well, never the crew or a co-sharer;
-- a draft's files, and a draft answer's: only the person who added them;
+- personal_data_found: the review desk and the Ones Committee as well, never the crew or a sharer who did not add it;
+- a conversation file (`purpose = 'conversation'`, the "+" in S-08's box, DEC-124) with a customer detail found:
+  only the person who uploaded it, the review desk and the Ones Committee, never the idea's lead or sharer who did
+  not upload it, the crew, previews or anyone else (DEC-127, decided; `opens_found_conversation_file`, BLD-C222);
+- a draft's files, a draft answer's, and a conversation file not yet on an entry: only the person who added them
+  (BLD-C222);
+- before both checks have finished (the virus scan and the gatekeeper; `checking` until then, never on the pattern
+  check alone) nobody but the person who added it sees the row, and nobody opens it (DEC-127);
 - everyone else: not found.
+
+A file's `purpose` is `idea` (Proof, the edit page, an answer) or `conversation` (BLD-C216). Every reader of an idea's
+own files reads `purpose = 'idea' AND conversation_entry_id IS NULL` (`IDEA_OWN`), so a conversation file never
+shows among them. A conversation file still not on an entry a day after it was added is removed by the sweep.
 Logs, errors and audit carry IDs, states and kinds only (non-negotiable 3).
 """
 
@@ -56,7 +76,10 @@ from core.config import get_settings
 from core.db import Conn
 from core.logging import get_logger
 from desk.store import CUSTOMER_DETAIL, DESK_SEES, FILES_CHECKED, READERS, code_of, has_role, own_codes
+from hide import core as hide_core
 from hide import files as hide_files
+from jobs.runner import JobWaits
+from jobs.runner import log as jobs_log
 from onepc.context import open_text, seal_text
 
 log = get_logger("files")
@@ -66,6 +89,27 @@ OCR_TIMEOUT_S = 240.0
 CHECKING = "checking"
 VIEWABLE: tuple[str, ...] = ("checked", "hidden_checked", CUSTOMER_DETAIL)  # a stored copy that can be opened
 FINAL_FAILED = ("infected", "locked", "too_big", "upload_failed")
+IDEA, CONVERSATION = "idea", "conversation"  # attachments.purpose (BLD-C216)
+# The idea's own files: never one added for the conversation, sent or not (both conditions, so a row that is half
+# one and half the other is never shown as the idea's). Callers prefix the columns when they join.
+IDEA_OWN = "purpose = 'idea' AND conversation_entry_id IS NULL"
+UNSENT_CONVERSATION_HOURS = 24  # a conversation file not on an entry after this long is removed (BLD-C216)
+# Waiting for the gatekeeper (BLD-C225 to BLD-C227). The names are pinned by lane A's upgrade and its rehearsal.
+GATEKEEPER = "gatekeeper"  # `checks.waiting_for` while the check waits for it
+WAITING_GATEKEEPER = "waiting_gatekeeper"  # the job's `last_error` while it waits (a reason, not a failure)
+WAIT_STEP_S = 300  # the fallback step: the watch runs waiting checks within a tick of the switch-on
+# The day's budget spent: the job's `last_error`, which `requeue_waiting` does not touch, and a longer step, since the
+# budget comes back tomorrow, not within a tick (BLD-C236). The row still reads `WAITING_LINE`.
+WAITING_BUDGET = "waiting_budget"
+BUDGET_WAIT_S = 1800
+GATEWAY = (
+    "gateway"  # `checks.waiting_for` after a counted gateway failure: the assistant is on, so no waiting line
+)
+NO_WAIT = "none"  # `checks.waiting_for` of a file that gave up on an error that was not a wait
+BATCH = 50  # rows per commit in the switch-on re-queue and the start sweep
+SYSTEM = "system:files"
+# To confirm later (HR, DEC-123): the line a file's row shows while it waits for the gatekeeper.
+WAITING_LINE = "Waiting for the personal details check. It runs when the assistant is back."
 
 MIME = {
     "pdf": "application/pdf",
@@ -167,14 +211,39 @@ class Viewer:
     sharer: bool = False  # a credited sharer of the idea (`own_codes`)
     crew: bool = False  # on the idea's crew
     desk: bool = False  # the review desk or the Ones Committee (`desk.store.READERS`)
+    lead: bool = False  # the idea's own sharer (its contributor), not a co-sharer from a merge
 
 
-def rights(state: str, kind: str, *, draft: bool, answer_unsent: bool, viewer: Viewer) -> tuple[bool, bool]:
-    """(sees the row, opens the file). Pure, so every row of the rule has its own unit test."""
+def opens_found_conversation_file(viewer: Viewer) -> bool:
+    """DEC-127 (decided by the product lead, 22 Nov), kept in this one place: a conversation file in which our checks
+    find a customer detail opens only for the person who uploaded it, the review desk and the Ones Committee
+    (`desk`, `desk.store.READERS`). Never for the idea's lead or sharer who did not upload it, the crew, previews or
+    anyone else. `rights` reads it, so `_rights` and every route here do too (`GET /files/:id`, `/view`); a change
+    to DEC-127 is a change to this line only (BLD-C222)."""
+    return viewer.uploader or viewer.desk
+
+
+def rights(
+    state: str,
+    kind: str,
+    *,
+    draft: bool,
+    answer_unsent: bool,
+    viewer: Viewer,
+    conversation: bool = False,
+    unsent: bool = False,
+    gatekeeper_ran: bool = True,
+) -> tuple[bool, bool]:
+    """(sees the row, opens the file). Pure, so every row of the rule has its own unit test. `conversation` is a file
+    added for the conversation (BLD-C216) and `unsent` one of those still on no entry: it is the uploader's alone,
+    like a draft's file (DEC-127, BLD-C222). A found conversation file follows `opens_found_conversation_file`.
+    With `gatekeeper_ran` false (the function of that name) only its uploader sees it (DEC-127: never on patterns)."""
     if viewer.uploader:
         see = True
-    elif draft or answer_unsent:
-        see = False  # a draft's files, and a draft answer's, stay with the person who added them
+    elif draft or answer_unsent or (conversation and unsent) or not gatekeeper_ran:
+        see = False  # a draft's files, a draft answer's and an unsent conversation file stay with their uploader
+    elif conversation and state == CUSTOMER_DETAIL:
+        see = opens_found_conversation_file(viewer)  # DEC-127: never the idea's lead or sharer, nor the crew
     elif viewer.desk:
         see = state in DESK_SEES
     elif viewer.sharer or viewer.crew:
@@ -236,14 +305,33 @@ def _viewer(conn: Conn, row: dict[str, Any], user_id: str) -> Viewer:
         ).fetchone()
         is not None
     )
-    return Viewer(uploader=uploader, sharer=sharer, crew=crew, desk=has_role(conn, user_id, READERS))
+    lead = code is not None and code == row["idea_code"]
+    return Viewer(
+        uploader=uploader, sharer=sharer, crew=crew, desk=has_role(conn, user_id, READERS), lead=lead
+    )
+
+
+def gatekeeper_ran(row: dict[str, Any]) -> bool:
+    """Whether the gatekeeper has run on this file (DEC-127: never opened on the pattern check alone). A 1% Club file
+    (`file_state` set) is never checked or found without it (BLD-C107), so its state already says so. A file from the
+    old pipeline (no `file_state`) could be marked clean on the patterns alone (`checks.gatekeeper` false while
+    `attachments.deep_check` was off): it counts only with `checks.gatekeeper` true (BLD-C222)."""
+    if row.get("file_state"):
+        return True
+    return (row.get("checks") or {}).get("gatekeeper") is True
 
 
 def _rights(conn: Conn, row: dict[str, Any], user_id: str) -> tuple[Viewer, bool, bool]:
+    """`rights` for a loaded row (`_ROW`, every column): every route here decides through this. A conversation file
+    on no entry yet (`conversation_entry_id` NULL) is unsent: a non-uploader gets not found for its row and its
+    copy, exactly as for an id that does not exist (BLD-C222)."""
     v = _viewer(conn, row, user_id)
+    conversation = row.get("purpose") == CONVERSATION
     see, opens = rights(
         effective_state(row), str(row.get("kind") or "file"), draft=row["idea_status"] == "draft",
         answer_unsent=row.get("answer_id") is not None and row.get("answer_sent_at") is None, viewer=v,
+        conversation=conversation, unsent=conversation and row.get("conversation_entry_id") is None,
+        gatekeeper_ran=gatekeeper_ran(row),
     )  # fmt: skip
     return v, see, opens
 
@@ -292,7 +380,7 @@ def item_json(conn: Conn, row: dict[str, Any], *, uploader: bool, opens: bool) -
         out["count"] = int(row["item_count"])
     if row.get("hidden_note"):
         out["hidden_note"] = row["hidden_note"]
-    problem = _problem(row, state, uploader=uploader)
+    problem = problem_line(row, state, uploader=uploader)
     if problem:
         out["problem"] = problem
     if kind == "link":
@@ -306,13 +394,16 @@ def item_json(conn: Conn, row: dict[str, Any], *, uploader: bool, opens: bool) -
     return out
 
 
-def _problem(row: dict[str, Any], state: str, *, uploader: bool) -> str | None:
+def problem_line(row: dict[str, Any], state: str, *, uploader: bool) -> str | None:
+    """The FileItem's `problem` line; the draft read (`draft.store._files`) gives the same line (BLD-E076)."""
     if state == CUSTOMER_DETAIL:
         # C-FILE.row's found line is the uploader's, with Hide it for me and Remove file. The pack has no line for
         # the review desk's view of such a file: it reads `customer_detail` (a copy gap, not invented here).
         if not uploader:
             return None
         return hide_files.found_line(hide_files.FileFinds.from_codes((row.get("checks") or {}).get("found")))
+    if state == CHECKING and (row.get("checks") or {}).get("waiting_for") == GATEKEEPER:
+        return WAITING_LINE  # in place of an endless "Checking for personal details" (BLD-C225)
     if state == "upload_failed":
         return UPLOAD_FAILED
     if state == "too_big":
@@ -336,7 +427,11 @@ def items_for(
 ) -> list[dict[str, Any]]:
     """The files and links on an idea (or one answer) that this person may see, oldest first: for the draft and
     the edit page (S-05, S-06B), which list them in `Draft.files` and `Idea.files`."""
-    sql = _ROW.replace("WHERE a.id = %s", "WHERE a.idea_uuid = %s AND a.kind IN ('file', 'link')")
+    sql = _ROW.replace(
+        "WHERE a.id = %s",
+        "WHERE a.idea_uuid = %s AND a.kind IN ('file', 'link') "
+        "AND a.purpose = 'idea' AND a.conversation_entry_id IS NULL",  # never a conversation file (BLD-C216)
+    )
     args: list[Any] = [idea_uuid]
     if answer_id is not None:
         sql += " AND a.answer_id = %s"
@@ -369,24 +464,96 @@ def _is_uuid(value: object) -> bool:
     return True
 
 
+def purpose_of(given: str | None, *, idea_id: str | None) -> str:
+    """`for` on `POST /files` (DEC-124, BLD-C216): absent, the file is the idea's own; "conversation" is the "+" in
+    the conversation's box and needs `idea_id`. Any other value, or "conversation" without an idea: 422."""
+    if given is None:
+        return IDEA
+    if given != CONVERSATION:
+        raise FileRefused(422, "for_invalid", "", field="for")
+    if not idea_id:
+        raise FileRefused(422, "target_required", "", field="idea_id")
+    return CONVERSATION
+
+
+_IDEA_BY = {
+    "id": "SELECT id AS idea_uuid FROM ideas WHERE id = %s",
+    "idea_id": "SELECT id AS idea_uuid FROM ideas WHERE idea_id = %s",
+    "answer": "SELECT s.idea_uuid FROM answers an JOIN questions q ON q.id = an.question_id "
+    "JOIN question_sets s ON s.id = q.set_id WHERE an.id = %s",
+}
+
+
+def _hide_lock_first(conn: Conn, by: str, value: str) -> None:
+    """L-HIDE's lock on the file's idea before any row lock (BLD-C067, BLD-C228): `accept` and `accept_link` reach
+    hide (`hide_name`) after `_owner`'s row locks, and lane F's team-up and lane B's desk take hide's lock before the
+    idea's or the answer's row. The idea's uuid is read with no lock; a row gone by the row lock answers as before."""
+    row = conn.execute(_IDEA_BY[by], (value,)).fetchone()
+    if row is not None:
+        hide_core.lock(conn, str(row["idea_uuid"]))
+
+
+def _conversation_owner(conn: Conn, user_id: str, code: str, idea_id: str) -> Owner:
+    """A file for the conversation of a shared idea: only a reader lane F lets attach (`convo.access.reader`'s
+    `may_attach`: the sharer, the review desk and the Ones Committee). Anyone who may not read the conversation, or
+    may read it without attaching, finds nothing there (404, never 403), so the answer never says the idea exists;
+    a withdrawn or merged idea, to someone who may attach, is closed (409)."""
+    from convo import access
+    from convo.store import Refused
+
+    column = "idea_id" if str(idea_id).startswith("IDEA-") else "id"
+    if column == "id" and not _is_uuid(idea_id):
+        raise _not_found()
+    _hide_lock_first(conn, column, idea_id)
+    row = conn.execute(
+        f"SELECT id, idea_id, contributor_code, status FROM ideas WHERE {column} = %s FOR UPDATE",  # noqa: S608 (fixed)
+        (idea_id,),
+    ).fetchone()
+    if row is None or row["status"] == "draft":
+        raise _not_found()  # a draft has no conversation
+    idea = dict(row)
+    try:
+        reader = access.reader(conn, idea, user_id)
+    except Refused:
+        raise _not_found() from None
+    if not reader.may_attach:
+        raise _not_found()
+    if idea["status"] in ("withdrawn", "merged"):
+        raise FileRefused(409, "idea_closed", "")
+    return Owner(str(idea["id"]), code, user_id)
+
+
 def _owner(
-    conn: Conn, user_id: str, *, draft_id: str | None, idea_id: str | None, answer_id: str | None
+    conn: Conn,
+    user_id: str,
+    *,
+    draft_id: str | None,
+    idea_id: str | None,
+    answer_id: str | None,
+    purpose: str = IDEA,
 ) -> Owner:
     """Where the file goes, and that this person may add it there (A-API.files: exactly one of the three).
     - a draft: its owner only;
     - a shared idea: a credited sharer (`own_codes`), while it is not withdrawn or merged;
+    - a shared idea's conversation (`purpose` "conversation"): `_conversation_owner`;
     - an answer: the sharer whose draft answer it is, while the set is open and the answer not yet sent, as lane
       B's answer rules allow (`desk.asking.save_answer`); never wider. The idea is the answer's idea.
     Anyone else finds nothing there."""
     given = [x for x in (draft_id, idea_id, answer_id) if x]
     if len(given) != 1:
         raise FileRefused(422, "target_required", "", field="draft_id")
+    if purpose == CONVERSATION and not idea_id:
+        raise FileRefused(422, "target_required", "", field="idea_id")
     code = code_of(conn, user_id) if _is_uuid(user_id) else None
     if code is None:
         raise _not_found()
+    if purpose == CONVERSATION:
+        return _conversation_owner(conn, user_id, code, str(idea_id))
     if draft_id:
         if not _is_uuid(draft_id):
             raise _not_found()
+        # Hide's lock first, keyed by the lower-case uuid as hide's own lock is (BLD-C228).
+        hide_core.lock(conn, str(uuid.UUID(str(draft_id))))
         row = conn.execute(
             "SELECT id, contributor_code, status FROM ideas WHERE id = %s FOR UPDATE", (draft_id,)
         ).fetchone()
@@ -397,6 +564,7 @@ def _owner(
         column = "idea_id" if str(idea_id).startswith("IDEA-") else "id"
         if column == "id" and not _is_uuid(idea_id):
             raise _not_found()
+        _hide_lock_first(conn, column, idea_id)
         row = conn.execute(
             f"SELECT id, contributor_code, status FROM ideas WHERE {column} = %s FOR UPDATE",  # noqa: S608 (fixed)
             (idea_id,),
@@ -416,6 +584,7 @@ def _owner(
 
     if not _is_uuid(answer_id):
         raise _not_found()
+    _hide_lock_first(conn, "answer", str(answer_id))
     row = conn.execute(
         "SELECT an.id, an.by_code, an.sent_at, s.idea_uuid, s.state, i.contributor_code, i.status "
         "FROM answers an JOIN questions q ON q.id = an.question_id JOIN question_sets s ON s.id = q.set_id "
@@ -502,16 +671,22 @@ def accept(
     draft_id: str | None = None,
     idea_id: str | None = None,
     answer_id: str | None = None,
+    purpose: str = IDEA,
 ) -> dict[str, Any]:
     """`POST /files`: store the bytes in quarantine and queue the checks. Returns the FileItem, `checking`. If the
-    row cannot be written after the bytes are stored, the stored copy is deleted again (no orphan in the store)."""
+    row cannot be written after the bytes are stored, the stored copy is deleted again (no orphan in the store).
+    `purpose` "conversation" is a file for the idea's conversation (BLD-C216); its checks are the same (DEC-107)."""
+    if purpose not in (IDEA, CONVERSATION):
+        raise FileRefused(422, "for_invalid", "", field="for")
     cfg = uploads()
     kind = screen(data, name, cfg)
     s = get_settings()
     stored: str | None = None
     try:
         with conn.transaction():
-            owner = _owner(conn, user_id, draft_id=draft_id, idea_id=idea_id, answer_id=answer_id)
+            owner = _owner(
+                conn, user_id, draft_id=draft_id, idea_id=idea_id, answer_id=answer_id, purpose=purpose
+            )
             att_id = _next_id(conn)
             key = _key(att_id)
             clean_name = _clean_name(name)
@@ -524,24 +699,24 @@ def accept(
             stored = key
             conn.execute(
                 "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, uploaded_by_user, name, mime, bytes, "
-                "sha256, store_key, state, kind, file_state, answer_id, checks) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'quarantine', 'file', %s, %s, %s)",
+                "sha256, store_key, state, kind, file_state, answer_id, checks, purpose) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'quarantine', 'file', %s, %s, %s, %s)",
                 (att_id, owner.idea_uuid, owner.code, user_id, shown[:200], _shown_mime(kind, clean_name),
                  len(data), hashlib.sha256(data).hexdigest(), key, CHECKING, owner.answer_id,
-                 Jsonb({"type": kind})),
+                 Jsonb({"type": kind}), purpose),
             )  # fmt: skip
             conn.execute(
                 "INSERT INTO jobs (type, payload, dedupe_key) VALUES (%s, %s, %s)",
                 (JOB, Jsonb({"attachment_id": att_id}), f"{JOB}:{att_id}"),
             )
             _audit(conn, user_id, "file.added", owner.idea_uuid,
-                   {"file_id": att_id, "type": kind, "answer_id": owner.answer_id})  # fmt: skip
+                   {"file_id": att_id, "type": kind, "answer_id": owner.answer_id, "purpose": purpose})  # fmt: skip
             row = _load(conn, att_id)
     except BaseException:
         if stored is not None:
             _delete_quietly(s.s3_bucket_quarantine, stored)
         raise
-    log.info("files.added", attachment_id=att_id, file_type=kind, byte_count=len(data))
+    log.info("files.added", attachment_id=att_id, file_type=kind, byte_count=len(data), purpose_code=purpose)
     return item_json(conn, row, uploader=True, opens=False)
 
 
@@ -631,9 +806,15 @@ def accept_link(
 # ---- the check (job `file.check`) -------------------------------------------------------------------------------
 
 
-class CheckWaits(Exception):
-    """The check cannot run yet (the scanner, OCR, the store or the gatekeeper is not answering): the job retries;
-    after its last try the file is `upload_failed`, with Try again. The message is a reason code only."""
+class CheckRetry(Exception):
+    """The check cannot run yet (the scanner, OCR, the store or the gateway is not answering): the job retries;
+    after its last try the file is `upload_failed`, with Try again. The message is a reason code only, and `check`
+    keeps it in `checks.waiting_for`. A gatekeeper that is switched off is not this: it is `JobWaits` (BLD-C225).
+    The job's `last_error` is "CheckRetry". r3 raised it as `CheckWaits` and wrote that name, which is how
+    `reset_r3_waits` finds r3's jobs and leaves this build's retries in their backoff (BLD-C236)."""
+
+
+CheckWaits = CheckRetry  # r3's name for it, kept for code that imports it; the jobs now record "CheckRetry"
 
 
 ENDS_COPY = ("not_checkable",)  # a failure Try again cannot change: the quarantine copy goes at once
@@ -661,11 +842,14 @@ def _finish(conn: Conn, row: dict[str, Any], state: str, code: str) -> str:
             return str(live["file_state"]) if live else "missing"
         if (state != "upload_failed" or code in ENDS_COPY) and row.get("store_key"):
             store.delete(s.s3_bucket_quarantine, row["store_key"])
+        # A file that gave up (`check_failed`) keeps the wait it died of, or "none": so every such row from this
+        # build has `waiting_for`, and only r3's rows lack it (`start_sweep`, BLD-C227). Any other end drops it.
         conn.execute(
             "UPDATE attachments SET file_state = %s, state = %s, updated_at = now(), "
-            "checks = coalesce(checks, '{}'::jsonb) || jsonb_build_object('result', %s::text, 'ended_at', now()) "
-            "WHERE id = %s",
-            (state, old_state(state), code, row["id"]),
+            "checks = (CASE WHEN %s THEN coalesce(checks, '{}'::jsonb) || jsonb_build_object('waiting_for', "
+            "coalesce(checks->>'waiting_for', %s::text)) ELSE coalesce(checks, '{}'::jsonb) - 'waiting_for' END) "
+            "|| jsonb_build_object('result', %s::text, 'ended_at', now()) WHERE id = %s",
+            (state, old_state(state), code == "check_failed", NO_WAIT, code, row["id"]),
         )
         _audit(conn, "system:files", "file.checked", str(row["idea_uuid"]),
                {"file_id": row["id"], "state": state, "result": code})  # fmt: skip
@@ -689,10 +873,46 @@ def _extract(kind: str, data: bytes, types: tuple[str, ...]) -> Extracted:
     return got
 
 
+def gatekeeper_on(conn: Conn) -> bool:
+    """`ai.all` and `agent.gatekeeper` both on, read from the table past the 10-second cache, so a switch-on is
+    seen at once here and by the gateway after it (the cache is refilled from this read)."""
+    from core import killswitch
+
+    killswitch.clear_cache()
+    return all(killswitch.is_on(name, conn) for name in hide_files.GATEKEEPER_SWITCHES)
+
+
+def _note_wait(conn: Conn, att_id: str, reason: str) -> None:
+    """Keep why the check waits (`checks.waiting_for`) on a file still checking. Its own statement on the runner's
+    autocommit connection: no transaction here reaches hide, so hide's lock order is untouched (BLD-C228)."""
+    conn.execute(
+        "UPDATE attachments SET checks = coalesce(checks, '{}'::jsonb) || jsonb_build_object('waiting_for', %s::text) "
+        "WHERE id = %s AND file_state = %s",
+        (reason, att_id, CHECKING),
+    )
+
+
+def _gatekeeper_wait(conn: Conn, att_id: str, *, budget: bool = False) -> JobWaits:
+    """The file waits for the gatekeeper (BLD-C225): it stays checking, its row reads `WAITING_LINE`, and the job
+    runs again after the step without using a try. Never a skip of the gatekeeper (non-negotiable 4). `budget`: the
+    day's budget is spent, so it waits as `WAITING_BUDGET`, every `BUDGET_WAIT_S` (BLD-C236)."""
+    _note_wait(conn, att_id, GATEKEEPER)
+    return JobWaits(BUDGET_WAIT_S, WAITING_BUDGET) if budget else JobWaits(WAIT_STEP_S, WAITING_GATEKEEPER)
+
+
 def check(conn: Conn, att_id: str) -> str:
     """Virus scan, then the file's structure and text layer in the sandbox, then the gatekeeper and hide's
-    detection (L-HIDE.files/1, /6). Returns the new state. Raises `CheckWaits` while a service it needs is down.
+    detection (L-HIDE.files/1, /6). Returns the new state. Raises `JobWaits` while the gatekeeper is switched off
+    (BLD-C225) and `CheckRetry` while a service it needs is down, its reason kept in `checks.waiting_for`.
     A job for a file that is gone, or no longer checking, changes nothing."""
+    try:
+        return _check(conn, att_id)
+    except CheckRetry as wait:
+        _note_wait(conn, att_id, str(wait))
+        raise
+
+
+def _check(conn: Conn, att_id: str) -> str:
     s = get_settings()
     found = conn.execute(
         "SELECT id, idea_uuid, store_key, file_state, uploaded_by_user, uploaded_by_code, checks "
@@ -702,6 +922,14 @@ def check(conn: Conn, att_id: str) -> str:
     if found is None or found["file_state"] != CHECKING:
         return str(found["file_state"]) if found else "missing"
     row = dict(found)
+    # First, before the virus scan: while the gatekeeper is switched off the file waits, and no scan is repeated.
+    if not gatekeeper_on(conn):
+        raise _gatekeeper_wait(conn, att_id)
+    if (row.get("checks") or {}).get("waiting_for"):  # it runs now: the row no longer says it waits
+        conn.execute(
+            "UPDATE attachments SET checks = checks - 'waiting_for' WHERE id = %s AND file_state = %s",
+            (att_id, CHECKING),
+        )
     if not row.get("store_key"):
         return _finish(conn, row, "upload_failed", "no_copy")
     try:
@@ -709,11 +937,11 @@ def check(conn: Conn, att_id: str) -> str:
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
             return _finish(conn, row, "upload_failed", "no_copy")
-        raise CheckWaits("store") from None
+        raise CheckRetry("store") from None
     try:
         verdict = clamav.scan_bytes(data)
     except clamav.ScannerUnavailable:
-        raise CheckWaits("scanner") from None
+        raise CheckRetry("scanner") from None
     if not verdict.clean:
         return _finish(conn, row, "infected", "virus")
     kind = str((row.get("checks") or {}).get("type") or kind_before_scan(data) or "")
@@ -721,7 +949,7 @@ def check(conn: Conn, att_id: str) -> str:
         got = _extract(kind, data, uploads().types)
     except sandbox.ExtractionFailed as exc:
         if exc.code == "ocr_unavailable":
-            raise CheckWaits("ocr") from None
+            raise CheckRetry("ocr") from None
         state = {"locked": "locked", "too_big": "too_big"}.get(exc.code, "upload_failed")
         return _finish(conn, row, state, exc.code)
     real = got.kind if got.kind in MIME else kind
@@ -731,12 +959,18 @@ def check(conn: Conn, att_id: str) -> str:
 
         by = user_of(conn, row["uploaded_by_code"]) or "system:files"
     # The gatekeeper reads the text before the file's row is locked, so Remove and Try again never wait on a model
-    # (BLD-C107). It cannot run: the file stays checking and the job tries again (non-negotiable 4, DEC-103).
+    # (BLD-C107). It cannot run: the file stays checking (non-negotiable 4, DEC-103). Switched off meanwhile, or the
+    # day's budget spent: it waits without using a try (BLD-C225). The gateway failing: a try, as before.
     try:
         gate = hide_files.gate_for(conn, str(row["idea_uuid"]), hide_files.text_of(got.pieces))
-    except hide_files.GatekeeperWaits:
-        raise CheckWaits("gatekeeper") from None
+    except hide_files.GatekeeperWaits as exc:
+        if str(exc) in ("switched_off", "daily_budget"):  # the assistant is off, not failing
+            raise _gatekeeper_wait(conn, att_id, budget=str(exc) == "daily_budget") from None
+        raise CheckRetry(GATEWAY) from None  # a counted try; its row never says "when the assistant is back"
     with conn.transaction():
+        # L-HIDE's lock before the file's row (BLD-C067, BLD-C228): `hide_file` takes it next. The gatekeeper has
+        # already run above, so nothing waits on a model under it.
+        hide_core.lock(conn, str(row["idea_uuid"]))
         live = conn.execute(
             "SELECT file_state FROM attachments WHERE id = %s FOR UPDATE", (att_id,)
         ).fetchone()
@@ -749,7 +983,7 @@ def check(conn: Conn, att_id: str) -> str:
         # No hidden note: nothing is blacked out until "Hide it for me" (DEC-107); the found line is the problem.
         conn.execute(
             "UPDATE attachments SET file_state = %s, state = %s, pages = %s, mime = %s, hidden_note = NULL, "
-            "checks = coalesce(checks, '{}'::jsonb) || %s, updated_at = now() WHERE id = %s",
+            "checks = (coalesce(checks, '{}'::jsonb) - 'waiting_for') || %s, updated_at = now() WHERE id = %s",
             (state, old_state(state), got.pages, MIME.get(real, "application/octet-stream"),
              Jsonb({"type": real, "result": "found" if finds.count else "clean", "found": finds.codes(),
                     "gatekeeper": "ran",  # always: a file never skips it (BLD-C107)
@@ -770,6 +1004,152 @@ def gave_up(conn: Conn, att_id: str) -> None:
     ).fetchone()
     if row is not None and row["file_state"] == CHECKING:
         _finish(conn, dict(row), "upload_failed", "check_failed")
+
+
+# ---- waiting for the gatekeeper: the switch-on re-queue and the worker-start sweep (BLD-C226, BLD-C227) ----------
+
+
+def requeue_waiting(conn: Conn, batch: int = BATCH) -> int:
+    """On every tick of the ticker's watch (about every 60 s) while `ai.all` and `agent.gatekeeper` are both on:
+    the file checks waiting for the gatekeeper are made due now, `batch` jobs per commit, the switches read again
+    before each batch, stopping if they go off (BLD-C226). It covers a switch-on from the Admin page, which the
+    worker's own set path never sees, and a worker started with the assistant on. Nothing is checked here: the job
+    runner runs each check, from the virus scan. Logs carry a count only. Returns how many."""
+    moved = 0
+    while gatekeeper_on(conn):
+        with conn.transaction():
+            # The batch is picked once (a MATERIALIZED CTE), so a commit moves at most `batch` jobs. An
+            # `IN (SELECT … LIMIT n FOR UPDATE SKIP LOCKED)` can be rescanned per row, and a rescan skips the rows this
+            # same UPDATE has just changed and takes the next ones (BLD-C238).
+            n = conn.execute(
+                "WITH due AS MATERIALIZED (SELECT id FROM jobs WHERE type = %s AND state = 'queued' "
+                "AND last_error = %s AND run_at > now() ORDER BY id LIMIT %s FOR UPDATE SKIP LOCKED) "
+                "UPDATE jobs SET run_at = now() FROM due WHERE jobs.id = due.id",
+                (JOB, WAITING_GATEKEEPER, batch),
+            ).rowcount
+        moved += n
+        if n < batch:
+            break
+    if moved:
+        log.info("files.waiting_requeued", job_count=moved)
+    return moved
+
+
+def reset_r3_waits(conn: Conn) -> int:
+    """r3 counted each wait as a try: its file checks still queued after a wait (`last_error` "CheckWaits") get
+    their tries back and wait for the gatekeeper (BLD-C227). Run by `start_sweep`, not in its count. Returns how
+    many; logs `jobs.waits_reset` with the count only."""
+    n = 0
+    while True:
+        with conn.transaction():
+            done = conn.execute(  # the batch picked once, as `requeue_waiting` does (BLD-C238)
+                "WITH due AS MATERIALIZED (SELECT id FROM jobs WHERE type = %s AND state = 'queued' "
+                "AND last_error = 'CheckWaits' ORDER BY id LIMIT %s FOR UPDATE SKIP LOCKED) "
+                "UPDATE jobs SET attempts = 0, last_error = %s FROM due WHERE jobs.id = due.id",
+                (JOB, BATCH, WAITING_GATEKEEPER),
+            ).rowcount
+        n += done
+        if done < BATCH:
+            break
+    jobs_log.info("jobs.waits_reset", job_count=n)
+    return n
+
+
+# THE EXACT RULE (lane A, from r3's `check`, `gave_up` and `_finish`): a row r3 let die of its waits. r3 never kept
+# the scan's verdict on a waiting row, so none is asked for: the whole check runs again, from the virus scan, and
+# nothing opens until it passes (non-negotiable 8). A row from this build always has `waiting_for` once it gave up,
+# so it is never moved: real failures are not retried on every restart.
+_R3_DEAD = (
+    "SELECT a.id, a.idea_uuid, a.store_key FROM attachments a JOIN ideas i ON i.id = a.idea_uuid "
+    "WHERE a.kind = 'file' AND a.id > %s "
+    "AND i.status NOT IN ('withdrawn', 'merged') AND i.merged_into IS NULL "  # a
+    "AND a.file_state = 'upload_failed' "  # b
+    "AND a.checks->>'result' = 'check_failed' AND NOT a.checks ? 'gatekeeper' "  # c
+    "AND NOT a.checks ? 'waiting_for' "  # c: never a row from this build
+    "AND a.masked_store_key IS NULL "  # d
+    "AND NOT EXISTS (SELECT 1 FROM hidden_details h WHERE h.source = 'file' AND h.source_id = a.id) "  # d
+    "AND a.store_key IS NOT NULL AND coalesce(a.checks->>'copy', '') <> 'gone' "  # e
+    "ORDER BY a.id LIMIT %s FOR UPDATE OF a SKIP LOCKED"
+)
+
+
+def _in_store(s3: Any, bucket: str, key: str) -> bool:
+    """Whether the object is there. Only a clear "not there" is False; any other error stops the sweep."""
+    try:
+        s3.head_object(Bucket=bucket, Key=key)
+        return True
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404", "NotFound"):
+            return False
+        raise
+
+
+def _bring_back(conn: Conn, s3: Any, after_id: str) -> tuple[int, str | None]:
+    """One batch of `_R3_DEAD`, in one transaction: each row whose quarantine copy is there (e) and that was never
+    moved to the clean bucket (d) goes back to checking, waiting for the gatekeeper, with its result cleared, a
+    fresh check job at 0 tries and one `file.check_requeued` audit row. Returns (moved, the last id read)."""
+    s = get_settings()
+    moved, last = 0, None
+    with conn.transaction():
+        rows = conn.execute(_R3_DEAD, (after_id, BATCH)).fetchall()
+        for r in rows:
+            last = str(r["id"])
+            key = str(r["store_key"])
+            if not _in_store(s3, s.s3_bucket_quarantine, key) or _in_store(s3, s.s3_bucket_clean, key):
+                continue
+            conn.execute(
+                "UPDATE attachments SET file_state = %s, state = %s, updated_at = now(), "
+                "checks = (checks - 'result' - 'ended_at') || jsonb_build_object('waiting_for', %s::text) "
+                "WHERE id = %s",
+                (CHECKING, old_state(CHECKING), GATEKEEPER, last),
+            )
+            conn.execute(
+                "INSERT INTO jobs (type, payload, attempts, run_at, last_error) "
+                "SELECT %s, %s, 0, now() + make_interval(secs => %s), %s WHERE NOT EXISTS (SELECT 1 FROM jobs "
+                "WHERE type = %s AND state IN ('queued', 'running') AND payload->>'attachment_id' = %s)",
+                (JOB, Jsonb({"attachment_id": last}), WAIT_STEP_S, WAITING_GATEKEEPER, JOB, last),
+            )
+            _audit(conn, SYSTEM, "file.check_requeued", str(r["idea_uuid"]),
+                   {"file_id": last, "from": "upload_failed", "to": CHECKING})  # fmt: skip
+            moved += 1
+    return moved, last
+
+
+def start_sweep(conn: Conn) -> int:
+    """At worker start, whatever the switches say, before any job is taken (BLD-C227): r3's file checks still
+    queued get their tries back (`reset_r3_waits`), and every row that fits THE EXACT RULE goes back to waiting for
+    the gatekeeper, `BATCH` rows per commit. It checks nothing and opens nothing to anyone, so non-negotiable 4 is
+    unchanged, and it is idempotent: a row moved is checking, so it is never read again. Then one `files.start_sweep`
+    line (its only field `count`) and one `file.start_sweep` audit row, `after` {"count", "complete"}, which lane A's
+    upgrade reads to print "file checks: N files back to waiting for the personal-data check (none opened)". A
+    failure part-way logs `files.start_sweep_failed` (`count`, `error_type`) and still writes the audit row, with
+    `complete` false. Returns the count. A separate step: if the lead picks "leave them failed", only this goes."""
+    count, complete = 0, True
+    try:
+        reset_r3_waits(conn)
+        s3 = store.client()
+        after = ""
+        while True:
+            moved, last = _bring_back(conn, s3, after)
+            count += moved
+            if last is None:
+                break
+            after = last
+    except Exception as exc:
+        complete = False
+        log.error("files.start_sweep_failed", count=count, error_type=type(exc).__name__)
+    try:
+        with conn.transaction():
+            conn.execute(
+                "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'file.start_sweep', %s, %s)",
+                (SYSTEM, "files:start_sweep", Jsonb({"count": count, "complete": complete})),
+            )
+    except Exception as exc:
+        complete = False
+        log.error("files.start_sweep_failed", count=count, error_type=type(exc).__name__)
+    if complete:
+        log.info("files.start_sweep", count=count)
+    return count
 
 
 # ---- opening, retrying, removing --------------------------------------------------------------------------------
@@ -855,9 +1235,71 @@ def drop(conn: Conn, row: dict[str, Any]) -> None:
     conn.execute("DELETE FROM attachments WHERE id = %s", (row["id"],))
 
 
+def start_sweep_done(conn: Conn) -> bool:
+    """Whether the most recent worker start sweep (`start_sweep`) finished: its audit row, the latest, says
+    `complete` true. Until then the attachments sweep deletes nothing, so a copy the start sweep would bring back is
+    never lost first (lane A, 22 Nov). The latest row, not any row ever: after a rollback to r3, r3 leaves new files
+    of its own shape, and an earlier finished run says nothing about them; a run that stopped part-way pauses the
+    sweep until a later worker start finishes one."""
+    row = conn.execute(
+        "SELECT after->>'complete' AS complete FROM audit_log WHERE entity = 'files:start_sweep' "
+        "AND action = 'file.start_sweep' ORDER BY at DESC, id DESC LIMIT 1"
+    ).fetchone()
+    return row is not None and row["complete"] == "true"
+
+
 def sweep_failed_copies(conn: Conn) -> int:
-    """The quarantine copy of a file that stayed `upload_failed` past the retention period (`rules/thresholds.md`
-    `attachments.rejected_retention_hours`) is deleted; Try again then asks for the file again. Returns how many."""
+    """The attachments sweep, every hour (`files.sweep`, BLD-C242; its old caller, the draft purge, is retired). The
+    quarantine copy of a file that stayed `upload_failed` past the retention period (`rules/thresholds.md`
+    `attachments.rejected_retention_hours`) is deleted; Try again then asks for the file again. And a file added for
+    the conversation that never went on an entry is removed, every stored copy and its row, a day after it was added
+    (`sweep_unsent_conversation`, BLD-C216). Nothing is deleted unless the most recent worker start sweep finished
+    (`start_sweep_done`). Returns how many of both, 0 while it waits."""
+    if not start_sweep_done(conn):
+        log.info("files.sweep_waits")  # the latest start sweep did not finish
+        return 0
+    return _sweep_failed(conn) + sweep_unsent_conversation(conn)
+
+
+def sweep_unsent_conversation(conn: Conn, hours: int = UNSENT_CONVERSATION_HOURS) -> int:
+    """Conversation files (`purpose` "conversation") still not on an entry `hours` after they were added: each is
+    locked, checked again and dropped (`drop`: every stored copy, its hidden details, its queued checks, its row).
+    Never an answer's file (`answer_id` set: lane B's own rule keeps those). One file failing (the object store
+    not answering) rolls back that file only, is logged by its ID and the error's type, and the sweep goes on, so
+    the draft purge that runs it never fails after its drafts are gone (BLD-C223). Logs and the audit carry IDs
+    only. Returns how many."""
+    due = conn.execute(
+        "SELECT id FROM attachments WHERE purpose = 'conversation' AND conversation_entry_id IS NULL "
+        "AND answer_id IS NULL AND created_at < now() - make_interval(hours => %s) ORDER BY created_at",
+        (hours,),
+    ).fetchall()
+    removed = 0
+    for d in due:
+        try:
+            with conn.transaction():
+                row = conn.execute(
+                    "SELECT * FROM attachments WHERE id = %s AND purpose = 'conversation' "
+                    "AND conversation_entry_id IS NULL AND answer_id IS NULL "
+                    "AND created_at < now() - make_interval(hours => %s) FOR UPDATE SKIP LOCKED",
+                    (d["id"], hours),
+                ).fetchone()
+                if row is None:
+                    continue  # sent on an entry meanwhile, or another sweep has it
+                drop(conn, dict(row))
+                _audit(conn, "system:files", "file.swept", str(row["idea_uuid"]),
+                       {"file_id": str(row["id"]), "purpose": CONVERSATION})  # fmt: skip
+        except Exception as exc:  # the next sweep tries it again; a deleted copy stays deleted
+            log.warning(
+                "files.sweep_unsent_failed", attachment_id=str(d["id"]), error_type=type(exc).__name__
+            )
+            continue
+        removed += 1
+        log.info("files.swept_unsent", attachment_id=str(d["id"]))
+    return removed
+
+
+def _sweep_failed(conn: Conn) -> int:
+    """The failed uploads' quarantine copies past their retention period (see `sweep_failed_copies`)."""
     from rules import load_rule
 
     try:

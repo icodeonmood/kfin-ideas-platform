@@ -200,7 +200,15 @@ def test_pdf_pan_rejected_with_page_and_clean_pdf_opens_for_reviewer(deep_off: A
     sent = b.post(f"/api/submissions/{draft}/submit", json={"canvas": full_canvas()})
     assert sent.status_code == 202, sent.text
 
-    # After submit, the clean PDF opens for a reviewer as a safe download, and the download is logged.
+    # DEC-127 (3), BLD-C222: with the deep check off this file passed on the patterns alone (`checks.gatekeeper`
+    # false), so after submit it still opens for no one but its owner: never on the pattern check alone.
+    assert reviewer.get(f"/api/attachments/{good_id}").status_code == 404
+    # Once the gatekeeper has checked it (`checks.gatekeeper` true, as the deep check records), the clean PDF opens
+    # for a reviewer as a safe download, and the download is logged.
+    conn.execute(
+        "UPDATE attachments SET checks = checks || jsonb_build_object('gatekeeper', true) WHERE id = %s",
+        (good_id,),
+    )
     opened = reviewer.get(f"/api/attachments/{good_id}")
     assert opened.status_code == 200
     assert opened.content == clean_bytes
@@ -214,10 +222,12 @@ def test_pdf_pan_rejected_with_page_and_clean_pdf_opens_for_reviewer(deep_off: A
     ).fetchone()["n"]
     assert logged == 2  # owner once, reviewer once
 
-    # The PNG (awaiting_check) and the rejected PDF answer 403 to everyone, owner and reviewer alike.
-    for viewer in (b, reviewer):
-        assert viewer.get(f"/api/attachments/{png_id}").status_code == 403
-        assert viewer.get(f"/api/attachments/{bad.json()['id']}").status_code == 403
+    # The PNG (awaiting_check) and the rejected PDF never open: their owner gets 403 (the file is there, not clean).
+    # The gatekeeper never read either, so for the reviewer they don't exist: the same 404 as a missing id
+    # (DEC-127 (3), BLD-C222: never opened on the pattern check alone, and nothing revealed about it).
+    for att in (png_id, bad.json()["id"]):
+        assert b.get(f"/api/attachments/{att}").status_code == 403
+        assert reviewer.get(f"/api/attachments/{att}").status_code == 404
 
     # Another contributor never sees the file or its status.
     stranger = make().browser()

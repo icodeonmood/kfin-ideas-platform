@@ -174,19 +174,24 @@ def merge_locked(
             raise Refused(422, e.code, e.message, e.field)
     leader, joiner = (this, other) if lead == "this" else (other, this)
     credited = own_codes(conn, leader) | own_codes(conn, joiner)
-    masked, _ = adapters.hide(conn, str(leader["id"]), note.strip(), by=user_id)
+    masked, checked = adapters.hide_checked(conn, str(leader["id"]), note.strip(), by=user_id)
     merge_id = str(uuid.uuid4())
+    # `gatekeeper_done_at` only when the gatekeeper's check is complete; else desk.text_recheck asks (BLD-B278)
     conn.execute(
         "INSERT INTO merges (id, lead_idea_uuid, merged_idea_uuid, via, by_user_id, team_up, note_encrypted, "
-        "prior_status, at) VALUES (%s, %s, %s, 'review_desk', %s, %s, %s, %s, %s)",
+        "prior_status, at, gatekeeper_done_at) "
+        "VALUES (%s, %s, %s, 'review_desk', %s, %s, %s, %s, %s, CASE WHEN %s THEN now() END)",
         (merge_id, leader["id"], joiner["id"], user_id, team_up,
-         seal(masked, "merges", "note_encrypted", merge_id), joiner["status"], t),
+         seal(masked, "merges", "note_encrypted", merge_id), joiner["status"], t, checked),
     )  # fmt: skip
-    # L-MERGE.effects/1, /5: the joining idea points to the lead; its open sets close, queued ones are dropped
+    # L-MERGE.effects/1, /5: the joining idea points to the lead; its open sets close, queued ones are dropped, every
+    # reviewer's, with what hide kept for their questions (BLD-B272; both ideas' lane C locks are held by the callers)
+    from desk.asking import drop_queued
+
     conn.execute(
         "UPDATE ideas SET status = 'merged', merged_into = %s WHERE id = %s", (leader["id"], joiner["id"])
     )
-    conn.execute("DELETE FROM question_sets WHERE idea_uuid = %s AND state = 'queued'", (joiner["id"],))
+    drop_queued(conn, joiner["id"])
     closed = conn.execute(
         "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed' "
         "RETURNING id",

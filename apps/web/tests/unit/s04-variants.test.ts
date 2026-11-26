@@ -472,8 +472,11 @@ describe("S3 Voice first on a phone's S-04 (PhoneCompose.md simulatorS3=Voice fi
       EXPOSED,
       { flag: "s3", event: "s3.listen", outcome: "started", screen: "S-04" },
     ]);
-    // Said politely for a screen reader (C-PROMPT's status line)
-    expect(host.querySelector('[role="status"].vh')?.textContent).toBe("Listening. Up to 3 minutes.");
+    // Said politely for a screen reader (C-PROMPT's status line, the box foot's own: the "+" picker's status line
+    // sits inside `.attach-w` and says what the files did, BLD-C224)
+    expect(host.querySelector('.cfoot > [role="status"].vh')?.textContent).toBe(
+      "Listening. Up to 3 minutes.",
+    );
 
     await act(async () => {
       button("Type instead")!.click();

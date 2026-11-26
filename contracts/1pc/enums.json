@@ -192,7 +192,7 @@
     "worth_side": { "source": "repo (lane E): idea_worth.by_side, L-WORTH/3", "values": ["sharer", "reviewer"] },
     "similar_outcome": { "source": "repo (lane E): similar_links.outcome, L-AUDIT.metrics", "values": ["previewed", "kept_separate", "merge_asked"] },
     "hidden_found_by": { "source": "repo (lane E): hidden_details.found_by, L-HIDE.rules/7", "values": ["patterns", "gatekeeper", "reviewer"] },
-    "sealed_source": { "source": "repo (lane E): idea_words_sealed.source", "values": ["message", "answer", "conversation", "edit"] },
+    "sealed_source": { "source": "repo (lane E): idea_words_sealed.source", "values": ["message", "answer", "conversation", "edit", "teamup"] },
     "flag_variant": { "source": "repo (lane E): flag_assignments.variant, P-DECISIONS.experiments", "values": ["default", "alternative"] },
     "clock_kind": {
       "source": "repo (lane E): sla_timers.stage for the pack's clocks (no CHECK on that column)",

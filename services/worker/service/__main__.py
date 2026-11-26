@@ -40,7 +40,8 @@ def _guard(name: str, target: object) -> threading.Thread:
 
 def ticker(poll_seconds: float = 20.0) -> None:
     """Send email that has come due and, every minute, check time limits (reminders, breaches, escalations,
-    §3.6) and the automatic switch-offs for the scanner and email bounces (§7.6)."""
+    §3.6), the automatic switch-offs for the scanner and email bounces (§7.6) and the file checks waiting for the
+    gatekeeper (BLD-C226). The watch runs once 60 s have passed, on the 20-second poll: 60 to 80 s apart."""
     from comms.send import send_due
     from core.db import connect
     from core.watch import Watch
@@ -101,6 +102,20 @@ def _speech_route_guard() -> None:
         log.warning("service.speech_guard_skipped", error_type=type(exc).__name__)
 
 
+def _file_start_sweep() -> None:
+    """BLD-C227: once per worker start, before any job is taken, files an earlier build (r3) let die of its waits go
+    back to waiting for the gatekeeper (`attachments.files.start_sweep`: it logs and audits its own count, and a
+    failure part-way). Nothing is checked or opened by it."""
+    from attachments.files import start_sweep
+    from core.db import connect
+
+    try:
+        with connect(autocommit=True) as conn:
+            start_sweep(conn)
+    except Exception as exc:  # the database not up: the sweep could not start, and the worker still runs
+        log.error("service.file_start_sweep_skipped", error_type=type(exc).__name__)
+
+
 def main() -> None:
     settings = get_settings()
     roles = settings.roles
@@ -108,6 +123,8 @@ def main() -> None:
     if "api" in roles:
         ensure_buckets()
     _speech_route_guard()
+    if "jobs" in roles:
+        _file_start_sweep()  # before the name model's warm-up and before the job runner starts
     if "repo_writer" in roles:
         _guard("repo_writer", RepoWriter(settings).run_forever)
     if "indexer" in roles:

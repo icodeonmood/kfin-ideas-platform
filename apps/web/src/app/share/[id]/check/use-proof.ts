@@ -3,9 +3,10 @@
 /**
  * "Anything that shows it?" as state (C-FILE.row, C-FILE.uploader, A-API.files): the rows, and what adding, trying
  * again, hiding and removing a file or link does to them. Check it (S-05) uses it for a draft and the edit page
- * (S-06B) for a shared idea, so a file behaves the same on both. A file never blocks the others (C-FILE.uploader/4);
- * rows that are still moving on the server (scan, then the personal-details check) are asked again until they
- * settle. No words are logged here (non-negotiable 3).
+ * (S-06B) for a shared idea, and the prompt box (S-03, S-04, S-04B; `share/box-files.tsx`) for the draft it may first
+ * have to make (`resolve`, BLD-C214), so a file behaves the same everywhere. A file never blocks the others
+ * (C-FILE.uploader/4); rows that are still moving on the server (scan, then the personal-details check) are asked
+ * again until they settle. No words are logged here (non-negotiable 3).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -13,14 +14,35 @@ import type { FileItem } from "@/lib/contracts";
 
 import { api, type Call, type ProofTarget } from "./client";
 import { CHECK_COPY } from "./copy";
-import { POLL, pollDelay, settling, type ProofItem } from "./model";
+import { POLL, pollDelay, settling, waitingForCheck, type ProofItem } from "./model";
 import type { LinkResult } from "./proof";
 
 /** Every call the page makes, so its save status can follow it (C-TASKBAR.save). */
 export type Track = <T>(p: Promise<Call<T>>) => Promise<Call<T>>;
 
-export function useProof(to: string | ProofTarget, track: Track, limitMb: number) {
+/** Where a row goes when the page has no draft yet: the prompt box on Home and Share a problem makes the draft on
+ * the first file (C-PROMPT.attach, BLD-C214). Resolves to null when it could not be made. */
+export type ResolveTarget = () => Promise<string | ProofTarget | null>;
+
+const NOT_SENT: Call<FileItem> = { ok: false, status: 0, error: null };
+
+export function useProof(
+  to: string | ProofTarget | null,
+  track: Track,
+  limitMb: number,
+  resolve?: ResolveTarget,
+) {
   const [proof, setProof] = useState<ProofItem[]>([]);
+  // The target as the latest render has it, and how to make one, for uploads that start before a re-render.
+  const target = useRef({ to, resolve });
+  useEffect(() => {
+    target.current = { to, resolve };
+  });
+  /** The draft or idea for a new row: the one the page has, or the one `resolve` makes (once, by the caller). */
+  const where = useCallback(async (): Promise<string | ProofTarget | null> => {
+    const t = target.current;
+    return t.to ?? (t.resolve ? await t.resolve() : null);
+  }, []);
 
   const replace = useCallback(
     (key: string, next: Partial<ProofItem>) =>
@@ -50,7 +72,10 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
 
   const upload = async (key: string, file: File) => {
     replace(key, { localState: "uploading", refusal: undefined, note: undefined });
-    const posted = track(api.upload(to, file));
+    const to = target.current.to;
+    const posted = track(
+      to ? api.upload(to, file) : where().then((made) => (made ? api.upload(made, file) : NOT_SENT)), // no draft could be made: Try again
+    );
     pending.current.set(key, posted);
     const r = await posted;
     pending.current.delete(key);
@@ -97,6 +122,10 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
     const have = new Set(proof.map((p) => p.item?.url ?? p.item?.name ?? p.name));
     const left: string[] = [];
     let problem: LinkResult["problem"] = null;
+    const fresh = links.filter((url) => !have.has(url));
+    if (!fresh.length) return { left, problem };
+    const to = target.current.to ?? (await where());
+    if (!to) return { left: fresh, problem: "failed" }; // no draft could be made: the links stay in the box
     for (const url of links) {
       if (have.has(url)) continue;
       const r = await track(api.link(to, url));
@@ -203,30 +232,39 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
   const settleEarly = async (): Promise<boolean> =>
     (await Promise.all(Array.from(early.current.values()))).every(Boolean);
 
+  /** Waits for every upload still on its way, so a page that moves on finds each file on the draft (BLD-C214). */
+  const settleUploads = useCallback(async (): Promise<void> => {
+    await Promise.all(Array.from(pending.current.values()));
+  }, []);
+
   // Files settle on the server (scan, then the personal-details check): ask again until they do (C-FILE.row). A
   // failed ask (the network, a 4xx while a switch is off) waits longer and asks again; after five in a row the row
-  // offers "Try again" rather than freezing (BLD-C139).
+  // offers "Try again" rather than freezing (BLD-C139). While every moving file waits for the gatekeeper, every
+  // 30 s (BLD-C236).
   useEffect(() => {
     const moving = proof.filter(settling);
     if (!moving.length) return;
     const worst = Math.max(0, ...moving.map((p) => pollFails.current.get(p.key) ?? 0));
-    const t = setTimeout(async () => {
-      let again = false;
-      for (const p of moving) {
-        if (!p.item?.id) continue;
-        const r = await api.file(p.item.id);
-        if (r.ok && r.body) {
-          pollFails.current.delete(p.key);
-          replace(p.key, { item: r.body });
-          continue;
+    const t = setTimeout(
+      async () => {
+        let again = false;
+        for (const p of moving) {
+          if (!p.item?.id) continue;
+          const r = await api.file(p.item.id);
+          if (r.ok && r.body) {
+            pollFails.current.delete(p.key);
+            replace(p.key, { item: r.body });
+            continue;
+          }
+          const fails = (pollFails.current.get(p.key) ?? 0) + 1;
+          pollFails.current.set(p.key, fails);
+          if (fails >= POLL.tries) replace(p.key, { stalled: true });
+          else again = true;
         }
-        const fails = (pollFails.current.get(p.key) ?? 0) + 1;
-        pollFails.current.set(p.key, fails);
-        if (fails >= POLL.tries) replace(p.key, { stalled: true });
-        else again = true;
-      }
-      if (again) setPollTick((n) => n + 1);
-    }, pollDelay(worst));
+        if (again) setPollTick((n) => n + 1);
+      },
+      pollDelay(worst, moving.every(waitingForCheck)),
+    );
     return () => clearTimeout(t);
   }, [proof, pollTick, replace]);
 
@@ -249,6 +287,7 @@ export function useProof(to: string | ProofTarget, track: Track, limitMb: number
     /** A file removed while uploading is still being deleted. */
     removing: earlyCount > 0,
     settleEarly,
+    settleUploads,
     leftover,
   };
 }

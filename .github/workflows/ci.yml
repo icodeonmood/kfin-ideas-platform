@@ -30,6 +30,9 @@ jobs:
   gates:
     runs-on: ubuntu-24.04
     timeout-minutes: 75
+    env:
+      # BLD-A244: make test and make e2e also write JUnit XML here; uploaded below as the go/no-go CI report.
+      TEST_RESULTS: ${{ github.workspace }}/test-results
     steps:
       - uses: actions/checkout@v4
 
@@ -77,6 +80,20 @@ jobs:
           docker compose -f infra/docker-compose.yml --project-directory . --env-file .env \
             logs --no-color --no-log-prefix worker web > container.log
           cd services/worker && uv run --frozen python ../../scripts/ci/check_logs.py ../../container.log
+
+      # The CI report for the go/no-go (ARCHITECTURE §9.3, "Every B1-B7 acceptance test passes"; BLD-A244): the JUnit
+      # XML of the Python, web unit and end-to-end tests, and the golden-set reports, on every run, pass or fail. Test
+      # names and synthetic data only (non-negotiable 11); no container log goes in it.
+      - name: Keep the test results (the go/no-go CI report)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            test-results/
+            eval/reports/*.json
+          retention-days: 30
+          if-no-files-found: warn
 
       # IDs-only logs (non-negotiable 3, checked just above), kept for a week so a failure can be diagnosed
       # after the run (BLD-A171). Never a log the check just refused: artifacts are readable by anyone who can

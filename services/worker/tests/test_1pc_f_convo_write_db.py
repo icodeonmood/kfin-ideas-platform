@@ -225,7 +225,7 @@ def test_l_convo_7_files_only_by_id_and_only_once_checked(
         "XLSX",
         "checked",
     )
-    assert f["view_url"] == f"/api/attachments/{ok}" and f["added_by"]["name"] == "Kavya Menon"
+    assert f["view_url"] == f"/api/files/{ok}/view" and f["added_by"]["name"] == "Kavya Menon"  # BLD-F095
     assert (
         db.execute("SELECT conversation_entry_id FROM attachments WHERE id = %s", (ok,)).fetchone()[
             "conversation_entry_id"
@@ -338,8 +338,8 @@ def test_l_convo_routes_are_mounted_on_the_worker_behind_the_internal_token(
 def test_bld_f062_j_teamup_5_6_files_go_only_to_readers_the_attachment_route_lets_open_them(
     db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
 ) -> None:
-    """The sharer, the desk and the core committee get the file with its link; the crew, a plain committee holder,
-    the build team and a mentioned person get the message without it (DEC-107)."""
+    """The sharer, the desk and the Ones Committee get the file with its link (BLD-B270: a committee-only member
+    too), and since DEC-129 the crew too; the build team and a mentioned person get the message without it."""
     kavya, meera, meghna, tara = cast["kavya"], cast["meera"], cast["meghna"], cast["colleague"]
     core = fx.person(db, "Rohan Mehta", roles=(("core_committee", None),))
     plain = fx.person(db, "Nisha Rao", roles=(("committee", None),))
@@ -351,11 +351,11 @@ def test_bld_f062_j_teamup_5_6_files_go_only_to_readers_the_attachment_route_let
     sent = send(db, idea["idea_id"], kavya["id"],
                 {"text": "The rejection list, for Tara too.", "file_ids": [att], "mentions": [tara["id"]]},
                 at=fx.at(17, 10))  # fmt: skip
-    assert [f["view_url"] for f in sent["entry"]["files"]] == [f"/api/attachments/{att}"]  # the sharer's own
-    for who in (kavya, meera, core):
+    assert [f["view_url"] for f in sent["entry"]["files"]] == [f"/api/files/{att}/view"]  # the sharer's own
+    for who in (kavya, meera, core, plain, meghna):
         [m] = messages(conversation(db, idea["idea_id"], who["id"], at=NOW))
         assert [f["id"] for f in m["files"]] == [att], who["name"]
-    for who in (meghna, plain, arjun, tara):
+    for who in (arjun, tara):
         [m] = messages(conversation(db, idea["idea_id"], who["id"], at=NOW))
         assert m["files"] == [] and m["text"] == "The rejection list, for Tara too.", who["name"]
 
@@ -615,18 +615,86 @@ def test_bld_f067_l_convo_10_removing_a_message_drops_what_l_hide_kept_and_keeps
     assert gone["removed"] and gone["text"] == "Message removed"
 
 
-def test_bld_f054_a_refusal_from_l_hide_is_a_ready_503_and_nothing_is_written(
-    db: Any, cast: dict[str, Any], told: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
+def test_bld_f093_l_convo_10_removing_a_message_leaves_another_ideas_and_another_sources_details(
+    db: Any, cast: dict[str, Any], told: list[dict[str, Any]]
 ) -> None:
+    """Removal forgets only what L-HIDE kept for that message (source "conversation", its entry id): the same folio
+    hidden on another idea, and in another text of the same idea (source "message"), keeps its hidden detail, its
+    vault value and its sealed words (f-convo-7 review, after launch)."""
+    import uuid
+
+    from hide import hide_message
+    from hide.core import scope_for
+
+    kavya = cast["kavya"]
+    idea = fx.idea(db, kavya)
+    other = fx.idea(db, kavya, title="Branch staff cannot read the rejection code")
+    gone = send(db, idea["idea_id"], kavya["id"], {"text": "Folio 1234567890 failed."}, at=fx.at(17, 10))
+    there = send(db, other["idea_id"], kavya["id"], {"text": "Folio 1234567890 failed here too."},
+                 at=fx.at(17, 10, 1))  # fmt: skip
+    draft_text = str(uuid.uuid4())
+    with db.transaction():
+        hide_message(db, str(idea["id"]), "Folio 1234567890 is in my notes.", by=kavya["id"], source="message",
+                     source_id=draft_text)  # fmt: skip
+
+    def tags(i: dict[str, Any], source: str, sid: str) -> set[str]:
+        return {
+            str(r["vault_tag"])
+            for r in db.execute(
+                "SELECT vault_tag FROM hidden_details WHERE idea_uuid = %s AND source = %s AND source_id = %s "
+                "AND vault_tag IS NOT NULL",
+                (i["id"], source, sid),
+            ).fetchall()
+        }
+
+    def in_vault(i: dict[str, Any], found: set[str]) -> bool:
+        n = db.execute(
+            "SELECT count(*) AS n FROM pseudonym_vault WHERE scope_id = %s AND tag = ANY(%s::text[])",
+            (scope_for(str(i["id"])), sorted(found)),
+        ).fetchone()["n"]
+        return bool(found) and int(n) == len(found)
+
+    def sealed(i: dict[str, Any], source: str) -> int:
+        return int(
+            db.execute(
+                "SELECT count(*) AS n FROM idea_words_sealed WHERE idea_uuid = %s AND source = %s",
+                (i["id"], source),
+            ).fetchone()["n"]
+        )
+
+    elsewhere = tags(other, "conversation", there["entry"]["id"])
+    in_notes = tags(idea, "message", draft_text)
+    assert elsewhere and in_notes and tags(idea, "conversation", gone["entry"]["id"])
+    before = (sealed(other, "conversation"), sealed(idea, "message"))
+    assert before == (1, 1)
+
+    remove(db, idea["idea_id"], kavya["id"], gone["entry"]["id"], at=fx.at(17, 10, 2))
+    assert tags(idea, "conversation", gone["entry"]["id"]) == set()
+    assert tags(other, "conversation", there["entry"]["id"]) == elsewhere and in_vault(other, elsewhere)
+    assert tags(idea, "message", draft_text) == in_notes and in_vault(idea, in_notes)
+    assert (sealed(other, "conversation"), sealed(idea, "message")) == before
+
+
+@pytest.mark.parametrize(("hide_status", "status"), [(503, 503), (409, 422), (404, 422)])
+def test_bld_f054_a_refusal_from_l_hide_is_a_ready_503_or_422_and_nothing_is_written(
+    db: Any,
+    cast: dict[str, Any],
+    told: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    hide_status: int,
+    status: int,
+) -> None:
+    """Lane C's HideError never reaches the person as a 500: a 5xx is a 503, any 4xx a 422, both with the same ready
+    message (f-convo-7 review, after launch: the 4xx case pinned by BLD-F093)."""
     from hide.core import HideError
 
     def refuses(*a: Any, **k: Any) -> Any:
-        raise HideError(503, "gatekeeper_down")
+        raise HideError(hide_status, "gatekeeper_down" if hide_status >= 500 else "conflict")
 
     monkeypatch.setattr("convo.adapters._hide_message", refuses)
     idea = fx.idea(db, cast["kavya"])
     err = refused(send, db, idea["idea_id"], cast["kavya"]["id"], {"text": "Folio 1234567890 failed."})
-    assert (err.status, err.code, err.field) == (503, "hide_unavailable", "text")
+    assert (err.status, err.code, err.field) == (status, "hide_unavailable", "text")
     assert (
         err.message
         == "We couldn’t check this message for customers’ details just now. Try again in a minute."

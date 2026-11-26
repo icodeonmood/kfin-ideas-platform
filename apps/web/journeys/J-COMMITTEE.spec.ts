@@ -3,15 +3,35 @@
  * Copy: reference/copy/Committee.md (S-R4), reference/copy/Status.md (S-06 committee line, "Reversed" state).
  * Seed: Manoj is on the committee. C1 (picked 10 days ago) is extended, F1 (not picked 3 days ago) is reversed,
  * J1 (picked 38 days ago) has expired, T7 (picked 5 days ago) is read.
+ * Roles (/4, DEC-121, BLD-B270): Manoj holds `committee` and nothing else, Kunal `admin` and nothing else (club_seed
+ * PEOPLE). F2 (J-REVIEW's, still with the desk when this file runs) is read only here.
  */
 import { expect, type Locator, type Page } from "@playwright/test";
 
-import { addMonthsIST, dayIST, decisionWindow, ideaUrl, nextCloseIST, seeded, signInAs, step } from "./lib";
+import {
+  addMonthsIST,
+  CLUB_EMAIL,
+  dayIST,
+  decisionWindow,
+  expectClubMail,
+  expectNoSeriousAxeIssues,
+  ideaUrl,
+  mailLink,
+  mailTo,
+  nextCloseIST,
+  seeded,
+  signInAs,
+  snap,
+  step,
+} from "./lib";
 
 const EXPLANATION =
   "The review desk decides on the committee’s behalf, and the sharer hears at once. For 30 days after, you can " +
   "reverse a decision, with a note the sharer reads. Extend a window 30 days at a time, up to 3 months. Then it " +
   "expires and the decision stands.";
+
+/** The committee's note when it reverses F1 (J-COMMITTEE/3b): Faisal reads it on the page, never by email. */
+const REVERSE_NOTE = "We want to try this at two branches on pension days before deciding for every branch.";
 
 async function openCommittee(page: Page) {
   await signInAs(page, "manoj");
@@ -150,7 +170,7 @@ step(
   { needs: ["S-R4", "L-COMMITTEE", "S-06", "L-NOTIFY"], changes: ["F1"] },
   async ({ page, browser }) => {
     const f1 = await seeded("F1");
-    const note = "We want to try this at two branches on pension days before deciding for every branch.";
+    const note = REVERSE_NOTE;
     await openCommittee(page);
     await rowFor(page, f1.title).getByRole("button", { name: "Review" }).click();
     await page.getByRole("button", { name: "Reverse the decision" }).click();
@@ -191,6 +211,35 @@ step(
 );
 
 step(
+  "J-COMMITTEE/3e",
+  "S-06",
+  "Faisal's email: the reversal comes at once from the Ones Committee as one, never the note, and the link opens it",
+  { needs: ["S-06", "L-COMMITTEE", "L-NOTIFY"], after: ["J-COMMITTEE/3b"] },
+  async ({ page }) => {
+    const f1 = await seeded("F1");
+    // L-NOTIFY/1, /3 (DEC-131 (1), BLD-G007): a reversal always goes outside the app, at once, and says what
+    // happened with a link; the words are HR's (comms/templates/inbox/decision_reversed.md).
+    const mail = await mailTo(page, CLUB_EMAIL.faisal, "The Ones Committee reversed a decision", f1.title);
+    expectClubMail(mail, CLUB_EMAIL.faisal);
+    expect(mail.text).toContain("Hi Faisal,");
+    // DEC-113: the sharer reads the Ones Committee as one, never a member's name.
+    expect(mail.text).toContain(`The Ones Committee reversed a decision on your idea: ${f1.title}.`);
+    expect(mail.text).not.toContain("Manoj");
+    expect(mail.html).not.toContain("Manoj");
+    expect(mail.text).toContain("Read the note and the new decision in the app. This is final.");
+    // The note is read in the app, never in an email (L-NOTIFY/3, BLD-E004).
+    expect(mail.text).not.toContain(REVERSE_NOTE);
+    expect(mail.html).not.toContain(REVERSE_NOTE);
+    const link = mailLink(mail, "Read the note");
+    expect(link.pathname).toBe(ideaUrl(f1));
+    await signInAs(page, "faisal");
+    await page.goto(link.pathname);
+    await expect(page.getByText("The Ones Committee changed the decision to picked")).toBeVisible();
+    await expect(page.locator("blockquote").filter({ hasText: REVERSE_NOTE })).toBeVisible();
+  },
+);
+
+step(
   "J-COMMITTEE/3c",
   "S-R4",
   "A window that closed with nothing done is under Expired and the decision stands",
@@ -205,5 +254,77 @@ step(
     const panel = await openPanel(page, j1.title, "See it");
     await expect(panel.getByRole("button", { name: /^Extend to / })).toHaveCount(0);
     await expect(panel.getByRole("button", { name: "Reverse the decision" })).toHaveCount(0);
+  },
+);
+
+step(
+  "J-COMMITTEE/4",
+  "S-R2",
+  "A committee-only member reads an idea with the desk and its Listen, with no desk action; an admin-only user is refused",
+  { needs: ["S-R2", "L-COMMITTEE", "C-LISTEN", "L-LISTEN", "P-PRODUCT.privacy"] },
+  async ({ page, browser }, info) => {
+    // F2 (Faisal's, with Lavanya, opened, not decided, J2 listed as similar): still with the desk here, as files run
+    // alphabetically and J-REVIEW/M3 merges it later. Not Manoj's (L-COMMITTEE.rules/9), and only read: his S-R2
+    // never opens an idea (the open needs work_review_queue), and the decision he tries below is empty.
+    const f2 = await seeded("F2");
+    const j2 = await seeded("J2");
+    const ref = f2.ref ?? f2.uuid;
+    const at = `/desk/ideas/${ref}`;
+    await signInAs(page, "manoj");
+    await page.goto(at);
+    await expect(page).toHaveURL((url) => url.pathname === at);
+    await expect(page.getByRole("heading", { level: 1, name: f2.title })).toBeVisible();
+    // C-LISTEN: the strip, its heading and Play (ready or not: "Play the whole idea", then "…, {length}")
+    const listen = page.getByRole("region", { name: "Listen to the whole idea", exact: true });
+    await expect(
+      listen.getByRole("heading", { name: "Listen to the whole idea", exact: true }),
+    ).toBeVisible();
+    await expect(listen.getByRole("button", { name: /^Play the whole idea/ })).toBeVisible();
+    // The similar idea is there to read, so a missing Merge below is his role, not an empty list
+    const j2Row = page
+      .locator(".ri-sim-row")
+      .filter({ has: page.getByRole("button", { name: j2.title, exact: true }) });
+    await expect(j2Row.getByRole("button", { name: `Preview ${j2.title}`, exact: true })).toBeVisible();
+    // Desk actions are the review desk's (can_act needs REVIEWERS): none of what Lavanya sees on this page
+    // (reviewer-idea.tsx: the bar's Decide, Ask Faisal first, each part's Ask about this, the worth controls, Merge)
+    await expect(page.getByRole("button", { name: "Decide on this idea", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Ask \S+ first/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^(?:Ask about this|Asking), / })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^(?:Revise|Change) what it’s worth$/ })).toHaveCount(0);
+    // The worth line tells its reader to decide or revise, so it is the review desk's alone (BLD-B270 follow-up)
+    await expect(page.getByText(/sees your figures next to/)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Revise and recategorise", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Merge with / })).toHaveCount(0);
+    // C-SIDEBAR unchanged: the Ones Committee, and no Review desk
+    const nav = page.getByRole("navigation", { name: "Main" }).filter({ visible: true });
+    await expect(nav.getByRole("link", { name: /^Ones Committee/ })).toBeVisible();
+    await expect(nav.getByRole("link", { name: /^Review desk/ })).toHaveCount(0);
+    // L-LISTEN: the desk's script answers him; a write is refused at the proxy (an empty decision: nothing to decide)
+    expect((await page.request.get(`/api/desk/ideas/${ref}/listen`)).status()).toBe(200);
+    const write = await page.request.post(`/api/desk/ideas/${ref}/decision`, { data: {} });
+    expect(write.status(), `decision: ${await write.text()}`).toBe(403);
+
+    // P-PRODUCT.privacy: an admin on neither the desk nor the committee passes the web's gate and the worker refuses
+    // him: S-R1 sends him to `/`, which is Home for anyone signed in (BLD-C143); S-R2 is not found; Listen is 403.
+    const admin = await (await browser.newContext()).newPage();
+    try {
+      await signInAs(admin, "kunal");
+      await admin.goto("/desk");
+      await expect(admin).toHaveURL((url) => url.pathname === "/home");
+      await expect(admin.getByRole("heading", { level: 1, name: "Review desk" })).toHaveCount(0);
+      const notFound = await admin.goto(at);
+      expect(notFound?.status()).toBe(404);
+      // BLD-B277: the 1% Club's own not-found page in the shell, worded as for an idea that is not there.
+      const nothing = admin.getByRole("heading", { level: 1, name: "We couldn’t find that idea." });
+      await expect(nothing).toBeVisible();
+      await expect(admin.getByText("Check the link, or go back to Home.", { exact: true })).toBeVisible();
+      await expect(admin.getByRole("heading", { level: 1, name: f2.title })).toHaveCount(0);
+      await expectNoSeriousAxeIssues(admin);
+      const refused = await admin.request.get(`/api/desk/ideas/${ref}/listen`);
+      expect(refused.status(), `listen: ${await refused.text()}`).toBe(403);
+    } finally {
+      await snap(admin, info, "J-COMMITTEE/4", "S-R2", "kunal");
+      await admin.context().close();
+    }
   },
 );

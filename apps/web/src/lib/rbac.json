@@ -36,6 +36,7 @@
     },
     "view_review_queue": {
       "reviewer": "yes",
+      "committee": "yes",
       "core_committee": "yes",
       "admin": "yes"
     },
@@ -422,10 +423,15 @@
     "POST /api/desk/ideas/{id}/merge                   work_review_queue",
     "GET /api/desk/ideas/{id}/suggested-questions      work_review_queue",
     "POST /api/desk/ideas/{id}/question-sets           work_review_queue",
+    "PUT /api/desk/ideas/{id}/question-sets/queued      work_review_queue",
     "POST /api/question-sets/{id}/extend               work_review_queue",
     "POST /api/question-sets/{id}/remind               work_review_queue",
     "GET /api/ideas/{id}/question-set                  signed_in",
     "PUT /api/questions/{id}/answer                    signed_in",
+    "POST /api/questions/{id}/answer/voice/start      submit",
+    "POST /api/questions/{id}/answer/voice/chunk      submit",
+    "POST /api/questions/{id}/answer/voice/end        submit",
+    "GET /api/questions/{id}/answer/voice/{stream}    submit",
     "POST /api/question-sets/{id}/send                 signed_in",
     "GET /api/ideas/{id}/decision                      signed_in",
     "GET /api/committee                                committee_window",
@@ -538,7 +544,11 @@
       "key": "ember",
       "label": "The Ember",
       "href": "/ember",
-      "place": "account"
+      "place": "account",
+      "roles": [
+        "core_committee",
+        "admin"
+      ]
     },
     {
       "key": "delivery",

@@ -10,13 +10,30 @@
  * (J-RESUME/4). Row 4 is therefore a second new person with an empty box, who types the same words and sends the
  * first message; their draft and idea carry from row 4 to row 12. Each variation has its own person too.
  * Sign-in is single sign-on only (BLD-E002): the email route is row 2b alone, waiting on `L-AUTH.email-code`.
- * Voice is on at launch (DEC-108); the "By voice" variation is still left out, as are the S1 and S2 experiments and
- * the phone layouts (V-ACC).
+ * Voice is on at launch (DEC-108); the "By voice" variation is still left out on S-04, as are the S1 and S2
+ * experiments and the phone layouts (V-ACC), apart from v6's one look at the phone's dock and v7's at Home's hint.
+ * v7 is Home's mic (WF-02, BLD-C220): a tone for a microphone, which CI's fake speech route hears as its sample.
+ * Walk items of 20 Nov: v4 and v5 are the "+" in the prompt box (DEC-124, WF-01) on Home, Share a problem and the
+ * draft page; v6 is the Capture first draft page (DEC-125, WF-04), which switches `ai.all` off on the admin page and
+ * always back on. v8 is a file while the assistant is off (BLD-C225 to BLD-C227): it waits for the personal details
+ * check, says so, and is checked once `ai.all` is back on. Each has its own new person, so the main path's draft is
+ * not touched.
  */
-import { expect, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { expect, type Locator, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, signIn } from "../e2e/helpers";
-import { carriedFor, expectWithDesk, runSeconds, step } from "./lib";
+import { restoreSwitches, setSwitch, signIn, type SwitchState } from "../e2e/helpers";
+import { withSwitchLock } from "../e2e/switch-lock";
+import {
+  addFile,
+  carriedFor,
+  expectNoSeriousAxeIssues,
+  expectWithDesk,
+  openPicker,
+  PLUS,
+  runSeconds,
+  step,
+} from "./lib";
 
 // --- Run-time patterns ----------------------------------------------------------------------------------------------
 
@@ -50,6 +67,12 @@ const SENDER = fresh(200, "Sender");
 const FROM_HOME = fresh(700, "Homeprompt");
 const SIGNED_IN = fresh(1400, "Signedin");
 const AREA_WAITS = fresh(500, "Areawait");
+const HOME_FILES = fresh(600, "Homefiles");
+const BOX_FILES = fresh(800, "Boxfiles");
+const CAPTURE = fresh(1600, "Capturefirst");
+const HOME_VOICE = fresh(1800, "Homevoice");
+const FILE_WAIT = fresh(1900, "Filewait");
+const HOME_HINT = fresh(1500, "Homehint");
 
 async function signInAsFresh(page: Page, who: Fresh): Promise<void> {
   await signIn(page, who.emp, { email: who.email, name: who.name });
@@ -552,5 +575,609 @@ step(
     await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
     await expectWithDesk(page);
     await expect(partValue(page, "Area")).toContainText("Operations");
+  },
+);
+
+// --- Walk items WF-01 and WF-04: the "+" in every prompt box (DEC-124) and the Capture first draft page (DEC-125) ---
+
+const LINK_LINE =
+  "SharePoint, Teams and 1% Club links are marked internal. Anything else is marked external.";
+/** DEC-107's second sentence, as J-RECOVER/8 reads it on Check it. */
+const FOUND_LINE =
+  /^Found a phone number(?: on page \d+)?\. Only you, the review desk and the Ones Committee can open it\.$/;
+
+/** The box's tool row (C-PROMPT.anatomy/2) and its controls from the left. */
+function toolRow(page: Page): Locator {
+  return page.locator(".cfoot", { has: page.getByRole("button", { name: PLUS }) });
+}
+function tools(page: Page): Locator {
+  return toolRow(page).locator("button, a");
+}
+
+/** A file's row in the box (C-FILE.row): the list "Your files and links", one item per file. */
+function boxRow(page: Page, name: string): Locator {
+  return page
+    .getByRole("list", { name: "Your files and links" })
+    .getByRole("listitem")
+    .filter({ hasText: name });
+}
+
+/** S-04 for a new person: the empty box ("Start a new one" if an earlier run left this ID a draft, as row 4). */
+async function emptyShare(page: Page): Promise<void> {
+  await page.goto("/share");
+  const startNew = page.getByRole("button", { name: "Start a new one" });
+  await expect(startNew.or(composeBox(page)).first()).toBeVisible();
+  if (await startNew.isVisible()) await startNew.click();
+  await expect(composeBox(page)).toHaveValue("");
+}
+
+step(
+  "J-SHARE/v4",
+  "S-03",
+  'Home\'s "+": the picker, a file that makes the draft, then the same file on the draft page and under Proof',
+  { needs: ["S-03", "C-PROMPT.attach", "C-FILE", "S-04B", "S-05"] },
+  async ({ page }, info) => {
+    info.setTimeout(120_000); // the file's checks can take up to 30 s of it
+    const words =
+      "Walk-in investors fill the same change form twice because the branch copy and the scanned copy never match.";
+    const name = "branch-change-form.pdf";
+    await signInAsFresh(page, HOME_FILES);
+    await page.goto("/home");
+    await expect(
+      page.getByRole("heading", { level: 1, name: `What keeps getting in your way, ${HOME_FILES.first}?` }),
+    ).toBeVisible();
+    // DEC-124: the "+" comes first in the box's tool row.
+    await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+    await expect(page.getByRole("button", { name: PLUS })).toHaveAttribute("title", PLUS);
+
+    // The picker the Home board draws (`attachments=Picker open`).
+    const picker = await openPicker(page);
+    await expect(picker.getByText(/^Drop files or a folder here, or/)).toBeVisible();
+    for (const label of ["browse", "Choose a folder", "Add link"]) {
+      await expect(picker.getByRole("button", { name: label, exact: true })).toBeVisible();
+    }
+    const link = picker.getByRole("textbox", { name: "Or paste a link to a page, file or idea" });
+    await expect(link).toBeVisible();
+    await expect(picker.getByText(LINK_LINE)).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+    // Escape closes it and focus goes back to the "+".
+    await link.focus();
+    await expect(link).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(picker).toHaveCount(0);
+    await expect(page.getByRole("button", { name: PLUS })).toBeFocused();
+
+    // The first file makes the draft; its row is in the box and the checks pass (DEC-107: scan, then the check).
+    await addFile(page, name, "Change form, branch copy and scanned copy, week 47.");
+    await expect(boxRow(page, name)).toBeVisible();
+    await expect(boxRow(page, name).getByText("Checked", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(boxRow(page, name).getByRole("button", { name: `Remove ${name}` })).toBeVisible();
+
+    // Continue: the words go into THAT draft as its first message, and the file travels with it.
+    await page.getByRole("textbox", { name: "Say it in your own words" }).fill(words);
+    await page.getByRole("link", { name: "Continue to Share a problem" }).click();
+    await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
+    const draft = new URL(page.url()).pathname;
+    await expect(page.getByText(words).first()).toBeVisible();
+    await expect(boxRow(page, name).getByText("Checked", { exact: true })).toBeVisible();
+    await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+
+    // Check it, part 4: Proof lists the same file.
+    await page.goto(`${draft}/check`);
+    await page.getByRole("button", { name: /^(?:\d )?Proof\b/ }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Anything that shows it?" })).toBeVisible();
+    await expect(page.getByText(name).first()).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+  },
+);
+
+step(
+  "J-SHARE/v5",
+  "S-04B",
+  'Share a problem\'s "+": a file with a customer detail opens only for you, the review desk and the Ones Committee, and stays with the draft until Remove',
+  { needs: ["S-04", "S-04B", "C-PROMPT.attach", "C-FILE", "L-HIDE"] },
+  async ({ page }, info) => {
+    info.setTimeout(120_000); // the file's checks can take up to 30 s of it
+    const words =
+      "Couriers call the branch to confirm investor addresses because the dispatch list has no landmark field.";
+    const name = "courier-callback-notes.pdf";
+    await signInAsFresh(page, BOX_FILES);
+    await emptyShare(page);
+    // DEC-124: the "+" comes first in the tool row on the empty box too, before the mic and the round button.
+    await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+
+    // A file before any words makes the draft (C-PROMPT.attach). Synthetic number, as J-RECOVER/8.
+    await addFile(page, name, "Investor called back on 9800000012 about the courier.");
+    await expect(boxRow(page, name).getByText(FOUND_LINE)).toBeVisible({ timeout: 30_000 });
+    await expectNoSeriousAxeIssues(page);
+
+    // The first message: the same draft, and the row is still in the box on the draft page.
+    await composeBox(page).fill(words);
+    await page.getByRole("button", { name: "Start my draft" }).click();
+    await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
+    await expect(page.getByText(words).first()).toBeVisible();
+    await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+    await expect(boxRow(page, name).getByText(FOUND_LINE)).toBeVisible();
+
+    // Remove takes it out of the box and off the draft.
+    await boxRow(page, name)
+      .getByRole("button", { name: `Remove ${name}` })
+      .click();
+    await expect(boxRow(page, name)).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByText(words).first()).toBeVisible();
+    await expect(page.getByText(name)).toHaveCount(0);
+  },
+);
+
+step(
+  "J-SHARE/v6",
+  "S-04B",
+  'Capture first (the assistant off): no draft panel, the conversation and the box at most 960px wide and centred, "+" then Move to Review with its line; the phone keeps its dock, and Full mode brings the panel back',
+  { needs: ["S-04", "S-04B", "C-PROMPT.attach", "C-DRAFT-PANEL", "L-DRAFT", "BLD-D032"] },
+  async ({ page, browser }, info) => {
+    // Two admin visits, three waits of up to 30 s and the 11 s below: the default 60 s is too short, and a step that
+    // times out must still reach its `finally` and put the switch back.
+    info.setTimeout(150_000);
+    const words =
+      "Every month-end the branch prints the same SIP report three times because the export drops the last page.";
+    let draft = "";
+    const root = page.locator(".cz");
+    const moveButton = page.getByRole("button", { name: "Move to Review" });
+    const moveLink = page.getByRole("link", { name: "Move to Review" });
+
+    // DEC-125 (1): Capture first is `ai.all` off. Switched on the admin page, as an admin would, and always put back.
+    await withSwitchLock("ai.all", async () => {
+      // DEC-088: every switch starts on, so "on" is the state to put back if setSwitch fails half-way.
+      let before: SwitchState = "on";
+      try {
+        before = await setSwitch(browser, "ai.all", "off");
+        await signInAsFresh(page, CAPTURE);
+        // The web reads switches through a 10-second cache, which a change clears (server/killswitch.ts).
+        await expect(async () => {
+          await emptyShare(page);
+          await expect(root).toHaveClass(/\bcapture\b/, { timeout: 2_000 });
+        }).toPass({ timeout: 30_000 });
+
+        // DEC-125 (3) on the empty box: "+", then Move to Review, off until there is a draft to check.
+        await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+        await expect(tools(page).nth(1)).toHaveAccessibleName("Move to Review");
+        await expect(moveButton).toHaveAttribute("aria-disabled", "true");
+        await expect(page.getByRole("heading", { level: 2, name: "Your draft" })).toHaveCount(0);
+        await expectNoSeriousAxeIssues(page);
+
+        await composeBox(page).fill(words);
+        await page.getByRole("button", { name: "Start my draft" }).click();
+        await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
+        draft = new URL(page.url()).pathname;
+        await expect(page.getByText(words).first()).toBeVisible();
+        await expect(root).toHaveClass(/\bcapture\b/);
+
+        // DEC-130 (BLD-D032): at 1440 the conversation and the prompt box are at most 960px wide, centred in
+        // the column the draft panel left (it amends DEC-125 (2), "the full width").
+        const middle = async (sel: string) => {
+          const box = await page.locator(sel).first().boundingBox();
+          if (!box) throw new Error(`DEC-130: ${sel} has no box`);
+          return { width: box.width, centre: box.x + box.width / 2 };
+        };
+        const column = await middle(".cz .cmain");
+        for (const sel of [".cz .convo", ".cz .cdock .prompt"]) {
+          const part = await middle(sel);
+          const off = Math.abs(part.centre - column.centre);
+          expect(part.width, `${sel} is at most 960px wide`).toBeLessThanOrEqual(960);
+          expect(off, `${sel} is centred in the column`).toBeLessThanOrEqual(2);
+        }
+
+        // (2): no draft panel and nothing that forms.
+        await expect(page.getByRole("heading", { level: 2, name: "Your draft" })).toHaveCount(0);
+        await expect(page.getByText("Forms as you write")).toHaveCount(0);
+        await expect(page.getByText(/^Couldn.t work this out\. Add it yourself\.$/)).toHaveCount(0);
+        // (3): "+", then Move to Review; DEC-118: on once the words are saved and nothing is building, with its
+        // readiness line tied to it for screen readers. Exactly one on the page.
+        await expect(tools(page).first()).toHaveAttribute("aria-label", PLUS);
+        await expect(tools(page).nth(1)).toHaveAccessibleName("Move to Review");
+        await expect(moveLink).toHaveAttribute("href", new RegExp(`${esc(draft)}/check$`), {
+          timeout: 30_000,
+        });
+        await expect(moveLink).toHaveAccessibleDescription("Looks right? Check the sorting and send it.");
+        await expect(moveLink.or(moveButton)).toHaveCount(1);
+        // (4): the rule-based hint chips stay.
+        await expect(page.locator(".nexts .chip").first()).toBeVisible({ timeout: 30_000 });
+        await expectNoSeriousAxeIssues(page);
+
+        await moveLink.click();
+        await page.waitForURL(new RegExp(`${esc(draft)}/check$`));
+        await expect(page.getByText(/^Check it, part \d+ of \d+$/)).toBeVisible();
+
+        // (5): the phone is unchanged: no Capture first layout, and Move to Review stays in its dock.
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.goto(draft);
+        await expect(page.getByText(words).first()).toBeVisible();
+        await expect(root).not.toHaveClass(/\bcapture\b/);
+        await expect(moveLink.or(moveButton).filter({ visible: true }).first()).toBeVisible();
+        await page.setViewportSize({ width: 1440, height: 900 });
+      } finally {
+        await restoreSwitches(browser, [["ai.all", before]]);
+        // The worker reads switches through its own 10-second cache (core/killswitch.py): wait it out, pass or
+        // fail, so the steps after this one meet the assistant on.
+        await new Promise((resolve) => setTimeout(resolve, 11_000));
+      }
+    });
+
+    // (6): Full mode brings today's design back.
+    await page.goto(draft);
+    await expect(root).not.toHaveClass(/\bcapture\b/);
+    await expect(page.getByRole("heading", { level: 2, name: "Your draft" })).toBeVisible();
+  },
+);
+
+// --- Walk item WF-02: the mic in Home's box (BLD-C220) ----------------------------------------------------------------
+
+/** What CI's fake speech route hears for every 5 seconds of audio (services/worker/gateway/speech.py FAKE_SAMPLE). */
+const HEARD =
+  "Branch staff type every change of bank form twice because the scanned copy is hard to read, and it adds a day to each request.";
+
+/** axe without the reflow check's 320 px resize, for a state a resize would end: Home's box crosses its phone layout
+ * at 640 px (compose.tsx `useIsPhone`) and would remount mid-recording. The same tags and bar as e2e/helpers. */
+async function axeInPlace(page: Page): Promise<void> {
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const blocking = results.violations
+    .filter((v) => v.impact === "serious" || v.impact === "critical")
+    .map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
+  expect(blocking, `axe on ${page.url()}`).toEqual([]);
+}
+
+type Rect = { x: number; y: number; width: number; height: number };
+
+function overlaps(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
+/** The hint sits over the round button: wholly above it, across its middle. */
+function over(hint: Rect, round: Rect): boolean {
+  const middle = round.x + round.width / 2;
+  return hint.y + hint.height <= round.y && hint.x <= middle && middle <= hint.x + hint.width;
+}
+
+/**
+ * After a resize, waits for the page to settle: two frames, as lib.ts's axe check waits for a remount after a
+ * media query change, then until Home's box reads the same on two frames in a row (at most 30 more). Read any
+ * sooner, the box can still be mid-change in a narrower column, where its hint clears more than it does once
+ * settled (v7's flake of 22 Nov, BLD-G009).
+ */
+async function settled(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const frame = () => new Promise((done) => requestAnimationFrame(done));
+    const read = () => {
+      const box = document.querySelector(".hm-prompt");
+      const hint = box?.querySelector(".vhint");
+      return JSON.stringify([box?.getBoundingClientRect(), hint?.getBoundingClientRect()]);
+    };
+    await frame();
+    await frame();
+    let last = read();
+    for (let i = 0; i < 30; i += 1) {
+      await frame();
+      const now = read();
+      if (now === last) return;
+      last = now;
+    }
+  });
+}
+
+/** Home's box as laid out now: its hint, its "+" and its round button. */
+async function homeBox(page: Page): Promise<{ hint: Rect; plus: Rect; round: Rect }> {
+  const at = await page.evaluate(
+    ({ plusName, roundName }) => {
+      const prompt = document.querySelector(".hm-prompt");
+      const rect = (el: Element | null | undefined) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      return {
+        hint: rect(prompt?.querySelector(".vhint")),
+        plus: rect(prompt?.querySelector(`button[aria-label="${plusName}"]`)),
+        round: rect(prompt?.querySelector(`button[aria-label="${roundName}"]`)),
+      };
+    },
+    { plusName: PLUS, roundName: "Tap to start speaking" },
+  );
+  if (!at.hint || !at.plus || !at.round) {
+    throw new Error('Home\'s box has its hint, its "+" and its round button');
+  }
+  return { hint: at.hint, plus: at.plus, round: at.round };
+}
+
+step(
+  "J-SHARE/v7",
+  "S-04B",
+  'Home\'s mic: the round button in the empty box, its hint over it on arrival and clear of the "+" on a phone; a tap makes the draft once, and the note lands on Share a problem',
+  { needs: ["S-03", "C-PROMPT.voice", "L-DRAFT.voice", "S-04B", "BLD-C220"] },
+  async ({ page }, info) => {
+    info.setTimeout(120_000); // about 5 seconds of tone for the fake route to hear, then the note is finished
+    // CI's browser has no microphone; this one plays a steady tone, which the fake route hears as HEARD. Synthetic.
+    await page.addInitScript(() => {
+      if (!navigator.mediaDevices) return;
+      navigator.mediaDevices.getUserMedia = async () => {
+        const ctx = new AudioContext();
+        const tone = ctx.createOscillator();
+        const out = ctx.createMediaStreamDestination();
+        tone.connect(out);
+        tone.start();
+        return out.stream;
+      };
+    });
+    // Reduced motion keeps the hint still (no slide in), so its place reads the same on every frame. It
+    // still goes at 5.9 s (BLD-C240, which v7b times); the checks of its place below come in the first
+    // seconds.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const made: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && new URL(r.url()).pathname === "/api/drafts") made.push(r.url());
+    });
+    await signInAsFresh(page, HOME_VOICE);
+    await page.goto("/home");
+    const box = page.getByRole("textbox", { name: "Say it in your own words" });
+    const round = page.getByRole("button", { name: "Tap to start speaking", exact: true });
+    const hint = page.locator(".hm-prompt .vhint");
+    await expect(box).toHaveValue("");
+    await expect(round).toBeVisible();
+    await expect(hint).toContainText("Tap to start speaking");
+    await expect(hint).toContainText("Not recording until you do");
+    // DEC-128: Home lets its own origin use the microphone (where the browser can say).
+    const allowed = await page.evaluate(() => {
+      const d = document as Document & { featurePolicy?: { allowsFeature(feature: string): boolean } };
+      return d.featurePolicy ? d.featurePolicy.allowsFeature("microphone") : null;
+    });
+    expect(allowed, "DEC-128: the microphone is allowed on Home").not.toBe(false);
+    // On arrival the hint sits over the round button (C-PROMPT.voice, both Home boards).
+    await settled(page);
+    const desk = await homeBox(page);
+    expect(over(desk.hint, desk.round), "on arrival the hint sits over the round button").toBe(true);
+
+    // Lane D's QA: on a phone the hint (about 200 px, two lines) sits over the round button and clear of the
+    // "+". While it shows it may cover the box's first line, as the PhoneHome drawing does (lane D, 22 Nov,
+    // BLD-G009); when it goes, and that it goes while the box has focus, is BLD-C240, which v7b pins.
+    await page.setViewportSize({ width: 360, height: 780 });
+    await settled(page);
+    await expect(round).toBeVisible();
+    await expect(hint).toBeVisible();
+    const phone = await homeBox(page);
+    expect(over(phone.hint, phone.round), "on a phone the hint sits over the round button").toBe(true);
+    expect(overlaps(phone.hint, phone.plus), 'the hint covers the "+"').toBe(false);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expectNoSeriousAxeIssues(page);
+
+    // A tap makes Home's draft, before any audio, and records (C-PROMPT.voice).
+    await round.click();
+    const stop = page.getByRole("button", { name: "Stop, and use what you said" });
+    await expect(stop).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Listening. Up to 3 minutes.")).toBeVisible();
+    await axeInPlace(page);
+    // About 5 seconds of tone is heard as HEARD, and what is heard comes into the box.
+    await expect(box).toHaveValue(new RegExp(esc(HEARD)), { timeout: 30_000 });
+    await stop.click();
+
+    // Once the note is finished the page goes on to Share a problem, with the note as the draft's message.
+    await page.waitForURL(/\/share\/[0-9a-f-]{36}$/, { timeout: 30_000 });
+    await expect(page.getByText(HEARD).first()).toBeVisible();
+    expect(made, "Home makes one draft").toHaveLength(1);
+    await expectNoSeriousAxeIssues(page);
+  },
+);
+
+/**
+ * How Home's hint went (BLD-C240): when it could no longer be seen, in ms on the page's animation
+ * timeline since it was drawn; whether it faded or moved on the way; and how many way-out clocks it had
+ * (one, unless it was drawn again).
+ */
+type HintRun = { goneAt: number; faded: boolean; moved: boolean; clocks: number };
+
+/**
+ * Reads Home's hint in the page, frame by frame, until its way out (compose.css: czHintOut, or czHintGone
+ * under reduced motion) has run to its end and nothing of it can be seen: hidden, or at an opacity under
+ * 0.01. The opacity ends the wait so that a hint left "visible" at no opacity fails on the step's
+ * toBeHidden, not on a timeout: Chromium ends the 0.01 ms reduced-motion way out (F-MOTION.reduced) a
+ * hair short of its last frame (CI 45128423160), so czHintGone is hidden at both ends. The time is read
+ * on the frame that finds it gone, not from the animation's own clock, which stops at its end.
+ */
+async function hintRun(page: Page): Promise<HintRun> {
+  return page.evaluate(async () => {
+    const hint = document.querySelector(".hm-prompt .vhint");
+    if (!hint) throw new Error("Home's hint is on screen");
+    const waysOut = ["czHintOut", "czHintGone"];
+    const isOut = (a: Animation): a is CSSAnimation =>
+      a instanceof CSSAnimation && waysOut.includes(a.animationName);
+    const out = hint.getAnimations().find(isOut);
+    if (!out) throw new Error(`the hint has its way out (${waysOut.join(" or ")})`);
+    const delay = Number(out.effect?.getTiming().delay ?? 0);
+    const frame = () => new Promise((done) => requestAnimationFrame(done));
+    const until = performance.now() + 15_000;
+    let faded = false;
+    let moved = false;
+    const clocks = new Set<Animation>([out]);
+    while (performance.now() < until) {
+      if (!hint.isConnected) throw new Error("the hint was drawn again, which starts its clock again");
+      for (const a of hint.getAnimations()) {
+        if (isOut(a)) clocks.add(a);
+      }
+      const style = getComputedStyle(hint);
+      const opacity = Number(style.opacity);
+      if (out.playState === "finished" && (style.visibility === "hidden" || opacity < 0.01)) {
+        const goneAt = Number(document.timeline.currentTime) - Number(out.startTime);
+        return { goneAt, faded, moved, clocks: clocks.size };
+      }
+      if (style.transform !== "none") moved = true;
+      // A fade is an opacity part way, once the way out has begun (the way in fades too, before 1.25 s).
+      if (Number(out.currentTime) >= delay && opacity > 0.01 && opacity < 0.99) faded = true;
+      await frame();
+    }
+    // What the browser holds for the hint when it has not gone: its way-out clock and the styles in force.
+    const style = getComputedStyle(hint);
+    const timing = out.effect?.getComputedTiming();
+    const seen = {
+      clocks: clocks.size,
+      live: hint.getAnimations().includes(out),
+      state: out.playState,
+      at: out.currentTime,
+      started: out.startTime,
+      timeline: document.timeline.currentTime,
+      timing: out.effect?.getTiming(),
+      progress: timing?.progress,
+      end: timing?.endTime,
+      css: [
+        style.visibility,
+        style.opacity,
+        style.animationName,
+        style.animationDelay,
+        style.animationDuration,
+        style.animationFillMode,
+      ],
+    };
+    throw new Error(`the hint was still there after 15 s: ${JSON.stringify(seen)}`);
+  });
+}
+
+step(
+  "J-SHARE/v7b",
+  "S-03",
+  "Home's hint goes on its own by about 6.4 s, goes while a phone's box has focus, stays away once anything is typed, and under reduced motion goes at once without moving",
+  { needs: ["S-03", "C-PROMPT.voice", "BLD-C220", "BLD-C240"] },
+  async ({ page }, info) => {
+    info.setTimeout(90_000); // three loads of Home and two waits of about 6.4 s for the hint to go
+    await signInAsFresh(page, HOME_HINT);
+    await page.goto("/home");
+    const box = page.getByRole("textbox", { name: "Say it in your own words" });
+    const round = page.getByRole("button", { name: "Tap to start speaking", exact: true });
+    const hint = page.locator(".hm-prompt .vhint");
+
+    // On arrival the hint shows. On the desk the box's focus leaves it there: the focus rule is a phone's.
+    await expect(hint).toBeVisible();
+    await box.focus();
+    await expect(box).toBeFocused();
+    await expect(hint).toBeVisible();
+    // From 5.9 s it fades for 0.45 s, and then it is gone.
+    const desk = await hintRun(page);
+    expect(desk.goneAt, "the hint stays until 5.9 s and fades for 0.45 s").toBeGreaterThanOrEqual(6_349);
+    expect(desk.goneAt, "gone by about 6.4 s").toBeLessThan(6_650);
+    expect(desk.faded, "it fades on the way out").toBe(true);
+    expect(desk.clocks, "its clock started once, on arrival").toBe(1);
+    await expect(hint, "gone means hidden, so a screen reader does not read it either").toBeHidden();
+
+    // On a phone (PhoneHome) it goes while the words box has focus, and shows again once the focus leaves.
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.reload();
+    await expect(hint).toBeVisible();
+    await box.focus();
+    await expect(hint).toBeHidden();
+    await box.blur();
+    await expect(hint).toBeVisible();
+
+    // Once anything is typed it stays away, even after the box is cleared (the board's `!draft && !typed`),
+    // and the round button is the microphone again, at either width.
+    await box.fill("Forms");
+    await expect(hint).toHaveCount(0);
+    await box.fill("");
+    await box.blur();
+    await expect(round).toBeVisible();
+    await expect(hint).toHaveCount(0);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect(round).toBeVisible();
+    await expect(hint).toHaveCount(0);
+
+    // Reduced motion (F-MOTION.reduced) takes the movement, not the hint: it shows, still, for the same 5.9 s
+    // and then goes at once, with no fade.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.reload();
+    await expect(hint).toBeVisible();
+    const still = await hintRun(page);
+    expect(still.moved, "it never moves").toBe(false);
+    expect(still.faded, "it goes at once, with no fade").toBe(false);
+    expect(still.goneAt, "it stays until 5.9 s").toBeGreaterThanOrEqual(5_900);
+    expect(still.goneAt, "gone by about 6.4 s").toBeLessThan(6_400);
+    expect(still.clocks, "its clock started once, on arrival").toBe(1);
+    await expect(hint, "hidden, not only see-through (BLD-C240 follow-up, czHintGone)").toBeHidden();
+    await expectNoSeriousAxeIssues(page);
+  },
+);
+
+// --- A2: a file while the assistant is off (BLD-C225 to BLD-C227) -----------------------------------------------------
+
+/** BLD-C227: a checking file's line while its personal details check waits for the assistant (check/model.ts
+ * `rowView`, from the FileItem's `problem` while `checks.waiting_for` is "gatekeeper"), in the box and on Proof. */
+const WAIT_LINE = "Waiting for the personal details check. It runs when the assistant is back.";
+
+step(
+  "J-SHARE/v8",
+  "S-04B",
+  "Capture first: a file waits for the personal details check, says so on the draft page and in Proof, never fails, and is checked once the assistant is back",
+  { needs: ["S-04", "S-04B", "S-05", "C-PROMPT.attach", "C-FILE", "L-HIDE", "BLD-C225"] },
+  async ({ page, browser }, info) => {
+    // Two admin visits, the waits while off, the 11 s below and up to 80 s for the switch-on re-queue (the watch's
+    // 60 s gate on a 20 s poll, BLD-C226), then the check itself. A step that times out must still put the switch back.
+    info.setTimeout(300_000);
+    const words =
+      "Branch staff scan the same change of bank form twice because the first scan is too faint to read at the desk.";
+    const name = `bank-form-scan-notes-${runSeconds().toString(36)}.pdf`;
+    const waiting = boxRow(page, name).getByText(WAIT_LINE, { exact: true });
+    const checked = boxRow(page, name).getByText("Checked", { exact: true });
+    let draft = "";
+
+    // DEC-125 (1): Capture first is `ai.all` off, switched on the admin page and always put back (BLD-G004).
+    await withSwitchLock("ai.all", async () => {
+      let before: SwitchState = "on";
+      try {
+        before = await setSwitch(browser, "ai.all", "off");
+        await signInAsFresh(page, FILE_WAIT);
+        // The web reads switches through a 10-second cache, which a change clears (server/killswitch.ts).
+        await expect(async () => {
+          await emptyShare(page);
+          await expect(page.locator(".cz")).toHaveClass(/\bcapture\b/, { timeout: 2_000 });
+        }).toPass({ timeout: 30_000 });
+
+        // A file with no customer detail (synthetic words only). Its check waits for the gatekeeper without using
+        // a try (BLD-C225; non-negotiable 4 keeps it closed to everyone else), and the row says why (BLD-C227).
+        await addFile(page, name, "Scan settings for the branch copier: grey scale, one page per form.");
+        await expect(waiting).toBeVisible({ timeout: 45_000 });
+        await expect(checked).toHaveCount(0);
+        await expectNoSeriousAxeIssues(page);
+
+        // The draft page reads the same line from the server: the reason is kept with the file's checks.
+        await composeBox(page).fill(words);
+        await page.getByRole("button", { name: "Start my draft" }).click();
+        await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
+        draft = new URL(page.url()).pathname;
+        await expect(page.getByText(words).first()).toBeVisible();
+        await expect(waiting).toBeVisible();
+        await expect(page.getByText(/^Didn.t upload\./)).toHaveCount(0);
+
+        // Check it, part 4: Proof shows the file with the same line.
+        await page.goto(`${draft}/check`);
+        await page.getByRole("button", { name: /^(?:\d )?Proof\b/ }).click();
+        await expect(page.getByRole("heading", { level: 1, name: "Anything that shows it?" })).toBeVisible();
+        await expect(page.getByText(name).first()).toBeVisible();
+        await expect(page.getByText(WAIT_LINE, { exact: true }).first()).toBeVisible();
+        await expect(page.getByText(/^Didn.t upload\./)).toHaveCount(0);
+        await expectNoSeriousAxeIssues(page);
+      } finally {
+        await restoreSwitches(browser, [["ai.all", before]]);
+        // The worker reads switches through its own 10-second cache (core/killswitch.py): wait it out, pass or
+        // fail, so the steps after this one meet the assistant on.
+        await new Promise((resolve) => setTimeout(resolve, 11_000));
+      }
+    });
+
+    // Back on: the watch queues the waiting check again (BLD-C226) and the file is checked. The draft page is
+    // loaded again while it waits, so the row is read from the server each time.
+    expect(draft, "the draft page was reached while the assistant was off").toBeTruthy();
+    await expect(async () => {
+      await page.goto(draft);
+      await expect(checked).toBeVisible({ timeout: 5_000 });
+    }).toPass({ timeout: 150_000, intervals: [10_000] });
+    await expect(waiting).toHaveCount(0);
+    await expect(page.getByText(/^Didn.t upload\./)).toHaveCount(0);
   },
 );

@@ -13,6 +13,7 @@ import { BANNERS } from "@/lib/killswitch-routes";
 import type { CurrentUser } from "./auth/current";
 import { getDb } from "./db";
 import { spansToUtf16, type CodePointSpan } from "./hide-offsets";
+import { switchStates } from "./killswitch";
 import { workerFetch } from "./worker";
 
 export type DeviceKind = "phone" | "laptop";
@@ -38,6 +39,17 @@ export const DRAFT_MESSAGES: Record<string, string> = {
   voice_unavailable: BANNERS["capture.voice"],
 };
 const FALLBACK = "Something went wrong. Please try again.";
+
+/** Capture first (DEC-125, BLD-C212): `ai.all` is off. Read exactly as the "The assistant is taking a break…" banner
+ * reads it (components/banners.tsx: the switch table, anything but "on" is off); a table that cannot be read shows no
+ * banner, so Tell it stays in Full mode too. Nothing else turns it on: a run that fails every part keeps Full mode. */
+export async function captureFirstOn(): Promise<boolean> {
+  try {
+    return (await switchStates()).get("ai.all") !== "on";
+  } catch {
+    return false;
+  }
+}
 
 /** "This draft is open on your phone. Carry on here?" (L-DRAFT.autosave/5, NOT DRAWN default). */
 export function openElsewhere(device: unknown): string {

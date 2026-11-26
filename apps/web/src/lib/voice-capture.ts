@@ -104,6 +104,9 @@ export type VoiceCaptureOptions = {
   requestTimeoutMs?: number;
   /** The audio context must be running within this long of the tap, or the note fails with `audio_suspended`. */
   resumeTimeoutMs?: number;
+  /** Where the note's routes are: `${base}/start`, `/chunk`, `/end` and `/{stream}`. By default the draft's,
+   * `/api/drafts/{target}/voice`; S-R3 passes its question's, `/api/questions/{id}/answer/voice` (lane B, BLD-B276). */
+  base?: string;
 };
 
 export const VOICE_NOTICE_KEY = "1pc.voice.notice-seen";
@@ -195,6 +198,7 @@ export class VoiceCapture {
   private readonly resolveDraft: (() => Promise<string | null>) | null;
   private readonly requestTimeoutMs: number;
   private readonly resumeTimeoutMs: number;
+  private readonly base: string | null;
   private target: string; // the draft the note belongs to: `draftId`, or the one `resolveDraft` gave
   private noticeShownOnScreen = false;
   private detach: (() => void) | null = null;
@@ -227,11 +231,17 @@ export class VoiceCapture {
     this.resolveDraft = options.resolveDraft ?? null;
     this.requestTimeoutMs = options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
     this.resumeTimeoutMs = options.resumeTimeoutMs ?? RESUME_TIMEOUT_MS;
+    this.base = options.base ?? null;
     this.target = draftId;
     this.state = this.idle();
   }
 
   readonly getState = (): VoiceCaptureState => this.state;
+
+  /** The note's routes: `base`, or the draft's own (`/api/drafts/{target}/voice`, as before `base`). */
+  private root(): string {
+    return this.base ?? `/api/drafts/${encodeURIComponent(this.target)}/voice`;
+  }
 
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -409,7 +419,7 @@ export class VoiceCapture {
       budget -= chunk.data.byteLength;
       const q = new URLSearchParams({ stream, seq: String(chunk.seq) });
       try {
-        void this.fetchImpl(`/api/drafts/${encodeURIComponent(this.target)}/voice/chunk?${q}`, {
+        void this.fetchImpl(`${this.root()}/chunk?${q}`, {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/octet-stream" },
@@ -586,8 +596,7 @@ export class VoiceCapture {
     what: string,
     body?: PcmChunk | { stream: unknown },
   ): Promise<Answer> {
-    const draft = encodeURIComponent(this.target);
-    let url = `/api/drafts/${draft}/voice/${what}`;
+    let url = `${this.root()}/${what}`;
     const abort = new AbortController();
     this.inflight.add(abort);
     const init: RequestInit = { method, credentials: "same-origin", cache: "no-store", signal: abort.signal };
@@ -620,9 +629,8 @@ export class VoiceCapture {
   }
 
   private async endQuietly(stream: string): Promise<void> {
-    const draft = encodeURIComponent(this.target);
     try {
-      await this.fetchImpl(`/api/drafts/${draft}/voice/end`, {
+      await this.fetchImpl(`${this.root()}/end`, {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },

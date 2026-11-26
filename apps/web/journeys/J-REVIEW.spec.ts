@@ -15,9 +15,24 @@
  * J-TRACK's and lists Z1 as similar; read only here). The desk merge (M3) joins F2 (Faisal's) and J2 (Jatin's), both
  * opened by Lavanya and listing each other as similar; F2 was shared first, so it leads by default (L-MERGE.desk/2).
  */
+import AxeBuilder from "@axe-core/playwright";
 import { expect, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 
-import { expectDeskCard, ideaUrl, seeded, signInAs, snap, step, type Person, type StepRef } from "./lib";
+import {
+  CLUB_EMAIL,
+  expectClubMail,
+  expectDeskCard,
+  expectNoSeriousAxeIssues,
+  ideaUrl,
+  mailLink,
+  mailTo,
+  seeded,
+  signInAs,
+  snap,
+  step,
+  type Person,
+  type StepRef,
+} from "./lib";
 
 // --- Patterns for run-time parts of the copy ----------------------------------------------------------------------------
 
@@ -257,6 +272,12 @@ step(
     await preview.getByRole("button", { name: "Close the preview" }).click();
     await expect(preview).toBeHidden();
     await expect(page.getByRole("button", { name: `Merge with ${z1.title}` })).toBeEnabled();
+    // BLD-B273, F-SPACE.targets (WCAG 2.5.8): every target in Similar ideas is 24 × 24 px or spaced clear of the next.
+    const targets = await new AxeBuilder({ page }).include(".ri-sim").withRules(["target-size"]).analyze();
+    expect(
+      targets.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`),
+      "Similar ideas, target size",
+    ).toEqual([]);
   },
 );
 
@@ -410,6 +431,34 @@ step(
   },
 );
 
+step(
+  "J-REVIEW/6e",
+  "S-06",
+  "Pallavi's email: the decision comes at once with the idea's title and a link, never the reason, and the link opens it",
+  { needs: ["S-06", "L-NOTIFY", "L-DECIDE"], after: ["J-REVIEW/6"] },
+  async ({ page }) => {
+    const p1 = await seeded("P1");
+    // L-NOTIFY/1, /3 (DEC-131 (1), BLD-G007): a decision always goes outside the app, at once, whatever
+    // Pallavi's settings, and says what happened with a link; the words are HR's (inbox/decision.md).
+    const mail = await mailTo(page, CLUB_EMAIL.pallavi, "A decision on your idea", p1.title);
+    expectClubMail(mail, CLUB_EMAIL.pallavi);
+    expect(mail.text).toContain("Hi Pallavi,");
+    // DEC-111: the review desk as one, as on S-06, never the reviewer's name.
+    expect(mail.text).toContain(`The review desk picked your idea: ${p1.title}.`);
+    expect(mail.text).not.toContain("Lavanya");
+    expect(mail.text).toContain("Read the decision and the reason in the app.");
+    // The reason is read in the app, never in an email (L-NOTIFY/3, BLD-E004).
+    expect(mail.text).not.toContain(REASON);
+    expect(mail.html).not.toContain(REASON);
+    const link = mailLink(mail, "Read the decision");
+    expect(link.pathname).toBe(ideaUrl(p1));
+    await signInAs(page, "pallavi");
+    await page.goto(link.pathname);
+    await expect(page.getByText("Picked. A team is being chosen to build it.").first()).toBeVisible();
+    await expect(page.getByText(REASON).first()).toBeVisible();
+  },
+);
+
 // --- J-REVIEW.ask: ask first (K1 for A1–A3; Z1 for the clock; B1 for answers) ---------------
 
 step(
@@ -424,6 +473,7 @@ step(
     await page.goto(deskUrl(k1));
     await expect(page.getByRole("heading", { level: 1, name: k1.title })).toBeVisible();
     const askFirst = page.getByRole("button", { name: /^Ask Kiran first/ });
+    const saved = queueSaved(page);
     await askAbout(page, "How often").click();
     await expect(askFirst).toHaveAttribute("aria-expanded", "true");
     await expect(askAbout(page, "How often")).toHaveAttribute("aria-pressed", "true");
@@ -442,6 +492,8 @@ step(
     await expect(askFirst).toContainText(new RegExp(`${n} questions? ready`));
     await expect(page.getByRole("button", { name: "Decide without asking" })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Send \d+ questions? to Kiran$/ })).toBeVisible();
+    // BLD-B272: the queue is saved once the changes pause, so the next visit finds it (A1b).
+    expect((await saved).status(), "the queue is saved").toBe(200);
   },
 );
 
@@ -464,6 +516,58 @@ async function addQuestion(page: Page, text: string): Promise<void> {
   await page.getByRole("button", { name: "Add this question" }).click();
   await expect(page.getByRole("button", { name: `Remove: ${text}` })).toBeVisible();
 }
+
+/** A made-up PAN (synthetic, non-negotiable 11) in a question the reviewer types: the stored copy is masked (L-HIDE). */
+const QUESTION_WITH_PAN = "Is this the investor with PAN AAAPZ7777Q who called the branch twice?";
+
+/** The reviewer's queue, saved once the changes pause (PUT …/question-sets/queued, BLD-B272). */
+function queueSaved(page: Page) {
+  return page.waitForResponse(
+    (res) =>
+      res.request().method() === "PUT" && new URL(res.url()).pathname.endsWith("/question-sets/queued"),
+  );
+}
+
+step(
+  "J-REVIEW/A1b",
+  "S-R2",
+  "Back later: the questions queued are still there, folded and ready to send; one with a customer detail is kept masked",
+  { needs: ["S-R2", "L-QUESTIONS", "L-HIDE"], changes: ["K1"], after: ["J-REVIEW/A1"] },
+  async ({ page }) => {
+    const k1 = await seeded("K1");
+    const howOften = "Remove: How often does this happen: a few times a day, a week or a month?";
+    await signInAs(page, "lavanya");
+    await page.goto(deskUrl(k1));
+    await expect(page.getByRole("heading", { level: 1, name: k1.title })).toBeVisible();
+    // L-QUESTIONS/4 (BLD-B272): A1's queue was kept; a new visit opens with it folded, ready to send.
+    const askFirst = page.getByRole("button", { name: /^Ask Kiran first/ });
+    await expect(askFirst).toHaveAttribute("aria-expanded", "false");
+    await expect(askFirst).toContainText(/\d+ questions? ready/);
+    await expect(page.getByRole("button", { name: /^Send \d+ questions? to Kiran$/ })).toBeVisible();
+    await openAsk(page);
+    await expect(page.getByRole("button", { name: howOften })).toBeVisible();
+    const removes = page.getByRole("button", { name: /^Remove: / });
+    const before = await removes.count();
+
+    // L-HIDE, DEC-103: the question is hidden before it is stored, so the next visit reads only the masked copy.
+    let saved = queueSaved(page);
+    await addQuestion(page, QUESTION_WITH_PAN);
+    expect((await saved).status(), "the queue is saved").toBe(200);
+    await page.reload();
+    await openAsk(page);
+    await expect(removes).toHaveCount(before + 1);
+    const masked = page.getByRole("button", { name: /^Remove: Is this the investor with PAN .*••••/ });
+    await expect(masked).toBeVisible();
+    await expect(page.getByText("AAAPZ7777Q")).toHaveCount(0);
+    await expectNoSeriousAxeIssues(page);
+
+    // Removing it is kept too, so A2 starts from A1's queue.
+    saved = queueSaved(page);
+    await masked.click();
+    expect((await saved).status(), "the queue is saved").toBe(200);
+    await expect(removes).toHaveCount(before);
+  },
+);
 
 step(
   "J-REVIEW/A2",
@@ -679,7 +783,10 @@ step(
   "J-REVIEW/M3",
   "S-R2",
   "Merge and tell both: one idea survives, the banner says so, and the merged sharer's page points to it",
-  { needs: ["S-R2", "C-SHEET-MERGE", "L-MERGE", "L-COMMITTEE", "S-06"], changes: ["F2", "J2"] },
+  {
+    needs: ["S-R2", "C-SHEET-MERGE", "L-MERGE", "L-COMMITTEE", "S-06", "C-LISTEN"],
+    changes: ["F2", "J2"],
+  },
   async ({ page, browser }, info) => {
     // From J2's page; the lead is F2 by default (shared first), and Team them up is on: Jatin joins Faisal's crew.
     const f2 = await seeded("F2");
@@ -707,14 +814,22 @@ step(
         .first(),
     ).toBeVisible();
     // The lead's row under Similar ideas reads Merged, and still does after a reload, though J2 joined F2 rather
-    // than F2 joining J2 (C-SHEET-MERGE.after, L-MERGE.desk; BLD-B266). The strip "Listen to the whole idea" is not
-    // checked here: lane B restores it on a merged idea after launch.
+    // than F2 joining J2 (C-SHEET-MERGE.after, L-MERGE.desk; BLD-B266).
     const leadRow = page
       .locator(".ri-sim-row")
       .filter({ has: page.getByRole("button", { name: f2.title, exact: true }) });
     await expect(leadRow.getByText("Merged", { exact: true })).toBeVisible();
     await page.reload();
     await expect(leadRow.getByText("Merged", { exact: true })).toBeVisible();
+    // C-LISTEN on the merged idea's own S-R2 (DeskIdea.md state=Merged keeps the strip; BLD-B271): its heading and
+    // Play, "Play the whole idea" until ready, then "…, {length}". With no device voice (CI's headless browser) the
+    // strip may show "Couldn’t prepare the audio. Try again." after 3 seconds; a runner with a voice won't, so
+    // neither that line nor Play's disabled state is pinned.
+    const listen = page.getByRole("region", { name: "Listen to the whole idea", exact: true });
+    await expect(
+      listen.getByRole("heading", { name: "Listen to the whole idea", exact: true }),
+    ).toBeVisible();
+    await expect(listen.getByRole("button", { name: /^Play the whole idea/ })).toBeVisible();
     await asOther(browser, info, "jatin", { ref: "J-REVIEW/M3", screen: "S-06" }, async (sharer) => {
       await sharer.goto(ideaUrl(j2));
       await expect(

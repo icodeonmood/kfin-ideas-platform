@@ -5,7 +5,10 @@ export default defineConfig({
   testDir: "e2e",
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
-  reporter: [["list"]],
+  // BLD-A244: CI also writes JUnit XML for the go/no-go report when `make e2e` passes E2E_JUNIT_FILE.
+  reporter: process.env.E2E_JUNIT_FILE
+    ? [["list"], ["junit", { outputFile: process.env.E2E_JUNIT_FILE }]]
+    : [["list"]],
   use: { baseURL: process.env.E2E_BASE_URL || "http://localhost:3000", trace: "retain-on-failure" },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },

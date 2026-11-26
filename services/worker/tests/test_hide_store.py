@@ -869,14 +869,14 @@ def test_l_hide_rules_7_a_reviewer_never_hides_on_their_own_or_a_merged_in_idea(
 def test_l_hide_detect_a_recheck_waits_while_the_assistant_is_off_and_is_audited_when_it_gives_up(
     hdb: Any,
 ) -> None:
-    """B (BLD-C067): a re-check queued while the assistant was on, run while `ai.all` is off, fails with
-    `GatekeeperUnavailable("ai_off")` and calls no model, so the runner tries again instead of finishing with nothing
-    found. Its last attempt goes dead and is audited (`hide.recheck_gave_up`) with IDs and the code only."""
+    """B (BLD-C067, BLD-C231): a re-check queued while the assistant was on, run while `ai.all` is off, waits
+    (`JobWaits`: its try is given back, as a file's check does) and calls no model, so a switch-off never uses up its
+    tries. Back on with the gateway still down, its last attempt goes dead and is audited (`hide.recheck_gave_up`) with
+    IDs and the code only, and its words are marked done, so the re-check sweep does not ask about them again."""
     import jobs.handlers  # noqa: F401 (registers hide.recheck and its on_dead)
     from core import killswitch
     from gateway.routes import FAKE_SCRIPT, RouteError
-    from hide.core import GatekeeperUnavailable
-    from jobs.runner import run_one
+    from jobs.runner import JobWaits, run_one
 
     db = hdb
     uid, code = person(db)
@@ -891,21 +891,30 @@ def test_l_hide_detect_a_recheck_waits_while_the_assistant_is_off_and_is_audited
     calls_before = count(db, calls, scope_for(iid))
     gave = "SELECT count(*) AS n FROM audit_log WHERE action = 'hide.recheck_gave_up' AND entity = %s"
     gave_before = count(db, gave, f"idea:{iid}")
+    state = "SELECT state, attempts, last_error FROM jobs WHERE id = %s"
     db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'ai.all'")
     killswitch.clear_cache()
     try:
-        with pytest.raises(GatekeeperUnavailable) as off:
+        with pytest.raises(JobWaits) as off:
             hide_recheck.run(db, job["payload"])
-        assert str(off.value) == "ai_off"
+        assert (off.value.code, off.value.seconds) == ("waiting_gatekeeper", 300)
         assert masked_message(db, mid) == out.masked  # nothing lost while it waits
         db.execute(
             "UPDATE jobs SET attempts = max_attempts - 1, run_at = '1999-01-01' WHERE id = %s", (job["id"],)
         )  # the runner's last attempt, first in its queue
         assert run_one(db, "test-hide-recheck")
+        waiting = db.execute(state, (job["id"],)).fetchone()
+        assert (waiting["state"], waiting["last_error"]) == ("queued", "waiting_gatekeeper")
+        assert waiting["attempts"] == job["max_attempts"] - 1  # not a try
     finally:
         db.execute("UPDATE kill_switches SET state = 'on' WHERE name = 'ai.all'")
         killswitch.clear_cache()
-    done = db.execute("SELECT state, last_error FROM jobs WHERE id = %s", (job["id"],)).fetchone()
+    assert count(db, calls, scope_for(iid)) == calls_before  # no model call while the assistant is off
+
+    FAKE_SCRIPT.append(RouteError("connection"))  # back on, the gateway still down: the last attempt fails
+    db.execute("UPDATE jobs SET run_at = '1999-01-01' WHERE id = %s", (job["id"],))
+    assert run_one(db, "test-hide-recheck")
+    done = db.execute(state, (job["id"],)).fetchone()
     assert (done["state"], done["last_error"]) == ("dead", "GatekeeperUnavailable")
     assert count(db, gave, f"idea:{iid}") == gave_before + 1
     row = db.execute(
@@ -914,10 +923,126 @@ def test_l_hide_detect_a_recheck_waits_while_the_assistant_is_off_and_is_audited
     ).fetchone()
     assert row["actor"] == "system"
     assert row["after"] == {
-        "source": "message", "source_id": mid, "code": "ai_off", "recheck_job": job["id"],
+        "source": "message", "source_id": mid, "code": "GatekeeperUnavailable", "recheck_job": job["id"],
         "attempts": job["max_attempts"],
     }  # fmt: skip
-    assert count(db, calls, scope_for(iid)) == calls_before  # no model call while the assistant is off
+    assert sealed_done(db, mid) is not None  # the audit row is the record: the sweep does not ask again
+
+
+def sealed_done(conn: Any, source_id: str, source: str = "message") -> Any:
+    """`idea_words_sealed.gatekeeper_done_at` for one text (BLD-C231): None while it waits for the gatekeeper."""
+    row = conn.execute(
+        "SELECT gatekeeper_done_at FROM idea_words_sealed WHERE source = %s AND source_id = %s",
+        (source, source_id),
+    ).fetchone()
+    assert row is not None
+    return row["gatekeeper_done_at"]
+
+
+def no_stray_rechecks(conn: Any) -> None:
+    """Re-checks other tests left queued (the shared database keeps `jobs`) would count toward the sweep's cap."""
+    conn.execute("DELETE FROM jobs WHERE type = 'hide.recheck' AND state IN ('queued', 'running')")
+
+
+def recheck_jobs(conn: Any, idea_uuid: str) -> list[Any]:
+    return conn.execute(
+        "SELECT id, payload, state FROM jobs WHERE type = 'hide.recheck' AND payload->>'idea_uuid' = %s ORDER BY id",
+        (idea_uuid,),
+    ).fetchall()
+
+
+def test_l_hide_detect_bld_c231_words_written_while_the_assistant_is_off_are_checked_once_it_is_back(
+    hdb: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DEC-131 (3), BLD-C231: a message hidden while `ai.all` is off gets the patterns and names only, its sealed words
+    stay unchecked and nothing is queued. Once the assistant is back, the sweep queues one re-check (the caller's own
+    id, the same dedupe key), which finds the address and marks the words done; nothing is asked twice, and a message
+    hidden with the assistant on is marked done at once and never swept."""
+    from core import killswitch
+    from gateway.routes import FAKE_SCRIPT
+
+    monkeypatch.setattr(hide_recheck, "SETTLE", "0 seconds")
+    db = hdb
+    no_stray_rechecks(db)
+    uid, code = person(db)
+    iid = idea(db, code, shared=True)
+    db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'ai.all'")
+    killswitch.clear_cache()
+    try:
+        mid, out = message(db, iid, uid, f"Forms come back from {ADDRESS} every week", gatekeeper=True)
+        assert out.hidden_count == 0 and not out.gatekeeper_checked and sealed_done(db, mid) is None
+        assert recheck_jobs(db, iid) == []  # nothing queued while off
+        assert hide_recheck.queue_unchecked(db) == 0  # and the sweep waits for the switches
+    finally:
+        db.execute("UPDATE kill_switches SET state = 'on' WHERE name = 'ai.all'")
+        killswitch.clear_cache()
+
+    FAKE_SCRIPT.append(gatekeeper_output())  # nothing found: marked done at once
+    checked, done = message(db, iid, uid, "Mandates bounce at capture", seq=2, gatekeeper=True)
+    assert done.gatekeeper_checked and sealed_done(db, checked) is not None
+
+    assert hide_recheck.queue_unchecked(db) == 1
+    jobs = recheck_jobs(db, iid)
+    assert [j["payload"] for j in jobs] == [
+        {"idea_uuid": iid, "source": "message", "source_id": mid, "by": uid}
+    ]
+    assert hide_recheck.queue_unchecked(db) == 0  # queued already: never twice
+
+    FAKE_SCRIPT.append(address_found())
+    hide_recheck.run(db, jobs[0]["payload"])
+    assert ADDRESS not in masked_message(db, mid)
+    assert sealed_done(db, mid) is not None
+    db.execute("UPDATE jobs SET state = 'done' WHERE id = %s", (jobs[0]["id"],))
+    assert hide_recheck.queue_unchecked(db) == 0  # every text has had its check
+
+
+def test_l_hide_detect_bld_c231_the_sweep_keeps_at_most_five_rechecks_going_and_new_words_wait_again(
+    hdb: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """BLD-C231: after a switch-on the backlog yields to live work: at most `RECHECK_OUTSTANDING` (5) re-checks are
+    running or due at once, topped up as they finish. New words hidden while the assistant is off take a checked
+    text back to unchecked."""
+    from core import killswitch
+    from gateway.routes import FAKE_SCRIPT
+
+    monkeypatch.setattr(hide_recheck, "SETTLE", "0 seconds")
+    db = hdb
+    no_stray_rechecks(db)
+    uid, code = person(db)
+    iid = idea(db, code, shared=True)
+    db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'ai.all'")
+    killswitch.clear_cache()
+    try:
+        mids = [message(db, iid, uid, f"Mandate {n} bounced at capture", seq=n + 1)[0] for n in range(7)]
+    finally:
+        db.execute("UPDATE kill_switches SET state = 'on' WHERE name = 'ai.all'")
+        killswitch.clear_cache()
+    assert hide_recheck.RECHECK_OUTSTANDING == 5
+    assert hide_recheck.queue_unchecked(db) == 5
+    assert hide_recheck.queue_unchecked(db) == 0  # five already due
+    first = recheck_jobs(db, iid)[:3]  # three re-checks finish: their words are marked done, their jobs done
+    db.execute("UPDATE jobs SET state = 'done' WHERE id = ANY(%s)", ([j["id"] for j in first],))
+    db.execute(
+        "UPDATE idea_words_sealed SET gatekeeper_done_at = now() WHERE source = 'message' AND source_id = ANY(%s)",
+        ([j["payload"]["source_id"] for j in first],),
+    )
+    assert hide_recheck.queue_unchecked(db) == 2  # room for three, but only the last two are left
+    assert len(recheck_jobs(db, iid)) == 7
+
+    FAKE_SCRIPT.append(gatekeeper_output())
+    words = "Mandates bounce at capture"
+    with db.transaction():
+        hide_message(db, iid, words, by=uid, source_id=mids[0], gatekeeper=True)
+    assert sealed_done(db, mids[0]) is not None
+    db.execute("UPDATE kill_switches SET state = 'off' WHERE name = 'ai.all'")
+    killswitch.clear_cache()
+    try:
+        with db.transaction():
+            hide_message(db, iid, words + " every week", by=uid, source_id=mids[0], gatekeeper=True)
+        assert sealed_done(db, mids[0]) is None  # new words, not yet checked
+    finally:
+        db.execute("UPDATE kill_switches SET state = 'on' WHERE name = 'ai.all'")
+        killswitch.clear_cache()
 
 
 def test_l_hide_rules_7_two_desk_hides_on_an_unmapped_authors_message_leave_a_correct_copy(hdb: Any) -> None:

@@ -232,21 +232,56 @@ def _brought_ref(conn: Conn, req: Req, brought: dict[str, Any], t: dt.datetime, 
     return idea_ref(conn, brought, t, full=full)
 
 
-def request_json(conn: Conn, req: Req, *, full: bool = False) -> dict[str, Any]:
+def text_key(req: Req, part: str) -> tuple[str, str]:
+    """(idea uuid, source_id) under which lane C's hide keeps one of a request's texts (BLD-F097): the note of a
+    team-up request under the idea asked about and the request's id; a draft's ask under the draft and `ask_id`;
+    the lead's decline reason under the lead's idea and `decline_id`."""
+    if part == "decline":
+        return str(req.idea["id"]), adapters.decline_id(req.id)
+    if req.kind == "merge":
+        return str(req.row["draft_uuid"]), adapters.ask_id(req.id)
+    return str(req.idea["id"]), req.id
+
+
+def words(conn: Conn, req: Req, part: str, *, mine: bool) -> str | None:
+    """A request's note (`part` "note") or the lead's decline reason ("decline") as its reader may read it
+    (DEC-103, DEC-104, BLD-F097): the person who typed it (`mine`) gets their own words from lane C's sealed copy;
+    everyone else, and the typer when nothing was sealed (a request sent before BLD-F097, or seeded), the masked
+    copy stored on the request."""
+    column = "lead_reason_encrypted" if part == "decline" else "note_encrypted"
+    masked = unseal(req.row[column], req.table, column, req.id)
+    if not mine or masked is None:
+        return masked
+    return adapters.own_words(conn, *text_key(req, part)) or masked
+
+
+def _lead_typed_it(conn: Conn, req: Req) -> bool:
+    """Whether the idea's lead now is the one who answered and so typed the reason: a lead who took over since
+    reads the masked copy, like everyone else but its typer."""
+    by = req.row.get("answered_by_code")
+    return by is not None and lead_code(conn, req.idea) == by
+
+
+def request_json(conn: Conn, req: Req, *, viewer: str | None, full: bool = False) -> dict[str, Any]:
     """E-ENTITIES TeamUpRequest, plus `request` ('teamup' or 'merge'). A draft merge request reads with team-up
-    states. Only its two parties ever get one (the requester and the lead); `full` is the lead's view."""
+    states. Only its two parties ever get one (the requester and the lead); `full` is the lead's view. Each reads
+    their own words back and the other's masked copy (`words`): the requester their note, the lead their reason.
+    `viewer` is the reader's contributor code: the note is the requester's own words only when the reader is the
+    requester (`from_code`), never because of who the caller is; the lead and anyone else read it masked (DEC-103,
+    DEC-104, BLD-F098)."""
     t = clock_now()
+    typed_it = viewer is not None and viewer == str(req.row["from_code"])
     out: dict[str, Any] = {
         "id": req.id,
         "request": req.kind,
         "idea_id": req.idea.get("idea_id"),
         "from": person_by_code(conn, req.row["from_code"]).as_json(),
-        "note": unseal(req.row["note_encrypted"], req.table, "note_encrypted", req.id) or "",
+        "note": words(conn, req, "note", mine=typed_it) or "",
         "brought": [_brought_ref(conn, req, b, t, full) for b in req.brought],
         "state": req.teamup_state,
         "sent_at": req.row["sent_at"].isoformat(),
     }
-    reason = unseal(req.row["lead_reason_encrypted"], req.table, "lead_reason_encrypted", req.id)
+    reason = words(conn, req, "decline", mine=full and _lead_typed_it(conn, req))
     if reason:
         out["lead_reason"] = reason
     if req.row["answered_at"] is not None:
@@ -411,7 +446,7 @@ def my_state(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:
         "crew_count": len(crew_codes(conn, idea["id"])),
         "can_request": why is None and code is not None,
         "why_not": why,
-        "request": request_json(conn, mine) if mine else None,
+        "request": request_json(conn, mine, viewer=code) if mine else None,
         "after": after_for(conn, mine, role, user_id) if mine else None,
     }
 
@@ -435,6 +470,20 @@ def _brought_rows(conn: Conn, raw: Any, code: str, target: Any) -> list[dict[str
     return list(out.values())
 
 
+def _gate_note(conn: Conn, idea: dict[str, Any], code: str | None, note: str) -> adapters.Gate | None:
+    """BLD-F100 (BLD-C234): lane C's gatekeeper asked for the note before `send` opens its transaction and takes
+    lane C's lock, so the lock never waits on the model. Only when this person may send it: they have a code, may
+    see the idea (`load_idea_for`, before this), may team up on it (L-TEAMUP.rules/1), have no request waiting on it
+    (rules/4) and the note is long enough; otherwise nothing goes to the gatekeeper and the refusal comes under the
+    lock as before. Everything is read again under the lock. The note is trimmed exactly as it is hidden, so the
+    gate is for that very text; if it changed, lane C's hide asks again."""
+    if code is None or team_up_refusal(conn, idea, code) is not None or waiting_from(conn, idea["id"], code):
+        return None
+    if rules.check_note(note, adapters.note_min()) is not None:
+        return None
+    return adapters.gate(conn, str(idea["id"]), note.strip())
+
+
 def send(
     conn: Conn, ref: str, user_id: str, body: dict[str, Any], idempotency_key: str | None = None
 ) -> dict[str, Any]:
@@ -444,41 +493,52 @@ def send(
     `draft_id` marks "Keep mine separate" from Check it on that draft's similar ideas (V-ACC.similar/7)."""
     note = str(body.get("note") or "")
     asked = {"ref": ref, **body}
+    me = code_of(conn, user_id)
     made = remembered(conn, user_id, idempotency_key, ROUTE_SEND, asked)
     if made is not None:
         req = load_request(conn, made)
-        return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
-    me = code_of(conn, user_id)
+        return {**request_json(conn, req, viewer=me), "after": after_for(conn, req, None, user_id)}
     idea = load_idea_for(conn, ref, me)
     _settled_mine(conn, idea, me)  # an ended request of theirs no longer counts as waiting
     raw_draft = body.get("draft_id")
     draft_id = raw_draft if isinstance(raw_draft, str) and raw_draft else None
+    # BLD-F100: the gatekeeper before the transaction and lane C's lock, so no lock waits on the model
+    first = _gate_note(conn, idea, me, note)
     with audited(conn), conn.transaction():
         code = require_code(conn, user_id)
         # BLD-F027: every idea this send touches, in id order, before anything else: the idea, the ideas brought
-        # (the foreign keys on `teamup_brought` share-lock them) and the draft kept separate (marked below).
-        lock_ideas(conn, idea["id"], *_named_ideas(conn, body.get("brought_idea_ids")),
+        # (the foreign keys on `teamup_brought` share-lock them) and the draft kept separate (marked below). Before
+        # those row locks, lane C's lock on each of the same ideas in the same order (BLD-B247, BLD-F097): the note
+        # goes through lane C's hide below, which takes it again (re-entrant).
+        touched = (idea["id"], *_named_ideas(conn, body.get("brought_idea_ids")),
                    *([d] if (d := _as_uuid(draft_id)) else []))  # fmt: skip
+        adapters.lock_hide(conn, *touched)
+        lock_ideas(conn, *touched)
         idea = load_idea_for(conn, ref, code, lock=True)
         # the same key sent twice at once: the second waited for the lock, and returns the first
         made = remembered(conn, user_id, idempotency_key, ROUTE_SEND, asked)
         if made is not None:
             req = load_request(conn, made)
-            return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
+            return {**request_json(conn, req, viewer=code), "after": after_for(conn, req, None, user_id)}
         # BLD-F029: "Waiting for the lead" when the lead is not named to them
         lead = lead_seen_by(conn, idea, user_id, code)
         # L-TEAMUP.rules/1, the rule the similar read shows too (BLD-C187)
         refused = team_up_refusal(conn, idea, code)
         if refused is not None:
             raise Refused(409, refused, TEAM_UP_REFUSED[refused])
+        # L-TEAMUP.rules/4, one waiting request per person per idea (a draft's merge request to it counts): read
+        # here under the idea's lock; the partial unique index `teamup_requests_one_open` (state = 'sent') backs it,
+        # and its UniqueViolation below gives the same refusal
         if waiting_from(conn, idea["id"], code):
             raise Refused(409, "already_requested", rules.waiting_for(lead.first))
         problem = rules.check_note(note, adapters.note_min())
         if problem:
             raise Refused(problem.status, problem.code, problem.message, problem.field)
         brought = _brought_rows(conn, body.get("brought_idea_ids"), code, idea["id"])
-        masked, _ = adapters.hide(conn, str(idea["id"]), note.strip())
+        # L-HIDE, DEC-103, BLD-F097: lane C's hide (patterns, then the gatekeeper) before the lead or anything else
+        # sees the note; the requester's own words are sealed for them under the request's id, made first
         rid = str(uuid.uuid4())
+        masked, _ = adapters.hide(conn, str(idea["id"]), note.strip(), by=user_id, source_id=rid, gate=first)
         t = clock_now()
         try:
             with conn.transaction():
@@ -507,7 +567,7 @@ def send(
               after={"request_id": rid, "brought": len(brought), "from_draft": bool(draft_id)})  # fmt: skip
         remember(conn, user_id, idempotency_key, ROUTE_SEND, asked, rid)
         req = load_request(conn, rid)
-        return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
+        return {**request_json(conn, req, viewer=code), "after": after_for(conn, req, None, user_id)}
 
 
 def read(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
@@ -523,12 +583,12 @@ def read(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
     if ended(req):  # its idea closed, or its draft was sent or archived: read in its closed state (BLD-F024)
         settle(conn, req.idea)
         req = load_request(conn, request_id)
-    out = request_json(conn, req, full=is_lead)
+    out = request_json(conn, req, viewer=code, full=is_lead)
     if is_lead:
         who = person_by_code(conn, req.row["from_code"])
         out["reader"] = rules.reader_words(who.name, who.first_name, len(req.brought))
         out["answers"] = rules.answers_for(bool(req.brought)) if req.waiting else []
-        out.update(_answered(req, who, out.get("lead_reason")))
+        out.update(_answered(req, who, words(conn, req, "decline", mine=False)))  # as `_answer`'s line reads
     if is_from:
         out["after"] = after_for(conn, req, crew_role(conn, req.idea["id"], code) if code else None, user_id)
     return out
@@ -568,7 +628,7 @@ def withdraw(conn: Conn, request_id: str, user_id: str) -> dict[str, Any]:
                   entity_of(req.brought[0] if req.kind == "merge" else req.idea),
                   after={"request_id": req.id})  # fmt: skip
         req = load_request(conn, request_id)
-        return {**request_json(conn, req), "after": after_for(conn, req, None, user_id)}
+        return {**request_json(conn, req, viewer=code), "after": after_for(conn, req, None, user_id)}
 
 
 def _not_waiting(req: Req, who: Person) -> Refused:
@@ -611,16 +671,22 @@ def answer(conn: Conn, request_id: str, user_id: str, body: dict[str, Any]) -> d
         peek = load_request(conn, request_id)
         code = code_of(conn, user_id)
         _require_lead(conn, peek, code, user_id, ans)  # V-ACC.similar/8: before anything else is said
+        first = _gate_reason(conn, peek, ans, body)  # BLD-F100: the lead's reason, before the transaction
         with conn.transaction():
             # Every idea the answer touches first, in id order (`lock_ideas`), then the request row. A merge
             # (`apply_lead_merge`) and a draft's ask lock ideas the same way, so two leads answering each other's
             # requests at once wait for each other instead of deadlocking. The ideas a request names never change.
-            lock_ideas(conn, peek.idea["id"], *(b["id"] for b in peek.brought))
+            # Before those row locks, lane C's lock on each of the same ideas in the same order (BLD-B247,
+            # BLD-F096): a merge forgets what hide kept for the merged idea's queued questions (`drop_queued`), and
+            # a reviewer's "Hide this" and lane B's desk merge take lane C's lock first too.
+            touched = (peek.idea["id"], *(b["id"] for b in peek.brought))
+            adapters.lock_hide(conn, *touched)
+            lock_ideas(conn, *touched)
             req = load_request(conn, request_id, lock=True)
             _require_lead(conn, req, code, user_id, ans)
             who = person_by_code(conn, req.row["from_code"])
             if not ended(req):
-                return _answer(conn, req, who, str(code), user_id, ans, body)
+                return _answer(conn, req, who, str(code), user_id, ans, body, gate=first)
             settle(conn, req.idea)  # kept: the transaction ends normally and the refusal follows
         if is_closed(str(req.idea["status"])):
             raise Refused(409, "idea_closed", "This idea is no longer open to team up.")
@@ -635,13 +701,38 @@ def _require_lead(conn: Conn, req: Req, code: str | None, user_id: str, ans: Ans
         )  # fmt: skip
 
 
+def _reason(ans: Answer, body: dict[str, Any]) -> str:
+    """The lead's decline reason as it is checked, hidden and stored: trimmed, and only with Decline."""
+    return str(body.get("reason") or "").strip() if ans == "decline" else ""
+
+
+def _gate_reason(conn: Conn, req: Req, ans: Answer, body: dict[str, Any]) -> adapters.Gate | None:
+    """BLD-F100 (BLD-C234): lane C's gatekeeper asked for the lead's reason before `answer` opens its transaction
+    and takes lane C's lock. Only once this person is known to be the lead (`_require_lead`, before this), while the
+    request still waits, and for a reason that passes its check; otherwise nothing goes to the gatekeeper. The text
+    is `_reason`, the same string `_answer` hides, so the gate is for that very text."""
+    reason = _reason(ans, body)
+    if not reason or not req.waiting or rules.check_reason(reason) is not None:
+        return None
+    return adapters.gate(conn, str(req.idea["id"]), reason)
+
+
 def _answer(
-    conn: Conn, req: Req, who: Person, code: str, user_id: str, ans: Answer, body: dict[str, Any]
+    conn: Conn,
+    req: Req,
+    who: Person,
+    code: str,
+    user_id: str,
+    ans: Answer,
+    body: dict[str, Any],
+    *,
+    gate: adapters.Gate | None = None,
 ) -> dict[str, Any]:
-    """The answer itself, in `answer`'s transaction, with every idea and the request row locked."""
+    """The answer itself, in `answer`'s transaction, with every idea and the request row locked. `gate`: the
+    gatekeeper's finds for the reason, asked before the transaction (BLD-F100)."""
     if not req.waiting:
         raise _not_waiting(req, who)
-    reason = str(body.get("reason") or "").strip() if ans == "decline" else ""
+    reason = _reason(ans, body)
     mergeable = _open_brought(req)
     if ans == "merge":
         if not req.brought:
@@ -655,7 +746,15 @@ def _answer(
             raise Refused(problem.status, problem.code, problem.message, problem.field)
     t = clock_now()
     state = (rules.TEAMUP_STATE_FOR if req.kind == "teamup" else rules.MERGE_STATE_FOR)[ans]
-    masked_reason = adapters.hide(conn, str(req.idea["id"]), reason)[0] if reason else None
+    # L-HIDE, DEC-103, BLD-F097: lane C's hide before the requester reads it; the lead's own words sealed for them.
+    # `answer` already holds lane C's lock on the idea, taken first, and asked the gatekeeper before it (BLD-F100).
+    masked_reason = (
+        adapters.hide(
+            conn, str(req.idea["id"]), reason, by=user_id, source_id=adapters.decline_id(req.id), gate=gate
+        )[0]
+        if reason
+        else None
+    )
     conn.execute(
         f"UPDATE {req.table} SET state = %s, lead_reason_encrypted = %s, answered_by_code = %s, "  # noqa: S608
         "answered_at = %s WHERE id = %s",
@@ -689,7 +788,7 @@ def _answer(
                  "has_reason": bool(masked_reason)})  # fmt: skip
     done = load_request(conn, req.id)
     return {
-        "request": request_json(conn, done, full=True),
+        "request": request_json(conn, done, viewer=code, full=True),
         "result": rules.lead_result(ans, who.first_name, len(req.brought), masked_reason),
         "say_hello": None if ans == "decline" else rules.say_hello(who.first_name, str(req.idea["idea_id"])),
     }

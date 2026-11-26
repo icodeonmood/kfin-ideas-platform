@@ -1,16 +1,17 @@
 /**
- * Privacy notice shown at first sign-in (§6.2). DRAFT for Legal and the DPO: "No launch without it" (§9.1).
+ * Privacy notice shown at first sign-in (§6.2): "No launch without it" (§9.1).
  * The version here must equal PRIVACY_NOTICE_VERSION (`.env.example`, `scripts/uat/rehearse.sh`, and every server's
  * app env file, which `scripts/uat/deploy.sh` checks); acceptance is stored against that version, and a new version
- * asks everyone again. 0.2-draft (BLD-A232) corrects who sees what (DEC-104, DEC-106), customer details (DEC-103,
+ * asks everyone again. 0.2-draft (BLD-A232) corrected who sees what (DEC-104, DEC-106), customer details (DEC-103,
  * DEC-107, L-HIDE.rules/6-7), voice notes and listening (DEC-108) and the pronoun from Profile (DEC-108 (3)),
- * with the product lead's calls of 19 Nov on review B3, B5 and B6; `docs/privacy-notice-0.2.md` lists every changed
- * sentence for Legal and the DPO. Three lines wait for the DPO; the DPO's commit sets "0.2" and `draft: false`.
+ * with the product lead's calls of 19 Nov on review B3, B5 and B6. 0.2 (BLD-A233) is final: the appraisal,
+ * retention and contact lines are the product lead's, provisionally approved; HR, Legal and the DPO confirm later.
+ * `docs/privacy-notice-0.2.md` lists every changed sentence for Legal and the DPO.
  */
 export const PRIVACY_NOTICE = {
-  version: "0.2-draft",
+  version: "0.2",
   title: "How 1% Club uses your information",
-  draft: true,
+  draft: false,
   sections: [
     {
       heading: "What we use",
@@ -26,7 +27,7 @@ export const PRIVACY_NOTICE = {
         "To run the ideas programme: to review ideas, find colleagues working on the same thing, keep you informed, and recognise contributions.",
         "Inside 1% Club, your ideas are stored under a contributor code, and the link from that code to you is kept in a separate table.",
         "Before the AI assistant reads your idea, our checks look for names and personal details in the text and replace them with labels.",
-        "Your contribution history is not used in performance appraisal unless HR policy says so. (To be confirmed by HR.)",
+        "Sharing here is voluntary. What you share is never used against you, and it is not used in your performance appraisal.",
       ],
     },
     {
@@ -61,14 +62,14 @@ export const PRIVACY_NOTICE = {
     {
       heading: "How long we keep it",
       paragraphs: [
-        "As long as KFintech's record-retention policy requires. If you leave KFintech, the link between your name and your contributor code is deleted, so your ideas stay but no longer point to you. (Retention period to be confirmed by Legal.)",
+        "We keep your ideas and their conversations for as long as KFintech's record-retention policy requires for business records. Drafts you don't send are archived after 30 days. Voice recordings are deleted within a day, once they are turned into text.",
       ],
     },
     {
       heading: "Your choices and questions",
       paragraphs: [
         "You can see and download everything you have shared from My ideas.",
-        "For questions or complaints under KFintech's data protection policy, contact the Data Protection Officer. (Contact details to be confirmed by Legal.)",
+        "For questions or complaints under KFintech's data protection policy, or to ask for a copy, correction or deletion of your data, write to KFintech's Data Protection Officer at the address given in that policy on the intranet.",
       ],
     },
   ],

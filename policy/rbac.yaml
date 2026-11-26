@@ -18,7 +18,8 @@ capabilities:
   submit:                     { contributor: yes }                     # submit and join (+1 and appeals retired, DEC-106)
   see_org_ideas:              { contributor: yes }
   work_review_queue:          { reviewer: yes, admin: yes }
-  view_review_queue:          { reviewer: yes, core_committee: yes, admin: yes }   # the queue and desk decisions
+  view_review_queue:          { reviewer: yes, committee: yes, core_committee: yes, admin: yes }   # the queue and desk decisions;
+                              # committee: S-R2, its Listen and the desk's reads for the Ones Committee (DEC-121, BLD-B270)
   veto_desk_decision:         { core_committee: yes }
   hide_for_desk:              { reviewer: yes, committee: yes, core_committee: yes }   # S-R2 "Hide this" (L-HIDE.rules/7, BLD-C060, BLD-B247)
   open_attachments:           { contributor: as_idea }
@@ -324,10 +325,15 @@ endpoints:
   - POST /api/desk/ideas/{id}/merge                   work_review_queue
   - GET /api/desk/ideas/{id}/suggested-questions      work_review_queue
   - POST /api/desk/ideas/{id}/question-sets           work_review_queue
+  - PUT /api/desk/ideas/{id}/question-sets/queued      work_review_queue   # BLD-B272: the reviewer's queue, saved as it changes
   - POST /api/question-sets/{id}/extend               work_review_queue
   - POST /api/question-sets/{id}/remind               work_review_queue
   - GET /api/ideas/{id}/question-set                  signed_in       # the sharer only, checked by the worker
   - PUT /api/questions/{id}/answer                    signed_in       # the sharer only, checked by the worker
+  - POST /api/questions/{id}/answer/voice/start      submit          # S-R3's spoken answer (BLD-B276): lane C's stream, the sharer only, checked by the worker
+  - POST /api/questions/{id}/answer/voice/chunk      submit          # ~1 s of 16 kHz PCM, relayed and never kept; answers the words so far
+  - POST /api/questions/{id}/answer/voice/end        submit          # their own words, with no English copy (DEC-131)
+  - GET /api/questions/{id}/answer/voice/{stream}    submit          # polling, as a draft's note polls
   - POST /api/question-sets/{id}/send                 signed_in       # the sharer only, checked by the worker
   - GET /api/ideas/{id}/decision                      signed_in       # the decision as the sharer and crew read it
   - GET /api/committee                                committee_window
@@ -387,6 +393,6 @@ navigation:
   - { key: committee, label: Ones Committee,  href: /committee, place: main,   roles: [committee, core_committee] }   # committee_window
   - { key: profile,   label: Your profile and settings, href: /profile, place: account }
   - { key: one,       label: Your One dashboard, href: /one,    place: account, member: ones }
-  - { key: ember,     label: The Ember,       href: /ember,     place: account }
+  - { key: ember,     label: The Ember,       href: /ember,     place: account, roles: [core_committee, admin] }   # they write it at /ember/compose; everyone reads it from the Wall (S-WALL.ember, BLD-D021)
   - { key: delivery,  label: Delivery,        href: /delivery,  place: account, roles: [working_group, sponsor, core_committee, admin, ceo] }
   - { key: admin,     label: Admin,           href: /admin,     place: account, roles: [admin, infosec, hr] }

@@ -50,14 +50,14 @@ export function saveWords(
 
 /**
  * C-TASKBAR: the sticky bar across the top of a task screen (Tell it, Check it, Edit). The task's title, the three
- * steps, the save status in a polite live region, and "Save and close". Two step looks are drawn (C-TASKBAR.steps,
- * OPEN: the product owner to choose one): labelled bars on Tell it, numbered nodes on Check it. A done step links back.
+ * steps, the save status in a polite live region, and "Save and close". The steps are Check it's numbered nodes on
+ * every task screen, Tell it included (C-TASKBAR.steps; BLD-D024 closed its OPEN:): a ticked ring for a done step, an
+ * ink disc with the number for the current one, a hollow numbered ring for one to come. A done step links back.
  * `steps={false}` hides the steps, as Tell it does before the first message (S-04.empty).
  */
 export function Taskbar({
   title = "Share a problem",
   step,
-  look = step === "tell" ? "bars" : "nodes",
   steps = true,
   stepHrefs = {},
   save,
@@ -70,7 +70,6 @@ export function Taskbar({
 }: {
   title?: string;
   step: TaskStep;
-  look?: "bars" | "nodes";
   steps?: boolean;
   /** Where each done step links back to. */
   stepHrefs?: Partial<Record<TaskStep, string>>;
@@ -91,22 +90,15 @@ export function Taskbar({
       <div className="tbar-in">
         <span className="tbar-t">{title}</span>
         {steps ? (
-          <ol
-            className={look === "bars" ? "tsteps tsteps-bars" : "tsteps tsteps-nodes"}
-            aria-label="Progress"
-          >
+          <ol className="tsteps tsteps-nodes" aria-label="Progress">
             {STEPS.map((s, i) => {
               const state = i < at ? "done" : i === at ? "now" : "next";
               const href = state === "done" ? stepHrefs[s.key] : undefined;
-              const mark =
-                look === "nodes" ? (
+              const words = (
+                <>
                   <span className="tsn" aria-hidden="true">
                     {state === "done" ? <IconTick size={12} /> : i + 1}
                   </span>
-                ) : null;
-              const words = (
-                <>
-                  {mark}
                   <span className="tsl">{s.label}</span>
                   {state === "done" ? <span className="vh">, done</span> : null}
                 </>

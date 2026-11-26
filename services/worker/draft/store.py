@@ -27,6 +27,7 @@ from core.db import Conn
 from core.logging import get_logger
 from draft import adapters, labels, parts, runs
 from draft.config import rules
+from hide import core as hide_core
 from onepc import enums
 from onepc.context import open_text, seal_text
 from pii import vault
@@ -108,8 +109,14 @@ _DRAFT_SELECT = (
 
 
 def _load(conn: Conn, owner: Owner, idea_uuid: str, *, lock: bool = False) -> dict[str, Any]:
+    """The owner's open draft, or 404. `lock`: L-HIDE's lock on the idea first, then the row (BLD-C067, BLD-C228).
+    Every locked load starts its transaction and may reach hide (a message, an edit, a part's words, `forget`), and
+    lane F's team-up takes hide's lock before the idea's row, so the order is the same everywhere. The id is the
+    lower-case form `UUID_RE` allows, the key hide's own lock uses."""
     if not UUID_RE.match(idea_uuid):
         raise DraftError(404, "not_found")
+    if lock:
+        hide_core.lock(conn, idea_uuid)
     row = conn.execute(_DRAFT_SELECT + " FOR UPDATE" if lock else _DRAFT_SELECT, (idea_uuid,)).fetchone()
     if row is None or row["contributor_code"] != owner.code or row["status"] != "draft":
         raise DraftError(404, "not_found")
@@ -197,6 +204,8 @@ def create(
         raise DraftError(400, "idempotency_key_invalid")
     idea_uuid = _new_id()
     with conn.transaction():
+        # Hide's lock before any row, as in every draft write (BLD-C228): the first message is hidden below.
+        hide_core.lock(conn, idea_uuid)
         if idempotency_key:
             got = conn.execute(
                 "INSERT INTO idempotency_keys (key, user_id, route, request_hash, status, response_json) "
@@ -236,6 +245,27 @@ def _check_text(text: Any, *, field: str = "text") -> str:
     return text.strip()
 
 
+def _gateable(text: Any) -> str | None:
+    """The words `_check_text` would keep, or None when it would refuse them (the transaction then refuses them as
+    before, and nothing is asked)."""
+    if not isinstance(text, str) or not text.strip() or len(text) > rules().max_message_chars:
+        return None
+    return text.strip()
+
+
+def _pre_gate(
+    conn: Conn, owner: Owner, idea_uuid: str, texts: list[str | None], *, client_id: str | None = None
+) -> list[Any]:
+    """BLD-C234 (L-HIDE, BLD-C067): the gatekeeper is asked about the person's words BEFORE the transaction that takes
+    hide's lock, so the lock covers the writes, not the model call. Only for the owner's open draft, read first with
+    no lock (anyone else's is not found, as before, and nothing is asked); not for a message the device sent before.
+    Hide uses each gate only for the same words; if they differ it asks again under the lock, as it did before."""
+    _load(conn, owner, idea_uuid)
+    if client_id and _by_client_id(conn, idea_uuid, client_id):
+        return [None] * len(texts)
+    return [adapters.gate(conn, idea_uuid, t) if t else None for t in texts]
+
+
 def _spans(hidden: adapters.Hidden) -> list[dict[str, Any]]:
     """`idea_messages.spans` keeps start, end and kind (positions in the person's own text)."""
     return [{"start": x["start"], "end": x["end"], "kind": x["kind"]} for x in hidden.spans]
@@ -255,10 +285,11 @@ def _add(
     defer_run: bool = False,
     files: list[str] | None = None,
     lang: str | None = None,
+    gate: Any = None,
 ) -> tuple[str, str | None]:
     """Inside a transaction: mask, store the masked copy, seal the person's words, record what was hidden, link the
     files added with it, save, then begin the run. Returns (message id, run id). `lang` is the language the voice
-    service heard; otherwise the script decides."""
+    service heard; otherwise the script decides. `gate`: the gatekeeper asked before the lock (`_pre_gate`)."""
     text = _check_text(text)
     english = _check_text(text_en, field="text_en") if text_en else None
     if via not in enums.values("message_via"):
@@ -278,7 +309,9 @@ def _add(
         raise DraftError(409, "too_many_messages", limit=rules().max_messages)
     mid = str(uuid.uuid4())
     # DEC-103: masked before anything else sees the words; the person's own words sealed for them alone.
-    hidden = adapters.hide_message(conn, idea_uuid, text, by=owner.user_id, source="message", source_id=mid)
+    hidden = adapters.hide_message(
+        conn, idea_uuid, text, by=owner.user_id, source="message", source_id=mid, gate=gate
+    )
     masked_en = adapters.preview(conn, english, idea_uuid=idea_uuid).masked if english else None
     now = _now(conn)
     when = at if at is not None and now - dt.timedelta(days=OFFLINE_DAYS) <= at <= now else now
@@ -340,7 +373,11 @@ def add_message(
     `text` is the person's own words; `text_en`, for a voice note or another language, an English copy labelled as
     a translation (DEC-108): context for the parts, never quoted. A voice note names its `stream_id`: the message
     is taken from the voice service (`_from_voice`) and then hidden and built exactly like typed words.
-    `defer_run` keeps the words without building (the S1 interview's answers until the last, L-DRAFT.parts/10)."""
+    `defer_run` keeps the words without building (the S1 interview's answers until the last, L-DRAFT.parts/10).
+    Typed words are put to the gatekeeper before hide's lock (BLD-C234); a voice note's words are only known inside
+    the transaction, so hide asks there, as before."""
+    words = None if via == "voice" and stream_id else _gateable(text)
+    gate = _pre_gate(conn, owner, idea_uuid, [words], client_id=client_id)[0] if words else None
     with conn.transaction():
         row = _load(conn, owner, idea_uuid, lock=True)
         known = _by_client_id(conn, idea_uuid, client_id) if client_id else None
@@ -357,7 +394,8 @@ def add_message(
         if via == "voice" and stream_id:
             text, text_en, lang = _from_voice(conn, owner, idea_uuid, stream_id, text, text_en)
         return _add(conn, owner, idea_uuid, device, text=text, via=via, text_en=text_en or None,
-                    client_id=client_id, at=at, defer_run=defer_run, files=files, lang=lang)  # fmt: skip
+                    client_id=client_id, at=at, defer_run=defer_run, files=files, lang=lang,
+                    gate=gate)  # fmt: skip
 
 
 def _from_voice(
@@ -396,9 +434,12 @@ def edit_message(
     text_en: Any = None,
 ) -> tuple[str, str | None]:
     """`PATCH /drafts/:id/messages/:mid`: the person changes their words (the box autosaving, or "Edit" on a sent
-    message). Masked again from scratch; the parts not pinned are built again."""
+    message). Masked again from scratch; the parts not pinned are built again. The new words are put to the
+    gatekeeper before hide's lock (BLD-C234)."""
     if not UUID_RE.match(message_id):
         raise DraftError(404, "not_found")
+    new_words = _gateable(text)
+    gate = _pre_gate(conn, owner, idea_uuid, [new_words])[0] if new_words else None
     with conn.transaction():
         row = _load(conn, owner, idea_uuid, lock=True)
         _writable(row, device)
@@ -411,7 +452,7 @@ def edit_message(
         english = _check_text(text_en, field="text_en") if text_en else None
         # Hidden again from scratch: the spans moved. The person's sealed words follow the edit.
         hidden = adapters.hide_message(
-            conn, idea_uuid, words, by=owner.user_id, source="message", source_id=message_id
+            conn, idea_uuid, words, by=owner.user_id, source="message", source_id=message_id, gate=gate
         )
         masked_en = adapters.preview(conn, english, idea_uuid=idea_uuid).masked if english else None
         conn.execute(
@@ -431,15 +472,29 @@ def edit_message(
 # ---- parts the person changes (L-DRAFT.pins) ---------------------------------------------------------------------
 
 
-def _mask_value(conn: Conn, owner: Owner, idea_uuid: str, wire_key: str, value: Any) -> Any:
+def _part_texts(wire_key: str, value: Any) -> list[str | None]:
+    """The texts `_mask_value` hides, in its order (one for a string, one per item for a list)."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list) and wire_key != "value":
+        return [v if isinstance(v, str) and v.strip() else None for v in value]
+    return []
+
+
+def _mask_value(
+    conn: Conn, owner: Owner, idea_uuid: str, wire_key: str, value: Any, gates: list[Any] | None = None
+) -> Any:
     """The person's own text in a part is masked like any message (DEC-103); what was hidden is recorded. A list
-    cut shorter takes the hidden details and sealed words of the items it lost with it (BLD-C038)."""
+    cut shorter takes the hidden details and sealed words of the items it lost with it (BLD-C038). `gates`: the
+    gatekeeper asked before hide's lock, one per text in `_part_texts` order (BLD-C234)."""
     prefix = f"{idea_uuid}:part:{wire_key}:"
+    asked = gates or []
 
     def one(text: str, n: int) -> str:
         masked, _ = adapters.hide_text(
-            conn, idea_uuid, text, by=owner.user_id, source="edit", source_id=f"{prefix}{n}"
-        )
+            conn, idea_uuid, text, by=owner.user_id, source="edit", source_id=f"{prefix}{n}",
+            gate=asked[n] if n < len(asked) else None,
+        )  # fmt: skip
         return masked
 
     if isinstance(value, str):
@@ -479,6 +534,14 @@ def set_part(
     if wire_key not in parts.EDITABLE:
         raise DraftError(409, "not_editable", field="part")
     row_key = "title" if wire_key == "summary" else wire_key
+    gates: list[Any] = []
+    if "value" in body:  # the part's words, put to the gatekeeper before hide's lock (BLD-C234)
+        try:
+            texts = _part_texts(wire_key, parts.clean_value(wire_key, body["value"]))
+        except parts.PartValueError:
+            texts = []  # refused in the transaction below, as before; nothing asked
+        if any(texts):
+            gates = _pre_gate(conn, owner, idea_uuid, texts)
     with conn.transaction():
         row = _load(conn, owner, idea_uuid, lock=True)
         _writable(row, device)
@@ -510,7 +573,7 @@ def set_part(
                 cleaned = parts.clean_value(wire_key, body["value"])
             except parts.PartValueError as exc:
                 raise DraftError(422, exc.code, field="value") from None
-            masked = _mask_value(conn, owner, idea_uuid, wire_key, cleaned)
+            masked = _mask_value(conn, owner, idea_uuid, wire_key, cleaned, gates)
             if row_key == "title":
                 base = old if isinstance(old, dict) else {}
                 pinned = parts.pinned_fields(base) | {wire_key}
@@ -760,13 +823,22 @@ def _own_receipts(conn: Conn, idea_uuid: str, messages: list[dict[str, Any]]) ->
 
 
 def _files(conn: Conn, idea_uuid: str, owner: Owner) -> list[dict[str, Any]]:
+    """The draft's files with the same lines `POST /files` gives (E-ENTITIES FileItem, BLD-E076): a draft's files
+    are only ever added by its owner (`attachments.files._owner`), and only the owner reads the draft, so each line
+    is the uploader's: the found line, and View on a checked file, one with a customer detail included (C-FILE.row,
+    DEC-107: the sharer always opens their own checked file). `GET /files/:id/view` still checks rights itself."""
+    from attachments.files import Viewer, effective_state, problem_line, rights
+
     rows = conn.execute(
         "SELECT id, kind, name, mime, bytes, pages, item_count, file_state, state, hidden_note, link_scope, "
-        "message_id, created_at FROM attachments WHERE idea_uuid = %s AND parent_id IS NULL ORDER BY created_at",
+        "message_id, created_at, checks FROM attachments WHERE idea_uuid = %s AND parent_id IS NULL "
+        "AND purpose = 'idea' AND conversation_entry_id IS NULL ORDER BY created_at",  # never a conversation file
         (idea_uuid,),
     ).fetchall()
+    uploader = Viewer(uploader=True)
     out = []
     for r in rows:
+        row = dict(r)
         item: dict[str, Any] = {
             "id": r["id"], "kind": r["kind"], "name": r["name"], "type": r["mime"] or "", "size": int(r["bytes"]),
             "state": r["file_state"] or r["state"], "added_by": {"id": owner.user_id},
@@ -776,6 +848,13 @@ def _files(conn: Conn, idea_uuid: str, owner: Owner) -> list[dict[str, Any]]:
                          ("link_scope", "link_scope"), ("message_id", "message_id")):  # fmt: skip
             if r[col] is not None:
                 item[key] = str(r[col]) if key == "message_id" else r[col]
+        state = effective_state(row)
+        problem = problem_line(row, state, uploader=True)
+        if problem is not None:
+            item["problem"] = problem
+        _, opens = rights(state, str(r["kind"] or "file"), draft=True, answer_unsent=False, viewer=uploader)
+        if opens:  # as item_json for the uploader: a file once checked or found, never a link
+            item["view_url"] = f"/api/files/{r['id']}/view"
         out.append(item)
     return out
 

@@ -3,13 +3,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // The database is mocked: these tests are about which rows the old route (/api/attachments/:id and its status)
 // still describes and serves (lane C review fix 3, A-API.files, DEC-107).
 const row = vi.fn();
+const wheres: unknown[][] = [];
 const chain: Record<string, unknown> = {};
-for (const step of ["selectFrom", "innerJoin", "select", "where"]) chain[step] = () => chain;
+for (const step of ["selectFrom", "innerJoin", "select", "orderBy"]) chain[step] = () => chain;
+chain.where = (...args: unknown[]) => {
+  wheres.push(args);
+  return chain;
+};
 chain.executeTakeFirst = () => Promise.resolve(row());
+chain.execute = () => Promise.resolve([]);
 vi.mock("@/server/db", () => ({ getDb: () => chain }));
 vi.mock("@/server/worker", () => ({ workerFetch: vi.fn() }));
 
-const { accessible } = await import("@/server/attachments");
+const { accessible, listFor } = await import("@/server/attachments");
 
 import type { CurrentUser } from "@/server/auth/current";
 
@@ -39,15 +45,33 @@ const base = {
   stage: "scanned",
   file_state: null,
   answer_id: null,
+  checks: { patterns: true, ocr: false, gatekeeper: true },
 };
 
-afterEach(() => row.mockReset());
+afterEach(() => {
+  row.mockReset();
+  wheres.length = 0;
+});
 
 describe("A-API.files: the old /api/attachments route and the files pipeline", () => {
   it("still serves the old pipeline's clean file to its owner and the desk", async () => {
     row.mockReturnValue({ ...base });
     expect(await accessible(owner, base.id)).not.toBeNull();
     expect(await accessible(desk, base.id)).not.toBeNull();
+  });
+
+  it("DEC-127, BLD-C222: a file clean on the pattern check alone opens for its owner only, never the desk", async () => {
+    for (const checks of [
+      { patterns: true, ocr: false, gatekeeper: false },
+      { patterns: true, gatekeeper: false, gatekeeper_skipped: true },
+      { patterns: true },
+      null,
+    ]) {
+      row.mockReturnValue({ ...base, checks });
+      expect(await accessible(owner, base.id)).not.toBeNull();
+      expect(await accessible(desk, base.id)).toBeNull();
+      expect(await accessible(admin, base.id)).toBeNull();
+    }
   });
 
   it("refuses a checked file of the files pipeline, to everyone (it opens only through /api/files/:id/view)", async () => {
@@ -74,5 +98,18 @@ describe("A-API.files: the old /api/attachments route and the files pipeline", (
   it("refuses a link row of the files pipeline", async () => {
     row.mockReturnValue({ ...base, name: "example.org/report", mime: null, file_state: "ok" });
     expect(await accessible(owner, base.id)).toBeNull();
+  });
+});
+
+describe("BLD-C223: the old draft read lists the idea's own files only", () => {
+  it("never lists a file added for the conversation, sent or not (IDEA_OWN)", async () => {
+    await listFor("7d3f0c2a-1b2c-4d5e-8f90-123456789abc");
+    expect(wheres).toEqual(
+      expect.arrayContaining([
+        ["idea_uuid", "=", "7d3f0c2a-1b2c-4d5e-8f90-123456789abc"],
+        ["purpose", "=", "idea"],
+        ["conversation_entry_id", "is", null],
+      ]),
+    );
   });
 });

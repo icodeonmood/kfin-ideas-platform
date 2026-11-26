@@ -87,7 +87,7 @@ def test_S_R2_similar_J_REVIEW_A5_a_line_from_the_bits_that_exist(
     assert sim["meta"] == f"{other['idea_id']}, {bits}. 1 on its crew"
 
 
-def test_S_R2_similar_the_heading_and_the_committee_row_skip_a_missing_city_or_area(
+def test_S_R2_similar_S_R4_the_heading_and_the_committee_row_skip_a_missing_city_or_area(
     db: Conn, cast: dict[str, Any]
 ) -> None:
     """The same bug on S-R2's heading and S-R4's Idea column: an idea with no city reads "by Kavya Menon, Investor

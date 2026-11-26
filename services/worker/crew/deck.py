@@ -177,6 +177,10 @@ class Card:
     reason_kind: str
     reason: str
     strength: tuple[int, int, int, int]  # reason, close before related, the match's own order, its idea's day
+    # DEC-126 (BLD-F094): the person's own request still waiting on this idea, as (request id, "teamup" | "merge"),
+    # and when they asked; None when they have not asked.
+    request: tuple[str, str] | None = None
+    requested_at: dt.datetime | None = None
 
     def facets(self) -> dict[str, tuple[str, ...]]:
         return {
@@ -206,12 +210,39 @@ class Card:
         }
         if self.looking_for:
             out["looking_for"] = self.looking_for
+        if self.request is not None:
+            # DEC-126: "Requested" with "Withdraw" (`DELETE /team-up/:id` withdraws either kind). The id is the
+            # viewer's own request's; nothing else about it, and never its note (BLD-F094).
+            out["request"] = {"id": self.request[0], "kind": self.request[1]}
         return out
 
 
-def order_key(c: Card) -> tuple[int, int, int, int, float]:
-    """L-CREW/3: by the reason's strength, then the most recently shared first."""
-    return (*c.strength, -c.shared_at.timestamp())
+def order_key(c: Card) -> tuple[int, int, int, int, int, float]:
+    """L-CREW/3 under DEC-126 (BLD-F094): by the reason's strength, then the most recently shared first. An idea the
+    person has asked to join comes after every other card, the oldest request first, so the newest is last."""
+    if c.requested_at is not None:
+        return (1, 0, 0, 0, 0, c.requested_at.timestamp())
+    return (0, *c.strength, -c.shared_at.timestamp())
+
+
+def limited(shown: Sequence[Card], limit: int | None) -> list[Card]:
+    """A short read of the deck (`limit`; Home's top three, S-03), lane F's reading of DEC-126 (2) (BLD-F094; amended
+    by BLD-F096).
+
+    Requested cards sort last, so a person with `limit` or more other cards would lose the one they just asked about
+    from Home after a reload. So when the deck is longer than `limit` and holds a requested card, the read is up to
+    `limit - 1` other cards in deck order, then the latest requested cards in deck order to fill the read to `limit`
+    (requested cards are oldest request first, so the most recently requested card is last). The read always holds
+    `min(limit, len(shown))` cards. A deck that fits in `limit` comes whole, in order, as without a limit."""
+    if not limit or len(shown) <= limit:
+        return list(shown)
+    asked = [c for c in shown if c.request is not None]
+    if not asked:
+        return list(shown[:limit])
+    others = [c for c in shown if c.request is None][: limit - 1]
+    # at least 1, and never more than `asked` holds, since the deck is longer than `limit`
+    room = limit - len(others)
+    return [*others, *asked[-room:]]
 
 
 @dataclass(frozen=True)
@@ -252,21 +283,31 @@ def _links(conn: Conn, v: Viewer) -> dict[str, _Link]:
 _ELIGIBLE = """
 SELECT i.id::text AS uuid, i.idea_id, i.title, i.status, i.area, i.city, i.shared_at, i.summary,
        i.helper_picks, i.helper_text, i.contributor_code,
-       coalesce(c.codes, ARRAY[]::text[]) AS crew_codes, c.lead_code
+       coalesce(c.codes, ARRAY[]::text[]) AS crew_codes, c.lead_code,
+       rq.id AS request_id, rq.kind AS request_kind, rq.sent_at AS requested_at
 FROM ideas i
 LEFT JOIN LATERAL (
   SELECT array_agg(cm.contributor_code ORDER BY (cm.role = 'lead') DESC, cm.joined_at, cm.id) AS codes,
          max(cm.contributor_code) FILTER (WHERE cm.role = 'lead') AS lead_code
   FROM crew_members cm WHERE cm.idea_uuid = i.id AND cm.left_at IS NULL
 ) c ON true
+LEFT JOIN LATERAL (
+  SELECT q.id::text AS id, q.kind, q.sent_at FROM (
+    SELECT t.id, 'teamup'::text AS kind, t.sent_at FROM teamup_requests t
+    WHERE t.idea_uuid = i.id AND t.from_code = %(code)s AND t.state = 'sent'
+    UNION ALL
+    SELECT mr.id, 'merge'::text, mr.sent_at FROM merge_requests mr
+    WHERE mr.other_idea_uuid = i.id AND mr.from_code = %(code)s AND mr.state = 'waiting'
+  ) q ORDER BY q.sent_at DESC, q.id DESC LIMIT 1
+) rq ON true
 WHERE i.status = ANY(%(open)s) AND i.shared_at IS NOT NULL AND i.idea_id IS NOT NULL
   AND i.contributor_code IS DISTINCT FROM %(code)s
   AND NOT EXISTS (SELECT 1 FROM crew_members m
                   WHERE m.idea_uuid = i.id AND m.contributor_code = %(code)s AND m.left_at IS NULL)
   AND NOT EXISTS (SELECT 1 FROM teamup_requests t
-                  WHERE t.idea_uuid = i.id AND t.from_code = %(code)s AND t.state IN ('sent', 'declined'))
+                  WHERE t.idea_uuid = i.id AND t.from_code = %(code)s AND t.state = 'declined')
   AND NOT EXISTS (SELECT 1 FROM merge_requests mr
-                  WHERE mr.other_idea_uuid = i.id AND mr.from_code = %(code)s AND mr.state IN ('waiting', 'declined'))
+                  WHERE mr.other_idea_uuid = i.id AND mr.from_code = %(code)s AND mr.state = 'declined')
   AND NOT EXISTS (SELECT 1 FROM crew_passes p
                   WHERE p.user_id = %(uid)s AND p.idea_uuid = i.id AND p.undone_at IS NULL)
 """
@@ -275,10 +316,11 @@ WHERE i.status = ANY(%(open)s) AND i.shared_at IS NOT NULL AND i.idea_id IS NOT 
 def cards_for(conn: Conn, v: Viewer, current: dt.datetime) -> list[Card]:
     """The whole deck for this person, in order, before filters (L-CREW/1–4).
 
-    L-CREW/1: shared ideas still open to a crew that the person is not on, has not asked to join (a team-up
-    request, or a draft's merge request, waiting or declined; a withdrawn one may be asked again, BLD-F038) and
-    has not passed. Each needs one of the four
-    reasons of L-CREW/2; an idea with none is not shown."""
+    L-CREW/1 under DEC-126 (BLD-F094): shared ideas still open to a crew that the person is not on, was not declined
+    on (a team-up request, or a draft's merge request, BLD-F038) and has not passed. An idea they have asked to join
+    and are still waiting on stays, as "Requested" with its request (`Card.request`), and sorts last (`order_key`);
+    a withdrawn request is as if never asked. Each card needs one of the four reasons of L-CREW/2; an idea with none
+    is not shown."""
     rows = conn.execute(_ELIGIBLE, {"open": list(OPEN_STATUSES), "code": v.code, "uid": v.user_id}).fetchall()
     links = _links(conn, v)
     plans: list[tuple[dict[str, Any], str, str, tuple[int, int, int, int], list[str], str]] = []
@@ -311,12 +353,14 @@ def cards_for(conn: Conn, v: Viewer, current: dt.datetime) -> list[Card]:
     for r, kind, reason, strength, codes, area in plans:
         crew = [people[c] for c in codes]
         wanted = tuple(str(p) for p in (r["helper_picks"] or []))
+        asked = (str(r["request_id"]), str(r["request_kind"])) if r["request_id"] else None
         cards.append(
             Card(
                 r["uuid"], str(r["idea_id"]), mask_text(r["title"]).strip() or str(r["idea_id"]), str(r["status"]),
                 area, str(r["city"] or ""), r["shared_at"], crew[0], tuple(crew[:FACES]), len(codes),
                 checked_sentence(conn, r["summary"]) or SUMMARY_PENDING,
                 looking_for(wanted, checked_sentence(conn, r["helper_text"])), wanted, kind, reason, strength,
+                asked, r["requested_at"] if asked else None,
             )
         )  # fmt: skip
     return sorted(cards, key=order_key)
@@ -507,7 +551,8 @@ def deck(
     (`active`), the person's tallies, the deck's state and "Your crews".
 
     `state` is `cards` while any card is left before filters; once none is, `everyone_seen` if the person has
-    passed, asked or joined anything (L-CREW/7), else `nothing_yet` (L-CREW/8, BLD-F033)."""
+    passed, asked or joined anything (L-CREW/7), else `nothing_yet` (L-CREW/8, BLD-F033). Requested cards count as
+    cards everywhere: in the filters, their counts and `total` (DEC-126). `limit` reads the deck as `limited` says."""
     current = now or _now()
     v = viewer(conn, user_id)
     cards = cards_for(conn, v, current)
@@ -522,7 +567,7 @@ def deck(
         state = "nothing_yet"
     groups = facet_groups(cards, active)
     body: dict[str, Any] = {
-        "items": [c.as_json() for c in (shown[:limit] if limit else shown)],
+        "items": [c.as_json() for c in limited(shown, limit)],
         "total": len(shown),
         "counts": {f"{g['key']}:{o['value']}": o["count"] for g in groups for o in g["options"]},
         "filters": groups,
@@ -537,7 +582,8 @@ def deck(
 
 
 def home(conn: Conn, user_id: str, limit: int = 3, now: dt.datetime | None = None) -> dict[str, Any]:
-    """L-CREW/10, A-API.home `crew`: the deck's first `limit` cards and how many there are in all."""
+    """L-CREW/10, A-API.home `crew`: the deck's first `limit` cards (with the latest requested card last, `limited`)
+    and how many there are in all."""
     d = deck(conn, user_id, limit=limit, now=now, include_crews=False)
     return {"total": d["deck_total"], "top": d["items"]}
 

@@ -7,7 +7,8 @@ else gets 404, never 403, so the answer never says that the conversation exists.
 
 Files on messages and answers go only to readers the attachment route lets open them (BLD-F062, DEC-107): the
 sharer, and the roles `view_review_queue` names in `policy/rbac.yaml` (`apps/web/src/server/attachments.ts`,
-`accessible()`).
+`accessible()`), and since DEC-129 the crew too, who open the checked ones through lane C's files route (`rights()`
+lets the sharer and the crew open a checked file; a file with a customer detail never reaches the conversation).
 """
 
 from __future__ import annotations
@@ -21,8 +22,9 @@ from core.db import Conn
 DESK_ROLES = ("reviewer",)
 COMMITTEE_ROLES = ("committee", "core_committee", "core_chair")
 # `view_review_queue` in policy/rbac.yaml (core_chair is an alias of core_committee): who opens a file besides the
-# sharer. Keep in step with `accessible()` in apps/web/src/server/attachments.ts (BLD-F062).
-FILE_ROLES = ("reviewer", "core_committee", "core_chair", "admin")
+# sharer. Keep in step with `accessible()` in apps/web/src/server/attachments.ts (BLD-F062). `committee` is in
+# `view_review_queue` since BLD-B270, so a committee-only member opens and adds files too (DEC-107).
+FILE_ROLES = ("reviewer", "committee", "core_committee", "core_chair", "admin")
 
 
 @dataclass(frozen=True)
@@ -43,9 +45,17 @@ class Reader:
         return self.sharer or self.crew or self.desk or self.committee or self.build
 
     @property
+    def checked_files(self) -> bool:
+        """Gets the checked files on messages and answers: the readers who open every file (`files`) and, since the
+        product lead's DEC-129, the crew, the lead included. The crew still adds none (`may_attach`); the build team
+        and a mentioned person get none (P-PRODUCT.privacy: checked files are for the sharer, crew, desk and
+        committee)."""
+        return self.files or self.crew
+
+    @property
     def may_attach(self) -> bool:
-        """Adds files to a message: the sharer, the review desk and the core committee, the readers who can open
-        them (BLD-F063). The crew, the build team and a mentioned person write without files."""
+        """Adds files to a message: the sharer, the review desk and the Ones Committee, the readers who can open
+        them (BLD-F063, BLD-B270). The crew, the build team and a mentioned person write without files."""
         return self.files and self.full
 
     @property

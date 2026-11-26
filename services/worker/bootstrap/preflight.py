@@ -11,9 +11,24 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Mapping
+from email.utils import parseaddr
 
 SECRETS = ("INTERNAL_API_TOKEN", "SESSION_SECRET", "CONTRIBUTOR_HMAC_SECRET", "VAULT_ENCRYPTION_KEY")
 DEV_VALUES = {"ideas", "minio", "minio-secret", "dev-web-only", "dev-worker-only", "change-me"}
+# Email through Graph (BLD-A243). GRAPH_CLIENT_SECRET is the worker's alone: the database env file, never the app's.
+GRAPH_NAMES = (
+    "GRAPH_TENANT_ID",
+    "GRAPH_CLIENT_ID",
+    "GRAPH_SERVICE_MAILBOX",
+    "GRAPH_CLIENT_SECRET",
+    "EMAIL_FROM",
+)
+
+
+def is_production(app_env: str) -> bool:
+    """Production mode (BLD-A235): APP_ENV is `prod` as this preflight reads it, stripped and case-sensitive, so a
+    value preflight passes as prod is prod in the seed and the smoke checks too. Anything else is not production."""
+    return app_env.strip() == "prod"
 
 
 def check(env: Mapping[str, str]) -> tuple[list[str], list[str]]:
@@ -74,12 +89,23 @@ def check(env: Mapping[str, str]) -> tuple[list[str], list[str]]:
         warnings.append(
             "EMBEDDINGS_MODE=hash: matching quality is not representative (UAT should use bge-m3, AT-B5-01)"
         )
-    if (get("EMAIL_MODE") or "smtp") == "graph":
-        for name in ("GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_SERVICE_MAILBOX"):
+    email_mode = get("EMAIL_MODE") or "smtp"
+    # BLD-A243: the secret comes from the database env file, the rest from the app env file.
+    if email_mode == "graph":
+        for name in GRAPH_NAMES:
             if not get(name):
                 problems.append(f"EMAIL_MODE=graph needs {name}")
-    else:
+        mailbox, sender = get("GRAPH_SERVICE_MAILBOX"), get("EMAIL_FROM")
+        if mailbox and "@" not in mailbox:
+            problems.append("GRAPH_SERVICE_MAILBOX must be the service mailbox's email address")
+        elif mailbox and sender and parseaddr(sender)[1].strip().lower() != mailbox.lower():
+            problems.append(
+                "EMAIL_FROM must be the service mailbox's address (GRAPH_SERVICE_MAILBOX) with EMAIL_MODE=graph"
+            )
+    elif email_mode == "smtp":
         warnings.append("EMAIL_MODE=smtp: email goes to the SMTP_URL server, not the KFin service mailbox")
+    else:
+        problems.append("EMAIL_MODE must be smtp or graph")
     if "kfintech.example" not in get("KFIN_EMAIL_DOMAINS"):
         warnings.append(
             "KFIN_EMAIL_DOMAINS lacks kfintech.example: the synthetic UAT people will look external"

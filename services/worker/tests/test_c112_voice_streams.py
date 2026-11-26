@@ -103,6 +103,9 @@ def env(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, Any]]:
     monkeypatch.setattr(drafts.killswitch, "is_on", lambda name, conn=None: switches.get(name, False))
     monkeypatch.setattr(drafts.prefs, "refer_as", lambda conn, user_id: refer["value"])
     monkeypatch.setattr("voice.service.limits", lambda: Limits(max_waiting=3, max_per_hour=10))
+    # MeterConn has no vault and no users table, so here the English copy's words go untagged (no sentence in this
+    # file holds a name); test_c200_speech_tags.py tags them for real, against a migrated test database (BLD-C200).
+    monkeypatch.setattr(sarvam, "tag_for_service", lambda text, **k: sarvam.Outgoing(text=text, tags={}))
     drafts._live.clear()
     yield {"switches": switches, "refer": refer, "clock": clock, "conn": MeterConn()}
     drafts._live.clear()

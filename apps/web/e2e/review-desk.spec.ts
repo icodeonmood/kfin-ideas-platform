@@ -3,10 +3,20 @@
  * sharer's Answer screen. Ideas are written straight into this run's database for the seeded sharer, because the
  * share journey is another lane's; everything after that goes through the screens. Synthetic data only.
  */
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { Client } from "pg";
 
-import { expectNoSeriousAxeIssues, expectNoSidewaysScroll, PERSONAS, signIn } from "./helpers";
+import {
+  expectNoSeriousAxeIssues,
+  expectNoSidewaysScroll,
+  navLabels,
+  PERSONAS,
+  PHONE_TABS,
+  signIn,
+} from "./helpers";
+import { esc } from "./club";
+import { expectHeld, expectNoGlideRunning, glidingRow, slowGlides } from "./glide";
 import { carrying, storageCarries, storageNames, watchRequestUrls } from "./search-words";
 
 const DATABASE_URL =
@@ -290,6 +300,117 @@ test("S-R3: the sharer answers the desk's questions one at a time and sends (V-A
   await expect(reviewer.page.getByText("Our Hyderabad branch alone.")).toBeVisible();
 });
 
+test('S-R3, C-FILE.row, L-QUESTIONS.answer, BLD-B275: a file-only answer through the "+" is checked, listed and sent', async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const NAME = "branch-call-log.md"; // a small synthetic text file (.md: .txt is not an allowed type)
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `Rejection SMS gives a code only (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(sharer.code, title);
+  const sent = await reviewer.page.request.post(`/api/desk/ideas/${ideaId}/question-sets`, {
+    data: {
+      questions: [{ part: "evidence", text: "Can you add the branch call log for last week?" }],
+      time_to_answer: "3d",
+    },
+  });
+  expect(sent.status()).toBe(201);
+
+  const s = sharer.page;
+  await s.goto(`/ideas/${ideaId}/answer`);
+  // C-PROMPT.anatomy/2, DEC-124: the "+" in the box's tool row, with the Answer board's name and tooltip (it opens
+  // files only, BLD-B275)
+  const plus = s.getByRole("button", { name: "Attach files to this answer" });
+  await expect(plus).toBeVisible();
+  await expect(plus).toHaveAttribute("title", "Attach files");
+  await expect(s.getByRole("button", { name: "Skip for now" })).toBeVisible();
+  // The upload makes the answer's row first (an empty save), then carries its id and never `for` (BLD-B274). The
+  // browser does not hand the test a multipart body with a file in it, so the form's fields are pinned by the unit
+  // test (`answerUploadForm`) and the stored row by the query at the end (the answer's id, purpose "idea")
+  const upload = s.waitForRequest((r) => r.url().endsWith("/api/files") && r.method() === "POST");
+  const chooser = s.waitForEvent("filechooser");
+  await plus.click();
+  await (
+    await chooser
+  ).setFiles({ name: NAME, mimeType: "text/markdown", buffer: Buffer.from("The call log for week 47.") });
+  expect((await upload).headers()["content-type"] ?? "").toContain("multipart/form-data");
+  await expect(plus).toBeFocused(); // focus stays on the "+" after picking
+  // C-FILE.row: the row, named by its file, reaches Checked as the screen asks again
+  const row = s.getByRole("list", { name: "Your files" }).getByRole("listitem").filter({ hasText: NAME });
+  await expect(row.getByText("Checked", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(row.getByRole("button", { name: `Remove ${NAME}` })).toBeVisible();
+  // A file and no words is answered (the worker's _has_content)
+  await expect(s.getByRole("button", { name: "Question 1, answered" })).toBeVisible();
+  await expectNoSeriousAxeIssues(s);
+  await s.getByRole("button", { name: "Next" }).click();
+  await expect(s.getByRole("heading", { name: "Check your answers" })).toBeVisible();
+  await expect(s.getByText("One file attached.", { exact: true })).toBeVisible();
+  await s.getByRole("button", { name: /Send 1 answer to / }).click();
+  await expect(s.getByRole("heading", { name: "Your answers are with the review desk" })).toBeVisible();
+  await expect(s.getByText("One file attached.", { exact: true })).toBeVisible();
+  const held = await db((c) =>
+    c.query<{ purpose: string; sent: boolean }>(
+      "SELECT a.purpose, an.sent_at IS NOT NULL AS sent FROM attachments a JOIN answers an ON an.id = a.answer_id " +
+        "JOIN ideas i ON i.id = a.idea_uuid WHERE i.idea_id = $1",
+      [ideaId],
+    ),
+  );
+  expect(held.rows).toEqual([{ purpose: "idea", sent: true }]);
+});
+
+test('S-R3, C-PROMPT.anatomy/2, C-PROMPT.voice, BLD-B276: "Say your answer" follows the "+" in the answer box', async ({
+  browser,
+}, testInfo) => {
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `Rejection SMS gives a code only (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(sharer.code, title);
+  const sent = await reviewer.page.request.post(`/api/desk/ideas/${ideaId}/question-sets`, {
+    data: {
+      questions: [{ part: "often", text: "How many calls a week reach the branch about it?" }],
+      time_to_answer: "3d",
+    },
+  });
+  expect(sent.status()).toBe(201);
+
+  const s = sharer.page;
+  await s.goto(`/ideas/${ideaId}/answer`);
+  // The tool row reads the "+", then the mic (C-PROMPT.anatomy/2), with the Answer board's names; nothing is
+  // recorded until the person presses it. No note is recorded here: lane C's capture is tested on its own
+  const mic = s.getByRole("button", { name: "Say your answer", exact: true });
+  await expect(mic).toBeVisible();
+  await expect(mic).toHaveAttribute("aria-pressed", "false");
+  const tools = s.locator(".ans-tools > button");
+  await expect(tools).toHaveCount(2);
+  await expect(tools.nth(0)).toHaveAttribute("aria-label", "Attach files to this answer");
+  await expect(tools.nth(1)).toHaveAttribute("aria-label", "Say your answer");
+  // BLD-B279: both sit inside the box's frame (lane D's Field slot, BLD-D029), the mic at its foot on the right
+  await expect(s.locator(".fld-frame .fld-tools .ans-tools > button")).toHaveCount(2);
+  const frame = (await s.locator(".ans-box .fld-frame").boundingBox())!;
+  for (const b of [(await tools.nth(0).boundingBox())!, (await tools.nth(1).boundingBox())!]) {
+    expect(b.x).toBeGreaterThanOrEqual(frame.x);
+    expect(b.y).toBeGreaterThanOrEqual(frame.y);
+    expect(b.x + b.width).toBeLessThanOrEqual(frame.x + frame.width);
+    expect(b.y + b.height).toBeLessThanOrEqual(frame.y + frame.height);
+  }
+  const micAt = (await tools.nth(1).boundingBox())!;
+  expect(frame.x + frame.width - (micAt.x + micAt.width)).toBeLessThan(12);
+  expect(frame.y + frame.height - (micAt.y + micAt.height)).toBeLessThan(12);
+  await expect(s.getByPlaceholder("Type your answer, or tap the mic and say it")).toBeVisible();
+  // DEC-108: before the first recording, the screen says where the voice goes, with no vendor's name
+  await expect(
+    s.getByText(
+      "Your voice note goes to an Indian speech service to turn it into text. You can check the text before you send it.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expectNoSeriousAxeIssues(s);
+  // Typing still works beside it, and the box keeps its keys
+  await s.getByRole("textbox", { name: "Your answer to question 1" }).fill("About 15 calls a week.");
+  await expect(s.getByRole("button", { name: "Next" })).toBeVisible();
+});
+
 test("V-ACC.review/14: a reviewer opening their own idea cannot act on it", async ({ browser }, testInfo) => {
   const reviewer = await person(browser, PERSONAS.reviewer);
   const title = `A reviewer's own idea (${testInfo.project.name} ${Date.now()})`;
@@ -477,4 +598,267 @@ test("DEC-110, S-R1.rules/4 (J-BROWSE/4, /6): the desk's search stays in the tab
   await expectDecideBy(other.page);
   await expect(other.page.getByRole("searchbox", { name: "Search the desk" })).toHaveValue("");
   await other.page.context().close();
+});
+
+test("DEC-121, S-R2: a committee-only member opens the reviewer's idea and its Listen", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `Branch slips ask for the same form twice (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(sharer.code, title);
+  // A decided idea, as the Ones Committee meets it (J-COMMITTEE/1–2): the reviewer opens it and picks it
+  await reviewer.page.goto(`/desk/ideas/${ideaId}`);
+  const decided = await reviewer.page.request.post(`/api/desk/ideas/${ideaId}/decision`, {
+    data: { choice: "pick", reason: REASON },
+  });
+  expect(decided.status(), `decision: ${await decided.text()}`).toBe(201);
+  // An idea still with the desk, with a similar idea beside it: the reviewer is offered Decide, Ask, worth and Merge
+  // on it (S-R2.panel, S-R2.similar), so the committee member's zero below is the role at work, not an empty page
+  const onDesk = `Branch slips ask for the PAN twice (${testInfo.project.name} ${Date.now()})`;
+  const onDeskId = await sharedIdea(sharer.code, onDesk);
+  const similar = `Branch slips repeat the address box (${testInfo.project.name} ${Date.now()})`;
+  const similarId = await sharedIdea(sharer.code, similar);
+  await db((c) =>
+    c.query(
+      "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) SELECT a.id, b.id, 'close', " +
+        "'Same branch slip' FROM ideas a, ideas b WHERE a.idea_id = $1 AND b.idea_id = $2",
+      [onDeskId, similarId],
+    ),
+  );
+  await reviewer.page.goto(`/desk/ideas/${onDeskId}`);
+  await expect(reviewer.page.getByRole("button", { name: "Decide on this idea" })).toBeVisible();
+  await expect(reviewer.page.getByRole("button", { name: `Merge with ${similar}` })).toBeVisible();
+
+  // A synthetic member who holds `committee` and nothing else (BLD-B270): made on this first sign-in, so no other
+  // spec signs in as them. The role is given for this test and taken back after it (grants are read on every
+  // request); only the grant this test inserted is deleted.
+  const id = `SYN-C${Date.now().toString(36).toUpperCase()}${testInfo.project.name === "desktop" ? "D" : "P"}`;
+  const ctx = await browser.newContext();
+  const m = await ctx.newPage();
+  await signIn(m, id, {
+    employeeId: id,
+    email: `${id.toLowerCase()}@kfintech.example`,
+    name: "Synthetic Committee Member",
+  });
+  const me = (await (await m.request.get("/api/me")).json()) as { email: string };
+  const grant = await db(
+    async (c) =>
+      (
+        await c.query<{ id: string }>(
+          "INSERT INTO role_grants (user_id, role) SELECT id, 'committee' FROM users WHERE email = $1 " +
+            "RETURNING id::text AS id",
+          [me.email],
+        )
+      ).rows[0]!.id,
+  );
+  try {
+    const held = await db((c) =>
+      c.query<{ role: string }>(
+        "SELECT g.role FROM role_grants g JOIN users u ON u.id = g.user_id WHERE u.email = $1 " +
+          "AND (g.valid_to IS NULL OR g.valid_to > now())",
+        [me.email],
+      ),
+    );
+    expect(held.rows.map((r) => r.role)).toEqual(["committee"]);
+
+    // S-R2 opens for them, with the strip "Listen to the whole idea", and no desk action
+    await m.goto(`/desk/ideas/${ideaId}`);
+    await expect(m).toHaveURL(new RegExp(`/desk/ideas/${ideaId}$`));
+    await expect(m.getByRole("heading", { level: 1, name: title })).toBeVisible();
+    await expect(m.getByRole("heading", { name: "Listen to the whole idea" })).toBeVisible();
+    await expect(m.getByRole("button", { name: "Decide on this idea" })).toHaveCount(0);
+    // C-LISTEN, L-LISTEN: the desk's script answers them
+    const listen = await m.request.get(`/api/desk/ideas/${ideaId}/listen`);
+    expect(listen.status(), `listen: ${await listen.text()}`).toBe(200);
+    // BLD-B270, S-R2: on the idea still with the desk they read it, and are offered none of the desk's actions
+    // (`can_act` holds only for the review desk)
+    await m.goto(`/desk/ideas/${onDeskId}`);
+    await expect(m.getByRole("heading", { level: 1, name: onDesk })).toBeVisible();
+    await expect(m.getByRole("heading", { name: "Review this idea" })).toBeVisible();
+    await expect(m.getByRole("button", { name: "Decide on this idea" })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /^Ask about this/ })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /^Ask .* first/ })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /what it’s worth$/ })).toHaveCount(0);
+    await expect(m.getByRole("button", { name: /^Merge with / })).toHaveCount(0);
+    // C-SIDEBAR: their sidebar is as before (Ones Committee, no Review desk); a phone's tabs are everyone's
+    await m.goto("/home");
+    expect(await navLabels(m)).toEqual(
+      testInfo.project.name === "phone-360"
+        ? PHONE_TABS
+        : ["Share a problem", "Home", "Find your crew", "Wall", "Inbox", "Ones Committee"],
+    );
+  } finally {
+    await db((c) => c.query("DELETE FROM role_grants WHERE id = $1::bigint", [grant]));
+    await ctx.close();
+  }
+});
+
+test("BLD-B272, S-R2.panel, J-REVIEW/A1: a queued question is still there after a reload, and removing it is kept too", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(90_000);
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const title = `Nominee page goes missing from branch slips (${testInfo.project.name} ${Date.now()})`;
+  const ideaId = await sharedIdea(sharer.code, title);
+  const similar = `Branch slips drop the nominee page (${testInfo.project.name} ${Date.now()})`;
+  const similarId = await sharedIdea(sharer.code, similar);
+  await db((c) =>
+    c.query(
+      "INSERT INTO similar_links (idea_uuid, other_idea_uuid, strength, reason) SELECT a.id, b.id, 'close', " +
+        "'Same branch slip' FROM ideas a, ideas b WHERE a.idea_id = $1 AND b.idea_id = $2",
+      [ideaId, similarId],
+    ),
+  );
+  const r = reviewer.page;
+  const queueSaved = () =>
+    r.waitForResponse(
+      (res) =>
+        res.request().method() === "PUT" &&
+        new URL(res.url()).pathname === `/api/desk/ideas/${ideaId}/question-sets/queued`,
+    );
+  await r.goto(`/desk/ideas/${ideaId}`);
+  await expect(r.getByRole("heading", { name: "Review this idea" })).toBeVisible();
+
+  // BLD-B273, F-SPACE.targets (WCAG 2.5.8): S-R2's Similar ideas keep every target 24 × 24 px or spaced clear
+  await expect(r.getByRole("button", { name: `Merge with ${similar}` })).toBeAttached();
+  const targets = await new AxeBuilder({ page: r }).include(".ri-sim").withRules(["target-size"]).analyze();
+  expect(
+    targets.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`),
+    "S-R2 Similar ideas, target size",
+  ).toEqual([]);
+
+  // Ask about this queues the part's suggestion; the page saves the queue once the changes pause
+  const howOften = r.getByRole("region", { name: "How often" });
+  const saved = queueSaved();
+  await howOften.getByRole("button", { name: "Ask about this, How often" }).click();
+  await expect(r.getByRole("button", { name: /^Ask .* first/ })).toContainText("1 question ready");
+  expect((await saved).status(), "the queue is saved").toBe(200);
+
+  // Back on the page later, the question is still queued, ready to send (the Ask section folded, S-R2.panel/2)
+  await r.reload();
+  await expect(r.getByRole("heading", { name: "Review this idea" })).toBeVisible();
+  await expect(r.getByRole("button", { name: /^Ask .* first/ })).toContainText("1 question ready");
+  await expect(r.getByRole("button", { name: /^Ask .* first/ })).toHaveAttribute("aria-expanded", "false");
+  await expect(r.getByRole("button", { name: /Send 1 question to / })).toBeVisible();
+  await expect(howOften.getByRole("button", { name: "Asking, How often" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expectNoSeriousAxeIssues(r);
+
+  // Removing it is saved the same way: the next visit opens with nothing queued
+  await r.getByRole("button", { name: /^Ask .* first/ }).click();
+  const removed = queueSaved();
+  await r.getByRole("button", { name: /^Remove: / }).click();
+  expect((await removed).status(), "the emptied queue is saved").toBe(200);
+  await r.reload();
+  await expect(r.getByRole("button", { name: "Decide on this idea" })).toBeVisible();
+  await expect(r.getByRole("button", { name: /^Ask .* first/ })).not.toContainText("ready");
+});
+
+/**
+ * BLD-D038: an idea that sorts first by Area ("Accounts") and last by decide-by (20 days out), so a re-sort between the
+ * two moves its row a long way down the desk, from a place on screen.
+ */
+async function glideIdea(code: string, title: string): Promise<string> {
+  return db(async (c) => {
+    const r = await c.query<{ idea_id: string; id: string }>(
+      "INSERT INTO ideas (idea_id, contributor_code, status, title, summary, often, affects, area, city, kind, " +
+        "shared_at, decide_by, edit_closes_at) VALUES (next_idea_ref(), $1, 'with_review_desk', $2, $3, " +
+        "'About 40 calls a day at one branch.', ARRAY['Investors'], 'Accounts', 'Hyderabad', 'problem', " +
+        "now(), now() + interval '20 days', now() + interval '3 days') RETURNING idea_id, id",
+      [code, title, "Branch slips ask for the folio number twice, so investors fill the form again."],
+    );
+    await c.query(
+      "INSERT INTO crew_members (idea_uuid, contributor_code, role, via) VALUES ($1, $2, 'lead', 'shared')",
+      [r.rows[0]!.id, code],
+    );
+    return r.rows[0]!.idea_id;
+  });
+}
+
+/** The desk's rows, desktop table and phone cards alike (S-R1.rules/6). */
+const DESK_ROWS = ".rd-table tbody";
+
+/** The reviewer on To review sorted by Area, with the glide idea on screen. The list read on arrival comes from the
+ * page's own code, so once it lands the page has hydrated and a press is the page's (as BLD-A252's spec waits). */
+async function deskByArea(browser: Browser, title: string): Promise<Page> {
+  const sharer = await person(browser, PERSONAS.contributor);
+  await glideIdea(sharer.code, title);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const r = reviewer.page;
+  const arrived = r.waitForResponse(
+    (res) => new URL(res.url()).pathname === "/api/desk" && res.request().method() === "GET" && res.ok(),
+  );
+  await r.goto("/desk?tab=to_review&sort=area");
+  await arrived;
+  await expect(r.getByRole("heading", { level: 1, name: "Review desk" })).toBeVisible();
+  await expect(r.getByRole("main").getByRole("link", { name: title, exact: true })).toBeVisible();
+  await r.locator(`${DESK_ROWS} tr`).first().scrollIntoViewIfNeeded();
+  return r;
+}
+
+/** C-SORTS to `to`, waiting for that list's read: its pressed button on a desktop; on a phone the one cycler steps
+ * there through its three sorts (time left, decide by, area). On To review, time left and decide by order the rows
+ * alike. */
+async function deskSort(p: Page, to: "Decide by" | "Area"): Promise<void> {
+  const wide = p.getByRole("button", { name: to, exact: true });
+  const phone = !(await wide.isVisible());
+  const want = to === "Area" ? "area" : phone ? "time_left" : "decide_by";
+  const listed = p.waitForResponse((res) => {
+    const u = new URL(res.url());
+    return (
+      u.pathname === "/api/desk" &&
+      res.request().method() === "GET" &&
+      res.ok() &&
+      u.searchParams.get("sort") === want
+    );
+  });
+  if (!phone) await wide.click();
+  else
+    for (const from of to === "Area" ? ["time left", "decide by"] : ["area"])
+      await p.getByRole("button", { name: `Sorted by ${from}`, exact: true }).click();
+  await listed;
+}
+
+test("BLD-D038, F-MOTION.rules/5 (J-BROWSE/4): a press holds the gliding row; the click opens it", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const title = `Accounts slips ask for the folio twice (${testInfo.project.name} ${Date.now()})`;
+  const r = await deskByArea(browser, title);
+  await slowGlides(r);
+
+  // Area to Decide by: rows glide to their new places; the press lands on a row's link where it is drawn
+  await deskSort(r, "Decide by");
+  const row = await glidingRow(r, DESK_ROWS);
+  await r.mouse.move(row.x, row.y);
+  await r.mouse.down();
+  await expectHeld(r, DESK_ROWS, row);
+  await r.mouse.up();
+  await r.waitForURL(new RegExp(`/desk/ideas/${esc(row.id)}$`), { timeout: 10_000 });
+});
+
+test("BLD-D038, F-MOTION.rules/5 (J-BROWSE/4): a key or the wheel ends the desk's glide at once", async ({
+  browser,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const title = `Accounts slips repeat the PAN box (${testInfo.project.name} ${Date.now()})`;
+  const r = await deskByArea(browser, title);
+  await slowGlides(r);
+
+  // A key (Shift) during the glide: nothing still runs on the next frame
+  await deskSort(r, "Decide by");
+  await glidingRow(r, DESK_ROWS, { hit: false });
+  await r.keyboard.press("Shift");
+  await expectNoGlideRunning(r, DESK_ROWS);
+
+  // A fresh glide, back to Area: the wheel ends it the same way
+  await deskSort(r, "Area");
+  await glidingRow(r, DESK_ROWS, { hit: false });
+  await r.mouse.wheel(0, 1);
+  await expectNoGlideRunning(r, DESK_ROWS);
 });

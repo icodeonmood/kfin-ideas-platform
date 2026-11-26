@@ -10,6 +10,8 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { cssRules } from "./helpers/css-rules";
+
 vi.mock("@/lib/motion/spark", () => ({ sparkBurst: vi.fn() }));
 vi.mock("next/link", async () => {
   const { createElement: h } = await import("react");
@@ -193,6 +195,59 @@ async function click(el: Element | undefined) {
   expect(el, "element to click").toBeTruthy();
   await act(async () => (el as HTMLElement).click());
   await settle();
+}
+
+/** Every card in the pile, in deck order, by title (only the front one is in the reading order). */
+const slots = () => Array.from(document.querySelectorAll<HTMLElement>(".dcard"));
+const slotTitles = () => slots().map((d) => text(d.querySelector(".crew-tb")));
+/** Let requestAnimationFrame callbacks run (focus moves after the deck redraws). */
+async function frames() {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 40));
+  });
+}
+
+/** The team-up sheet's calls for C1, answered here: a send makes request req-1, waiting for Ravi. */
+function answerTeamUp() {
+  routes[`GET /api/ideas/${C1.id}/team-up`] = {
+    body: {
+      idea_id: C1.id,
+      lead: RAVI,
+      me: null,
+      crew_count: 4,
+      can_request: true,
+      why_not: null,
+      request: null,
+      after: null,
+    },
+  };
+  routes[`GET /api/ideas/${C1.id}/team-up/draft-note`] = {
+    body: {
+      note: "I take these calls at our Hyderabad branch every day, about 40 a day, and most are about R07.",
+      own_ideas: [],
+      idea: { id: C1.id, title: C1.title },
+      lead: RAVI,
+      min_chars: 30,
+      max_chars: 600,
+    },
+  };
+  routes["GET /api/me"] = {
+    body: { name: "Kavya Iyer", email: "kavya@example.test", contributor_code: "CTR-0a1b2c" },
+  };
+  routes[`POST /api/ideas/${C1.id}/team-up`] = (b) => ({
+    status: 201,
+    body: {
+      id: "req-1",
+      request: "teamup",
+      idea_id: C1.id,
+      from: KAVYA,
+      note: (b as { note: string }).note,
+      brought: [],
+      state: "sent",
+      sent_at: "2026-11-18T10:30:00+05:30",
+      after: { state: "waiting", line: "Waiting for Ravi", action: { label: "Withdraw", op: "withdraw" } },
+    },
+  });
 }
 
 // --- Pure helpers ----------------------------------------------------------------------------------------------
@@ -449,46 +504,8 @@ describe("S-H2 Find your crew", () => {
     expect(page()).not.toContain("Ideas you team up on show here.");
   });
 
-  it("J-TEAMUP/1–2: Team up sends through the sheet; the card waits, Keep looking moves on, Your crews lists it", async () => {
-    routes[`GET /api/ideas/${C1.id}/team-up`] = {
-      body: {
-        idea_id: C1.id,
-        lead: RAVI,
-        me: null,
-        crew_count: 4,
-        can_request: true,
-        why_not: null,
-        request: null,
-        after: null,
-      },
-    };
-    routes[`GET /api/ideas/${C1.id}/team-up/draft-note`] = {
-      body: {
-        note: "I take these calls at our Hyderabad branch every day, about 40 a day, and most are about R07.",
-        own_ideas: [],
-        idea: { id: C1.id, title: C1.title },
-        lead: RAVI,
-        min_chars: 30,
-        max_chars: 600,
-      },
-    };
-    routes["GET /api/me"] = {
-      body: { name: "Kavya Iyer", email: "kavya@example.test", contributor_code: "CTR-0a1b2c" },
-    };
-    routes[`POST /api/ideas/${C1.id}/team-up`] = (b) => ({
-      status: 201,
-      body: {
-        id: "req-1",
-        request: "teamup",
-        idea_id: C1.id,
-        from: KAVYA,
-        note: (b as { note: string }).note,
-        brought: [],
-        state: "sent",
-        sent_at: "2026-11-18T10:30:00+05:30",
-        after: { state: "waiting", line: "Waiting for Ravi", action: { label: "Withdraw", op: "withdraw" } },
-      },
-    });
+  it("J-TEAMUP/1–2, DEC-126: Team up sends through the sheet; the card reads Requested, Keep looking sends it to the end, Your crews lists it", async () => {
+    answerTeamUp();
     await mount();
     await click(button("Team up on Rejection SMS codes confuse investors: send Ravi a note"));
     const sheet = document.querySelector<HTMLElement>('[role="dialog"]')!;
@@ -497,19 +514,257 @@ describe("S-H2 Find your crew", () => {
     expect(posts()).toEqual([`POST /api/ideas/${C1.id}/team-up`]);
     expect(page()).toContain("Sent to Ravi");
     await click(button("Keep looking"));
-    // Nothing is passed; the next card is in front, and the request is in Your crews.
+    await frames();
+    // Nothing is passed; the card asked about goes to the end of the deck and the next card comes to the front,
+    // with focus on it (WCAG 2.4.3). The request is in Your crews, "Waiting for Ravi" (DEC-126 (5)).
     expect(posts()).toEqual([`POST /api/ideas/${C1.id}/team-up`]);
     expect(text(front())).toContain("No script for calls about rejections");
+    expect(page()).toContain("Idea 1 of 3");
+    expect(document.activeElement).toBe(button("No script for calls about rejections. Preview the idea"));
+    expect(slotTitles()).toEqual([C2.title, C3.title, C1.title]);
     const row = links().find((a) => a.getAttribute("href") === `/ideas/${C1.id}`)!;
     expect(row.getAttribute("aria-label")).toBe(
       "Rejection SMS codes confuse investors, waiting for Ravi. Open the idea.",
     );
     expect(text(row.closest("li"))).toContain("Ravi Nair, Investor service");
-    // Back on the card it reads Waiting for Ravi, marked as where Team up was (BLD-F074).
-    await click(button("Previous idea"));
-    const waiting = front()!.querySelector("[data-teamup-opener]");
-    expect(text(waiting)).toBe("Waiting for Ravi");
-    expect(posts()).toEqual([`POST /api/ideas/${C1.id}/team-up`]);
+    // At the end it reads Requested: greyed, inactive but focusable and read out, marked as where Team up was.
+    const last = slots()[2]!;
+    const requested = last.querySelector<HTMLButtonElement>("[data-teamup-opener]")!;
+    expect(text(requested)).toBe("Requested");
+    expect(requested.getAttribute("aria-disabled")).toBe("true");
+    expect(requested.hasAttribute("disabled")).toBe(false);
+    expect(requested.classList.contains("is-inactive")).toBe(true);
+    // lane D's shared looks (BLD-D019, BLD-F096): Team up's own classes, inactive; the quiet link under it
+    expect(requested.className).toBe("btn btn-primary btn-full is-inactive crew-join");
+    expect(requested.getAttribute("aria-label")).toBe(
+      "Requested: you asked to team up on Rejection SMS codes confuse investors",
+    );
+    const withdraw = last.querySelector<HTMLButtonElement>(".link-quiet")!;
+    expect(withdraw.tagName).toBe("BUTTON");
+    expect(withdraw.className).toBe("link-quiet");
+    expect(text(withdraw)).toBe("Withdraw");
+    expect(withdraw.getAttribute("aria-label")).toBe(
+      "Withdraw your request to team up on Rejection SMS codes confuse investors",
+    );
+    expect(requested.contains(withdraw)).toBe(false);
+  });
+
+  it("DEC-126: Next on a card just asked about only moves on, at the end of the deck too (no pass)", async () => {
+    answerTeamUp();
+    await mount();
+    await click(button("Team up on Rejection SMS codes confuse investors: send Ravi a note"));
+    const sheet = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    await click(Array.from(sheet.querySelectorAll("button")).find((b) => text(b).startsWith("Send to Ravi")));
+    await click(button("Keep looking"));
+    await click(button("Next idea"));
+    await click(button("Next idea"));
+    expect(page()).toContain("Idea 3 of 3");
+    expect(text(front())).toContain(C1.title);
+    const before = posts().length;
+    await click(button("Next idea"));
+    expect(posts().slice(before)).toEqual([]);
+    expect(page()).toContain("That's everyone for now");
+    expect(page()).toContain("You asked to team up on 1 idea.");
+  });
+
+  it("DEC-126: with reduced motion the card just moves; otherwise a copy of it flies to the back, out of reach", async () => {
+    for (const reduce of [false, true]) {
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn((q: string) => ({ matches: reduce && q.includes("reduce"), media: q })),
+      );
+      answerTeamUp();
+      await mount();
+      await click(button("Team up on Rejection SMS codes confuse investors: send Ravi a note"));
+      const sheet = document.querySelector<HTMLElement>('[role="dialog"]')!;
+      await click(
+        Array.from(sheet.querySelectorAll("button")).find((b) => text(b).startsWith("Send to Ravi")),
+      );
+      await click(button("Keep looking"));
+      const fly = document.querySelector<HTMLElement>(".crew-fly");
+      expect(slotTitles()).toEqual([C2.title, C3.title, C1.title]);
+      if (reduce) {
+        expect(fly).toBeNull();
+      } else {
+        expect(fly).toBeTruthy();
+        expect(fly!.getAttribute("aria-hidden")).toBe("true");
+        expect(fly!.hasAttribute("inert")).toBe(true);
+        expect(fly!.closest(".dcard")).toBe(front());
+        expect(text(fly)).toContain("Requested");
+        expect(fly!.querySelectorAll("[data-teamup-opener], a, button:not(.crew-tb)").length).toBe(0);
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 950));
+        });
+        expect(document.querySelector(".crew-fly")).toBeNull();
+      }
+      await act(async () => root.unmount());
+      document.body.innerHTML = "";
+      host = document.createElement("div");
+      document.body.append(host);
+      root = createRoot(host);
+      calls = [];
+    }
+  });
+
+  it("DEC-126, BLD-F096: a reply with no request id flies a copy with Requested and no Withdraw", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((q: string) => ({ matches: false, media: q })),
+    );
+    answerTeamUp();
+    routes[`POST /api/ideas/${C1.id}/team-up`] = { status: 201, body: {} };
+    await mount();
+    await click(button("Team up on Rejection SMS codes confuse investors: send Ravi a note"));
+    const sheet = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    await click(Array.from(sheet.querySelectorAll("button")).find((b) => text(b).startsWith("Send to Ravi")));
+    await click(button("Keep looking"));
+    const fly = document.querySelector<HTMLElement>(".crew-fly");
+    expect(fly).toBeTruthy();
+    expect(text(fly)).toContain("Requested");
+    expect(text(fly)).not.toContain("Withdraw");
+    expect(fly!.querySelectorAll(".link-quiet").length).toBe(0);
+    // the card itself draws the same: nothing to withdraw (BLD-F074)
+    expect(text(slots()[2])).toContain("Requested");
+    expect(text(slots()[2])).not.toContain("Withdraw");
+  });
+
+  it("DEC-126, BLD-F096: reduced motion turned on while the copy flies drops it at once", async () => {
+    const heard: { media: string; fn: (e: { matches: boolean }) => void }[] = [];
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((q: string) => ({
+        matches: false,
+        media: q,
+        addEventListener: (_: string, fn: (e: { matches: boolean }) => void) => heard.push({ media: q, fn }),
+        removeEventListener: () => {},
+      })),
+    );
+    answerTeamUp();
+    await mount();
+    await click(button("Team up on Rejection SMS codes confuse investors: send Ravi a note"));
+    const sheet = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    await click(Array.from(sheet.querySelectorAll("button")).find((b) => text(b).startsWith("Send to Ravi")));
+    await click(button("Keep looking"));
+    expect(document.querySelector(".crew-fly")).toBeTruthy();
+    // `.crew-fly` is display: none with reduced motion, so its animation's end never comes: no wait for 900 ms
+    await act(async () => {
+      for (const h of heard.filter((x) => x.media.includes("prefers-reduced-motion")))
+        h.fn({ matches: true });
+    });
+    expect(document.querySelector(".crew-fly")).toBeNull();
+    expect(slotTitles()).toEqual([C2.title, C3.title, C1.title]);
+  });
+
+  it("DEC-126, BLD-F096: S-H2 draws Requested and Withdraw with lane D's shared styles only, no copy of its own", () => {
+    const own = cssRules("app/crew/crew.css")
+      .flatMap((r) => r.selectors)
+      .filter((sel) => /is-inactive|link-quiet/.test(sel));
+    expect(own).toEqual([]);
+    const shared = cssRules("app/offer.css").flatMap((r) => r.selectors);
+    expect(shared).toContain(".link-quiet");
+    expect(shared).toContain(".btn.is-inactive");
+  });
+
+  it("DEC-126 after a reload: a requested card reads Requested; Withdraw turns it back to Team up in place, focus on Team up, Your crews drops it", async () => {
+    const C1R = { ...C1, request: { id: "req-9", kind: "teamup" } };
+    routes["GET /api/crew"] = {
+      body: deckBody([C2, C1R], {
+        asked: 1,
+        pending: 1,
+        your_crews: {
+          items: [
+            {
+              id: C1.id,
+              title: C1.title,
+              status: "with_review_desk",
+              lead: RAVI,
+              state: "waiting",
+              label: "Waiting for Ravi",
+              request_id: "req-9",
+              at: "2026-11-17T10:00:00+05:30",
+            },
+          ],
+          teamed_link: "/my-ideas?list=teamed",
+        },
+      }),
+    };
+    routes["DELETE /api/team-up/req-9"] = {
+      body: { id: "req-9", request: "teamup", idea_id: C1.id, state: "withdrawn", after: null },
+    };
+    await mount();
+    expect(slotTitles()).toEqual([C2.title, C1.title]);
+    await click(button("Next idea"));
+    expect(text(front())).toContain(C1.title);
+    const requested = button("Requested: you asked to team up on Rejection SMS codes confuse investors")!;
+    expect(requested.getAttribute("aria-disabled")).toBe("true");
+    // Inactive: a click does nothing (no sheet, no call).
+    const before = calls.length;
+    await click(requested);
+    expect(calls.length).toBe(before);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+
+    const withdraw = button("Withdraw your request to team up on Rejection SMS codes confuse investors")!;
+    withdraw.focus();
+    await click(withdraw);
+    await frames();
+    expect(posts()).toEqual(["POST /api/crew/pass", "DELETE /api/team-up/req-9"]);
+    // Back to Team up, where it stands (still the last card, still in front), with focus on it.
+    expect(page()).toContain("Idea 2 of 2");
+    const teamUp = button("Team up on Rejection SMS codes confuse investors: send Ravi a note")!;
+    expect(teamUp).toBeTruthy();
+    expect(front()!.contains(teamUp)).toBe(true);
+    expect(document.activeElement).toBe(teamUp);
+    expect(slotTitles()).toEqual([C2.title, C1.title]);
+    expect(links().find((a) => a.getAttribute("href") === `/ideas/${C1.id}`)).toBeUndefined();
+    expect(page()).toContain("Ideas you team up on show here.");
+    // Asked about no more: Next passes it now.
+    await click(button("Next idea"));
+    expect(posts().slice(-1)).toEqual(["POST /api/crew/pass"]);
+    expect(page()).toContain("New ideas close to yours show up here.");
+    expect(page()).not.toContain("You asked to team up");
+  });
+
+  it("DEC-126, BLD-F094: after a reload, Next on a requested card passes it like any other card", async () => {
+    const merged = { ...C1, request: { id: "req-9", kind: "merge" } };
+    routes["GET /api/crew"] = { body: deckBody([merged], { asked: 1 }) };
+    await mount();
+    expect(button("Requested: you asked to team up on Rejection SMS codes confuse investors")).toBeTruthy();
+    await click(button("Next idea"));
+    expect(calls.filter((c) => c.key === "POST /api/crew/pass").map((c) => c.body)).toEqual([
+      { idea_id: C1.id },
+    ]);
+    expect(page()).toContain("You asked to team up on 1 idea.");
+  });
+
+  it("DEC-126: a withdraw that fails says why, and the card stays Requested", async () => {
+    const asked = { ...C1, request: { id: "req-9", kind: "teamup" } };
+    routes["GET /api/crew"] = { body: deckBody([asked]) };
+    routes["DELETE /api/team-up/req-9"] = {
+      status: 409,
+      body: { error: { code: "not_waiting", message: "This request has already been answered." } },
+    };
+    await mount();
+    await click(button("Withdraw your request to team up on Rejection SMS codes confuse investors"));
+    expect(text(front()!.querySelector('[role="alert"]'))).toBe("This request has already been answered.");
+    expect(button("Requested: you asked to team up on Rejection SMS codes confuse investors")).toBeTruthy();
+  });
+
+  it("C-SHEET-TEAMUP: Withdraw request in the sheet turns the card back to Team up, where it is", async () => {
+    answerTeamUp();
+    routes["DELETE /api/team-up/req-1"] = {
+      body: { id: "req-1", request: "teamup", idea_id: C1.id, state: "withdrawn", after: null },
+    };
+    await mount();
+    await click(button("Team up on Rejection SMS codes confuse investors: send Ravi a note"));
+    const sheet = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    await click(Array.from(sheet.querySelectorAll("button")).find((b) => text(b).startsWith("Send to Ravi")));
+    // Its busy label shares the button ("Withdrawing…"), so the text starts with the name.
+    await click(buttons().find((b) => text(b).startsWith("Withdraw request")));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(slotTitles()).toEqual([C1.title, C2.title, C3.title]);
+    expect(text(front())).toContain(C1.title);
+    expect(button("Team up on Rejection SMS codes confuse investors: send Ravi a note")).toBeTruthy();
+    expect(links().find((a) => a.getAttribute("href") === `/ideas/${C1.id}`)).toBeUndefined();
   });
 
   it("C-PREVIEW from a card: the title opens the preview with the card's reason", async () => {

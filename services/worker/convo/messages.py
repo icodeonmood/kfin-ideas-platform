@@ -34,6 +34,7 @@ log = get_logger("convo")
 MAX_CHARS = 4000  # BLD-F055
 MAX_FILES = 5
 MAX_MENTIONS = 10
+CONVERSATION_FILE = "conversation"  # attachments.purpose of a file added with S-08's "+" (BLD-C216, BLD-F095)
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 _ATT = re.compile(r"^ATT-[0-9]{4}-[0-9]{6}$")
 _ROUTE = "POST /ideas/{}/conversation/messages"  # with the idea's reference: a key is for one idea (A-API.conventions/3)
@@ -49,7 +50,11 @@ EMPTY = "Write a message or attach a file first."  # L-CONVO/5 (Messages.md)
 TOO_LONG = "Keep a message under 4,000 characters."
 FILE_UNAVAILABLE = "This file can’t be added here. Add it again from this conversation."
 FILE_NOT_CHECKED = "This file is still being checked. Send it once it shows as checked."
-FILE_HAS_DETAIL = "This file has a customer detail in it. Hide the detail or remove the file first."
+# S-08 offers no way to hide a file's detail (DEC-107: "Hide it for me" is not built), so the line says only what
+# can be done there (BLD-F095).
+FILE_HAS_DETAIL = (
+    "This file has a customer detail in it, so it can’t be sent in the conversation. Remove it first."
+)
 NOT_YOURS = "You can remove only your own messages."
 TOO_LATE = "A message can be removed only in the first 5 minutes after sending."
 KEY_REUSED = "This request was already sent with different words. Refresh and try again."
@@ -191,14 +196,16 @@ def _idempotent(
 
 
 def _check_files(conn: Conn, idea: dict[str, Any], code: str | None, file_ids: list[str]) -> None:
-    """Each file: this idea's, uploaded by the sender, not on another message, and checked clean (L-CONVO/7;
-    DEC-107 keeps a file with a customer detail off the crew's screens, so it is not sent here)."""
+    """Each file: this idea's, added for its conversation (`purpose` "conversation", S-08's "+", BLD-C216), uploaded
+    by the sender, not on another message, and checked clean (L-CONVO/7; BLD-F095). The idea's own files (Proof, the
+    edit page, an answer) are never taken into a message. DEC-107 keeps a file with a customer detail off the crew's
+    screens, so it is not sent here."""
     if not file_ids:
         return
     rows = {
         str(f["id"]): dict(f)
         for f in conn.execute(
-            "SELECT id, kind, state, file_state, uploaded_by_code, conversation_entry_id FROM attachments "
+            "SELECT id, kind, state, file_state, purpose, uploaded_by_code, conversation_entry_id FROM attachments "
             "WHERE id = ANY(%s) AND idea_uuid = %s FOR UPDATE",
             (file_ids, idea["id"]),
         ).fetchall()
@@ -208,6 +215,7 @@ def _check_files(conn: Conn, idea: dict[str, Any], code: str | None, file_ids: l
         if (
             f is None
             or code is None
+            or f["purpose"] != CONVERSATION_FILE
             or f["uploaded_by_code"] != code
             or f["kind"] != "file"
             or f["conversation_entry_id"]

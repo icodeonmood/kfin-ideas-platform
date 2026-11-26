@@ -175,8 +175,8 @@ def test_dec_113_l_convo_8_a_members_message_its_files_and_in_this_conversation(
     assert m["mentions"][1] == DESK_MENTION
     s = _message(view, "Adding the committee’s notes.")
     assert (s["from"], s["from_label"]) == (COMMITTEE_REF, "The Ones Committee")
-    # Only readers who may open files get them (BLD-F062): the sharer here; added by the committee, not a person.
-    assert len(s["files"]) == (1 if who == "kavya" else 0)
+    # Only readers who may open files get them (BLD-F062): the sharer and, since DEC-129, the crew here; added by the committee, not a person.
+    assert len(s["files"]) == (1 if who in ("kavya", "ravi") else 0)
     assert all(f["added_by"] == COMMITTEE_REF for f in s["files"])
 
     # One row for the committee, however many members took part; no face, so the @mention picker leaves it out.
@@ -206,6 +206,56 @@ def test_dec_113_l_convo_6_a_mentioned_person_replies_to_the_ones_committee(
     assert rows.count(("The Ones Committee", "From the Ones Committee")) == 1
 
 
+def test_dec_113_l_convo_8_bld_f092_a_member_only_mentioned_reads_mentioned_until_a_member_writes(
+    db: Any,
+) -> None:
+    """The review desk mentions a member before any member has written: the sharer's committee row reads "Mentioned".
+    Once a member writes, the same one row reads "From the Ones Committee" (BLD-F092)."""
+    kavya = fx.person(db, "Kavya Menon")
+    meera = fx.person(db, "Meera Iyer", roles=(("reviewer", None),))
+    rohan = fx.person(db, "Rohan Mehta", roles=(("committee", None),))
+    idea = fx.idea(db, kavya, reviewer_id=meera["id"], opened_by=meera["id"])
+    send(db, idea["idea_id"], meera["id"],
+         {"text": "@Rohan Mehta can you look at this before Friday?", "mentions": [rohan["id"]]},
+         at=fx.at(17, 9))  # fmt: skip
+
+    def rows() -> list[tuple[str, str]]:
+        view = conversation(db, idea["idea_id"], kavya["id"], at=NOW)
+        _clean_of(_blob(view), rohan, meera)
+        return [(p["label"], p["doing"]) for p in view["participants"] if p["label"] == "The Ones Committee"]
+
+    assert rows() == [("The Ones Committee", "Mentioned")]
+    send(db, idea["idea_id"], rohan["id"], {"text": "Looked at it; the numbers hold."}, at=fx.at(17, 9, 30))
+    assert rows() == [("The Ones Committee", "From the Ones Committee")]
+
+
+@pytest.mark.parametrize(
+    "order", ["mentioned_then_another_member_writes", "a_member_writes_then_is_mentioned"]
+)
+def test_dec_113_l_convo_8_bld_f092_the_committee_row_reads_from_the_ones_committee_once_any_member_wrote(
+    db: Any, order: str
+) -> None:
+    """Whichever member wrote, and whether before or after a member was mentioned, the one committee row reads "From
+    the Ones Committee" (the f/followups-p1 review's two more orders)."""
+    kavya = fx.person(db, "Kavya Menon")
+    meera = fx.person(db, "Meera Iyer", roles=(("reviewer", None),))
+    rohan = fx.person(db, "Rohan Mehta", roles=(("committee", None),))
+    sunita = fx.person(db, "Sunita Bhatt", roles=(("committee", None),))
+    idea = fx.idea(db, kavya, reviewer_id=meera["id"], opened_by=meera["id"])
+    ref = idea["idea_id"]
+    mention = {"text": "@Rohan Mehta can you look at this before Friday?", "mentions": [rohan["id"]]}
+    if order == "mentioned_then_another_member_writes":
+        send(db, ref, meera["id"], mention, at=fx.at(17, 9))
+        send(db, ref, sunita["id"], {"text": "Looked at it; the numbers hold."}, at=fx.at(17, 9, 30))
+    else:
+        send(db, ref, rohan["id"], {"text": "Looked at it; the numbers hold."}, at=fx.at(17, 9))
+        send(db, ref, meera["id"], mention, at=fx.at(17, 9, 30))
+    view = conversation(db, ref, kavya["id"], at=NOW)
+    _clean_of(_blob(view), rohan, sunita, meera)
+    rows = [(p["label"], p["doing"]) for p in view["participants"] if p["label"] == "The Ones Committee"]
+    assert rows == [("The Ones Committee", "From the Ones Committee")]
+
+
 # --- The review desk and the committee keep the names ------------------------------------------------------------
 @pytest.mark.parametrize("who", NAMED)
 def test_dec_113_l_convo_the_review_desk_and_the_committee_read_the_members_by_name(
@@ -227,7 +277,7 @@ def test_dec_113_l_convo_the_review_desk_and_the_committee_read_the_members_by_n
     assert [x["id"] for x in k["mentions"]] == [w["rohan"]["id"]]
     s = _message(view, "Adding the committee’s notes.")
     assert all(f["added_by"]["id"] == w["sunita"]["id"] for f in s["files"])
-    assert len(s["files"]) == (0 if me else 1)  # a plain committee holder opens no files (BLD-F062)
+    assert len(s["files"]) == 1  # BLD-B270: a committee-only member opens files too (DEC-107)
     people = {p["person"]["id"]: p for p in view["participants"]}
     assert w["rohan"]["id"] in people and w["sunita"]["id"] in people
     assert people[w[who]["id"]]["label"] == "You"
@@ -265,8 +315,8 @@ def _items(db: Any, entry_id: str) -> dict[tuple[str, str], dict[str, Any]]:
     return {
         (str(r["kind"]), str(r["to_user"])): dict(r)
         for r in db.execute(
-            "SELECT kind, user_id::text AS to_user, payload, dedupe_key FROM notifications "
-            "WHERE channel = 'in_app' AND payload->>'entry_id' = %s",
+            "SELECT kind, user_id::text AS to_user, payload, from_user_id::text AS from_user, dedupe_key "
+            "FROM notifications WHERE channel = 'in_app' AND payload->>'entry_id' = %s",
             (entry_id,),
         ).fetchall()
     }
@@ -285,12 +335,15 @@ def test_dec_113_l_inbox_a_members_message_posts_comment_and_mention_as_the_ones
     # Outside the review desk and the committee: the committee speaks (IDs and a bool only)
     for key in (("comment", w["kavya"]["id"]), ("mention", w["tara"]["id"]), ("mention", w["ravi"]["id"])):
         assert items[key]["payload"] == {"entry_id": entry_id, "as_committee": True}, key
+        assert items[key]["from_user"] is None, key  # lane A's notify stores no member for it (BLD-A231)
     assert items[("comment", w["kavya"]["id"])]["dedupe_key"] == (
         f"convo.comment:{w['idea']['id']}:2026111710:committee"
     )
-    # The desk and the committee read the members' names in the conversation, so their items carry no flag
+    # The desk and the committee read the members' names in the conversation, so their items carry no flag and
+    # store the member who wrote
     for key in (("mention", w["meera"]["id"]), ("mention", w["sunita"]["id"])):
         assert items[key]["payload"] == {"entry_id": entry_id}, key
+        assert items[key]["from_user"] == w["rohan"]["id"], key
 
 
 def test_dec_113_l_inbox_the_committee_the_desk_and_the_crew_in_one_hour_post_three_comment_items(
@@ -301,16 +354,20 @@ def test_dec_113_l_inbox_the_committee_the_desk_and_the_crew_in_one_hour_post_th
     send(db, ref, w["rohan"]["id"], {"text": "Noted."}, at=fx.at(17, 11, 5))
     send(db, ref, w["ravi"]["id"], {"text": "Adding last week’s calls today."}, at=fx.at(17, 11, 10))
     send(db, ref, w["meera"]["id"], {"text": "Thanks for the log."}, at=fx.at(17, 11, 15))
-    keys = {
-        str(r["dedupe_key"]): dict(r["payload"])
+    found = {
+        str(r["dedupe_key"]): dict(r)
         for r in db.execute(
-            "SELECT dedupe_key, payload FROM notifications WHERE channel = 'in_app' AND kind = 'comment' "
-            "AND user_id = %s AND starts_with(dedupe_key, %s)",
+            "SELECT dedupe_key, payload, from_user_id::text AS from_user FROM notifications "
+            "WHERE channel = 'in_app' AND kind = 'comment' AND user_id = %s AND starts_with(dedupe_key, %s)",
             (w["kavya"]["id"], hour),
         ).fetchall()
     }
+    keys = {k: dict(r["payload"]) for k, r in found.items()}
     assert set(keys) == {hour, f"{hour}:committee", f"{hour}:desk"}
     committee, desk = keys[f"{hour}:committee"], keys[f"{hour}:desk"]
     assert committee.get("as_committee") is True and "as_desk" not in committee
     assert desk.get("as_desk") is True and "as_committee" not in desk
     assert set(keys[hour]) == {"entry_id"}
+    # The stored sender: none when the committee or the desk speaks as one; the crew member who wrote otherwise
+    senders = {k: r["from_user"] for k, r in found.items()}
+    assert senders == {f"{hour}:committee": None, f"{hour}:desk": None, hour: w["ravi"]["id"]}

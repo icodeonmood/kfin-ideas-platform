@@ -8,6 +8,16 @@
  * Sending from the box (P-ROUTES.graph, V-ACC.share/3): `POST /api/drafts { text }` makes the draft with the words as
  * its first message, and the person lands on S-04B on that draft; they never see the empty S-04. Enter sends; Shift
  * and Enter adds a line (C-PROMPT.keys). A starter puts its opener in the box and does not send.
+ * Attach (C-PROMPT.attach, DEC-124, BLD-C214): the "+" first in the box's tool row. Home has no draft until it sends,
+ * so the first file makes it, with the same call Share a problem's first send makes (`POST /api/drafts`), once; the
+ * file goes into it and its row stays in the box. Sending then adds the words to THAT draft as its first message and
+ * opens it, never a new one. Left unsent, it stays a private draft like any other.
+ * Speaking (C-PROMPT.voice, walk item WF-02, BLD-C220): while the box is empty its round button is the microphone,
+ * with "Tap to start speaking" and "Not recording until you do" beside it (Home.dc.html, PhoneHome.dc.html). It is
+ * Share's own capture (`useVoiceCapture`), which asks for the draft inside the tap from the same create-once draft the
+ * first file makes, so a file and a note always share one draft. A finished note goes into that draft at once, after
+ * any typed words, and the person lands on S-04B on it, as after typing. The microphone is allowed for this site on
+ * every page (DEC-128).
  */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -15,16 +25,18 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import { Prompt, PROMPT_COPY, STARTERS } from "@/components/compose/prompt";
 import { QuestionsCard } from "@/components/review/qcard";
-import { useTeamUpSheet } from "@/components/teamup/teamup-sheet";
+import { useTeamUpSheet, type TeamUpSent } from "@/components/teamup/teamup-sheet";
 import { ButtonLink } from "@/components/ui/button";
 import { Deck } from "@/components/ui/deck";
 import { FieldMsg } from "@/components/ui/field";
-import { OnesFan, OnesPost } from "@/components/ui/ones-fan";
+import { OnesFan, OnesNext, OnesPost } from "@/components/ui/ones-fan";
 import { Pill, type PillVariant } from "@/components/ui/pill";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { DraftClient, DraftError, newClientId } from "@/lib/compose/client";
 import type { CrewCard, MyIdeaRow } from "@/lib/contracts";
 import { COUNTS_EVENT } from "@/lib/inbox-events";
+import { useVoiceCapture } from "@/lib/use-voice-capture";
+import type { VoiceCaptureState, VoiceNote } from "@/lib/voice-capture";
 import {
   cheer,
   keepFailedSets,
@@ -39,7 +51,10 @@ import {
   type NeedsCard,
 } from "@/lib/home/data";
 
-import { CrewCardView, shownAsColleague } from "./crew-card";
+import { useBoxFiles } from "../share/box-files";
+import { useIsPhone, VOICE_COPY, voiceFailedLine } from "@/lib/voice-copy";
+
+import { CrewCardView, requestDropped, requestedLast, shownAsColleague } from "./crew-card";
 
 export const HOME_COPY = {
   question: (name: string) => `What keeps getting in your way, ${name}?`,
@@ -140,6 +155,9 @@ export const HOME_LINKS = {
   how: "/how-it-works",
   share: "/share",
 } as const;
+
+/** A note that failed because the session ended: sign in again and come back to Home (L-AUTH.states). */
+const HOME_SIGN_IN = `/sign-in?next=${encodeURIComponent("/home")}`;
 
 type Loaded<T> = { state: "loading" } | { state: "ready"; value: T };
 
@@ -307,8 +325,40 @@ export function HomeScreen({
   const [box, setBox] = useState("");
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<{ text: string; kind: "error" | "warn" } | null>(null);
+  const phone = useIsPhone(); // the small mic reads "Say it instead" on a phone (BLD-C232, review nit 7)
   const createKey = useRef<string>("");
   const boxRef = useRef<HTMLTextAreaElement>(null);
+
+  const refused = useCallback((err: unknown) => {
+    if (err instanceof DraftError && err.offline) setProblem({ text: HOME_COPY.offline, kind: "warn" });
+    else if (err instanceof DraftError && err.text) setProblem({ text: err.text, kind: "error" });
+  }, []);
+
+  // ── files in the box (C-PROMPT.attach, BLD-C214): the first file makes the draft, once ────────────────────────
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const fileDraft = useRef<Promise<string | null> | null>(null);
+  const fileDraftKey = useRef<string>("");
+  const draftForFiles = useCallback((): Promise<string | null> => {
+    if (fileDraft.current) return fileDraft.current;
+    if (!fileDraftKey.current) fileDraftKey.current = newClientId(); // a retried create finds the same draft
+    const made = client.create(fileDraftKey.current).then(
+      (r) => {
+        setDraftId(r.draft.id);
+        return r.draft.id;
+      },
+      (err: unknown) => {
+        fileDraft.current = null; // the next file tries again
+        refused(err);
+        return null;
+      },
+    );
+    fileDraft.current = made;
+    return made;
+  }, [client, refused]);
+  const files = useBoxFiles({ draftId, resolveDraft: draftForFiles });
+  const settleFiles = files.settle;
+  /** The words' message key when they go into the file's draft: one message however often the send is retried. */
+  const messageKey = useRef<string>("");
 
   const send = useCallback(async () => {
     const text = box.trim();
@@ -319,28 +369,135 @@ export function HomeScreen({
     }
     setProblem(null);
     setSending(true);
-    if (!createKey.current) createKey.current = newClientId(); // one draft per send, however often it is retried
     let id: string;
     try {
-      id = (await client.create(createKey.current, box)).draft.id;
+      const made = fileDraft.current ? await fileDraft.current : null;
+      if (made) {
+        // A file made the draft: the words go into THAT draft as its first message, never a new draft.
+        if (!messageKey.current) messageKey.current = newClientId();
+        await client.addMessage(made, { clientId: messageKey.current, text: box, via: "typed" });
+        id = made;
+      } else {
+        if (!createKey.current) createKey.current = newClientId(); // one draft per send, however often it is retried
+        id = (await client.create(createKey.current, box)).draft.id;
+      }
     } catch (err) {
       setSending(false);
-      if (err instanceof DraftError && err.offline) setProblem({ text: HOME_COPY.offline, kind: "warn" });
-      else if (err instanceof DraftError && err.text) setProblem({ text: err.text, kind: "error" });
+      refused(err);
       return;
     }
+    await settleFiles(); // every file in the box is on the draft before Tell it reads it
     try {
       router.push(`/share/${id}`);
     } catch {
       // The draft is made; the box is free again, and sending once more opens the same draft (same key).
       setSending(false);
     }
-  }, [box, sending, client, router]);
+  }, [box, sending, client, router, refused, settleFiles]);
+
+  // ── speaking (C-PROMPT.voice, WF-02, BLD-C220): Share's capture with Home's create-once draft ─────────────────────
+  const voiceOptions = useMemo(
+    () => ({ fetch: client.fetch, resolveDraft: draftForFiles }),
+    [client, draftForFiles],
+  );
+  // Home starts with no draft: the hook asks for one inside the tap (`draftForFiles`), as Share's S-04 does.
+  const voice = useVoiceCapture("", voiceOptions);
+  /** One message key per note, so a note is never added twice however it is retried. */
+  // One take at a time (BLD-C220 review fix): set while a note goes in, cleared when it fails back into the box, kept
+  // once the page moves on.
+  const taking = useRef(false);
+
+  /** A finished note: into the draft at once, after the typed words if any, then on to S-04B, as after typing. A
+   * failure keeps the words in the box and says why, as `send()` does. */
+  const takeNote = useCallback(
+    async (note: VoiceNote) => {
+      const words = note.text;
+      if (!words.trim() || taking.current) return; // a second note while one goes in adds nothing
+      taking.current = true;
+      const typed = box.trim() ? box : "";
+      const both = typed ? `${typed.replace(/\s+$/, "")} ${words}` : words;
+      const keep = (rest: string, err: unknown) => {
+        taking.current = false;
+        setBox(rest);
+        createKey.current = "";
+        messageKey.current = "";
+        setSending(false);
+        refused(err);
+      };
+      setProblem(null);
+      setSending(true);
+      setBox(both); // what goes, while it goes
+      const id = await draftForFiles(); // the draft the tap asked for (or a file made); it has said why if none
+      if (!id) {
+        keep(both, null);
+        return;
+      }
+      if (typed) {
+        // The typed words first, as their own message, with send()'s key: one message however often it is retried.
+        if (!messageKey.current) messageKey.current = newClientId();
+        try {
+          await client.addMessage(id, { clientId: messageKey.current, text: typed, via: "typed" });
+        } catch (err) {
+          keep(both, err);
+          return;
+        }
+      }
+      // One key per take: a note is taken once (`taking`), and a failed one comes back to the box as words, so there
+      // is no retry of the same note to dedupe (BLD-C232, review nit 5).
+      const key = newClientId();
+      try {
+        await client.addMessage(id, { clientId: key, text: words, via: "voice", streamId: note.streamId });
+      } catch (err) {
+        keep(words, err); // any typed words are on the draft already; the note's words come back to the box
+        return;
+      }
+      await settleFiles(); // every file in the box is on the draft before Tell it reads it
+      try {
+        router.push(`/share/${id}`);
+      } catch {
+        taking.current = false;
+        setSending(false);
+      }
+    },
+    [box, client, draftForFiles, refused, router, settleFiles],
+  );
+
+  const handledVoice = useRef<VoiceCaptureState | null>(null);
+  const { state: voiceState, reset: voiceReset } = voice;
+  useEffect(() => {
+    const s = voiceState;
+    if (handledVoice.current === s) return;
+    // Taken on the next tick, once per state, as Share does: the capture is an outside system telling Home what it
+    // heard.
+    const t = setTimeout(() => {
+      if (handledVoice.current === s) return;
+      handledVoice.current = s;
+      if (s.status === "done") {
+        void takeNote(s.note);
+        voiceReset();
+      } else if (s.status === "paused" && s.note) {
+        void takeNote(s.note);
+      } else if (s.status === "failed" && s.text.trim()) {
+        const heard = s.text;
+        setBox((b) => (b.trim() ? `${b.replace(/\s+$/, "")} ${heard}` : heard)); // nothing heard is lost
+        createKey.current = "";
+        messageKey.current = "";
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, [voiceState, voiceReset, takeNote]);
+  // A note that could not get a draft ends "unavailable": the draft's own error is already said, so the voice-off line
+  // is not drawn over it (BLD-C232, review nit 3).
+  const failedVoice =
+    voice.state.status === "failed" && !(voice.state.reason === "unavailable" && problem)
+      ? voiceFailedLine(voice.state.reason)
+      : null;
 
   const pick = (opener: string) => {
     setBox(opener);
     setProblem(null);
     createKey.current = "";
+    messageKey.current = "";
     requestAnimationFrame(() => {
       const el = boxRef.current;
       if (!el) return;
@@ -355,7 +512,32 @@ export function HomeScreen({
   const [crew, setCrew] = useState<Loaded<{ total: number; top: CrewCard[] } | null>>({ state: "loading" });
   const [ones, setOnes] = useState<Loaded<HomePost[] | null>>({ state: "loading" });
   const [crewAt, setCrewAt] = useState(0);
-  const teamUp = useTeamUpSheet({ doneLabel: "Done" });
+  // DEC-126 (WF-03b, BLD-C219). After a send the card reads "Requested" with "Withdraw" and goes to the end of the
+  // deck, where the server keeps it after a reload (BLD-F094); it stays there until the next read. The deck follows
+  // it, so "Requested" is in front when the sheet closes and the sheet's focus comes back to it (WCAG 2.4.3). After a
+  // withdraw, from the card or from the sheet, "Team up" is drawn again where the card stands: nothing moves.
+  const crewIds = crew.state === "ready" ? (crew.value?.top.map((c) => c.id) ?? []) : [];
+  const onTeamUpSent = (s: TeamUpSent) => {
+    if (!crewIds.includes(s.ideaId)) return;
+    setCrew((c) =>
+      c.state === "ready" && c.value
+        ? { state: "ready", value: { ...c.value, top: requestedLast(c.value.top, s) } }
+        : c,
+    );
+    setCrewAt(crewIds.length - 1);
+  };
+  const onTeamUpWithdrawn = (s: TeamUpSent) => {
+    setCrew((c) =>
+      c.state === "ready" && c.value
+        ? { state: "ready", value: { ...c.value, top: requestDropped(c.value.top, s.ideaId) } }
+        : c,
+    );
+  };
+  const teamUp = useTeamUpSheet({
+    doneLabel: "Done",
+    onSent: onTeamUpSent,
+    onWithdrawn: onTeamUpWithdrawn,
+  });
   // Each read of Needs you gets a number, and an older read never overwrites a newer one that is shown.
   const needsRead = useRef(0);
   const needsShown = useRef(0);
@@ -491,6 +673,7 @@ export function HomeScreen({
               setBox(v);
               if (problem) setProblem(null);
               createKey.current = "";
+              messageKey.current = "";
             }}
             onSend={() => void send()}
             sendLabel={HOME_COPY.send}
@@ -498,11 +681,38 @@ export function HomeScreen({
             label={HOME_COPY.label}
             placeholder={HOME_COPY.placeholder}
             keyHint
-            device="desktop"
+            device={phone ? "phone" : "desktop"}
             sending={sending}
             className="hm-prompt"
+            attach={files.button}
+            files={files.rows}
+            picker={files.picker}
+            voice={{
+              state: voice.state,
+              // No new note while one goes in or the words are sending (BLD-C220 review fix); called in the click.
+              start: () => {
+                if (!sending && !taking.current) void voice.start();
+              },
+              stop: voice.stop,
+              noticeShown: voice.noticeShown,
+            }}
+            micFirst
           >
             {problem ? <FieldMsg kind={problem.kind}>{problem.text}</FieldMsg> : null}
+            {/* Share's voice notices (C-PROMPT.voice): both regions stay mounted, so a notice that appears in them is
+                announced (WCAG 4.1.3). */}
+            <div className="vlive" role="status">
+              {voice.state.status === "paused" ? <p className="vnotice">{voice.state.banner}</p> : null}
+            </div>
+            <div className="vlive" role="alert">
+              {failedVoice === "paused" ? (
+                <p className="vnotice">{VOICE_COPY.voicePaused}</p>
+              ) : failedVoice === "sign_in" ? (
+                <p className="vnotice">
+                  <a href={HOME_SIGN_IN}>{VOICE_COPY.signInAgain}</a>
+                </p>
+              ) : null}
+            </div>
           </Prompt>
           <p className="hm-pnote">{HOME_COPY.help}</p>
           <div className="hstarters hm-starters" role="group" aria-label={PROMPT_COPY.startersLabel}>
@@ -680,7 +890,12 @@ export function HomeScreen({
                     index={crewAt}
                     onIndexChange={setCrewAt}
                     cards={crewData.top.map((c) => (
-                      <CrewCardView key={c.id} card={c} onTeamUp={teamUp.open} />
+                      <CrewCardView
+                        key={c.id}
+                        card={c}
+                        onTeamUp={teamUp.open}
+                        onWithdrawn={onTeamUpWithdrawn}
+                      />
                     ))}
                   />
                 </div>
@@ -782,14 +997,14 @@ export function HomeScreen({
                 </div>
               }
               companion={
-                <article className="opost hm-o-next" data-tier="0">
-                  <p className="hm-o-nt">{HOME_COPY.nextOne}</p>
-                  <p className="hm-o-np">{HOME_COPY.nextOneBody}</p>
-                  <Link href={HOME_LINKS.share} className="hm-o-more">
-                    {HOME_COPY.share}
-                  </Link>
-                </article>
+                <OnesNext
+                  title={HOME_COPY.nextOne}
+                  body={HOME_COPY.nextOneBody}
+                  action={HOME_COPY.share}
+                  href={HOME_LINKS.share}
+                />
               }
+              people={new Set((ones.value ?? []).map((p) => p.one.number)).size}
               cards={(ones.value ?? []).map((p) => (
                 <OnesPost
                   key={p.id}

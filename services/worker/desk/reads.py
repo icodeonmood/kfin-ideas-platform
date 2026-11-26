@@ -7,6 +7,7 @@ every idea on the desk except their own (SHIP_PLAN §8 fallback: any reviewer, n
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 from typing import Any
 
@@ -17,8 +18,11 @@ from desk.store import (
     CUSTOMER_DETAIL,
     DESK_SEES,
     FILES_CHECKED,
+    IDEA_OWN,
+    REVIEWERS,
     SHOWN_FILE,
     code_of,
+    has_role,
     joined,
     now,
     person_by_code,
@@ -95,6 +99,12 @@ def _row_json(row: queue.Row) -> dict[str, Any]:
     }  # fmt: skip
 
 
+def _read_only(row: queue.Row) -> queue.Row:
+    """A row for a reader who is not on the review desk (BLD-B270): "Remind {name}" writes, so it becomes "Open";
+    "Open" and "Read answers" only go to S-R2."""
+    return dataclasses.replace(row, action="Open", action_kind="open") if row.action_kind == "remind" else row
+
+
 def desk(conn: Conn, user_id: str, tab: str = "waiting", sort: str = "time_left", q: str | None = None,
          at: dt.datetime | None = None) -> dict[str, Any]:  # fmt: skip
     """GET /desk: one tab's rows (sorted), every tab's count, the summary sentence and the sidebar's three most
@@ -116,6 +126,8 @@ def desk(conn: Conn, user_id: str, tab: str = "waiting", sort: str = "time_left"
     chosen: queue.Tab = tab if tab in queue.TABS else "waiting"
     tabbed = [(i, queue.tab_of(i, t, p.decided_this_week_days)) for i in ideas]
     shown = [queue.row(i, k, t) for i, k in tabbed if k == chosen]
+    if not has_role(conn, user_id, REVIEWERS):  # the desk's actions are the review desk's (BLD-B270)
+        shown = [_read_only(r) for r in shown]
     sort_by: queue.Sort = sort if sort in queue.SORTS else "time_left"
     waiting = sorted(
         (queue.row(i, "waiting", t) for i, k in tabbed if k == "waiting"), key=lambda r: r.due_at or t
@@ -223,13 +235,20 @@ def _hidden(conn: Conn, idea_uuid: Any) -> Hidden:
     """The details hidden from everyone, one per value: a desk "Hide this" adds a row for each copy it masks, so the
     rows are grouped by vault tag (L-HIDE.rules/7). Shown details are not here (`_shown`). Only what the sharer has
     given the desk: never the desk's own words (a question, a reason) nor an answer still in draft, which stays the
-    sharer's until sent (non-negotiable 7; BLD-B247). `_shown` reads under the same filter."""
+    sharer's until sent (non-negotiable 7; BLD-B247), nor a file not yet sent: an unsent conversation file (DEC-127)
+    or an unsent answer's file, its name's details (`<id>:name`) included. `_shown` reads under the same filter."""
     return [
         (str(r["kind"]), str(r["masked"]) if r["masked"] else None)
         for r in conn.execute(
             "SELECT kind, masked FROM (SELECT DISTINCT ON (coalesce(vault_tag, id::text)) kind, masked, created_at "
-            "FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' AND source <> 'desk' AND NOT (source = "
+            "FROM hidden_details WHERE idea_uuid = %s AND state = 'hidden' AND source <> 'desk' "
+            "AND source <> 'teamup' AND NOT (source = "
             "'answer' AND NOT EXISTS (SELECT 1 FROM answers a WHERE a.id::text = source_id AND a.sent_at IS NOT NULL)) "
+            "AND NOT (source = 'file' AND EXISTS (SELECT 1 FROM attachments f "
+            "WHERE f.id::text = split_part(source_id, ':', 1) AND ("
+            "(f.purpose = 'conversation' AND f.conversation_entry_id IS NULL) "
+            "OR (f.answer_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM answers a "
+            "WHERE a.id = f.answer_id AND a.sent_at IS NOT NULL))))) "
             "ORDER BY coalesce(vault_tag, id::text), created_at) d ORDER BY created_at",
             (idea_uuid,),
         )
@@ -246,14 +265,21 @@ SHOWN_BECAUSE = {
 def _shown(conn: Conn, idea_uuid: Any) -> list[dict[str, Any]]:
     """L-HIDE.rules/6: what the sharer chose to show, and why, as the review desk reads it: "Folio shown, because
     it’s an internal reference." One line per value (grouped by vault tag; the latest showing), oldest first. The
-    value itself is never here: the desk reads it in the masked copy's place, as everyone does."""
+    value itself is never here: the desk reads it in the masked copy's place, as everyone does. As `_hidden`, never a
+    file not yet sent: an unsent conversation file (DEC-127) or an unsent answer's file."""
     from desk.store import person_by_user
 
     rows = conn.execute(
         "SELECT kind, reason, shown_by, shown_at FROM (SELECT DISTINCT ON (coalesce(vault_tag, id::text)) kind, "
         "reason, shown_by, shown_at FROM hidden_details WHERE idea_uuid = %s AND state = 'shown' AND source <> 'desk' "
+        "AND source <> 'teamup' "
         "AND NOT (source = 'answer' AND NOT EXISTS (SELECT 1 FROM answers a WHERE a.id::text = source_id "
         "AND a.sent_at IS NOT NULL)) "
+        "AND NOT (source = 'file' AND EXISTS (SELECT 1 FROM attachments f "
+        "WHERE f.id::text = split_part(source_id, ':', 1) AND ("
+        "(f.purpose = 'conversation' AND f.conversation_entry_id IS NULL) "
+        "OR (f.answer_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM answers a "
+        "WHERE a.id = f.answer_id AND a.sent_at IS NOT NULL))))) "
         "ORDER BY coalesce(vault_tag, id::text), shown_at DESC) d ORDER BY shown_at, kind",
         (idea_uuid,),
     ).fetchall()
@@ -281,14 +307,17 @@ def _checked_files(
 ) -> list[dict[str, Any]]:
     """Files in `states` (the checked ones; the desk's view adds those holding a customer detail, DEC-107, each with
     its `customer_detail` marker). Never one still checking, infected or locked; a draft answer's files stay the
-    sharer's until the answer is sent."""
+    sharer's until the answer is sent. Only the idea's own files (`IDEA_OWN`, BLD-B274): a file added for the
+    conversation (DEC-124), sent or not, is never among them. This one read feeds the Attachments card
+    (S-R2.left/2), the Attached part (`_evidence_text`, S-R2.left/3), every merged contribution (L-MERGE.effects/3),
+    the Listen script (L-LISTEN/2, which lane C's hosted voice reads too) and the committee's read of the page."""
     return [
         {**f, "customer_detail": f["file_state"] == CUSTOMER_DETAIL}
         for f in conn.execute(
-            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at, file_state, "  # noqa: S608 (SHOWN_FILE is fixed text)
+            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at, file_state, "  # noqa: S608 (SHOWN_FILE, IDEA_OWN are fixed text)
             "(SELECT a.sent_at FROM answers a WHERE a.id = attachments.answer_id) AS answer_sent_at, "
             "(SELECT a.by_code FROM answers a WHERE a.id = attachments.answer_id) AS answer_by "
-            f"FROM attachments WHERE idea_uuid = %s AND kind = 'file' AND {SHOWN_FILE} "
+            f"FROM attachments WHERE idea_uuid = %s AND kind = 'file' AND {SHOWN_FILE} AND {IDEA_OWN} "
             "AND (answer_id IS NULL OR EXISTS (SELECT 1 FROM answers a WHERE a.id = attachments.answer_id "
             "AND a.sent_at IS NOT NULL)) ORDER BY created_at, id",
             (idea_uuid, list(states)),
@@ -301,7 +330,8 @@ def _questions(
 ) -> dict[str, list[dict[str, Any]]]:
     """Every question sent on this idea, pinned to its part, with its answer once sent (S-R2.left/3). "You asked"
     for the viewer's own questions, "{first name} asked" for another reviewer's (reference/copy/DeskIdea.md). An
-    answer's files are those the desk may open (DEC-107), each with its `customer_detail` marker."""
+    answer's files are those the desk may open (DEC-107), each with its `customer_detail` marker, and only the idea's
+    own (`IDEA_OWN`, BLD-B274)."""
     from desk.store import person_by_code, person_by_user, unseal
 
     out: dict[str, list[dict[str, Any]]] = {}
@@ -324,7 +354,7 @@ def _questions(
             by = person_by_code(conn, r["by_code"])
             files = conn.execute(
                 "SELECT id, name, hidden_note, file_state FROM attachments WHERE answer_id = %s AND "  # noqa: S608 (fixed text)
-                f"{SHOWN_FILE} ORDER BY created_at, id",
+                f"{SHOWN_FILE} AND {IDEA_OWN} ORDER BY created_at, id",  # never a conversation file (BLD-B274)
                 (r["answer_id"], list(DESK_SEES)),
             ).fetchall()
             item["answer"] = {
@@ -440,13 +470,15 @@ def _contributions(conn: Conn, idea: dict[str, Any], at: dt.datetime, viewer_id:
 def _queued(conn: Conn, idea: dict[str, Any], user_id: str) -> dict[str, Any] | None:
     """The question set this reviewer queued and has not sent: the panel's Asking state opens with it (S-R2.panel,
     J-REVIEW/A1). A queued set is its reviewer's alone, so another reviewer's is never returned; the desk's lists
-    leave queued sets out (L-REVIEW.queue)."""
+    leave queued sets out (L-REVIEW.queue). The panel saves its queue as it changes (`asking.save_queue`, BLD-B272):
+    `rev` is the stored save's revision (0 for a set from before), which the panel's next save carries as its `base`.
+    A queue emptied by its reviewer is kept with no questions, so its revision still counts."""
     from desk import questions
     from desk.store import person_by_code, unseal
 
     s = conn.execute(
-        "SELECT id, time_to_answer FROM question_sets WHERE idea_uuid = %s AND state = 'queued' AND by_user_id = %s "
-        "ORDER BY created_at DESC LIMIT 1",
+        "SELECT id, time_to_answer, queue_rev FROM question_sets WHERE idea_uuid = %s AND state = 'queued' "
+        "AND by_user_id = %s ORDER BY created_at DESC LIMIT 1",
         (idea["id"], user_id),
     ).fetchone()
     if s is None:
@@ -463,6 +495,7 @@ def _queued(conn: Conn, idea: dict[str, Any], user_id: str) -> dict[str, Any] | 
     return {
         "set_id": str(s["id"]), "questions": asked, "time_to_answer": s["time_to_answer"],
         "ready_line": questions.ready_line(len(asked)), "send_label": questions.send_label(len(asked), first),
+        "rev": int(s["queue_rev"] or 0),
     }  # fmt: skip
 
 
@@ -519,7 +552,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     """Everything a reviewer needs to decide on one idea, on one page (S-R2.left, S-R2.panel). Raw words are the
     masked copy (L-REVIEW.open/3); unmasked hidden details never reach the desk."""
     from desk import revise, worth
-    from desk.store import READERS, has_role, is_own, load_idea, person_by_code
+    from desk.store import READERS, is_own, load_idea, person_by_code
 
     t = at or now()
     idea = load_idea(conn, ref)
@@ -599,6 +632,9 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
     ]  # fmt: skip
     decide_by = idea["decide_by"]
     c = clock.countdown(decide_by, t) if decide_by else None
+    # Decide, Ask, worth, Merge and the reminder are the review desk's: a committee member reads without them
+    # (BLD-B270; the worker refuses their writes, `REVIEWERS`)
+    can_act = not own and idea["status"] in ON_DESK_STATUSES and has_role(conn, user_id, REVIEWERS)
     return {
         "idea": {
             "id": idea["idea_id"],
@@ -612,7 +648,7 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
         },
         "sharer": sharer.as_json(),
         "own": own,
-        "can_act": not own and idea["status"] in ON_DESK_STATUSES,
+        "can_act": can_act,
         "decide_by": {
             "at": decide_by.isoformat() if decide_by else None,
             "label": when.day(decide_by, t) if decide_by else None,
@@ -625,8 +661,12 @@ def reviewer_idea(conn: Conn, ref: str, user_id: str, at: dt.datetime | None = N
             "tiles": [vars(x) for x in worth.tiles(sharer_worth, reviewer_worth)],
             "revised": reviewer_worth is not None,
             "revision": revision,
+            # The board's lines tell the reviewer to decide or revise, so only the review desk acting on the idea reads
+            # them; anyone who can't act (a committee member, BLD-B270) reads none (S-R2.panel; the BLD-B270 follow-up)
             "line": (
-                f"You’ve revised what it’s worth. {first} sees your figures next to theirs when you decide."
+                None
+                if not can_act
+                else f"You’ve revised what it’s worth. {first} sees your figures next to theirs when you decide."
                 if reviewer_worth is not None
                 else f"Clear enough? Decide now. If it’s worth more than {first} could put into numbers, revise what it’s "
                 f"worth first. {first} sees your figures next to theirs."
@@ -655,11 +695,38 @@ def script_for(conn: Conn, ref: str, at: dt.datetime | None = None) -> Any:
     # the plain kind names ("Folio is hidden from everyone."): the masked hint ("Folio ••••89") is for the page only,
     # never spoken
     texts = _part_texts(conn, idea, files, [(kind, None) for kind, _hint in _hidden(conn, idea["id"])])
-    answers = {
+    answers = _spoken_answers(conn, idea["id"], t)
+    return listen.build(
+        texts,
+        worth=reviewer_worth or sharer_worth,
+        answers=answers,
+        contributions=_spoken_contributions(conn, idea, t),
+    )
+
+
+def _spoken_answers(conn: Conn, idea_uuid: Any, at: dt.datetime) -> dict[str, list[Any]]:
+    """The answers sent on an idea, part by part, as the listen script reads them (L-LISTEN/2)."""
+    from desk import listen
+
+    return {
         part: [listen.Answer(q["answer"]["by"], q["answer"]["text"] or "") for q in qs if q["answer"]]
-        for part, qs in _questions(conn, idea["id"], t).items()
+        for part, qs in _questions(conn, idea_uuid, at).items()
     }
-    return listen.build(texts, worth=reviewer_worth or sharer_worth, answers=answers)
+
+
+def _spoken_contributions(conn: Conn, idea: dict[str, Any], at: dt.datetime) -> list[Any]:
+    """Every idea merged into this one, as `_contributions` lists it on S-R2 (L-MERGE.effects/3, BLD-B277), for the
+    listen script: the same for every viewer, so its files are only the checked ones (never one holding a customer
+    detail) and a hidden value is read by its kind, as the lead idea's are."""
+    from desk import listen
+
+    out = []
+    for c in conn.execute(_MERGED_IN, (idea["id"],)).fetchall():
+        files = _checked_files(conn, c["id"])
+        texts = _part_texts(conn, c, files, [(kind, None) for kind, _hint in _hidden(conn, c["id"])])
+        first = person_by_code(conn, c["contributor_code"]).first_name
+        out.append(listen.Contribution(first, texts, _spoken_answers(conn, c["id"], at)))
+    return out
 
 
 def listen_script(conn: Conn, ref: str, user_id: str) -> dict[str, Any]:

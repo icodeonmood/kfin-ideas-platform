@@ -107,6 +107,34 @@ describe("A-API.files upload (POST /api/files)", () => {
     expect((sent.get("file") as File).name).toBe("branch notes.pdf");
   });
 
+  it("DEC-124, BLD-C216: for: conversation beside idea_id goes on to the worker, which alone decides; without it, nothing", async () => {
+    const send = async (fields: Record<string, string>) => {
+      workerFetch.mockResolvedValueOnce(json(CONFIG));
+      workerFetch.mockResolvedValueOnce(json({ id: "ATT-2026-000011", state: "checking" }, 201));
+      const form = new FormData();
+      form.set(
+        "file",
+        new File([new Uint8Array([37, 80, 68, 70])], "notes.pdf", { type: "application/pdf" }),
+      );
+      for (const [k, v] of Object.entries(fields)) form.set(k, v);
+      const req = new Request("http://web.test/api/files", { method: "POST", body: form });
+      await addFile(
+        me,
+        new Request(req, { headers: { ...Object.fromEntries(req.headers), "content-length": "400" } }),
+      );
+      const sent = (workerFetch.mock.calls.at(-1) as [string, RequestInit])[1].body as FormData;
+      workerFetch.mockReset();
+      return sent;
+    };
+    const convo = await send({ idea_id: "IDEA-2026-001481", for: "conversation" });
+    expect(convo.get("idea_id")).toBe("IDEA-2026-001481");
+    expect(convo.get("for")).toBe("conversation");
+    // Any other value is the worker's to refuse (422); an empty one is not sent at all.
+    expect((await send({ idea_id: "IDEA-2026-001481", for: "chat" })).get("for")).toBe("chat");
+    expect((await send({ idea_id: "IDEA-2026-001481", for: "" })).get("for")).toBeNull();
+    expect((await send({ draft_id: "6f1c2a8e-3b4d-4e5f-8a9b-0c1d2e3f4a5b" })).get("for")).toBeNull();
+  });
+
   it("answers a missing file, or a worker it cannot reach, in the pack's shape without echoing anything", async () => {
     workerFetch.mockResolvedValueOnce(json(CONFIG));
     const empty = await addFile(me, upload(new FormData(), { "content-length": "10" }));

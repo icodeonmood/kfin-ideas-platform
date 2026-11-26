@@ -3,9 +3,14 @@
  * the screen on the dev-only page /kit/crew, with GET /api/crew, the passes, the preview and the team-up calls
  * answered by this spec (no seeded ideas). axe on the cards, the filter panel, the end of the deck and nothing yet
  * (lane D's helper, which settles motion first and checks reflow at 320px); the deck and the filter chips by
- * keyboard; 44px targets; Keep looking after a send. Synthetic people only: the pack's fictional cast (Kavya asks,
- * Ravi leads) and made-up colleagues.
+ * keyboard; 44px targets; Keep looking after a send. DEC-126 (WF-03b): after a send the card reads "Requested" and
+ * goes to the end of the deck; "Withdraw" under it (its contrast, focus ring and target measured) turns it back to
+ * "Team up" in place; axe on the Requested state at 375px and at 1440px; reduced motion. Both are lane D's shared
+ * looks (BLD-D019, BLD-D018; folded in by BLD-F096): "Requested" `.btn.is-inactive`, "Withdraw" `.link-quiet`, whose
+ * target is 24px with a mouse and padded to 44px on touch. Synthetic people only: the pack's fictional cast (Kavya
+ * asks, Ravi leads) and made-up colleagues.
  */
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page, type Route } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, signIn } from "./helpers";
@@ -200,6 +205,135 @@ async function open(page: Page) {
   await expect(page.getByRole("heading", { level: 1, name: "Find your crew" })).toBeAttached();
 }
 
+/** C1 as the server sends it after a reload once Kavya has asked (DEC-126): last in the deck, with its request. */
+const C1_ASKED = { ...C1, request: { id: "req-e2e", kind: "teamup" } };
+const ASKED_ROW = {
+  id: C1.id,
+  title: C1.title,
+  status: C1.status,
+  lead: RAVI,
+  state: "waiting",
+  label: "Waiting for Ravi",
+  request_id: "req-e2e",
+  at: "2026-11-18T10:30:00+05:30",
+};
+const REQUESTED = `Requested: you asked to team up on ${C1.title}`;
+const WITHDRAW = `Withdraw your request to team up on ${C1.title}`;
+const TEAM_UP_C1 = `Team up on ${C1.title}: send Ravi a note`;
+
+/** `DELETE /api/team-up/req-e2e` (L-TEAMUP.rules/3), answered here; resolves with each call's method. */
+async function answerWithdraw(page: Page) {
+  const seen: string[] = [];
+  await page.route("**/api/team-up/req-e2e", (route) => {
+    seen.push(route.request().method());
+    return route.fulfill({
+      json: { id: "req-e2e", request: "teamup", idea_id: C1.id, state: "withdrawn", after: null },
+    });
+  });
+  return seen;
+}
+
+/** WCAG contrast of an element's text against the first opaque background behind it. */
+async function contrastOf(page: Page, name: string): Promise<number> {
+  return page.getByRole("button", { name, exact: true }).evaluate((el) => {
+    const rgb = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+    const lum = (c: number[]) => {
+      const f = (v: number) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * f(c[0] ?? 0) + 0.7152 * f(c[1] ?? 0) + 0.0722 * f(c[2] ?? 0);
+    };
+    let at: Element | null = el;
+    let bg = "rgb(255, 255, 255)";
+    while (at) {
+      const c = getComputedStyle(at).backgroundColor;
+      if (c && c !== "transparent" && !/rgba\(.*,\s*0\)$/.test(c)) {
+        bg = c;
+        break;
+      }
+      at = at.parentElement;
+    }
+    const a = lum(rgb(getComputedStyle(el).color));
+    const b = lum(rgb(bg));
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  });
+}
+
+/**
+ * DEC-126 on a card asked about before this visit: Requested is greyed, inactive but focusable and read out;
+ * Withdraw under it is sub-text grey at 4.5:1 or better, with the shared 2px focus ring and lane D's shared target
+ * (at least 24px with a mouse, WCAG 2.5.8; padded to 44px on touch, BLD-D018). axe on this state. Then Withdraw
+ * turns it back to Team up where it stands, with focus on it, and Your crews drops it.
+ */
+async function requestedThenWithdraw(page: Page) {
+  const seen = await answerWithdraw(page);
+  await answerCrew(
+    page,
+    deck([C2, C1_ASKED], {
+      asked: 1,
+      pending: 1,
+      your_crews: { items: [ASKED_ROW], teamed_link: "/my-ideas?list=teamed" },
+    }),
+  );
+  await open(page);
+  await page.getByRole("button", { name: "Next idea" }).click();
+  await expect(page.getByText("Idea 2 of 2")).toBeAttached();
+  const requested = page.getByRole("button", { name: REQUESTED, exact: true });
+  await expect(requested).toBeVisible();
+  await expect(requested).toHaveAttribute("aria-disabled", "true");
+  await expect(requested).not.toHaveAttribute("disabled");
+  await expect(requested).toHaveText("Requested");
+  // lane D's shared looks (BLD-D019, BLD-F096): Team up's own button, inactive
+  await expect(requested).toHaveClass(/(^|\s)btn(\s|$)/);
+  await expect(requested).toHaveClass(/(^|\s)is-inactive(\s|$)/);
+  // Inactive: a click opens nothing (dispatched: Playwright waits for an aria-disabled button to be enabled).
+  await requested.dispatchEvent("click");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  const withdraw = page.getByRole("button", { name: WITHDRAW, exact: true });
+  await expect(withdraw).toHaveText("Withdraw");
+  await expect(withdraw).toHaveClass("link-quiet");
+  expect(await contrastOf(page, WITHDRAW)).toBeGreaterThanOrEqual(4.5);
+  const look = await withdraw.evaluate((el) => {
+    const c = getComputedStyle(el);
+    return { line: c.textDecorationLine, size: parseFloat(c.fontSize), weight: c.fontWeight };
+  });
+  expect(look.line).toContain("underline");
+  expect(look.size).toBeLessThanOrEqual(14);
+  expect(Number(look.weight)).toBeLessThanOrEqual(400);
+  // The shared quiet link's own box (a mouse here): at least 24px each way (WCAG 2.5.8); on touch its hit area is
+  // padded to 44px by `.link-quiet::after` (BLD-D018, pinned in targets-css.test.ts).
+  const box = (await withdraw.boundingBox())!;
+  expect(box.height).toBeGreaterThanOrEqual(24);
+  expect(box.width).toBeGreaterThanOrEqual(24);
+  // By keyboard: Requested is a tab stop, then Withdraw, with the visible focus ring.
+  await requested.focus();
+  await expect(requested).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(withdraw).toBeFocused();
+  const ring = await withdraw.evaluate((el) => {
+    const c = getComputedStyle(el);
+    return { style: c.outlineStyle, width: parseFloat(c.outlineWidth) };
+  });
+  expect(ring).toEqual({ style: "solid", width: 2 });
+  await expect(
+    page.getByRole("link", { name: `${C1.title}, waiting for Ravi. Open the idea.` }),
+  ).toBeVisible();
+  await expectNoSeriousAxeIssues(page);
+
+  await page.keyboard.press("Enter");
+  const teamUp = page.getByRole("button", { name: TEAM_UP_C1 });
+  await expect(teamUp).toBeFocused();
+  expect(seen).toEqual(["DELETE"]);
+  await expect(page.getByText("Idea 2 of 2")).toBeAttached();
+  await expect(page.getByRole("button", { name: REQUESTED })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: `${C1.title}, waiting for Ravi. Open the idea.` })).toHaveCount(
+    0,
+  );
+  await expect(page.getByText("Ideas you team up on show here.")).toBeVisible();
+}
+
 test.use({ viewport: { width: 375, height: 812 } });
 
 test.beforeEach(async ({ page }, info) => {
@@ -328,11 +462,90 @@ test("J-TEAMUP/1–2 at 375px: Team up sends, Keep looking moves on, Your crews 
   await expect(sheet.getByRole("status")).toContainText("Sent to Ravi");
   await sheet.getByRole("button", { name: "Keep looking" }).click();
   await expect(sheet).toBeHidden();
-  await expect(page.getByText("Idea 2 of 2")).toBeAttached();
+  // DEC-126: nothing passed; the card asked about goes to the end and the next one is in front, with focus.
+  await expect(page.getByText("Idea 1 of 2")).toBeAttached();
+  await expect(
+    page.getByRole("button", { name: "No script for calls about rejections. Preview the idea" }),
+  ).toBeFocused();
   const row = page.getByRole("link", {
     name: "Rejection SMS codes confuse investors, waiting for Ravi. Open the idea.",
   });
   await expect(row).toHaveAttribute("href", `/ideas/${C1.id}`);
   await expect(page.getByRole("listitem").filter({ has: row })).toContainText("Ravi Nair, Investor service");
   await expectNoSeriousAxeIssues(page);
+  // At the end of the deck it reads Requested; Next on a card just asked about only moves on.
+  await page.getByRole("button", { name: "Next idea" }).click();
+  await expect(page.getByText("Idea 2 of 2")).toBeAttached();
+  await expect(page.getByRole("button", { name: REQUESTED, exact: true })).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await expect(page.getByRole("button", { name: WITHDRAW, exact: true })).toBeVisible();
 });
+
+test("DEC-126 at 375px: a card asked about reads Requested, with Withdraw at 4.5:1, its focus ring and target; axe on the Requested state; Withdraw brings Team up back in place", async ({
+  page,
+}) => {
+  await requestedThenWithdraw(page);
+});
+
+test("DEC-126 at 375px with reduced motion: after a send the card goes to the end without the flight", async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await answerCrew(page, deck([C1, C2]));
+  await answerTeamUp(page);
+  await open(page);
+  await page.getByRole("button", { name: TEAM_UP_C1 }).click();
+  const sheet = page.getByRole("dialog", { name: "Team up with Ravi" });
+  await sheet.getByRole("button", { name: "Send to Ravi" }).click();
+  await sheet.getByRole("button", { name: "Keep looking" }).click();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByText("Idea 1 of 2")).toBeAttached();
+  await expect(page.locator(".crew-fly")).toHaveCount(0);
+  await expect(page.locator(".dcard").last()).toContainText(C1.title);
+  await expect(page.locator(".dcard").last()).toContainText("Requested");
+  // the same shared looks without the flight (BLD-F096)
+  await expect(page.locator(".dcard").last().locator("button.btn.is-inactive")).toHaveText("Requested");
+  await expect(page.locator(".dcard").last().locator("button.link-quiet")).toHaveText("Withdraw");
+});
+
+test.describe("at 1440px", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("DEC-126 at 1440px: Requested and Withdraw on the card, measured; axe on the Requested state; Withdraw brings Team up back in place", async ({
+    page,
+  }) => {
+    await requestedThenWithdraw(page);
+  });
+});
+
+// WCAG 2.5.8 (target size), docs/WCAG22_POST_LAUNCH.md row 4, BLD-F093: at rest nothing on the page sits over the
+// Filters button, at desktop and at 360px. Only axe's target-size rule, on the filter bar; the gate itself stays at
+// WCAG 2.1 AA (DEC-112) until lane A's BLD-A229. Axe's 2.2 inventory found the button partially obscured only after
+// J-TEAMUP's click on Team up had scrolled the page, which puts it under the phone's sticky bar (`.pnav`).
+for (const size of [
+  { name: "desktop", width: 1280, height: 800 },
+  { name: "360px", width: 360, height: 740 },
+]) {
+  test(`S-H2 WCAG 2.5.8 at ${size.name}: nothing sits over the Filters button; axe target-size passes`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: size.width, height: size.height });
+    await answerCrew(page, deck([C1, C2]));
+    await open(page);
+    const filters = page.getByRole("button", { name: "Filters", exact: true });
+    await expect(filters).toBeVisible();
+    await settleMotion(page);
+    const ownsItsMiddle = await filters.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return hit !== null && el.contains(hit);
+    });
+    expect(ownsItsMiddle).toBe(true);
+    const results = await new AxeBuilder({ page }).include(".crew-fbar").withRules(["target-size"]).analyze();
+    expect(results.violations.flatMap((v) => v.nodes.map((n) => `${v.id} ${n.target.join(" ")}`))).toEqual(
+      [],
+    );
+  });
+}

@@ -19,6 +19,7 @@ Golden sets and tests use placeholders that are filled at run time. Implement th
 | `{{DOB}}` | Date of birth | Random date 1940–2005 in one of `DD/MM/YYYY`, `DD-Mon-YYYY`, `YYYY-MM-DD` |
 | `{{IFSC}}` | IFSC | 4 letters, `0`, 6 alphanumerics |
 | `{{ARN}}` | Distributor ARN | `ARN-` + 4–6 digits |
+| `{{EUIN}}` | Distributor employee code (EUIN) | `E` + 6 digits; a business identifier that warns only, never blocks |
 | `{{PERSON_NAME}}` | Person name | From an Indian-locale fake-name generator; never a real public figure |
 | `{{COLLEAGUE_NAME}}` | Colleague | A name drawn from the synthetic `users` table, so the tagger tags it as `KFIN_EMPLOYEE` |
 | `{{CLIENT_AMC_NAME}}` | Client organisation | A **fictional** AMC from `eval/fixtures/clients.yaml`, loaded into the test taxonomy so the tagger tags it as `CLIENT_AMC`; never a real AMC |

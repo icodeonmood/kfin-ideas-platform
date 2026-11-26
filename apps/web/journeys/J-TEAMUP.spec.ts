@@ -9,13 +9,30 @@
  * Ravi (lead) is Rekha.
  * Seed: J-TEAMUP may change Tanvi's crew-deck passes (row 1 passes one card) and answer the team-up request waiting on
  * Rekha: Bhavesh's on R1, sent with no idea brought. Row 2 withdraws it so the sheet can be written again, row 3 sends
- * the new note, Rekha approves it (row 4), and the two talk in R1's conversation (row 6). R1 is shared with
+ * the new note, Rekha approves it (row 4), and the two talk in R1's conversation (row 6). Row 3b (DEC-126) finds that
+ * request on Bhavesh's crew deck as "Requested", withdraws it there and sends the same note again, so row 4 reads the
+ * newest request; its passes on the way are put back with "See them again" (he has no seeded passes). Row 3c does the
+ * same on Bhavesh's Home crew card (DEC-126 (6), BLD-C219), where Next passes nothing. R1 is shared with
  * J-SIMILAR (lib SEED): both only add requests, crew and messages, and nobody decides it, so no row here depends on
- * whether R1 is picked. Row 1 ends with the sheet open from a card, which is where row 2 starts.
+ * whether R1 is picked. Row 1 ends with the sheet open from a card, which is where row 2 starts. Rows 6b and 6c
+ * (DEC-124, walk item WF-01): Rekha sends a file and a link with the "+" in R1's conversation, the crew reads it, and
+ * the review desk finds the file there but not among S-R2's attachments (BLD-B274); files are made here (lib pdfWith).
  */
 import { expect, type Page } from "@playwright/test";
 
-import { ideaUrl, seeded, signInAs, snap, step } from "./lib";
+import {
+  addFile,
+  carriedFor,
+  expectNoSeriousAxeIssues,
+  ideaUrl,
+  openPicker,
+  PLUS,
+  runSeconds,
+  seeded,
+  signInAs,
+  snap,
+  step,
+} from "./lib";
 
 const DAY = String.raw`[A-Z][a-z]+day \d{1,2} [A-Z][a-z]+`;
 
@@ -133,6 +150,133 @@ step(
 );
 
 step(
+  "J-TEAMUP/3b",
+  "S-H2",
+  "Find your crew after the request: R1 is last as Requested, still last after a reload; Withdraw brings Team up back in its place, and the note goes again",
+  { needs: ["S-H2", "C-CREW-DECK", "L-CREW", "C-SHEET-TEAMUP", "L-TEAMUP"], changes: ["R1"] }, // withdraws row 3's request and sends it again
+  async ({ page }, info) => {
+    info.setTimeout(120_000); // a pass per card on the way to R1, each with its 620 ms flight
+    const r1 = await seeded("R1");
+    const requested = page.getByRole("button", { name: `Requested: you asked to team up on ${r1.title}` });
+    const withdraw = page.getByRole("button", { name: `Withdraw your request to team up on ${r1.title}` });
+    const teamUp = page.getByRole("button", {
+      name: new RegExp(`^Team up on ${esc(r1.title)}: send Rekha a note$`),
+    });
+    const position = page.getByText(/^Idea \d+ of \d+$/);
+    await signInAs(page, "bhavesh");
+    await page.goto("/crew");
+    await expect(page.getByRole("heading", { level: 1, name: "Find your crew" })).toBeVisible();
+
+    // DEC-126 (2): the idea asked about comes after every other card, and stays last after a reload (L-CREW/3).
+    const total = Number((await position.innerText()).replace(/^Idea \d+ of /, ""));
+    await expect(page.locator(".dcard").last()).toContainText(r1.title);
+    await page.reload();
+    await expect(position).toHaveText(`Idea 1 of ${total}`);
+    await expect(page.locator(".dcard").last()).toContainText(r1.title);
+
+    // Next is a pass (L-CREW/6): Bhavesh passes the cards in front of R1; "See them again" puts them back below.
+    for (let n = 2; n <= total; n++) {
+      await page.getByRole("button", { name: "Next idea" }).click();
+      await expect(position).toHaveText(`Idea ${n} of ${total}`);
+    }
+    // (1) "Requested", greyed and inactive but still read out as its state; (3) "Withdraw" under it.
+    await expect(requested).toBeVisible();
+    await expect(requested).toHaveAttribute("aria-disabled", "true");
+    await expect(withdraw).toBeVisible();
+    await expectNoSeriousAxeIssues(page);
+
+    // (4) Withdraw: "Team up" again in the same place, with focus on it, and the card does not move.
+    await withdraw.click();
+    await expect(teamUp).toBeVisible();
+    await expect(teamUp).toBeFocused();
+    await expect(requested).toHaveCount(0);
+    await expect(position).toHaveText(`Idea ${total} of ${total}`);
+    await expectNoSeriousAxeIssues(page);
+
+    // The same note again from the card's sheet (it opens on a drafted note), so row 4 reads NOTE word for word.
+    await teamUp.click();
+    const sheet = page.getByRole("dialog", { name: "Team up with Rekha" });
+    await sheet.getByRole("textbox").fill(NOTE);
+    await sheet.getByRole("button", { name: "Send to Rekha" }).click();
+    await expect(sheet).toContainText("Sent to Rekha");
+    await sheet.getByRole("button", { name: "Keep looking" }).click();
+    // R1 was the last card, so the deck ends; "See them again" puts back every pass made above.
+    await expect(page.getByRole("heading", { level: 2, name: "That's everyone for now" })).toBeVisible();
+    await page.getByRole("button", { name: "See them again" }).click();
+    await expect(position).toHaveText(`Idea 1 of ${total}`);
+    await expect(page.getByText("None passed")).toBeVisible();
+    await expect(page.locator(".dcard").last()).toContainText(r1.title);
+    await expect(page.locator(".dcard").last()).toContainText("Requested");
+  },
+);
+
+step(
+  "J-TEAMUP/3c",
+  "S-03",
+  "Home's crew card after the request: R1 is last as Requested, still last after a reload; Withdraw brings Team up back in its place, and the note again hands focus back to Requested",
+  {
+    needs: ["S-03", "C-CREW-DECK", "L-CREW", "C-SHEET-TEAMUP", "L-TEAMUP", "BLD-C219"],
+    changes: ["R1"], // withdraws row 3b's request and sends it again
+    after: ["J-TEAMUP/3b"],
+  },
+  async ({ page }) => {
+    const r1 = await seeded("R1");
+    // Home's "Find your crew" (S-03.sections/3): its deck's cards are `.dcard`; only the front one is read out.
+    const crew = page.locator("#hm-crew");
+    const position = crew.getByText(/^Idea \d+ of \d+$/);
+    const requested = crew.getByRole("button", { name: `Requested: you asked to team up on ${r1.title}` });
+    const withdraw = crew.getByRole("button", { name: `Withdraw your request to team up on ${r1.title}` });
+    const teamUp = crew.getByRole("button", {
+      name: new RegExp(`^Team up on ${esc(r1.title)}, with Rekha\\b`),
+    });
+    await signInAs(page, "bhavesh");
+    await page.goto("/home");
+
+    // DEC-126 (2), (6), BLD-F094 (4): Home's short read ends with the idea asked about, after a reload too.
+    await expect(position).toHaveText(/^Idea 1 of \d+$/);
+    const total = Number((await position.innerText()).replace(/^Idea 1 of /, ""));
+    await expect(crew.locator(".dcard").last()).toContainText(r1.title);
+    await page.reload();
+    await expect(position).toHaveText(`Idea 1 of ${total}`);
+    await expect(crew.locator(".dcard").last()).toContainText(r1.title);
+
+    // Next on Home only moves the deck; nothing is passed (BLD-C219's tests: no call).
+    for (let n = 2; n <= total; n++) {
+      await crew.getByRole("button", { name: "Next idea" }).click();
+      await expect(position).toHaveText(`Idea ${n} of ${total}`);
+    }
+    // (1), (3): "Requested" in Team up's place, greyed and inactive but still read out, with "Withdraw" under it.
+    await expect(requested).toBeVisible();
+    await expect(requested).toHaveAttribute("aria-disabled", "true");
+    await expect(withdraw).toBeVisible();
+    await expect(teamUp).toHaveCount(0);
+    await expectNoSeriousAxeIssues(page);
+
+    // (4) Withdraw: Team up again where the card stands, with focus on it; the card does not move.
+    await withdraw.click();
+    await expect(teamUp).toBeVisible();
+    await expect(teamUp).toBeFocused();
+    await expect(requested).toHaveCount(0);
+    await expect(position).toHaveText(`Idea ${total} of ${total}`);
+    await expectNoSeriousAxeIssues(page);
+
+    // The same note again from Home's sheet, so row 4 reads NOTE. Done hands focus back to "Requested" (WCAG 2.4.3),
+    // on the card in front, which is still the last.
+    await teamUp.click();
+    const sheet = page.getByRole("dialog", { name: "Team up with Rekha" });
+    await sheet.getByRole("textbox").fill(NOTE);
+    await sheet.getByRole("button", { name: "Send to Rekha" }).click();
+    await expect(sheet).toContainText("Sent to Rekha");
+    await sheet.getByRole("button", { name: "Done" }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(requested).toBeFocused();
+    await expect(position).toHaveText(`Idea ${total} of ${total}`);
+    await expect(crew.locator(".dcard").last()).toContainText(r1.title);
+    await expectNoSeriousAxeIssues(page);
+  },
+);
+
+step(
   "J-TEAMUP/4",
   "S-H2B",
   "Rekha reads Bhavesh's note word for word in her Inbox and approves",
@@ -141,7 +285,8 @@ step(
     const r1 = await seeded("R1");
     await signInAs(page, "rekha");
     await page.goto("/inbox");
-    // The request withdrawn in row 2 may still be listed; newest first (L-INBOX.rules/4), so row 3's is the first.
+    // The requests withdrawn in rows 2, 3b and 3c may still be listed; newest first (L-INBOX.rules/4), so the one row
+    // 3c sent is the first.
     await page
       .getByRole("button", {
         name: new RegExp(`^Bhavesh Patel asks to team up(?: [^,]+)?, ${esc(r1.title)}, `),
@@ -217,5 +362,190 @@ step(
       await snap(lead, info, "J-TEAMUP/6", "S-08", "rekha");
       await context.close();
     }
+  },
+);
+
+// --- Walk item WF-01 in the conversation: S-08's "+" (DEC-124, BLD-F095) ------------------------------------------
+
+/** Rekha's message with her file and a link (row 6b). Synthetic words and a synthetic SharePoint address. */
+const WITH_FILE = "Here are the branch notes on failed SIP debits, and the reasons page we keep.";
+const REASONS_LINK = "https://synthetic.sharepoint.com/sites/branch-ops/sip-debit-reasons";
+/** S-08's line on a file with a customer detail found: it can't go in the conversation (DEC-107, BLD-F095). */
+const HAS_DETAIL =
+  "This file has a customer detail in it, so it can’t be sent in the conversation. Remove it to send your message.";
+/**
+ * DEC-129 (the product lead, 22 Nov): the crew opens the idea's checked conversation files, as P-PRODUCT.privacy says
+ * (BLD-F062 lifted). A file with a customer detail found never reaches the crew (DEC-127), and the crew has no "+".
+ */
+const CREW_SEES_FILES = true;
+
+/** A file's row in S-08's box (C-FILE.row): the list "Your files" (a link goes into the words, so no link rows). */
+function convoRow(page: Page, name: string) {
+  return page.getByRole("list", { name: "Your files" }).getByRole("listitem").filter({ hasText: name });
+}
+
+/** The picker's link field (C-PROMPT.attach). */
+const LINK_FIELD = "Or paste a link to a page, file or idea";
+
+/** True once S-08 is laid out for a phone: the "+" before the words, as wider it comes after (BLD-F078). */
+async function plusFirst(page: Page): Promise<boolean> {
+  return page.getByRole("textbox", { name: "Message the crew" }).evaluate((words) => {
+    const plus = document.querySelector(".cv-attach");
+    if (!plus) return false;
+    return (words.compareDocumentPosition(plus) & Node.DOCUMENT_POSITION_PRECEDING) !== 0;
+  });
+}
+
+/**
+ * Crosses 640px to a phone (390) or the desk (1440) and waits until S-08 has drawn the other copy of the
+ * "+", so a focus check reads the new page, not the old one still on screen (BLD-F098).
+ */
+async function crossTo(page: Page, width: 390 | 1440): Promise<void> {
+  const phone = width === 390;
+  await page.setViewportSize(phone ? { width: 390, height: 844 } : { width: 1440, height: 900 });
+  await expect.poll(() => plusFirst(page), { message: `S-08 is laid out for ${width}px` }).toBe(phone);
+}
+
+step(
+  "J-TEAMUP/6b",
+  "S-08",
+  'Rekha\'s "+" in the conversation: the picker and the "+" keep focus across 640px, a checked file and a link go with her message, a file with a customer detail stays out, and the crew reads the message and opens the checked file',
+  {
+    needs: ["S-08", "C-PROMPT.attach", "C-FILE", "L-CONVO", "BLD-F095", "BLD-F098", "BLD-F102"],
+    changes: ["R1"],
+    after: ["J-TEAMUP/6"],
+  },
+  async ({ page, browser }, info) => {
+    info.setTimeout(150_000); // two files through their checks (up to 30 s each) and three axe runs
+    const r1 = await seeded("R1");
+    const carried = carriedFor<{ file: string }>("J-TEAMUP");
+    const name = `branch-sip-debit-notes-${runSeconds()}.pdf`;
+    const found = `courier-callback-${runSeconds()}.pdf`;
+    carried.file = name;
+    const box = page.getByRole("textbox", { name: "Message the crew" });
+
+    await signInAs(page, "rekha");
+    await page.goto(ideaUrl(r1, "/conversation"));
+    await expect(page.getByText(HELLO, { exact: true })).toBeVisible();
+    // DEC-124: the "+" comes first in the box's tool row (BLD-F095: `.cv-row.cfoot`), for the sharer (BLD-F063).
+    await expect(page.locator(".cfoot").getByRole("button").first()).toHaveAccessibleName(PLUS);
+    await expect(page.getByRole("button", { name: PLUS })).toHaveAttribute("title", PLUS);
+
+    // The picker, with Home's words; a link goes into the words, so it has no internal or external line.
+    await box.fill(WITH_FILE);
+    const picker = await openPicker(page);
+    await expect(picker.getByText(/^Drop files or a folder here, or/)).toBeVisible();
+    for (const label of ["browse", "Choose a folder", "Add link"]) {
+      await expect(picker.getByRole("button", { name: label, exact: true })).toBeVisible();
+    }
+    await expectNoSeriousAxeIssues(page);
+    const link = picker.getByRole("textbox", { name: LINK_FIELD });
+    const plus = page.getByRole("button", { name: PLUS });
+    // BLD-F102: a link being typed stays across 640px both ways, the picker open and its link field focused.
+    await link.fill(REASONS_LINK);
+    await expect(link).toBeFocused();
+    for (const width of [390, 1440] as const) {
+      await crossTo(page, width);
+      await expect(picker).toBeVisible();
+      await expect(link).toBeFocused();
+      await expect(link).toHaveValue(REASONS_LINK);
+    }
+    // Escape closes it and focus goes to the "+", which keeps it with its ring across 640px (BLD-F098).
+    await page.keyboard.press("Escape");
+    await expect(picker).toHaveCount(0);
+    await expect(plus).toBeFocused();
+    for (const width of [390, 1440] as const) {
+      await crossTo(page, width);
+      await expect(plus).toBeFocused();
+      const ring = await plus.evaluate((el) => el.matches(":focus-visible"));
+      expect(ring, 'the "+" shows its focus ring').toBe(true);
+    }
+
+    // A link goes into the words as typed, never a row and never fetched (non-negotiable 8). Escape dropped
+    // the one typed above (BLD-F102), so the field opens empty.
+    const again = await openPicker(page);
+    const field = again.getByRole("textbox", { name: LINK_FIELD });
+    await expect(field, "Escape dropped the link typed before").toHaveValue("");
+    await field.fill(REASONS_LINK);
+    await again.getByRole("button", { name: "Add link", exact: true }).click();
+    await expect(box).toHaveValue(new RegExp(`^${esc(WITH_FILE)} ${esc(REASONS_LINK)}\\s*$`));
+
+    // A checked file is a row in the box; one with a customer detail (a synthetic number, as J-RECOVER/8) can't go.
+    await addFile(page, name, "Failed SIP debits by reason, branch notes, week 47.");
+    await expect(convoRow(page, name).getByText("Checked", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await addFile(page, found, "Investor called back on 9800000012 about the failed debit.");
+    await expect(convoRow(page, found).getByText(HAS_DETAIL, { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await convoRow(page, found)
+      .getByRole("button", { name: `Remove ${found}` })
+      .click();
+    await expect(convoRow(page, found)).toHaveCount(0);
+
+    // Send: the words with the link, and the file on the message with View (L-CONVO/7); the box is empty again.
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    const onMessage = page.getByRole("list", { name: "Files in your message" }).last();
+    await expect(onMessage.getByRole("link", { name: `View ${name}` })).toHaveAttribute(
+      "href",
+      /^\/api\/files\/ATT-\d{4}-\d{6}\/view$/,
+    );
+    await expect(page.getByText(REASONS_LINK).last()).toBeVisible();
+    await expect(page.getByRole("list", { name: "Your files" })).toHaveCount(0);
+    await expect(box).toHaveValue("");
+    await expect(page.getByText(found)).toHaveCount(0);
+    await expectNoSeriousAxeIssues(page);
+
+    // The crew: the message, no "+" (BLD-F063), and the checked file (DEC-129).
+    const context = await browser.newContext();
+    const crew = await context.newPage();
+    try {
+      await signInAs(crew, "bhavesh");
+      await crew.goto(ideaUrl(r1, "/conversation"));
+      await expect(crew.getByText(WITH_FILE).last()).toBeVisible();
+      await expect(crew.getByRole("button", { name: PLUS })).toHaveCount(0);
+      if (CREW_SEES_FILES) {
+        const view = crew.getByRole("link", { name: `View ${name}` });
+        await expect(view).toBeVisible();
+        const href = (await view.getAttribute("href")) ?? "";
+        expect(href, "the crew's View names the file").toMatch(/^\/api\/files\/ATT-\d{4}-\d{6}\/view$/);
+        expect((await crew.request.get(href)).status(), "the crew opens a checked file").toBe(200);
+        // DEC-127: the file with a customer detail never reaches the crew (it can't be sent, BLD-F095).
+        await expect(crew.getByText(found)).toHaveCount(0);
+      } else {
+        await expect(crew.getByText(name)).toHaveCount(0);
+      }
+      await expectNoSeriousAxeIssues(crew);
+    } finally {
+      await snap(crew, info, "J-TEAMUP/6b", "S-08", "bhavesh");
+      await context.close();
+    }
+  },
+);
+
+step(
+  "J-TEAMUP/6c",
+  "S-R2",
+  "The review desk has the \"+\" in the conversation and reads Rekha's file there; S-R2's attachments leave it out",
+  {
+    needs: ["S-08", "L-CONVO", "BLD-F095", "S-R2", "BLD-B274"],
+    changes: ["R1"], // opening S-R2 may mark R1 as read by the desk
+    after: ["J-TEAMUP/6b"],
+  },
+  async ({ page }) => {
+    const r1 = await seeded("R1");
+    const name = carriedFor<{ file: string }>("J-TEAMUP").file;
+    expect(name, "row 6b names the file it sent").toBeTruthy();
+
+    await signInAs(page, "lavanya");
+    await page.goto(ideaUrl(r1, "/conversation"));
+    // BLD-F063, BLD-B270: the review desk may attach, and reads the files on a message.
+    await expect(page.getByRole("button", { name: PLUS })).toBeVisible();
+    await expect(page.getByRole("link", { name: `View ${name ?? ""}` })).toBeVisible();
+
+    // BLD-B274: a conversation file is not one of the idea's attachments on S-R2.
+    await page.goto(`/desk/ideas/${r1.ref ?? r1.uuid}`);
+    await expect(page.getByRole("heading", { name: "Attachments and artefacts" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Attached", exact: true })).toBeVisible();
+    await expect(page.getByText(name ?? "")).toHaveCount(0);
   },
 );

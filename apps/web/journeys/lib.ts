@@ -21,7 +21,7 @@ import path from "node:path";
 import { expect, test, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { Client } from "pg";
 
-import { signIn } from "../e2e/helpers";
+import { expectNoSeriousAxeIssues as axeAndReflow, signIn } from "../e2e/helpers";
 
 export type JourneyId =
   | "J-SHARE"
@@ -226,6 +226,100 @@ export function ideaUrl(idea: { ref: string | null; uuid: string }, sub = ""): s
   return `/ideas/${idea.ref ?? idea.uuid}${sub}`;
 }
 
+/** Mailpit in dev and CI (infra/docker-compose.yml): what a person reads in their email. */
+const MAILPIT = (process.env.MAILPIT_URL || "http://localhost:8025").replace(/\/$/, "");
+
+/** Where the 1% Club's email reaches a seeded person: club_seed's `_email`, first.last.1pc at the seed's
+ * domain. */
+export const CLUB_EMAIL = {
+  pallavi: "pallavi.joshi.1pc@kfintech.example",
+  faisal: "faisal.ansari.1pc@kfintech.example",
+} as const;
+
+/** One email as Mailpit holds it: the plain-text part with LF line ends, and the HTML part. */
+export type Mail = {
+  fromName: string;
+  fromAddress: string;
+  to: string[];
+  subject: string;
+  text: string;
+  html: string;
+};
+
+type MailpitAddress = { Name?: string; Address?: string };
+type MailpitMessage = {
+  From?: MailpitAddress;
+  To?: MailpitAddress[];
+  Subject?: string;
+  Text?: string;
+  HTML?: string;
+};
+
+/**
+ * The newest email to `address` with this subject whose plain text has `has` (an idea's title), polled until
+ * it comes. The worker sends queued email every 20 s and reads `comms.email` through a 10 s cache (BLD-A243),
+ * so 60 s is ample for an `immediate` item, which goes at any hour; a routine one waits for working hours and
+ * is not for a journey.
+ */
+export async function mailTo(page: Page, address: string, subject: string, has: string): Promise<Mail> {
+  const seen: { mail?: Mail } = {};
+  await expect
+    .poll(
+      async () => {
+        const query = encodeURIComponent(`to:${address}`);
+        const res = await page.request.get(`${MAILPIT}/api/v1/search?query=${query}`);
+        const list = (await res.json()) as { messages?: Array<{ ID?: string; Subject?: string }> };
+        for (const m of list.messages ?? []) {
+          if (m.Subject !== subject || !m.ID) continue;
+          const one = await page.request.get(`${MAILPIT}/api/v1/message/${m.ID}`);
+          const full = (await one.json()) as MailpitMessage;
+          const text = (full.Text ?? "").replace(/\r\n/g, "\n");
+          if (!text.includes(has)) continue;
+          seen.mail = {
+            fromName: full.From?.Name ?? "",
+            fromAddress: full.From?.Address ?? "",
+            to: (full.To ?? []).map((t) => t.Address ?? ""),
+            subject: full.Subject ?? "",
+            text,
+            html: full.HTML ?? "",
+          };
+          return true;
+        }
+        return false;
+      },
+      { message: `an email to ${address}: "${subject}"`, timeout: 60_000, intervals: [2_000] },
+    )
+    .toBe(true);
+  if (!seen.mail) throw new Error(`the email to ${address} was not kept`);
+  return seen.mail;
+}
+
+/** The sender on every 1% Club email in dev and CI (comms/send.py; BLD-A243 keeps it as EMAIL_FROM's
+ * default). */
+const CLUB_FROM = { name: "1% Club", address: "onepercentclub@kfintech.example" } as const;
+
+/**
+ * What every 1% Club email holds, whatever it says (DEC-061, BLD-125): it is from the 1% Club, to this
+ * person only, signed by the 1% Club team, and tracks no one: its only images are the 1% Club's mark, one
+ * file for everyone.
+ */
+export function expectClubMail(mail: Mail, to: string): void {
+  expect(mail.fromName).toBe(CLUB_FROM.name);
+  expect(mail.fromAddress).toBe(CLUB_FROM.address);
+  expect(mail.to).toEqual([to]);
+  expect(mail.text).toContain("The 1% Club team");
+  for (const m of mail.html.matchAll(/<img\b[^>]*\bsrc="([^"]*)"/gi)) {
+    expect(m[1], "an image is the 1% Club's mark, never a tracker").toMatch(/^https?:\/\/[^?#\s]+\.png$/);
+  }
+}
+
+/** Where a link in the plain text goes ("Read the decision: https://…"); a step reads its path. */
+export function mailLink(mail: Mail, label: string): URL {
+  const at = mail.text.match(new RegExp(`^${label}: (\\S+)$`, "m"))?.[1];
+  if (!at) throw new Error(`the email has a "${label}" link`);
+  return new URL(at, "http://app.invalid");
+}
+
 /** A draft on Tell it (`S-04B`) or Check it (`sub` = "/check", `S-05`). */
 export function draftUrl(idea: { uuid: string }, sub = ""): string {
   return `/share/${idea.uuid}${sub}`;
@@ -303,6 +397,21 @@ export function dayIST(t: Date, now: Date = new Date()): string {
     );
   const p = parts(t);
   return `${p.weekday} ${p.day} ${p.month}${p.year === parts(now).year ? "" : ` ${p.year}`}`;
+}
+
+/** wall/common.py day_label(): "1 Dec 2026" in India time, the month as Python's %b ("Sep", never "Sept"). */
+export function dayLabelIST(t: Date): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Kolkata",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    })
+      .formatToParts(t)
+      .map((x) => [x.type, x.value]),
+  );
+  return `${p.day} ${String(p.month).slice(0, 3)} ${p.year}`;
 }
 
 /**
@@ -389,6 +498,74 @@ export function onMain(id: string): boolean {
   const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const exact = new RegExp(`(?<![\\w-])${escaped}(?![\\w-])`);
   return base === id ? exact.test(corpus) : exact.test(corpus) || onMain(base);
+}
+
+// --- Accessibility -----------------------------------------------------------------------------------------------------
+
+/**
+ * The suites' axe check (e2e/helpers), then the page as the step left it. The check ends with the reflow check (WCAG
+ * 1.4.10, BLD-A163), which narrows the page to 320 px and back. A screen that draws its phone layout from a media
+ * query moves parts of itself on each crossing (S-08's "+" and its open picker, `usePhone` in conversation.tsx; the
+ * share box, `useIsPhone` in compose.tsx), and React puts them back in the frame after the resize. Focus or words given to the old copy are lost, so an Escape
+ * that follows reaches nothing (train 8, J-TEAMUP/6b). The media query's change runs before the next frame's
+ * callbacks, so two frames later the page is the one the step had. Every journey takes it from here.
+ */
+export async function expectNoSeriousAxeIssues(page: Page): Promise<void> {
+  await axeAndReflow(page);
+  await page.evaluate(async () => {
+    const frame = () => new Promise((done) => requestAnimationFrame(done));
+    await frame();
+    await frame();
+  });
+}
+
+// --- Files -------------------------------------------------------------------------------------------------------------
+
+/** A one-page PDF whose text is `text`: small, valid, made here (synthetic content only). J-RECOVER and J-SHARE. */
+export function pdfWith(text: string): Buffer {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    "",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  const stream = `BT /F1 14 Tf 72 760 Td (${text}) Tj ET`;
+  objects[3] = `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`;
+  let out = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((body, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const o of offsets) out += `${String(o).padStart(10, "0")} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, "latin1");
+}
+
+/** The "+" in every prompt box (DEC-124): its name and tooltip are the board's words (Home.md, `attachments`).
+ * J-SHARE (Home, Share a problem, the draft page) and J-TEAMUP (the conversation, S-08). */
+export const PLUS = "Add files, a folder or a link";
+
+/** Opens the picker the "+" controls (aria-controls) and returns it. */
+export async function openPicker(page: Page): Promise<Locator> {
+  const plus = page.getByRole("button", { name: PLUS });
+  await expect(plus).toHaveAttribute("aria-expanded", "false");
+  await plus.click();
+  await expect(plus).toHaveAttribute("aria-expanded", "true");
+  const id = await plus.getAttribute("aria-controls");
+  expect(id, 'the "+" names the picker it opens').toBeTruthy();
+  return page.locator(`[id="${id ?? ""}"]`);
+}
+
+/** "+", then "browse", then the person's file (a one-page PDF of `text`) in the system's file chooser. */
+export async function addFile(page: Page, name: string, text: string): Promise<void> {
+  const picker = await openPicker(page);
+  const chooser = page.waitForEvent("filechooser");
+  await picker.getByRole("button", { name: "browse", exact: true }).click();
+  await (await chooser).setFiles({ name, mimeType: "application/pdf", buffer: pdfWith(text) });
 }
 
 // --- Steps -------------------------------------------------------------------------------------------------------------

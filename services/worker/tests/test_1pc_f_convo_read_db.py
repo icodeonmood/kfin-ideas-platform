@@ -14,6 +14,7 @@ from convo import post
 from convo.reads import conversation
 from convo.store import Refused
 from ideapage import read as page_read
+from ideapage.shape import at_desk
 from tests import convo_fixtures as fx
 
 NOW = fx.at(17, 10, 30)  # Tuesday 17 November 2026, IST
@@ -282,6 +283,96 @@ def test_l_convo_3_event_lines_render_at_read_time_with_names_and_you(db: Any, c
     assert "You reversed the decision. It’s now Not now. Today, 9:00 am" in as_rohan
 
 
+def test_l_convo_3_dec_127_bld_c223_checked_counts_only_the_ideas_own_files_never_a_conversation_file(
+    db: Any, cast: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L-CONVO/3, DEC-127 (2), BLD-C223: "Checked and matched. N … hidden" counts what the check hid in what was shared,
+    the idea's own files included. A file added for the conversation, sent or not, found or not, and its name's
+    detail never change the line the lead, the crew or anyone else reads (lane C's finding, 22 Nov)."""
+    from convo.messages import send
+
+    monkeypatch.setattr("convo.adapters.notify_post", lambda conn, kind, to, **kw: None)
+    kavya, meera, ravi = cast["kavya"], cast["meera"], cast["ravi"]
+    idea = fx.idea(db, kavya, status="picked")
+    fx.join_crew(db, idea, ravi)
+    db.execute(
+        "INSERT INTO idea_status_history (idea_uuid, from_status, to_status, at) VALUES (%s, 'checking', "
+        "'with_review_desk', %s)",
+        (idea["id"], fx.at(14, 10, 6)),
+    )
+    own = fx.attachment(db, idea, kavya, purpose="idea", name="proof-screenshot.png")
+    unsent = fx.attachment(db, idea, meera, file_state="personal_data_found", name="calls-week-47.xlsx")
+    sent = fx.attachment(db, idea, kavya, name="branch-call-log.pdf")
+    send(db, idea["idea_id"], kavya["id"], {"text": "Here it is.", "file_ids": [sent]}, at=fx.at(17, 10, 6))
+    for source, source_id in (("message", "m1"), ("file", own)):  # what was shared: 2 folio numbers
+        db.execute(
+            "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked) VALUES (%s, %s, %s, 'folio', "
+            "'Folio ••••89')",
+            (idea["id"], source, source_id),
+        )
+    for source_id in (unsent, f"{unsent}:name", sent, f"{sent}:name"):  # conversation files: never counted
+        db.execute(
+            "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked) VALUES (%s, 'file', %s, "
+            "'folio', 'Folio ••••89')",
+            (idea["id"], source_id),
+        )
+    for who in (kavya, meera, ravi):  # the sharer, the desk and the crew read the same line
+        [line] = [
+            t for t in texts(conversation(db, idea["idea_id"], who["id"], at=NOW)) if t.startswith("Checked")
+        ]
+        assert line.startswith("Checked and matched. 2 folio numbers hidden, no similar ideas found."), who[
+            "name"
+        ]
+
+
+def test_l_convo_3_bld_f103_checked_never_counts_an_answers_file_sent_or_not(
+    db: Any, cast: dict[str, Any]
+) -> None:
+    """L-CONVO/3, BLD-F103 (lane C's note after r4): a file added with an answer to the review desk is the idea's
+    (`purpose` 'idea', no conversation entry) but was never shared at the check, so its details, sent or not, never
+    change the "Checked and matched" line the sharer, the desk and the crew read (as lane B's BLD-B247 leaves an
+    unsent answer's files out at the desk)."""
+    kavya, meera, ravi = cast["kavya"], cast["meera"], cast["ravi"]
+    idea = fx.idea(db, kavya, status="picked")
+    fx.join_crew(db, idea, ravi)
+    db.execute(
+        "INSERT INTO idea_status_history (idea_uuid, from_status, to_status, at) VALUES (%s, 'checking', "
+        "'with_review_desk', %s)",
+        (idea["id"], fx.at(14, 10, 6)),
+    )
+    set_id = fx.question_set(db, idea, meera, ("evidence", "often"), fx.at(16, 9))
+    fx.answer_all(db, set_id, kavya, fx.at(16, 9, 30))
+    answers = [
+        str(r["id"])
+        for r in db.execute(
+            "SELECT a.id FROM answers a JOIN questions q ON q.id = a.question_id WHERE q.set_id = %s ORDER BY q.seq",
+            (set_id,),
+        ).fetchall()
+    ]
+    db.execute("UPDATE answers SET sent_at = NULL WHERE id = %s", (answers[1],))  # one answer not yet sent
+    db.execute(
+        "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked) VALUES (%s, 'message', 'm1', "
+        "'folio', 'Folio ••••89')",
+        (idea["id"],),
+    )
+    for answer in answers:  # each answer's file, and its name's detail: never counted
+        shot = fx.attachment(db, idea, kavya, purpose="idea", name="sms-screenshot.png")
+        db.execute("UPDATE attachments SET answer_id = %s WHERE id = %s", (answer, shot))
+        for source_id in (shot, f"{shot}:name"):
+            db.execute(
+                "INSERT INTO hidden_details (idea_uuid, source, source_id, kind, masked) VALUES (%s, 'file', %s, "
+                "'folio', 'Folio ••••89')",
+                (idea["id"], source_id),
+            )
+    for who in (kavya, meera, ravi):
+        [line] = [
+            t for t in texts(conversation(db, idea["idea_id"], who["id"], at=NOW)) if t.startswith("Checked")
+        ]
+        assert line.startswith("Checked and matched. 1 folio number hidden, no similar ideas found."), who[
+            "name"
+        ]
+
+
 def test_l_convo_3_a_desk_merge_closes_the_merged_ideas_conversation_with_a_link(
     db: Any, cast: dict[str, Any]
 ) -> None:
@@ -401,13 +492,15 @@ def test_l_convo_8_s_08_no_messages_yet_and_the_side_panel(db: Any, cast: dict[s
     ]
 
 
-@pytest.mark.parametrize("status", ["checking", "with_review_desk"])
+@pytest.mark.parametrize("status", ["checking", "with_review_desk", "needs_you"])
 def test_s_08_l_convo_8_bld_f088_no_messages_yet_while_the_idea_is_at_the_review_desk(
     db: Any, cast: dict[str, Any], status: str
 ) -> None:
     """Messages.md draws "No messages yet" with the review desk: the sharer of an idea being checked or waiting on
-    the desk, with no entries yet, reads it under the idea's own lines."""
+    the desk, with no entries yet, reads it under the idea's own lines. `needs_you` is at the desk too (lane E's
+    `at_desk`); seeded with no question set, so no questions entry hides the block (f-convo-empty review, BLD-F093)."""
     idea = fx.idea(db, cast["kavya"], status=status)
+    assert at_desk(idea)
     view = conversation(db, idea["idea_id"], cast["kavya"]["id"], at=NOW)
     assert {e["type"] for e in view["entries"]} == {"event"}
     assert view["empty"]["title"] == "No messages yet"

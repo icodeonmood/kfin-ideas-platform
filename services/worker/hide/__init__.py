@@ -22,19 +22,34 @@ Lock order (BLD-C067): every caller takes hide's advisory lock, `hide.core.lock(
 answer, conversation entry or other row lock in the same transaction. Calling `hide_text`, `hide_message` or `forget`
 before your own `SELECT … FOR UPDATE` or `UPDATE` does that for you; if you must lock rows first, call
 `hide.core.lock(conn, idea_uuid)` at the start of the transaction (it is re-entrant within one transaction). Then a
-`hide_message` call holds that lock across the gatekeeper's model call, which BLD-C067 otherwise avoids: a known cost
-for such callers, not the pattern to copy, until a pre-gate (`hide.gate`, not built) lets them ask the gatekeeper
-before any lock.
+`hide_message` call would hold that lock across the gatekeeper's model call, which BLD-C067 otherwise avoids. Such
+callers ask first with `gate` (BLD-C234), before they open the transaction, and pass the result in:
+
+    g = hide.gate(conn, idea_uuid, text, source="conversation")   # no transaction open, nothing held
+    with conn.transaction():
+        hide.core.lock(conn, idea_uuid)
+        …                                                          # the caller's own row locks
+        hidden = hide_message(conn, idea_uuid, text, by=user_id, source="conversation", source_id=entry_id, gate=g)
+
+`gate(conn, idea_uuid, text, *, source) -> Gate`
+    The gatekeeper's finds for `text`, asked with no lock held; nothing stored. Check that the caller may write on
+    the idea before asking. The finds are used only for that exact text (`Gate.text_hash`, kept in memory only and
+    never logged): if the text hidden differs, hide asks the model again, as it would without a gate. With `ai.all`
+    off the gate is empty and no model is called.
 `desk_hide`, `show` and `hide_again` take the advisory lock first and the rows after it; lane B's desk transactions
 take it first too. Two transactions that take the two kinds of lock in opposite orders can deadlock.
 
-`hide_text(conn, idea_uuid, text, *, by, source="desk", source_id=None) -> (masked_text, hidden_count)`
+`hide_text(conn, idea_uuid, text, *, by, source="desk", source_id=None, gate=None) -> (masked_text, hidden_count)`
     Any text written on an idea: a desk question or reason ("desk"), an answer, a conversation message, an edit.
     Stores each value sealed with a `hidden_details` row and returns the masked copy and how many were hidden.
     `by` is the users.id of whoever typed it (the one person who may read the values). With a sealed source
     ("message", "answer", "conversation", "edit") and its `source_id`, their own words are sealed too.
 
-`hide_message(conn, idea_uuid, text, *, by, source="message", source_id, gatekeeper=True) -> Hidden`
+`hide_text_result(…same as hide_text…) -> Hidden`
+    `hide_text` with the whole result: `Hidden.gatekeeper_checked` is True only when the gatekeeper's check of the
+    text is complete (BLD-C231), for callers that keep their own re-check marker (lane B's desk texts, BLD-B278).
+
+`hide_message(conn, idea_uuid, text, *, by, source="message", source_id, gatekeeper=True, gate=None) -> Hidden`
     What drafts need (L-DRAFT, through lane C's adapter), for a message or an edit of one:
     - `Hidden.masked`: the masked copy, for `idea_messages.text_encrypted` and for every service and model;
     - `Hidden.spans`: `[{start, end, kind, hid}]` in the person's own text, for the dotted underline
@@ -80,23 +95,27 @@ from hide.core import (
     Hidden,
     HideError,
     forget,
+    gate,
     hide_into,
     preview,
     sealed_key,
 )
 from hide.desk import desk_hide, hide_again, show
-from hide.detect import Found, find, kinds_line, mask, receipt
+from hide.detect import Found, Gate, find, kinds_line, mask, receipt
 
 __all__ = [
     "Found",
+    "Gate",
     "Hidden",
     "HideError",
     "desk_hide",
     "find",
     "forget",
+    "gate",
     "hide_again",
     "hide_message",
     "hide_text",
+    "hide_text_result",
     "kinds_line",
     "mask",
     "preview",
@@ -107,14 +126,40 @@ __all__ = [
 
 
 def hide_text(
-    conn: Conn, idea_uuid: str, text: str, *, by: str, source: str = "desk", source_id: str | None = None
+    conn: Conn,
+    idea_uuid: str,
+    text: str,
+    *,
+    by: str,
+    source: str = "desk",
+    source_id: str | None = None,
+    gate: Gate | None = None,
 ) -> tuple[str, int]:
-    """Hide the customers' details in `text` written on an idea. Returns (masked_text, hidden_count)."""
+    """Hide the customers' details in `text` written on an idea. Returns (masked_text, hidden_count). `gate`: the
+    gatekeeper's finds asked before the lock (`hide.gate`, BLD-C234)."""
+    done = hide_text_result(conn, idea_uuid, text, by=by, source=source, source_id=source_id, gate=gate)
+    return done.masked, done.hidden_count
+
+
+def hide_text_result(
+    conn: Conn,
+    idea_uuid: str,
+    text: str,
+    *,
+    by: str,
+    source: str = "desk",
+    source_id: str | None = None,
+    gate: Gate | None = None,
+) -> Hidden:
+    """`hide_text`, returning the whole `Hidden`. `Hidden.gatekeeper_checked` says whether the gatekeeper's check of
+    the text is complete, so a caller that re-checks its own texts later (lane B's desk texts, BLD-B278) marks one
+    done only then, never after a gateway failure (BLD-C231)."""
     if source not in DETAIL_SOURCES:
         raise ValueError("unknown hide source")
     sid = source_id or str(uuid.uuid4())
-    done = hide_into(conn, idea_uuid, text, by=by, source=source, source_id=sid, seal=source_id is not None)
-    return done.masked, done.hidden_count
+    return hide_into(
+        conn, idea_uuid, text, by=by, source=source, source_id=sid, seal=source_id is not None, gate=gate
+    )
 
 
 def hide_message(
@@ -126,8 +171,12 @@ def hide_message(
     source: str = "message",
     source_id: str,
     gatekeeper: bool = True,
+    gate: Gate | None = None,
 ) -> Hidden:
-    """Hide a draft message (or an answer, conversation message or edit) and seal the person's own words."""
+    """Hide a draft message (or an answer, conversation message or edit) and seal the person's own words. `gate`:
+    the gatekeeper's finds asked before the lock (`hide.gate`, BLD-C234)."""
     if source not in SEALED_SOURCES:
         raise ValueError("hide_message takes a message, answer, conversation or edit")
-    return hide_into(conn, idea_uuid, text, by=by, source=source, source_id=source_id, gatekeeper=gatekeeper)
+    return hide_into(
+        conn, idea_uuid, text, by=by, source=source, source_id=source_id, gatekeeper=gatekeeper, gate=gate
+    )

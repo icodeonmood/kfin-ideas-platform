@@ -120,8 +120,8 @@ test("S-08 at 375px: the compact bar, the timeline as a log, the labelled box an
     "The crew and the review desk see this conversation.",
   );
   await expect(page.locator("form.cv-box .cv-sees")).toHaveCount(0);
-  // No attach control for the crew (BLD-F063), and none yet for anyone (BLD-F064).
-  await expect(page.getByRole("button", { name: "Attach a file" })).toHaveCount(0);
+  // No "+" for the crew, who may not attach (BLD-F063); the sharer's is in conversation-attach.spec.ts (BLD-F095).
+  await expect(page.getByRole("button", { name: "Add files, a folder or a link" })).toHaveCount(0);
   // Touch targets (F-A11Y): Send and the "i" are 44px or more each way, measured once the shell has arrived (its
   // entrance scales the page a hair: run 44153802713 read Send at 43.87px mid-arrival).
   await settleMotion(page);
@@ -164,7 +164,8 @@ test("BLD-F078, PhoneMessages at 375px on the route's task screen: the box is on
   expect(row.field.height).toBeCloseTo(44, 0);
   expect(row.field.top).toBeCloseTo(row.send.top, 0); // side by side on one row
   expect(row.field.right).toBeLessThan(row.send.left);
-  // No empty attach slot until BLD-F064 brings attach: the pill starts at the dock's content edge (lane D's QA)
+  // The crew may not attach (BLD-F063), so no "+" and no empty slot: the pill starts at the dock's content edge
+  // (lane D's QA); with the "+" the slot comes back first in the row (BLD-F095)
   expect(row.field.left).toBeLessThan(44);
   await expect(form.getByRole("button")).toHaveCount(1);
   const send = page.getByRole("button", { name: "Send", exact: true });

@@ -68,9 +68,8 @@
   backdrop-filter: var(--glass-blur);
 }
 
-/* The skip link sits above the sidebar, the bars and any pop-up when it has focus */
+/* The skip link stays above the bars and any pop-up when it has focus; ds-app.css gives it its own row in the flow */
 .skip-link:focus {
-  top: 12px;
   z-index: var(--z-skip);
 }
 
@@ -280,12 +279,16 @@
   display: none;
 }
 
+/* The open bar's sections keep their full height and the bar scrolls (.sb-in) when they do not fit, so a section's
+   rows never slide under the account row below it (F-SPACE.targets, WCAG 2.5.8: a 720 px tall window left the
+   reviewer's last "Waiting on sharers" row 13 px clear of "Account"). Folded, the hidden sections shrink to nothing
+   instead, which keeps the account row at the foot (see the folded rules below). */
 .sb-sec {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 1px;
   margin-top: 22px;
-  min-height: 0;
 }
 
 .sb-sec + .sb-sec {
@@ -597,6 +600,8 @@
 
   .sb-sec {
     visibility: hidden;
+    flex-shrink: 1;
+    min-height: 0;
   }
 
   .sb-top {
@@ -843,36 +848,7 @@
   text-decoration-color: currentColor;
 }
 
-/* Tell it: three labelled bars, the current one ink */
-.tsteps-bars {
-  gap: 8px;
-}
-
-.tsteps-bars li {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  width: 78px;
-  font: 500 12.5px/1 var(--ft);
-  color: var(--mute);
-}
-
-.tsteps-bars li::after {
-  content: "";
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(17, 17, 17, 0.1);
-}
-
-.tsteps-bars li.now {
-  color: var(--ink);
-}
-
-.tsteps-bars li.now::after {
-  background: var(--ink);
-}
-
-/* Check it: numbered nodes joined by short lines */
+/* Every task screen, Tell it included: numbered nodes joined by short lines (C-TASKBAR.steps, BLD-D024) */
 .tsteps-nodes {
   gap: 10px;
 }
@@ -982,16 +958,27 @@
     display: none;
   }
 
+  /* The page keeps room under it for the tab bar, or for the dock's own height when that is taller (BLD-D028) */
   .shell:not(.shell-public) main#main {
-    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+    padding-bottom: max(calc(96px + env(safe-area-inset-bottom)), calc(var(--dock-h, 0px) + 24px));
   }
 
   .shell[data-mode="task"] main#main {
-    padding-bottom: calc(120px + env(safe-area-inset-bottom));
+    padding-bottom: max(calc(120px + env(safe-area-inset-bottom)), calc(var(--dock-h, 0px) + 24px));
   }
 
   * {
     scroll-margin-block: 72px 120px;
+  }
+
+  /* With a dock on screen the browser scrolls a focused or scrolled-to target clear of the dock's measured height,
+     12px above it (BLD-D028; C-PHONE-TABS.dock sets --dock-h and data-dock on <html>) */
+  html[data-dock] {
+    scroll-padding-bottom: var(--dock-h);
+  }
+
+  html[data-dock] * {
+    scroll-margin-block: 72px 12px;
   }
 
   /* Root screens: the brand left, the account button right; the row stays while the page scrolls */
@@ -1196,6 +1183,11 @@
 }
 
 /* ---------- The dock (C-PHONE-TABS.dock; F-SPACE.cta): the forward action ---------- */
+/* The shell's slot for a phone's dock, last in main (BLD-D028): no box of its own, so nothing on it can move the dock */
+.dock-root {
+  display: contents;
+}
+
 .dock {
   display: flex;
   flex-wrap: wrap;

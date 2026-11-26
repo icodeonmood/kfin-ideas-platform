@@ -158,7 +158,7 @@ The conversation board draws no "he" or "she". The one line lane F wrote about a
 | `L-CONVO/7`, the check for customers’ details could not run (BLD-F054) | Not drawn | We couldn’t check this message for customers’ details just now. Try again in a minute. |
 | `L-CONVO/7`, a file that is not this person's, not on this idea, or already sent | Not drawn | This file can’t be added here. Add it again from this conversation. |
 | `L-CONVO/7`, a file still being checked | Not drawn | This file is still being checked. Send it once it shows as checked. |
-| `L-CONVO/7`, a file with a customer detail found (DEC-107) | Not drawn | This file has a customer detail in it. Hide the detail or remove the file first. |
+| `L-CONVO/7`, a file with a customer detail found (DEC-107; changed 21 Nov by BLD-F095, see section 9) | Not drawn | This file has a customer detail in it, so it can’t be sent in the conversation. Remove it first. |
 | `L-CONVO/10`, removing someone else's message | Not drawn | You can remove only your own messages. |
 | `L-CONVO/10`, removing after 5 minutes | Not drawn | A message can be removed only in the first 5 minutes after sending. |
 | `A-API.conventions/3`, the same request sent again with other words | Not drawn | This request was already sent with different words. Refresh and try again. |
@@ -203,6 +203,7 @@ For HR's sign-off under DEC-111. The sharer, the crew, the build team and anyone
 | `L-CONVO/8`, "In this conversation" | Meera from the review desk, Reviewing it (one row per reviewer, each with initials) | The review desk, Reviewing it (one row for the desk, no circle; also Picked it / Chose Not now / Didn’t pick it / From the review desk) |
 | `L-CONVO/5`, the box of a person the desk mentioned | Reply to Meera | Reply to the review desk |
 | `L-CONVO/6`, a person at the desk mentioned in the desk's message | @Harish Kulkarni (highlighted) | @the review desk (highlighted); the mention list does not offer the desk to the sharer, the crew or the build team (BLD-F083) |
+| `L-CONVO/8`, "In this conversation", no reviewer on the idea and a person at the desk only mentioned (BLD-F093, added 21 Nov) | The review desk, Mentioned (and still Mentioned after someone at the desk wrote) | The review desk, Mentioned until someone at the desk writes, then The review desk, From the review desk (as section 8 has it for the Ones Committee). To confirm later (DEC-123), HR |
 
 ### 7. Teams named only while Teams messages go out (DEC-105, BLD-F086, added 18 Nov)
 
@@ -226,6 +227,19 @@ For HR's sign-off under DEC-113, which extends DEC-111 to the Ones Committee. Th
 | `L-CONVO/6`, a member mentioned in a message | @Rohan Mehta (highlighted) | @the Ones Committee (highlighted); the mention list does not offer the committee to the sharer, the crew or the build team |
 | `L-CONVO/5`, the box of a person a member mentioned | Reply to Rohan | Reply to the Ones Committee |
 | `S-08`, the files on a member's message, as read out | Files in Rohan Mehta from the Ones Committee’s message | Files in the Ones Committee’s message |
+| `L-CONVO/8`, "In this conversation", a member only mentioned and no member has written yet (BLD-F092, added 20 Nov) | The Ones Committee, From the Ones Committee | The Ones Committee, Mentioned |
+
+On 20 Nov (BLD-F092) the screen was brought in line with the files row and the new row: until then a screen reader read "Files in The Ones Committee’s message" with a capital T, and a committee member who was only mentioned showed as "From the Ones Committee". "Mentioned" is the word every other mentioned person already reads (section 3).
+
+### 9. S-08's "+" (DEC-124, BLD-F095, added 21 Nov)
+
+The "+" in the conversation's box, for the sharer, the review desk and the Ones Committee. The "+" and the picker use the Home board's words as they stand (`reference/copy/Home.md`, `attachments`: "Add files, a folder or a link", "Drop files or a folder here, or", "browse", "Choose a folder", "Or paste a link to a page, file or idea", "Add link", "Remove {name}"), and a row's states are Check it's ("Checking for personal details", "Checked"). On S-08 a link goes into the message's words, so the picker has no line about internal and external links. The code is `apps/web/src/components/convo/compose.ts` (`S08_COPY`) and `services/worker/convo/messages.py`. Every line here is To confirm later (DEC-123), HR: nobody asks for sign-offs until the end of Sunday 22 Nov.
+
+| Module | Pack line | Our line |
+|---|---|---|
+| `S-08.layout/3`, the files in the box, as read out | Not drawn. To confirm later (DEC-123), HR | Your files |
+| `S-08.layout/3`, `C-FILE.row`, a file in the box with a customer detail found (DEC-107) | Check it's line, "Only you, the review desk and the Ones Committee can open it.", which is about opening the file, not used here. To confirm later (DEC-123), HR | This file has a customer detail in it, so it can’t be sent in the conversation. Remove it to send your message. |
+| `L-CONVO/7`, Send with that file in the box (the line under the box) | Not drawn; was "This file has a customer detail in it. Hide the detail or remove the file first.", but S-08 offers no way to hide a file's detail. To confirm later (DEC-123), HR | This file has a customer detail in it, so it can’t be sent in the conversation. Remove it first. |
 
 ## Find your crew (S-H2, L-CREW, added 18 Nov)
 
@@ -245,6 +259,18 @@ The page's own words are the pack's (`reference/copy/Crew.md`, every view, and `
 | `S-H2`, while the deck loads | Read by a screen reader only | Loading ideas close to yours |
 | `S-H2`, when the deck does not load | In place of the deck, with "Try again" | These ideas did not load / Check your connection, then try again. (lane C's line on the preview, BLD-C100) |
 | `S-H2`, when a pass, an undo or "See them again" does not go through | Under the deck | That did not go through. Check your connection, then try again. |
+
+### "Requested" and "Withdraw" on a card asked about (DEC-126, added 20 Nov)
+
+After a team-up request the card stays in the deck as "Requested", with "Withdraw" under it (BLD-F094). "Requested" and "Withdraw" are the product lead's words (DEC-126); they replace the pack's "Waiting for Ravi" and "Withdraw request" on the card. "Your crews" keeps "Waiting for Ravi". The code is `apps/web/src/components/teamup/requested-action.tsx` (`REQUESTED_COPY`), which Home's crew card (S-03) uses too. Every line here is To confirm later (DEC-123), HR: nobody asks for sign-offs until the end of Sunday 22 Nov.
+
+| Module | Where it shows | Our line |
+|---|---|---|
+| `C-CREW-DECK.states`, asked (DEC-126 (1)) | The card's button, greyed and inactive. To confirm later (DEC-123), HR | Requested |
+| `C-CREW-DECK.states`, asked (DEC-126 (3)) | Under the button, grey and underlined. To confirm later (DEC-123), HR | Withdraw |
+| `C-CREW-DECK.states`, asked | "Requested", read by a screen reader. To confirm later (DEC-123), HR | Requested: you asked to team up on Rejection SMS codes confuse investors |
+| `C-CREW-DECK.states`, asked | "Withdraw", read by a screen reader. To confirm later (DEC-123), HR | Withdraw your request to team up on Rejection SMS codes confuse investors |
+| `C-CREW-DECK.states`, a withdraw in progress | On "Withdraw" while it goes (the sheet's existing line, section 4) | Withdrawing… |
 
 ## Search on your own list (L-SEARCH, added 18 Nov)
 

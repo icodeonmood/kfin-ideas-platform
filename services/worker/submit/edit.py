@@ -118,8 +118,8 @@ def _fix(conn: Conn, idea_uuid: str) -> dict[str, Any] | None:
 def _files(conn: Conn, idea_uuid: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         "SELECT id, kind, name, file_state, state, hidden_note, link_scope FROM attachments WHERE idea_uuid = %s "
-        "AND parent_id IS NULL AND answer_id IS NULL AND conversation_entry_id IS NULL AND state <> 'rejected' "
-        "ORDER BY created_at",
+        "AND parent_id IS NULL AND answer_id IS NULL AND purpose = 'idea' AND conversation_entry_id IS NULL "
+        "AND state <> 'rejected' ORDER BY created_at",
         (idea_uuid,),
     ).fetchall()
     return [
@@ -174,7 +174,7 @@ def page(conn: Conn, key: str, user_id: str, *, now: dt.datetime) -> dict[str, A
     until = day(closes, now) if closes else None
     hidden = conn.execute(
         "SELECT id, kind, masked, state, reason, shown_at FROM hidden_details WHERE idea_uuid = %s "
-        "AND source <> 'file' ORDER BY created_at",
+        "AND source NOT IN ('file', 'teamup') ORDER BY created_at",
         (uid,),
     ).fetchall()
     return {
@@ -362,7 +362,7 @@ def _save_files(s: _Save, body: dict[str, Any]) -> None:
     if asked_added:
         rows = s.conn.execute(
             "SELECT id FROM attachments WHERE idea_uuid = %s AND id = ANY(%s) AND parent_id IS NULL "
-            "AND answer_id IS NULL AND conversation_entry_id IS NULL AND state <> 'rejected'",
+            "AND answer_id IS NULL AND purpose = 'idea' AND conversation_entry_id IS NULL AND state <> 'rejected'",
             (s.uid, asked_added),
         ).fetchall()
         here = {str(r["id"]) for r in rows}

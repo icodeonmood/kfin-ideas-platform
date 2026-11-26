@@ -22,6 +22,17 @@ def archive_drafts(conn: Conn, payload: dict[str, Any]) -> None:
     archive_untouched(conn)
 
 
+@handler("files.sweep")
+def sweep_files(conn: Conn, payload: dict[str, Any]) -> None:
+    """Every hour (BLD-C242, L-HIDE.files): a failed upload's quarantine copy goes once it is past
+    `attachments.rejected_retention_hours`, and a conversation file never put on an entry goes a day after it was
+    added (`attachments.files.sweep_failed_copies`). Their only caller was drafts.purge, retired with drafts.archive
+    (BLD-C074), so neither ran on any build before this. Nothing goes until a worker start sweep has finished once."""
+    from attachments import files as onepc_files
+
+    log.info("files.swept", swept_count=onepc_files.sweep_failed_copies(conn))
+
+
 @handler("drafts.purge")
 def purge_drafts(conn: Conn, payload: dict[str, Any]) -> None:
     """Delete drafts past their retention date (§4.1 step 2, AT-B3-04), and their files from the store.
@@ -351,6 +362,16 @@ def desk_clocks(conn: Conn, payload: dict[str, Any]) -> None:
     from desk.clocks import run_due
 
     run_due(conn)
+
+
+@handler("desk.text_recheck")
+def desk_text_recheck(conn: Conn, payload: dict[str, Any]) -> None:
+    """L-HIDE.detect, DEC-131 (3): the review desk's own texts written while the assistant was off get the
+    gatekeeper's check once it is back, a few at a time (lane B, BLD-B278). Lane C's watch queues it while both
+    switches are on (hide/recheck.py DESK_TEXT_RECHECK); it waits while either is off."""
+    from desk import text_recheck
+
+    text_recheck.run(conn, payload)
 
 
 @handler("hide.recheck")
