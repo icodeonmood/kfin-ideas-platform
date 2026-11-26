@@ -233,16 +233,18 @@ def _row(
     db: Conn, idea: dict[str, Any], by: dict[str, str], *, purpose: str = "idea", entry: str | None = None,
     state: str = "checked", kind: str = "file", hours_ago: float = 0,
 ) -> str:  # fmt: skip
-    """An attachments row as the routes leave it, written directly (its copy is a key in the faked store)."""
+    """An attachments row as the routes leave it, written directly (its copy is a key in the faked store). Added
+    and last changed `hours_ago`: an upload whose check ended at once. The sweep counts its day from `updated_at`
+    (BLD-A256), so both are aged, in the INSERT (the `attachments_updated_at` trigger resets it on any UPDATE)."""
     att = F._next_id(db)
     db.execute(
         "INSERT INTO attachments (id, idea_uuid, uploaded_by_code, uploaded_by_user, name, mime, bytes, store_key, "
-        "state, kind, file_state, checks, purpose, conversation_entry_id, created_at) "
+        "state, kind, file_state, checks, purpose, conversation_entry_id, created_at, updated_at) "
         "VALUES (%s, %s, %s, %s, 'notes.pdf', 'application/pdf', 1200, %s, %s, %s, %s, %s, %s, %s, "
-        "now() - make_interval(secs => %s))",
+        "now() - make_interval(secs => %s), now() - make_interval(secs => %s))",
         (att, idea["id"], by["code"], by["id"], f"files/{att}-{uuid.uuid4().hex}",
          "clean" if state == "checked" else "quarantine", kind, state, Jsonb({"type": "pdf"}), purpose, entry,
-         hours_ago * 3600),
+         hours_ago * 3600, hours_ago * 3600),
     )  # fmt: skip
     return att
 
