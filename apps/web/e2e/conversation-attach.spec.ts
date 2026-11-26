@@ -8,6 +8,9 @@
  * /api/files/:id/view. The spec answers the screen's calls itself, so it needs no seeded idea and nothing reaches the
  * worker. Synthetic people, words and files only.
  */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, test, type Page } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, signIn } from "./helpers";
@@ -363,4 +366,102 @@ test.describe('S-08\'s "+" at 1440px (Messages.jpg)', () => {
     await expectNoSeriousAxeIssues(page);
     await expect(picker).toBeVisible();
   });
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-narrow-2, never merged: BLD-D036 (the shared picker's link row) on S-08's picker
+ * (`.cv-pick`, lane F's), with lane F's BLD-F106 (the phone picker's opaque fill) from T35. The desktop project takes
+ * 1440 and 640, the phone project 360 and 320. Under 300px the field takes the row and Add link goes under it, full
+ * width and 44px; over 300px the two share a row; the icon is centred on the field; on a phone the picker's fill is
+ * opaque (F106); no sideways scroll; axe. Screenshots and measures go to test-results/qa-shots. Synthetic data only.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+
+test("QA (lane D, never merged): BLD-D036 on S-08's picker with BLD-F106, at 1440, 640, 360 and 320", async ({
+  page,
+}, info) => {
+  test.setTimeout(240_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+  await answer(page);
+  const sizes =
+    info.project.name === "phone-360"
+      ? ([
+          [360, 740],
+          [320, 640],
+        ] as const)
+      : ([
+          [1440, 900],
+          [640, 800],
+        ] as const);
+  for (const [w, h] of sizes) {
+    const at = `d036-s08-${w}x${h}`;
+    await page.setViewportSize({ width: w, height: h });
+    await openAsSharer(page);
+    await settleMotion(page);
+    await openPicker(page);
+    await settleMotion(page);
+    await page.locator(".cv-pick .fpick-link").evaluate((el) => el.scrollIntoView({ block: "center" }));
+    await settleMotion(page);
+    const g = await page.evaluate(() => {
+      const box = (e: Element | null | undefined) => {
+        if (!e) return null;
+        const r = e.getBoundingClientRect();
+        return {
+          left: r.left,
+          right: r.right,
+          top: r.top,
+          bottom: r.bottom,
+          width: r.width,
+          height: r.height,
+        };
+      };
+      const pick = document.querySelector<HTMLElement>(".cv-pick");
+      const row = pick?.querySelector(".fpick-link");
+      return {
+        sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        picker: box(pick),
+        fill: pick ? getComputedStyle(pick).backgroundColor : "",
+        row: box(row),
+        field: box(row?.querySelector("input")),
+        add: box(row?.querySelector(".btn")),
+        icon: box(row?.querySelector(".fpick-li")),
+      };
+    });
+    log[at] = g;
+    await page.screenshot({ path: join(QA_SHOTS, `${at}.png`) });
+    expect.soft(g.sideways, `${at}: no sideways scroll`).toBeLessThanOrEqual(0);
+    if (g.picker && g.row && g.field && g.add && g.icon) {
+      // The picker's content box decides (12px padding each side): under 300px wide it stacks
+      if (g.picker.width < 300) {
+        expect
+          .soft(g.add.top, `${at}: Add link under the field`)
+          .toBeGreaterThanOrEqual(g.field.bottom - 0.5);
+        expect
+          .soft(Math.abs(g.add.width - g.field.width), `${at}: Add link full width`)
+          .toBeLessThanOrEqual(1);
+        expect.soft(g.field.width, `${at}: the field takes the row`).toBeGreaterThanOrEqual(g.row.width - 1);
+      } else {
+        expect
+          .soft(g.add.left, `${at}: Add link beside the field`)
+          .toBeGreaterThanOrEqual(g.field.right - 0.5);
+      }
+      expect.soft(g.add.height, `${at}: Add link 44px`).toBeGreaterThanOrEqual(44);
+      expect
+        .soft(
+          Math.abs(g.icon.top + g.icon.height / 2 - (g.field.top + g.field.height / 2)),
+          `${at}: icon centred on the field`,
+        )
+        .toBeLessThanOrEqual(1);
+    }
+    if (w <= 640) {
+      // F106: an opaque fill, so the thread does not show through (rgb(), or rgba() with alpha 1)
+      const alpha = /rgba\([^)]*,\s*([\d.]+)\)/.exec(g.fill)?.[1];
+      expect
+        .soft(alpha === undefined ? 1 : Number(alpha), `${at}: the picker's fill is opaque (${g.fill})`)
+        .toBe(1);
+    }
+    await expectNoSeriousAxeIssues(page);
+  }
+  writeFileSync(join(QA_SHOTS, `d036-s08-${info.project.name}.json`), JSON.stringify(log, null, 2));
 });
