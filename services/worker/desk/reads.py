@@ -331,7 +331,10 @@ def _questions(
     """Every question sent on this idea, pinned to its part, with its answer once sent (S-R2.left/3). "You asked"
     for the viewer's own questions, "{first name} asked" for another reviewer's (reference/copy/DeskIdea.md). An
     answer's files are those the desk may open (DEC-107), each with its `customer_detail` marker, and only the idea's
-    own (`IDEA_OWN`, BLD-B274)."""
+    own (`IDEA_OWN`, BLD-B274). A sent answer with no words and no file left says the file was removed
+    (`files_removed`, BLD-B280): its sharer may remove a file after sending (DEC-107), and an answer is only sent with
+    words or a file the desk sees (DEC-132) and is never edited after, so nothing else leaves it empty."""
+    from desk.questions import ANSWER_FILES_REMOVED
     from desk.store import person_by_code, person_by_user, unseal
 
     out: dict[str, list[dict[str, Any]]] = {}
@@ -357,13 +360,15 @@ def _questions(
                 f"{SHOWN_FILE} AND {IDEA_OWN} ORDER BY created_at, id",  # never a conversation file (BLD-B274)
                 (r["answer_id"], list(DESK_SEES)),
             ).fetchall()
+            text = unseal(r["answer_encrypted"], "answers", "text_encrypted", str(r["answer_id"]))
             item["answer"] = {
                 "id": str(r["answer_id"]),
-                "text": unseal(r["answer_encrypted"], "answers", "text_encrypted", str(r["answer_id"])),
+                "text": text,
                 "at": r["answered_at"].isoformat(), "by": by.first_name,
                 "line": f"{by.first_name} answered, {_said_at(r['answered_at'], at)}",
                 "files": [{"id": f["id"], "name": f["name"], "hidden": f["hidden_note"],
                            "customer_detail": f["file_state"] == CUSTOMER_DETAIL} for f in files],
+                "files_removed": ANSWER_FILES_REMOVED if not files and not (text or "").strip() else None,
             }  # fmt: skip
         out.setdefault(str(r["part"]), []).append(item)
     return out
@@ -705,11 +710,16 @@ def script_for(conn: Conn, ref: str, at: dt.datetime | None = None) -> Any:
 
 
 def _spoken_answers(conn: Conn, idea_uuid: Any, at: dt.datetime) -> dict[str, list[Any]]:
-    """The answers sent on an idea, part by part, as the listen script reads them (L-LISTEN/2)."""
+    """The answers sent on an idea, part by part, as the listen script reads them (L-LISTEN/2). One whose file was
+    removed reads S-R2's line (BLD-B280)."""
     from desk import listen
 
     return {
-        part: [listen.Answer(q["answer"]["by"], q["answer"]["text"] or "") for q in qs if q["answer"]]
+        part: [
+            listen.Answer(q["answer"]["by"], q["answer"]["files_removed"] or q["answer"]["text"] or "")
+            for q in qs
+            if q["answer"]
+        ]
         for part, qs in _questions(conn, idea_uuid, at).items()
     }
 
