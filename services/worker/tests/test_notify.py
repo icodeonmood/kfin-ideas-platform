@@ -706,15 +706,16 @@ def test_DEC_104_teamup_answer_names_the_lead_only_to_a_requester_who_may_see_th
     notify.post(db, "teamup_answer", [kavya], idea_id=ideas["ravis"], sender=ravi,
                 refs={"request_id": str(uuid.uuid4()), "request": "teamup", "answer": answer, "has_reason": True})  # fmt: skip
     item = inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]
-    # an answer waits for the Inbox digest, where its section is headed by its own subject (BLD-A255)
+    # an answer waits for the Inbox digest, where its section is headed by its own subject, after the greeting
+    # the digest says once (BLD-A255)
     mail = digest_mail(db, kavya)
     seen = json.dumps(item, ensure_ascii=False) + mail.subject + mail.text + mail.html
     if case in ("hid their name", "has left"):
         assert item["from"]["name"] == "A colleague" and item["from"]["initials"] == ""
         assert item["from"]["id"].startswith("p") and item["body"]["sender"] == "The lead"
-        assert mail.text.startswith("The lead answered your team-up request\n")
+        assert "\nThe lead answered your team-up request\n" in mail.text
         assert "The lead declined your team-up request, with a reason" in mail.text
         assert ravi not in seen and "Ravi" not in seen
     else:
         assert item["from"]["id"] == ravi and item["body"]["sender"] == "Ravi Nair"
-        assert mail.text.startswith("Ravi Nair answered your team-up request\n")
+        assert "\nRavi Nair answered your team-up request\n" in mail.text

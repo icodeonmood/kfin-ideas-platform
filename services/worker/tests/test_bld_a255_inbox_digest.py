@@ -1,12 +1,14 @@
 """BLD-A255 without a database: DEC-133's after-launch rule with DEC-138's defaults (L-NOTIFY/1, /3, /4, /5).
 
-`notify.post` sends outside the app at once only a decision, a reversal, a merge notice, an answer reminder or
-anything posted as Needs you; every other Inbox item queues no email and no Teams message and is stored `routine`,
-the mark the day's Inbox digest reads. A repeat post that marks Needs you on an item that waited sends it at once, that
-one time. The digest is routed by `comms.send.compose` to `notify.digest.compose_inbox`, which builds one email from
-the items still unread, each section as that item's own email reads, so the sender is named exactly as the Inbox
-names them to that reader (DEC-111, DEC-113). Synthetic people only; the same flows against the real tables run in CI
-in tests/test_bld_a255_inbox_digest_db.py."""
+`notify.post` emails at once only a decision, a reversal, a merge notice, an answer reminder or anything posted as
+Needs you; every other Inbox item queues no email and is stored `routine`, the mark the day's Inbox digest reads. DEC-138
+is an email rule: Teams carries every item at once, as before, while its switch and the person's setting allow. A
+repeat post that marks Needs you on an item that waited emails it at once, that one time. The digest is routed by
+`comms.send.compose` to `notify.digest.compose_inbox`, which builds one email from the items still unread, each
+section as that item's own email reads, so the sender is named exactly as the Inbox names them to that reader
+(DEC-111, DEC-113), with the greeting and the sign-off said once; an item that cannot be rendered is left out. It is
+sent in working hours only. Synthetic people only; the same flows against the real tables run in CI in
+tests/test_bld_a255_inbox_digest_db.py."""
 
 from __future__ import annotations
 
@@ -70,7 +72,7 @@ class _Writes:
 
 @pytest.fixture
 def teams_on(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`comms.teams` on (DEC-105 ships it off), so a test can show a waiting item gets no Teams message either."""
+    """`comms.teams` on (DEC-105 ships it off), so a test can show a waiting item still gets its Teams message."""
     monkeypatch.setattr(notify.killswitch, "is_on", lambda *_: True)
 
 
@@ -102,15 +104,30 @@ def test_bld_a255_l_notify_2_5_an_answer_reminder_with_reminders_off_goes_nowher
 
 
 @pytest.mark.parametrize("kind", DIGEST_KINDS)
-def test_bld_a255_l_notify_1_dec138_any_other_kind_queues_no_outside_row_and_waits(
+def test_bld_a255_l_notify_1_dec138_any_other_kind_gets_teams_at_once_and_its_email_waits(
     kind: str, teams_on: None
 ) -> None:
+    """DEC-138 is an email rule: with Teams switched on and the person's setting on, Teams goes at once as before
+    (the Profile's "Teams messages: when the review desk asks you something, or one of your ideas moves a stage"); no
+    email row is written."""
     conn = _Writes()
     refs = {} if kind in notify.NO_REFS_KINDS else ENTRY
     posted = notify.post(conn, kind, [SHARER], idea_id=IDEA, sender=CREW, refs=refs)  # type: ignore[arg-type]
     assert posted.ids == [1]
-    assert conn.outside() == []  # no email and no Teams, with both on and Teams switched on
+    assert conn.outside() == ["teams"]
+    assert all("'immediate', 'queued', now()" in sql for sql, _ in conn.inserts[1:])
     assert conn.in_app_urgency() == "routine"  # the mark the digest reads
+
+
+@pytest.mark.parametrize("kind", DIGEST_KINDS)
+def test_bld_a255_l_notify_1_dec105_with_teams_switched_off_a_waiting_item_queues_nothing_outside(
+    kind: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(notify.killswitch, "is_on", lambda *_: False)  # as shipped (DEC-105)
+    conn = _Writes()
+    refs = {} if kind in notify.NO_REFS_KINDS else ENTRY
+    notify.post(conn, kind, [SHARER], idea_id=IDEA, sender=CREW, refs=refs)  # type: ignore[arg-type]
+    assert conn.outside() == [] and conn.in_app_urgency() == "routine"
 
 
 @pytest.mark.parametrize("kind", DIGEST_KINDS)
@@ -128,6 +145,10 @@ def test_bld_a255_a_repeat_that_marks_needs_you_on_a_waiting_item_sends_it_at_on
     assert again.updated == [7] and again.ids == []
     assert ("UPDATE notifications SET urgency = 'immediate' WHERE id = %s", (7,)) in conn.updates
     assert conn.outside() == ["email", "teams"]
+    # The Teams message queued when it was posted has the same key: the database keeps it to one (the CI test shows it)
+    for sql, params in conn.inserts[1:]:
+        assert "ON CONFLICT (user_id, channel, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING" in sql
+        assert params[-1] == "t:edge"
 
 
 @pytest.mark.parametrize(
@@ -247,3 +268,115 @@ def test_bld_a255_no_template_file_is_seeded() -> None:
     seed = Path(__file__).resolve().parents[3] / "seed" / "company-repo" / "comms" / "templates"
     assert (seed / "inbox" / "comment.md").exists()  # the seed's templates are where this looks
     assert not (seed / f"{digest.INBOX_TEMPLATE}.md").exists()
+
+
+def test_bld_a255_an_item_that_cannot_be_rendered_is_left_out_and_the_others_still_go(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """As the Inbox leaves out an item it cannot show (`notify.inbox._render`): logged by its ID and kind only, never
+    its words or the error's text. With nothing left, there is nothing to send."""
+    items = [
+        _waiting("comment", CREW, 61, ENTRY),
+        _waiting("mention", CREW, 62, ENTRY),
+        _waiting("crew_joined", CREW, 63),
+    ]
+    monkeypatch.setattr(digest, "waiting_items", lambda *_: items)
+    real = digest.inbox_render.variables
+
+    def flaky(conn: Any, row: dict[str, Any], viewer: str, now: dt.datetime, **kw: Any) -> Any:
+        if row["id"] == 62:
+            raise LookupError("Folio 1234567890 for Kavya Menon")  # the text must never reach the log
+        return real(conn, row, viewer, now, **kw)
+
+    logged: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(digest.inbox_render, "variables", flaky)
+    monkeypatch.setattr(digest.log, "warning", lambda event, **fields: logged.append((event, fields)))
+    until = {"since": None, "until": "2026-11-18T06:30:00+00:00"}
+    mail = digest.compose_inbox(desk._Conn(), SHARER, until, NOW)  # type: ignore[arg-type]
+    assert mail is not None and mail.subject == "Your 1% Club update: 2 new"
+    assert "Ravi Nair commented on your idea" in mail.text and "Ravi Nair joined your crew" in mail.text
+    assert "mentioned you" not in mail.text
+    assert logged == [
+        (
+            "notify.inbox_digest_item_failed",
+            {"notification_id": 62, "inbox_kind": "mention", "error_type": "LookupError"},
+        )
+    ]
+    monkeypatch.setattr(digest, "waiting_items", lambda *_: [items[1]])
+    assert digest.compose_inbox(desk._Conn(), SHARER, until, NOW) is None  # type: ignore[arg-type]
+
+
+def test_bld_a255_the_greeting_and_the_sign_off_are_said_once_in_the_templates_own_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every Inbox template opens "Hi {{recipient.first_name}}," and ends "The 1% Club team": the Inbox digest says each
+    once, before the first item and after the last; the old routes' held-mail digest (`email_html.digest`) is as it
+    was, each message whole."""
+    from comms import email_html
+
+    items = [_waiting("comment", CREW, 61, ENTRY), _waiting("crew_joined", CREW, 63)]
+    monkeypatch.setattr(digest, "waiting_items", lambda *_: items)
+    mail = digest.compose_inbox(desk._Conn(), SHARER, {"since": None, "until": "x"}, NOW)  # type: ignore[arg-type]
+    assert mail is not None
+    for part in (mail.text, mail.html):
+        assert part.count("Hi Kavya,") == 1 and part.count("The 1% Club team") == 1
+    text = mail.text
+    assert text.index("Hi Kavya,") < text.index("Ravi Nair commented on your idea\n")
+    assert text.index("Ravi Nair joined your crew\n") < text.index("The 1% Club team")
+    assert text.startswith("Hi Kavya,\n\n") and text.rstrip().endswith("The 1% Club team")
+    sections = [digest.inbox_render.variables(desk._Conn(), it, SHARER, NOW) for it in items]
+    held = email_html.digest(sections, "https://ideas.kfintech.example")
+    assert held.text.count("Hi Kavya,") == 2 and held.text.count("The 1% Club team") == 2
+
+
+def test_bld_a255_a_digest_out_of_working_hours_waits_for_the_next_opening_and_is_never_capped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """At send time (`comms.email` back on at night): the row's send_after moves to the next opening; it is not
+    composed, not counted against the daily cap and not folded into the old routes' digest."""
+    from comms import send
+
+    opens = NOW + dt.timedelta(hours=11)
+    monkeypatch.setattr(send, "next_send_time", lambda now, urgency: opens)
+    monkeypatch.setattr(send, "compose", lambda *_a, **_k: pytest.fail("composed out of hours"))
+    monkeypatch.setattr(send, "_hold_back", lambda *_a, **_k: pytest.fail("capped or folded"))
+
+    class _Log:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, tuple[Any, ...]]] = []
+
+        def execute(self, sql: str, params: tuple[Any, ...] = ()) -> None:
+            self.calls.append((sql, params))
+
+    conn = _Log()
+    row = {"id": 5, "event": send.INBOX_DIGEST, "urgency": "immediate", "user_id": SHARER, "kind": None}
+    assert send._send_one(conn, row, NOW) == "next"  # type: ignore[arg-type]
+    assert conn.calls == [("UPDATE notifications SET send_after = %s WHERE id = %s", (opens, 5))]
+    assert send.INBOX_DIGEST == digest.INBOX_EVENT
+
+
+def test_bld_a255_send_due_takes_every_other_email_before_the_inbox_digests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The claim's order (an ORDER BY change only): non-digest rows first, then by send_after and id. The CI test shows
+    an at-once email queued after many digests going first."""
+    from contextlib import contextmanager
+
+    from comms import send
+
+    claims: list[str] = []
+
+    class _Claim:
+        @contextmanager
+        def transaction(self) -> Any:
+            yield
+
+        def execute(self, sql: str, params: Any = None) -> desk._Rows:
+            if sql.startswith("SELECT n.id"):
+                claims.append(" ".join(sql.split()))
+            return desk._Rows([])
+
+    monkeypatch.setattr(send, "_may_send", lambda conn: True)
+    assert send.send_due(_Claim(), now=NOW) == 0  # type: ignore[arg-type]
+    (sql,) = claims
+    assert "ORDER BY (n.event IS NOT DISTINCT FROM 'inbox.digest'), n.send_after, n.id LIMIT 1" in sql

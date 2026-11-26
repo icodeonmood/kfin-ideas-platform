@@ -195,17 +195,21 @@ def test_l_notify_dec113_post_stores_no_member_when_no_recipient_holds_a_role(
     assert conn.stored() == [(SHARER, "in_app", None), (SHARER, "email", None)]
 
 
+@pytest.mark.parametrize("needs_you", (False, True), ids=("digest", "at-once"))
 @pytest.mark.parametrize("kind", ("comment", "mention"))
-def test_l_notify_dec113_as_committee_stores_no_sender(kind: str, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_l_notify_dec113_as_committee_stores_no_sender(
+    kind: str, needs_you: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """With `as_committee: true` the member is stored on no row, and no role is read: the flag is the whole of it.
-    The writer is still never one of the recipients."""
+    The writer is still never one of the recipients. A comment or mention's email waits for the Inbox digest, which
+    reads the in-app row (DEC-138, BLD-A255); marked Needs you, it is emailed at once, and that email row carries no
+    member either."""
     monkeypatch.setattr(notify.killswitch, "is_on", lambda *_: False)
     conn = _Writes()
     posted = notify.post(conn, kind, [SHARER, MEMBER], idea_id=IDEA, sender=MEMBER,  # type: ignore[arg-type]
-                         refs={**ENTRY, "as_committee": True})  # fmt: skip
+                         refs={**ENTRY, "as_committee": True}, needs_you=needs_you)  # fmt: skip
     assert len(posted.ids) == 1 and conn.role_reads == 0
-    # a comment or mention waits for the Inbox digest (DEC-138, BLD-A255): no outside row is written when it is posted
-    assert conn.stored() == [(SHARER, "in_app", None)]
+    assert conn.stored() == [(SHARER, "in_app", None)] + ([(SHARER, "email", None)] if needs_you else [])
 
 
 def test_l_notify_dec113_other_kinds_keep_their_sender_and_read_no_role(

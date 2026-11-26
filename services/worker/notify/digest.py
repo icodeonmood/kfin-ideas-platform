@@ -10,15 +10,19 @@ Off at launch (BLD-B241: nothing is mailed about overdue ideas; the desk sees th
 sentence). `DECIDE_BY_DIGEST=true` and a worker restart switch it on; while it is off nothing is queued, and a digest
 queued before it was switched off is not sent.
 
-The Inbox digest (DEC-133's after-launch rule with DEC-138's defaults; BLD-A255, L-NOTIFY/1, /3): `notify.post` sends
+The Inbox digest (DEC-133's after-launch rule with DEC-138's defaults; BLD-A255, L-NOTIFY/1, /3): `notify.post` emails
 at once only decisions, reversals, merge notices, answer reminders and anything posted as Needs you. Every other
-Inbox item is stored with `urgency = 'routine'` and waits. Once a working day, from the same `comms.digest` job,
-`queue_inbox` gives each active person with an email address and email on one email row covering the items that
-waited since their last digest (`payload` holds the window's two times only). `compose_inbox` builds it when it is
-sent, from the items still unread then: one section per item, oldest first, each as that item's own email would read
-(`notify.render.variables`), so it carries the idea title, what happened, any date and a link, never hidden details,
-anyone's words or a reason, and names the sender exactly as the Inbox does for that reader (DEC-111, DEC-113). No
-Teams digest, no new switch, no new template: `comms.email` off leaves it queued like any email.
+Inbox item is stored with `urgency = 'routine'` and its email waits (its Teams message does not). Once a day, in
+working hours on a working day, from the same `comms.digest` job, `queue_inbox` gives each active person with an
+email address and email on one email row covering the items that waited since their last digest, never more than 7
+days back, and up to 5 minutes before the run (`payload` holds the window's two times only). A digest still queued
+from an earlier day (email off, or a mail outage) has its window carried on to today instead, so a backlog is one
+email. `compose_inbox` builds it when it is sent, from the items still unread then: one section per item, oldest
+first, each as that item's own email would read (`notify.render.variables`), so it carries the idea title, what
+happened, any date and a link, never hidden details, anyone's words or a reason, and names the sender exactly as the
+Inbox does for that reader (DEC-111, DEC-113); the greeting and the sign-off are said once
+(`email_html.inbox_digest`). `comms.send` sends it in working hours only and after every other email. No Teams
+digest, no new switch, no new template: `comms.email` off leaves it queued like any email.
 """
 
 from __future__ import annotations
@@ -51,7 +55,13 @@ SHOWN = 20  # the longest list one email carries; the desk page has the rest
 INBOX_EVENT = "inbox.digest"
 INBOX_TEMPLATE = "inbox/digest"
 INBOX_KEY = "inbox_digest"
-# An Inbox item that waits for the digest: posted under DEC-138 as `routine` (so it had no outside message), not an
+# A window ends this long before the run, so an item whose transaction began just before the run and committed after
+# it falls into the next window instead of none.
+GRACE = dt.timedelta(minutes=5)
+# A window never starts more than this long before the run: a person back after weeks with email off is not sent
+# every old item (there is no count cap: "and N more" would be new words).
+LOOKBACK = dt.timedelta(days=7)
+# An Inbox item that waits for the digest: posted under DEC-138 as `routine` (so no email was queued for it), not an
 # at-once kind, not Needs you, never resolved (a resolved item was Needs you, so it went at once), and unread. Items
 # posted before the rule (r6: every one emailed at once, `immediate`) and the club seed's (no urgency) are never in it.
 _WAITING = (
@@ -161,50 +171,81 @@ def waiting_items(conn: Conn, user_id: str, since: object, until: object) -> lis
 
 
 def queue_inbox(conn: Conn, now: dt.datetime | None = None) -> int:
-    """Queue today's Inbox digest (DEC-138, BLD-A255): on a working day, one email row for each active person with an
-    email address and email on who has items that waited since the `until` of their last digest (none before: every
-    item that waited), up to now. A weekend's or a holiday's items roll into the next working day's window. At most
-    one a day per person (the key holds the IST date). Returns how many were queued."""
+    """Queue today's Inbox digest (DEC-138, BLD-A255), in working hours on a working day only: for each active person
+    with an email address and email on, the items that waited since the `until` of their last digest (no earlier than
+    `LOOKBACK` before now) and up to `GRACE` before now. A weekend's or a holiday's items roll into the next working
+    day's window. A person whose last digest is still queued (email off, an outage) has that row's window carried on
+    to now and its key moved to today, so a backlog sends one digest; anyone else with something waiting gets a new
+    row, at most one a day (the key holds the IST date). Returns how many rows were queued or carried on."""
     now = now or dt.datetime.now(dt.UTC)
     if next_send_time(now, "routine") != now:
         return 0  # a weekend, a holiday or out of hours: the next working day's window carries the items
-    key = f"{INBOX_KEY}:{now.astimezone(IST).date().isoformat()}"
-    rows = conn.execute(
+    params = {
+        "template": INBOX_TEMPLATE,
+        "event": INBOX_EVENT,
+        "now": now,
+        "until": now - GRACE,
+        "floor": now - LOOKBACK,
+        "key": f"{INBOX_KEY}:{now.astimezone(IST).date().isoformat()}",
+        "at_once": sorted(AT_ONCE),
+    }
+    carried = conn.execute(
+        "UPDATE notifications d SET dedupe_key = %(key)s::text, payload = jsonb_build_object('since', "  # noqa: S608 (fixed text)
+        "GREATEST((d.payload->>'since')::timestamptz, %(floor)s::timestamptz), 'until', %(until)s::timestamptz) "
+        "FROM users u LEFT JOIN comms_prefs p ON p.user_id = u.id "
+        "WHERE d.user_id = u.id AND u.active AND u.email <> '' AND coalesce(p.email, true) "
+        "AND d.channel = 'email' AND d.event = %(event)s::text AND d.state = 'queued' "
+        "AND d.id = (SELECT max(x.id) FROM notifications x WHERE x.user_id = d.user_id AND x.channel = 'email' "
+        "AND x.event = %(event)s::text) "
+        "AND EXISTS (SELECT 1 FROM notifications n WHERE n.user_id = d.user_id AND " + _WAITING + " "
+        "AND n.created_at > (d.payload->>'until')::timestamptz AND n.created_at <= %(until)s::timestamptz) "
+        "RETURNING d.id",
+        params,
+    ).fetchall()
+    queued = conn.execute(
         "INSERT INTO notifications (user_id, channel, template, payload, event, urgency, state, send_after, "  # noqa: S608 (fixed text)
         "dedupe_key) SELECT w.user_id, 'email', %(template)s::text, "
         "jsonb_build_object('since', w.since, 'until', %(until)s::timestamptz), %(event)s::text, 'immediate', "
-        "'queued', %(until)s::timestamptz, %(key)s::text FROM (SELECT u.id AS user_id, "
-        "(SELECT (d.payload->>'until')::timestamptz FROM notifications d WHERE d.user_id = u.id "
-        "AND d.channel = 'email' AND d.event = %(event)s::text "
-        "ORDER BY d.id DESC LIMIT 1) AS since FROM users u LEFT JOIN comms_prefs p ON p.user_id = u.id "
+        "'queued', %(now)s::timestamptz, %(key)s::text FROM (SELECT u.id AS user_id, "
+        "GREATEST(last.until, %(floor)s::timestamptz) AS since, last.state AS last_state "
+        "FROM users u LEFT JOIN comms_prefs p ON p.user_id = u.id "
+        "LEFT JOIN LATERAL (SELECT (d.payload->>'until')::timestamptz AS until, d.state FROM notifications d "
+        "WHERE d.user_id = u.id AND d.channel = 'email' AND d.event = %(event)s::text "
+        "ORDER BY d.id DESC LIMIT 1) last ON true "
         "WHERE u.active AND u.email <> '' AND coalesce(p.email, true)) w "
-        "WHERE EXISTS (SELECT 1 FROM notifications n WHERE n.user_id = w.user_id AND " + _WAITING + " "
-        "AND (w.since IS NULL OR n.created_at > w.since) AND n.created_at <= %(until)s::timestamptz) "
+        "WHERE w.last_state IS DISTINCT FROM 'queued' "
+        "AND EXISTS (SELECT 1 FROM notifications n WHERE n.user_id = w.user_id AND " + _WAITING + " "
+        "AND n.created_at > w.since AND n.created_at <= %(until)s::timestamptz) "
         "ON CONFLICT (user_id, channel, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING RETURNING id",
-        {
-            "template": INBOX_TEMPLATE,
-            "event": INBOX_EVENT,
-            "until": now,
-            "key": key,
-            "at_once": sorted(AT_ONCE),
-        },
+        params,
     ).fetchall()
-    if rows:
-        log.info("notify.inbox_digest_queued", person_count=len(rows))
-    return len(rows)
+    if carried or queued:
+        log.info("notify.inbox_digest_queued", person_count=len(queued), carried_count=len(carried))
+    return len(carried) + len(queued)
 
 
 def compose_inbox(
     conn: Conn, user_id: str, refs: dict[str, Any], now: dt.datetime | None = None
 ) -> email_html.Email | None:
     """The Inbox digest as it stands when it is sent (BLD-A255): its window's items still unread, oldest first, one
-    section each as that item's own email reads, its link opening the in-app item. None when every one has been read
-    (the row ends `nothing_to_send`)."""
+    section each as that item's own email reads, its link opening the in-app item. An item that cannot be rendered is
+    left out, as the Inbox leaves it out (`notify.inbox`), and logged by its ID and kind only. None when nothing is
+    left (the row ends `nothing_to_send`)."""
     now = now or dt.datetime.now(dt.UTC)
-    items = waiting_items(conn, user_id, refs.get("since"), refs.get("until"))
-    if not items:
+    sections = []
+    for item in waiting_items(conn, user_id, refs.get("since"), refs.get("until")):
+        try:
+            sections.append(
+                inbox_render.variables(conn, item, user_id, now, absolute=True, item_id=item["id"])
+            )
+        except Exception as exc:  # one item we cannot render must not hold back the others
+            # IDs and the kind only: never the item's words, nor the exception's text (non-negotiable 3).
+            log.warning(
+                "notify.inbox_digest_item_failed",
+                notification_id=item["id"],
+                inbox_kind=str(item.get("kind") or ""),
+                error_type=type(exc).__name__,
+            )
+    if not sections:
         return None
-    sections = [
-        inbox_render.variables(conn, item, user_id, now, absolute=True, item_id=item["id"]) for item in items
-    ]
-    return email_html.digest(sections, get_settings().app_base_url)
+    return email_html.inbox_digest(sections, get_settings().app_base_url)
