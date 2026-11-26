@@ -46,6 +46,11 @@ PART_EMPTY: dict[str, str] = {
     "evidence": EMPTY_ATTACHED,
     "fix": EMPTY_FIX,
 }
+# S-R2.left/3, L-LISTEN/2 (BLD-B280, the lead's answer (b) of 26 Nov; DEC-107, DEC-132): a sent answer with no words
+# whose files were all removed after it was sent says so, on the reviewer's page and in the listen script, so the
+# desk never sees or hears an empty answer. New words, under BUILD_LOG "To confirm later": the count is not kept, so
+# one file or several read the same.
+ANSWER_FILES_REMOVED = "The file sent with this answer was removed."
 SetState = Literal["queued", "sent", "seen", "partly_answered", "answered", "closed"]
 
 # L-QUESTIONS.ask/2: the part is guessed from the wording and can be changed before adding. Each list holds the
