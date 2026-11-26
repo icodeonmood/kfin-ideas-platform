@@ -31,6 +31,9 @@ PROBLEM = "The shared printer on the third floor jams every morning, so people w
 QUOTE_LINE = "Suggested because you said “KFintech could offer small AMCs”."
 PROBLEM_LINE = "Suggested because you described something that goes wrong today."
 BUSINESS_LINE = "Suggested because you described something new KFintech could offer."
+# What a person fills in before confirming when the draft left them empty (the fake route reads no group or benefit
+# in PROBLEM's words, and nothing at all with the assistant off): Confirm needs every field (L-SORT.rules/2).
+FILLED = {"affects": ["KFin teams"], "brings": ["saves_time"]}
 
 
 @pytest.fixture
@@ -134,7 +137,7 @@ def test_l_sort_bld_c201_a_kind_the_person_set_or_confirmed_is_never_replaced(dr
     assert not set(draft["suggestions"]) & set(parts.BUSINESS_PROMPTS.values())
 
     other = _told(db, owner, PROBLEM)
-    _patch(db, owner, other, {"confirm": True})
+    _patch(db, owner, other, {**FILLED, "confirm": True})
     _patch(db, owner, other, {"area": "New business"})
     v = sorting.read_draft(db, other, owner.user_id)
     assert v["kind"]["value"] == "problem" and v["kind"]["source"] == "confirmed"
@@ -165,7 +168,7 @@ def test_v_acc_s05_bld_c204_new_business_by_hand_suggests_a_business_idea_and_mo
     assert v["kind"]["source"] == "suggested"
     # Back to New business, then confirmed: a business idea, kept when the area moves again.
     _patch(db, owner, idea, {"area": "New business"})
-    v = _patch(db, owner, idea, {"confirm": True})
+    v = _patch(db, owner, idea, {**FILLED, "confirm": True})
     assert v["kind"]["value"] == "business_idea" and v["kind"]["source"] == "confirmed"
     v = _patch(db, owner, idea, {"area": "Operations"})
     assert v["kind"]["value"] == "business_idea" and v["kind"]["source"] == "confirmed"
@@ -178,7 +181,7 @@ def test_v_acc_s05_bld_c204_the_area_and_the_kind_in_one_change(drafting: Any) -
     v = _patch(db, owner, idea, {"area": "New business", "kind": "business_idea"})
     assert v["kind"]["value"] == "business_idea" and v["kind"]["source"] == "confirmed"
     other = _told(db, owner, PROBLEM)
-    v = _patch(db, owner, other, {"area": "New business", "confirm": True})
+    v = _patch(db, owner, other, {**FILLED, "area": "New business", "confirm": True})
     assert v["kind"]["value"] == "business_idea" and v["kind"]["source"] == "confirmed"
 
 
@@ -269,6 +272,6 @@ def test_dec141_bld_c204_capture_first_offers_a_business_idea_only_when_picked_b
     assert store.view(db, owner, idea, LAPTOP)["sorting"]["kind"]["value"] == "business_idea"
     v = _patch(db, owner, idea, {"area": "Operations"})
     assert v["kind"]["value"] == "problem" and v["kind"]["source"] == "suggested"
-    v = _patch(db, owner, idea, {"area": "New business", "confirm": True})
+    v = _patch(db, owner, idea, {**FILLED, "area": "New business", "confirm": True})
     assert v["kind"]["value"] == "business_idea" and v["kind"]["source"] == "confirmed"
     assert db.execute("SELECT count(*) AS n FROM llm_calls WHERE agent = 'draft-part'").fetchone()["n"] == 0
