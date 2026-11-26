@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  * BLD-C155). If that cannot be read here, Tell it's own load sends it there too. The S1 and S3 variants come from
  * lane A's reader on the server (the exposure logged as the screen renders), and S1's questions carry on from where
  * the draft's place is kept (P-DECISIONS.experiments, BLD-A216, BLD-C170, C172). Capture first (DEC-125) is `ai.all`
- * off, read as the "taking a break" banner reads it (BLD-C212). */
+ * or `agent.draft-part` off (DEC-143 (g)), read as the "taking a break" banner reads it (BLD-C212). */
 export default async function TellItConversation({ params }: { params: Promise<{ id: string }> }) {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
