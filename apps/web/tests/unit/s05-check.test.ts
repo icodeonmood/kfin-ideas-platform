@@ -2714,17 +2714,18 @@ const BUSINESS_LINE = "Suggested because you described something new KFintech co
 const PROBLEM_LINE = "Suggested because you described something that goes wrong today.";
 
 /** The usual config with New business among the areas, as `draft/config.py` lists it. */
+const CONTROLS = CONFIG.sorting.controls!;
 const BIZ_CONFIG: ConfigResponse = {
   ...CONFIG,
   sorting: {
     ...CONFIG.sorting,
     areas: [...CONFIG.sorting.areas, "New business"],
     controls: {
-      ...CONFIG.sorting.controls,
+      ...CONTROLS,
       area: {
-        ...CONFIG.sorting.controls.area,
-        shown: [...CONFIG.sorting.controls.area.shown, "New business"],
-        all: [...CONFIG.sorting.controls.area.all, "New business"],
+        ...CONTROLS.area,
+        shown: [...CONTROLS.area.shown, "New business"],
+        all: [...CONTROLS.area.all, "New business"],
       },
     },
   },
