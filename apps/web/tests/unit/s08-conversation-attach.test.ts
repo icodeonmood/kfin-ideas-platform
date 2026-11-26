@@ -20,7 +20,7 @@ vi.mock("next/link", () => ({
 
 const { Conversation } = await import("@/components/convo/conversation");
 const { S08_COPY, putLink } = await import("@/components/convo/compose");
-const { convoRowView, inDotFolder, sendable } = await import("@/components/convo/attach");
+const { convoRowView, sendable } = await import("@/components/convo/attach");
 const { PHONE } = await import("@/components/convo/pin");
 const { ATTACH_NAME } = await import("@/components/ui/attach-button");
 const { BOX_FILES_COPY } = await import("@/app/share/box-files");
@@ -697,15 +697,21 @@ describe("C-FILE.uploader in S-08's box: \"Choose a folder\" leaves out the syst
     ]);
   });
 
-  it("BLD-F109 inDotFolder: only the folders on the path count, never the file's own name; no path is no folder", () => {
-    expect(inDotFolder(inFolder("week-47/.git/config"))).toBe(true);
-    expect(inDotFolder(inFolder(".notes/R07-calls.md"))).toBe(true);
-    expect(inDotFolder(inFolder("week-47/R07-calls.md"))).toBe(false);
-    expect(inDotFolder(inFolder("week-47/.env"))).toBe(false); // a dot-file is the name filter's
-    expect(inDotFolder(md("R07-calls.md"))).toBe(false); // chosen on its own: jsdom gives no path
-    const plain = md("R07-calls.md");
-    Object.defineProperty(plain, "webkitRelativePath", { value: "" }); // a browser's empty path
-    expect(inDotFolder(plain)).toBe(false);
+  it("BLD-F109: a folder that is itself hidden adds nothing; a dot-file chosen on its own stays out, and the rest go, as before", async () => {
+    wide();
+    await show(sharerView());
+    await openPicker();
+    const folder = host.querySelector<HTMLInputElement>(".cv-pick input[webkitdirectory]")!;
+    Object.defineProperty(folder, "files", { value: [inFolder(".notes/R07-calls.md")], configurable: true });
+    await act(async () => {
+      folder.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flush();
+    expect(posts("/api/files")).toEqual([]);
+    await openPicker(); // the picker closes once a choice is made, even one that adds nothing (as before)
+    await choose([md(".DS_Store"), md("R07-calls.md")]); // no path: the name decides
+    await frame();
+    expect(posts("/api/files").map((c) => (c.form!.get("file") as File).name)).toEqual(["R07-calls.md"]);
   });
 });
 

@@ -54,18 +54,6 @@ export function uploadForConversation(ideaRef: string, file: File): Promise<Call
   return call<FileItem>(urls.files, { method: "POST", form });
 }
 
-/**
- * BLD-F109: a file "Choose a folder" found inside a folder whose name starts with "." (`calls/.git/config`). Its path
- * is `webkitRelativePath`, folders first and the file's own name last; a file chosen on its own, or dropped, has none.
- */
-export function inDotFolder(file: File): boolean {
-  const path: string | undefined = file.webkitRelativePath; // not every browser, or jsdom, gives one
-  return (path ?? "")
-    .split("/")
-    .slice(0, -1)
-    .some((folder) => folder.startsWith("."));
-}
-
 /** A row the message carries: on the server, a file, and not failed. The worker decides on the rest (L-CONVO/7). */
 export function sendable(p: ProofItem): boolean {
   const item = p.item;
@@ -180,11 +168,11 @@ export function useConvoFiles(ideaRef: string, onClosed: () => void): ConvoFiles
   };
 
   const addFiles = (files: File[]) => {
-    // A folder's own entries for the system (".DS_Store" and the like), and everything in a folder whose name starts
-    // with "." (".git/config" from "Choose a folder", BLD-F109), are not the person's files.
+    // A folder's own entries for the system (".DS_Store", ".git/…" and the like) are not the person's files: the
+    // name, or any folder on its path, starts with "." (BLD-F109; the share box has the same check, BLD-C248).
     const stamp = Date.now();
     const fresh: ProofItem[] = files
-      .filter((f) => !f.name.startsWith(".") && !inDotFolder(f))
+      .filter((f) => !(f.webkitRelativePath || f.name).split("/").some((part) => part.startsWith(".")))
       .map((file, i) => ({
         key: `local-${stamp}-${i}-${file.name}`,
         item: null,
