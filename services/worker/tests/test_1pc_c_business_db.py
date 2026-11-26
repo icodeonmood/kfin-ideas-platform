@@ -137,7 +137,8 @@ def test_l_sort_bld_c201_a_kind_the_person_set_or_confirmed_is_never_replaced(dr
     assert not set(draft["suggestions"]) & set(parts.BUSINESS_PROMPTS.values())
 
     other = _told(db, owner, PROBLEM)
-    _patch(db, owner, other, {**FILLED, "confirm": True})
+    # PROBLEM's words name no area either: the person picks one, then confirms.
+    _patch(db, owner, other, {**FILLED, "area": "Operations", "confirm": True})
     _patch(db, owner, other, {"area": "New business"})
     v = sorting.read_draft(db, other, owner.user_id)
     assert v["kind"]["value"] == "problem" and v["kind"]["source"] == "confirmed"
