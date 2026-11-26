@@ -314,19 +314,19 @@ def test_BLD_C200_L_DRAFT_voice_a_vault_that_cannot_be_opened_keeps_the_words_an
     ]
 
 
-def test_BLD_C200_DEC_120_a_name_written_in_devanagari_is_not_tagged_and_goes_under_dec_120s_exception(
+def test_BLD_C200_BLD_C247_a_name_written_in_devanagari_goes_as_a_tag(
     world: dict[str, Any],
 ) -> None:
-    """Finding 6 (the honest edge of BLD-C200): the gateway's tagger knows names in Latin script, from `users` and
-    its name rules, so a colleague's name written in Devanagari is not recognised. It reaches the speech service as
-    written, under DEC-120's exception for names, which still holds for such names. The customer's details are
-    masked before it either way, and the leak check still runs. This pins today's behaviour so the docs say it; a
-    tagger for other scripts would be a later change."""
+    """Finding 6, closed by DEC-139 (d) (BLD-C247): the tagger now knows names written in Devanagari, from the table
+    in the repo (pii/names/devanagari.tsv), as it knows names in Latin script. A colleague's name written in
+    Devanagari no longer reaches the speech service as written: it goes as a tag, like a model call's. The customer's
+    details are masked before it as before, and the leak check still runs. Other scripts wait for r8."""
     masked = f"{COLLEAGUE_DEVANAGARI} ने बताया कि investor का PAN ••••4F दो बार type होता है"
     text_en, translated, failure = english(world, masked)
     went = world["sent"][0]["input"]
-    # Not tagged: it reaches the service as written, under DEC-120's exception. (The tagger may still tag other
-    # words in the sentence, which hides more, not less; that is not what this pins.)
-    assert went.startswith(f"{COLLEAGUE_DEVANAGARI} ")
+    assert COLLEAGUE_DEVANAGARI not in went and "देविका" not in went and "रघुनाथन" not in went
+    # The name is the first tag and the words after it stay. The rest of the sentence is not pinned: the English NER
+    # model (SpacyRecognizer, unchanged here) also tags a run of mixed words further on, which errs on the safe side.
+    assert went.startswith("[[PERSON_1]] ने बताया कि investor ")
     assert "ABCPE" not in went  # the customer's detail never went unmasked
     assert failure is None and translated is True and text_en is not None
