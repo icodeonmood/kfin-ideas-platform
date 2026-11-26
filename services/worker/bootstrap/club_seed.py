@@ -439,9 +439,10 @@ def _due_within_a_day(now: dt.datetime) -> dt.datetime:
     after loading and has no reminder threshold inside the `WALK_ROOM` after the load (BLD-E077). So a walk straight
     after the load never finds it overdue and never meets a second reminder from the sweep (`desk.asking.remind_due`
     sends one per threshold). With a 6 pm deadline: a load before 2 pm gets 6 pm that day (its day-before reminder
-    has gone); from 2 pm to 4 pm, 6 pm the next day (its day-before reminder comes at 6 pm, after the walk); from 4
-    pm to 6 pm, 6 pm the day after next (no reminder crossed yet, so it reads "2 days"); from 6 pm, 6 pm the next
-    day (its day-before reminder went at 6 pm)."""
+    has gone); from 2 pm to before 4 pm, 6 pm the next day (its day-before reminder comes at 6 pm, after the walk); at
+    4 pm exactly, 6 pm that day (both thresholds crossed at the load); after 4 pm and before 6 pm, 6 pm the day after
+    next (no reminder crossed yet, so it reads "2 days"); from 6 pm, 6 pm the next day (its day-before reminder went
+    at 6 pm)."""
     from desk import clock, promises
 
     cal, hour = clock.office_calendar(), promises.get().deadline_hour

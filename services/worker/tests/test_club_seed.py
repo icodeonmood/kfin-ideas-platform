@@ -893,7 +893,8 @@ def test_bld_e077_a_walk_after_the_load_meets_one_t6_reminder_not_two(office: An
     """BLD-E077, L-QUESTIONS.clock/2, L-NOTIFY/5 (J-TRACK/6): the reminder sweep (`desk.asking.remind_due`, unchanged)
     sends once per threshold. T6's deadline has no threshold inside the `WALK_ROOM` after the load and its set records
     the latest threshold already crossed, so the sweep sends nothing during a walk straight after the load: a load
-    just before 4 pm or between 4 pm and 6 pm gives one answer reminder, not two."""
+    just before 4 pm or between 4 pm and 6 pm gives one answer reminder, not two. The first threshold after the walk
+    still sends, so the sweep is quiet in the walk because of the thresholds, not another early return."""
     from desk import asking, clock, promises
 
     conn = office
@@ -911,6 +912,10 @@ def test_bld_e077_a_walk_after_the_load_meets_one_t6_reminder_not_two(office: An
             (m["T6"].uuid,),
         ).fetchone()
         assert reminders["n"] == 1, now
+        # The Falses come from the threshold rule: the first threshold after the walk, before the deadline, sends.
+        later = [x for x in thresholds if now + club_seed.WALK_ROOM < x < t6["due_at"]]
+        if later:
+            assert asking.remind_due(conn, str(t6["id"]), at=later[0]) is True, (now, later[0])
         club_seed.remove(conn)
 
 
