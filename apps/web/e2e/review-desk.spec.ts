@@ -465,6 +465,59 @@ test("BLD-D034, C-PHONE-TABS.nav, S-R3: at 320px the phone bar shows Answer in f
   await expectNoSeriousAxeIssues(s);
 });
 
+test("BLD-D037, C-FIELD.tools, S-R3: at 320px the \"+\" and the mic sit on their own row under the words, at the end; the words take the frame's width; a focused tool's ring stays 2px inside the frame", async ({
+  browser,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "phone-360", "the narrow frame is a phone's");
+  const s = await answerAt320(browser, testInfo.project.name);
+  const box = s.getByRole("textbox", { name: "Your answer to question 1" });
+  const m = await s.locator(".ans-box .fld-frame").evaluate((frame) => {
+    const r = (e: Element) => {
+      const b = e.getBoundingClientRect();
+      return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width };
+    };
+    return {
+      frame: r(frame),
+      wrap: r(frame.parentElement!),
+      text: r(frame.querySelector("textarea")!),
+      tools: [...frame.querySelectorAll(".fld-tools button")].map(r),
+    };
+  });
+  // The frame keeps its place's width; the words take all of it inside the 1px border
+  expect(Math.abs(m.frame.width - m.wrap.width), "the frame keeps its width").toBeLessThanOrEqual(0.5);
+  expect(m.text.width, "the words take the frame's width").toBeGreaterThanOrEqual(m.frame.width - 2.5);
+  expect(m.text.width, "from 125px beside the tools").toBeGreaterThanOrEqual(220);
+  expect(m.tools).toHaveLength(2);
+  for (const t of m.tools)
+    expect(t.top, "the tools' row is under the words").toBeGreaterThanOrEqual(m.text.bottom);
+  expect(m.frame.right - m.tools[1]!.right, "the tools sit at the end").toBeLessThan(12);
+  expect(m.tools[0]!.left).toBeGreaterThan(m.frame.left + m.frame.width / 2);
+  // Tab from the words to each tool: its ring (2px, 2px out) stays at least 2px inside the frame's border box
+  await box.focus();
+  for (const name of ["Attach files to this answer", "Say your answer"]) {
+    await s.keyboard.press("Tab");
+    const tool = s.getByRole("button", { name, exact: true });
+    await expect(tool).toBeFocused();
+    const ring = await tool.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const out = Number.parseFloat(cs.outlineWidth) + Number.parseFloat(cs.outlineOffset);
+      const b = el.getBoundingClientRect();
+      const f = el.closest(".fld-frame")!.getBoundingClientRect();
+      return {
+        style: cs.outlineStyle,
+        left: b.left - out - f.left,
+        right: f.right - (b.right + out),
+        top: b.top - out - f.top,
+        bottom: f.bottom - (b.bottom + out),
+      };
+    });
+    expect(ring.style, `${name}: a ring shows`).not.toBe("none");
+    for (const side of ["left", "right", "top", "bottom"] as const)
+      expect(ring[side], `${name}: ${side}`).toBeGreaterThanOrEqual(2);
+  }
+  await expectNoSeriousAxeIssues(s);
+});
+
 test("V-ACC.review/14: a reviewer opening their own idea cannot act on it", async ({ browser }, testInfo) => {
   const reviewer = await person(browser, PERSONAS.reviewer);
   const title = `A reviewer's own idea (${testInfo.project.name} ${Date.now()})`;

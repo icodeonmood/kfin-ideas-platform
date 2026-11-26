@@ -200,7 +200,7 @@ textarea:is(.fld, .textarea) {
 /* C-FIELD tools (BLD-D029, C-PROMPT.anatomy/2): the field's own icon buttons at its trailing end, inside its frame, as
    the Answer board draws the "+" and the mic in its field (S-R3). The frame takes the field's border, fill and states,
    lit while anything in it has focus (as the board's field is); the control inside draws none, and its text starts
-   where a field's without tools does. On a text area the tools sit at the foot, 4px in */
+   where a field's without tools does. On a text area the tools sit at the foot, 6px in */
 .fld-frame {
   display: flex;
   align-items: center;
@@ -214,7 +214,12 @@ textarea:is(.fld, .textarea) {
     box-shadow var(--mo-quick) ease;
 }
 
+/* A multi-line frame measures itself to place its tools (BLD-D037): a size container whose width is its field's place,
+   never its content. It may wrap; its text starts from no width, so the tools stay on its line until the frame is
+   narrow (below) */
 .fld-frame.multi {
+  container: fld / inline-size;
+  flex-wrap: wrap;
   align-items: flex-end;
 }
 
@@ -238,6 +243,10 @@ textarea:is(.fld, .textarea) {
   min-height: 110px;
 }
 
+.fld-frame.multi > .fld {
+  flex-basis: 0;
+}
+
 .fld-frame > .fld,
 .fld-frame > .fld:focus,
 .fld-frame > .fld[aria-invalid="true"],
@@ -253,11 +262,29 @@ textarea:is(.fld, .textarea) {
   flex: none;
   align-items: center;
   gap: 2px;
-  padding-right: 4px;
+  /* 6px in from the frame's inner edge, so a tool's focus ring (2px, 2px out) keeps 2px clear of the frame's border;
+     each tool keeps its own 44px (BLD-D037) */
+  padding-right: 6px;
 }
 
 .fld-frame.multi > .fld-tools {
-  padding-bottom: 4px;
+  padding-bottom: 6px;
+}
+
+/* A multi-line frame under 300px wide (under 298px inside its 1px border) puts its tools on their own row under the
+   text, at the end, and the text takes the full width, 14px clear on the right as a field's is (BLD-D037). On S-R3
+   the text kept 165px at 360 and 125px at 320 beside the "+" and the mic; under it, it takes the frame's 223px at 320.
+   At 390 the frame is 310px and the text keeps 208px beside them, as the PhoneAnswer board draws. A one-line field
+   keeps its tools beside its text. The frame keeps its width; it grows by the tools' row */
+@container fld (max-width: 297px) {
+  .fld-frame.multi > .fld {
+    flex-basis: 100%;
+    padding-right: 14px;
+  }
+
+  .fld-frame.multi > .fld-tools {
+    margin-left: auto;
+  }
 }
 
 .help {
