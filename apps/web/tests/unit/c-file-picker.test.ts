@@ -238,8 +238,9 @@ describe("C-FILE.uploader, BLD-D031: the look is the shared sheet's; each screen
         .find((r) => r.at === narrow && r.selectors.includes(selector) && r.decls.has(prop))
         ?.decls.get(prop);
     expect(275 + 2 * Number.parseFloat(decl(".fpick", "padding") ?? "")).toBe(299);
-    // Home's phone box at 320 (225px) gave the field 79px beside Add link; stacked it takes the 201px row
-    expect(225 - 24).toBeGreaterThanOrEqual(200);
+    // Home's phone box is 265px at 360 and 225px at 320 (CI); the picker inside its 12px margins, 241px and 201px, gave
+    // the field 119px and 79px beside Add link. Both are under 300px, so the field takes the row: 217px and 177px
+    for (const picker of [265 - 24, 225 - 24]) expect(picker - 24).toBeLessThanOrEqual(275);
     expect(at(".fpick-link", "display")).toBe("grid");
     expect(at(".fpick-link", "grid-template-columns")).toBe("minmax(0, 1fr)");
     expect(at(".fpick-link .fld", "grid-area")).toBe("1 / 1");

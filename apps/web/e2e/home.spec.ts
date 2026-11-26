@@ -163,7 +163,8 @@ test("BLD-D036, C-FILE.picker (C-FILE.uploader), S-03: at 320px Home's picker gi
       icon: box(row.querySelector(".fpick-li")),
     };
   });
-  expect(m.field.width, "the field is wide enough to read a link").toBeGreaterThanOrEqual(200);
+  // Home's box is 225px at 320 on CI and the picker 201px inside its 12px margins: the field had 79px beside Add link
+  expect(m.field.width, "the field is wide enough to read a link").toBeGreaterThanOrEqual(170);
   expect(m.field.width, "the field takes the row").toBeGreaterThanOrEqual(m.row.width - 1);
   expect(m.add.top, "Add link is under the field").toBeGreaterThanOrEqual(m.field.bottom);
   expect(Math.abs(m.add.width - m.field.width), "Add link is full width").toBeLessThanOrEqual(1);

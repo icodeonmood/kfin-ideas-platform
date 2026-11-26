@@ -1735,7 +1735,7 @@ textarea:is(.fld, .textarea) {
 }
 
 /* A picker under 300px wide (under 276px inside its 12px padding) stacks its link row (BLD-D036, C-FILE.uploader):
-   beside "Add link" (about 114px and the 8px gap) the field kept 119px in Home's phone box at 360 and 79px at 320.
+   beside "Add link" (about 90px and the 8px gap) the field kept 119px in Home's phone box at 360 and 79px at 320.
    The field takes the row and "Add link" goes under it, full width, 44px tall (`.btn-sm`, F-SPACE.targets); the
    link icon shares the field's own row, so it stays centred on the field, not on the two rows */
 @container fpick (max-width: 275px) {

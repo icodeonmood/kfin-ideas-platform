@@ -275,7 +275,8 @@ test("BLD-D035, C-PHONE-TABS.dock, S-06B: at 320 × 640 the capped dock is one c
   await title.fill("Investors call about a redemption not processed");
   await title.press("Enter");
   await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible();
-  await page.getByRole("link", { name: "Cancel" }).click();
+  // The dock's Cancel (the task bar at the top has its own)
+  await page.locator(".dock.ed-dock").getByRole("link", { name: "Cancel" }).click();
   await expect(
     page.getByRole("alert").filter({ hasText: "Nothing changes for anyone else until you save." }),
   ).toBeVisible();
