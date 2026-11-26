@@ -307,7 +307,9 @@ def test_l_inbox_rules_3_l_merge_effects_1_bld_f108_a_lead_accepted_merge_resolv
     sent = asking.send_set(db, mine["idea_id"], cast["meera"]["id"],
                            {"questions": [Q1], "time_to_answer": "3d"}, f.at(16, 11))  # fmt: skip
     key = f"qs:{sent['id']}"
-    assert _needs_you(db, kavya["id"], key) == [True]
+    # Meera's "Send a reminder": a second item under the set's key (`qs:<set>:<day>:<hour>`), cleared with it
+    asking.remind(db, sent["id"], cast["meera"]["id"], f.at(16, 12))
+    assert _needs_you(db, kavya["id"], key) == [True, True]
 
     asked = requests.send(db, cast["lead"]["idea_id"], kavya["id"],
                           {"note": NOTE, "brought_idea_ids": [mine["idea_id"]]})  # fmt: skip
@@ -316,4 +318,4 @@ def test_l_inbox_rules_3_l_merge_effects_1_bld_f108_a_lead_accepted_merge_resolv
     assert f.status_of(db, mine) == {"status": "merged", "merged_into": cast["lead"]["id"]}
     closed = db.execute("SELECT state FROM question_sets WHERE id = %s", (sent["id"],)).fetchone()
     assert closed is not None and closed["state"] == "closed"
-    assert _needs_you(db, kavya["id"], key) == [False]
+    assert _needs_you(db, kavya["id"], key) == [False, False]
