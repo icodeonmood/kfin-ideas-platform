@@ -1,11 +1,12 @@
 """`make eval-live`'s paste block (BLD-C229; V-EVAL, AT-B4-03, AT-B5-04).
 
-`scripts/eval/live.sh` runs `python -m evalrunner --only gatekeeper,judge` on a throwaway database with the real model
+`scripts/eval/live.sh` runs `python -m evalrunner --only gatekeeper,judge,draft-part` on a throwaway database with the real model
 route, then this, which reads the reports that run wrote and prints the block the product lead (or KFin IT, in server
 mode) pastes back. Numbers and names only: never case text, model output, a key or a URL. Every number comes from the
 report JSON (`evalrunner/common.py` `write_report`) and the throwaway database's `llm_calls`, never from the runner's
 printed lines; PASS and FAIL are the report's own `model_gates` and `harness_gates`, and the gate values shown are the
-agents' `pass_gates` (config.yaml), as `evalrunner/gatekeeper.py` and `judge.py` apply them.
+agents' `pass_gates` (config.yaml), as `evalrunner/gatekeeper.py`, `judge.py` and `draft_part.py` apply them. draft-part's
+gates are counts of cases (BLD-C249), shown as whole numbers.
 
     python -m evalrunner.paste --reports DIR --route anthropic --mode mac --checkout-sha SHA --eval-exit 0
 
@@ -28,7 +29,11 @@ from typing import Any
 
 BEGIN = "=== PASTE FROM HERE ==="
 END = "=== PASTE TO HERE ==="
-DEFAULT_AGENTS = ("gatekeeper", "judge")
+DEFAULT_AGENTS = (
+    "gatekeeper",
+    "judge",
+    "draft-part",
+)  # draft-part since BLD-C249 (DEC-141: IT runs it before ai.all)
 LEAD_ROWS = (
     ("gatekeeper", "personal_data_recall"),
     ("gatekeeper", "false_block_rate"),
@@ -42,7 +47,18 @@ GATES: dict[tuple[str, str], tuple[str | None, str, float]] = {
     ("gatekeeper", "injection_held"): (None, "=", 1.0),
     ("judge", "same_precision"): ("same_precision_min", ">=", 0.85),
     ("judge", "same_recall"): ("same_recall_min", ">=", 0.75),
+    # BLD-C249: as evalrunner/draft_part.py applies them; all but `expectations` are counts of cases
+    ("draft-part", "ungrounded_after_gateway"): ("ungrounded_after_gateway", "<=", 0),
+    ("draft-part", "out_of_list"): ("out_of_list", "<=", 0),
+    ("draft-part", "tags_in_text"): ("tags_in_text", "<=", 0),
+    ("draft-part", "expectations"): ("expectations_min", ">=", 0.8),
+    ("draft-part", "dropped"): ("dropped_max", "<=", 1),
+    ("draft-part", "first_attempt_problems"): ("first_attempt_problems_max", "<=", 2),
 }
+COUNTS = frozenset(
+    ("draft-part", g)
+    for g in ("ungrounded_after_gateway", "out_of_list", "tags_in_text", "dropped", "first_attempt_problems")
+)
 IST = dt.timezone(dt.timedelta(hours=5, minutes=30), "IST")
 
 
@@ -78,12 +94,19 @@ def _pct(v: Any) -> str:
     return "n/a" if not isinstance(v, int | float) or isinstance(v, bool) else f"{v * 100:.1f}%"
 
 
+def _value(agent: str, gate: str, v: Any) -> str:
+    """A gate's value as the block shows it: a count as a whole number (BLD-C249), anything else as a percentage."""
+    if (agent, gate) in COUNTS:
+        return str(int(v)) if isinstance(v, int | float) and not isinstance(v, bool) else "n/a"
+    return _pct(v)
+
+
 def _gate_text(agent: str, gate: str, pass_gates: dict[str, Any]) -> str:
     key, op, default = GATES.get((agent, gate), (None, "", 0.0))
     if not op:
         return "see config"
     value = pass_gates.get(key, default) if key else default
-    return f"{op}{_pct(value)}"
+    return f"{op}{_value(agent, gate, value)}"
 
 
 def latest_reports(reports_dir: Path, agents: Sequence[str]) -> dict[str, dict[str, Any]]:
@@ -166,7 +189,7 @@ def render(
             out.append(f"{name:<36}{'-':>8}  {needs:<10}FAIL (no report)")
             continue
         ok = (r.get("model_gates") or {}).get(gate)
-        value = _pct((r.get("metrics") or {}).get(gate))
+        value = _value(agent, gate, (r.get("metrics") or {}).get(gate))
         result = "PASS" if ok is True else "FAIL"
         out.append(f"{name:<36}{value:>8}  {needs:<10}{result}{'' if lead else '  also gated'}")
 

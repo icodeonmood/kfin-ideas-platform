@@ -269,6 +269,7 @@ def meta(**over: Any) -> paste.Meta:
         "reasoning_model": "claude-sonnet-5-5",
         "checkout_sha": "a" * 40,
         "at": dt.datetime(2026, 11, 23, 4, 30, tzinfo=dt.UTC),
+        "agents": ("gatekeeper", "judge"),  # the two of BLD-C229; draft-part's own tests below (BLD-C249)
     }
     return paste.Meta(**(base | over))
 
@@ -356,6 +357,74 @@ def test_v_eval_c229_a_run_the_model_never_answered_cannot_pass() -> None:
     assert paste.render(reports, PASS_GATES, one, meta())[1]
 
 
+def dp_report(**gates: bool) -> dict[str, Any]:
+    model_gates = {
+        "ungrounded_after_gateway": True,
+        "out_of_list": True,
+        "tags_in_text": True,
+        "expectations": True,
+        "dropped": True,
+        "first_attempt_problems": True,
+    } | gates
+    return {
+        "agent": "draft-part",
+        "version": "0.2.0",
+        "route": "anthropic",
+        "metrics": {
+            "cases": 28,
+            "errors": 0,
+            "ungrounded_after_gateway": 0,
+            "out_of_list": 0,
+            "tags_in_text": 0,
+            "dropped": 1,
+            "first_attempt_problems": 2,
+            "expectations": 0.9,
+            "kind_accuracy": 0.875,
+        },
+        "model_gates": model_gates,
+        "harness_gates": {"no_errors": True, "checks_hold": True},
+        "cases": [{"id": "DP-13", "met": 3, "of": 3}],
+    }
+
+
+DP_GATES = {"expectations_min": 0.8, "dropped_max": 1, "first_attempt_problems_max": 3}
+
+
+def test_v_eval_bld_c249_draft_part_rows_are_counts_after_the_leads_three() -> None:
+    reports = {"gatekeeper": gk_report(), "judge": judge_report(), "draft-part": dp_report()}
+    three = ("gatekeeper", "judge", "draft-part")
+    lines, passed = paste.render(reports, PASS_GATES | {"draft-part": DP_GATES}, CALLS, meta(agents=three))
+    text = "\n".join(lines)
+    assert passed and lines[-2] == "EVAL-LIVE: PASS"
+    assert "agent draft-part 0.2.0: 28 cases" in text
+    assert "harness gates: gatekeeper 4/4 PASS | judge 2/2 PASS | draft-part 2/2 PASS" in text
+    lead_last = row(lines, "judge same_precision")[0]
+    dropped, first, expectations = (
+        row(lines, "draft-part dropped"),
+        row(lines, "draft-part first_attempt_problems"),
+        row(lines, "draft-part expectations"),
+    )
+    assert min(dropped[0], first[0], expectations[0]) > lead_last
+    assert " 1  <=1 " in dropped[1] and dropped[1].endswith("PASS  also gated")
+    assert " 2  <=3 " in first[1] and "%" not in first[1]
+    assert "90.0%" in expectations[1] and ">=80.0%" in expectations[1]
+    assert " 0  <=0 " in row(lines, "draft-part ungrounded_after_gateway")[1]
+    assert text.isascii() and "DP-13" not in text  # no case ids or text
+
+
+def test_v_eval_bld_c249_a_draft_part_gate_or_report_missing_fails_the_run() -> None:
+    three = ("gatekeeper", "judge", "draft-part")
+    gates = PASS_GATES | {"draft-part": DP_GATES}
+    reports = {"gatekeeper": gk_report(), "judge": judge_report(), "draft-part": dp_report(dropped=False)}
+    lines, passed = paste.render(reports, gates, CALLS, meta(agents=three))
+    assert not passed and lines[-2] == "EVAL-LIVE: FAIL (draft-part.dropped)"
+    lines, passed = paste.render(
+        {"gatekeeper": gk_report(), "judge": judge_report()}, gates, CALLS, meta(agents=three)
+    )
+    assert not passed and lines[-2] == "EVAL-LIVE: FAIL (draft-part.no_report)"
+    assert "agent draft-part: no report (the golden set did not finish)" in lines
+
+
 def test_at_b4_03_c229_server_block_shows_the_install_and_fails_if_its_llm_calls_moved() -> None:
     reports = {"gatekeeper": gk_report(), "judge": judge_report()}
     same = meta(mode="server", installed_tag="launch-2026-11-23-r5", installed_sha="b" * 40, install_before=7,
@@ -375,6 +444,7 @@ def test_v_eval_c229_paste_main_reads_the_report_json_and_the_gates_from_config(
 ) -> None:
     (tmp_path / "gatekeeper-0.2.0-20261123-043000.json").write_text(json.dumps(gk_report()))
     (tmp_path / "judge-0.3.1-20261123-043500.json").write_text(json.dumps(judge_report()))
+    (tmp_path / "draft-part-0.2.0-20261123-044000.json").write_text(json.dumps(dp_report()))
     (tmp_path / "judge-x-20991231-000000.json").write_text(
         json.dumps({"agent": "canvas-assist"})
     )  # not judge's
@@ -386,6 +456,11 @@ def test_v_eval_c229_paste_main_reads_the_report_json_and_the_gates_from_config(
     assert "<=5.0%" in row(out, "gatekeeper false_block_rate")[1]  # from agents/gatekeeper/config.yaml
     assert paste._gates_of("gatekeeper")["false_block_rate_max"] == 0.05
     assert paste._gates_of("judge")["same_precision_min"] == 0.85
+    # BLD-C249: draft-part by default, its count gates from agents/draft-part/config.yaml, as whole numbers
+    assert (
+        "<=3" in row(out, "draft-part first_attempt_problems")[1]
+        and "<=1" in row(out, "draft-part dropped")[1]
+    )
     assert paste.main([*args, "--eval-exit", "1"]) == 1
 
 
@@ -584,15 +659,25 @@ def test_v_eval_c229_mac_run_throwaway_database_and_the_key_for_the_golden_sets_
     assert out[-1].startswith("cleaned up: project kfin-eval-live")  # after the block, outside the paste
     recorded = calls(stubs)
     py = [c for c in recorded if c["tool"] == "python"]
-    assert [c["argv"][:2] for c in py] == [["-m", "bootstrap.seed"]] + [["-m", "core.killswitch"]] * 3 + [
+    assert [c["argv"][:2] for c in py] == [["-m", "bootstrap.seed"]] + [["-m", "core.killswitch"]] * 4 + [
         ["-m", "evalrunner"],
         ["-m", "evalrunner.paste"],
     ]
     switches = [c["argv"][3] for c in py if c["argv"][1] == "core.killswitch"]
-    assert switches == ["ai.all", "agent.gatekeeper", "agent.judge"]
-    assert all(c["argv"][4:5] == ["on"] and c["argv"][-2:] == ["--actor", "process:eval"] for c in py[1:4])
-    golden = py[4]
-    assert golden["argv"] == ["-m", "evalrunner", "--only", "gatekeeper,judge"]  # no --switch-off-failing
+    assert switches == [
+        "ai.all",
+        "agent.gatekeeper",
+        "agent.judge",
+        "agent.draft-part",
+    ]  # draft-part: BLD-C249
+    assert all(c["argv"][4:5] == ["on"] and c["argv"][-2:] == ["--actor", "process:eval"] for c in py[1:5])
+    golden = py[5]
+    assert golden["argv"] == [
+        "-m",
+        "evalrunner",
+        "--only",
+        "gatekeeper,judge,draft-part",
+    ]  # no --switch-off-failing
     allowed = {
         "PATH",
         "HOME",
@@ -723,6 +808,7 @@ def test_at_b4_03_c229_server_run_reads_the_install_only_and_passes_only_the_key
         ["python", "-m", "core.killswitch"],
         ["python", "-m", "core.killswitch"],
         ["python", "-m", "core.killswitch"],
+        ["python", "-m", "core.killswitch"],  # agent.draft-part (BLD-C249)
         ["python", "-m", "evalrunner"],
         ["python", "-m", "evalrunner.paste"],
     ]

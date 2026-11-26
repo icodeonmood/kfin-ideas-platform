@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# `make eval-live` (BLD-C229; V-EVAL, AT-B4-03, AT-B5-04): the golden sets for gatekeeper and judge on the REAL model
-# route, on a throwaway database, with a pass/fail block to paste back. Never in CI.
+# `make eval-live` (BLD-C229; V-EVAL, AT-B4-03, AT-B5-04): the golden sets for gatekeeper, judge and draft-part (BLD-C249:
+# the draft and the kind it suggests, DEC-141) on the REAL model route, on a throwaway database, with a pass/fail block
+# to paste back. Never in CI.
 #
 # Two modes, one script (agreed with lane A; BLD-A245 documents server mode in docs/UAT.md):
 #
@@ -27,8 +28,8 @@
 #
 # Both modes: migrated with dbmate as CI does; the company repo seeded into a throwaway folder and the 200 synthetic
 # people loaded (APP_ENV=test, so the dev overlay's synthetic client names are there for the golden sets); the switches
-# ai.all, agent.gatekeeper and agent.judge set on in the throwaway database only (actor process:eval); then
-# `python -m evalrunner --only gatekeeper,judge` with LLM_MODE=<route>, EMBEDDINGS_MODE=hash, SPEECH_MODE=fake and the
+# ai.all, agent.gatekeeper, agent.judge and agent.draft-part set on in the throwaway database only (actor process:eval);
+# then `python -m evalrunner --only gatekeeper,judge,draft-part` with LLM_MODE=<route>, EMBEDDINGS_MODE=hash, SPEECH_MODE=fake and the
 # reports in a throwaway folder (nothing lands in eval/reports/ or anywhere in the repo); no --switch-off-failing:
 # people decide (non-negotiable 5). Then `python -m evalrunner.paste` prints the block from the report JSON.
 #
@@ -60,7 +61,7 @@ unset EL_MODE EL_ROUTE EL_CHECKOUT EL_PROJECT EL_APP_ENV_FILE EL_DATA_DIR EL_WOR
 unset COMPOSE_FILE COMPOSE_PROJECT_NAME COMPOSE_PROFILES COMPOSE_ENV_FILES COMPOSE_PATH_SEPARATOR
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-AGENTS="gatekeeper,judge"
+AGENTS="gatekeeper,judge,draft-part" # draft-part since BLD-C249
 MAC_PROJECT="kfin-eval-live"
 MAC_PORT=55447
 SERVER_PROJECT="kfin-ideas-eval"
@@ -526,8 +527,8 @@ else
   worker_run seed none rw python -m bootstrap.seed --seed-dir /seed/company-repo >>"$EL_ERR" 2>&1 || stop "exit $?" "seed"
 fi
 
-say "  switches ai.all, agent.gatekeeper and agent.judge on, in this throwaway database only ..."
-for sw in ai.all agent.gatekeeper agent.judge; do
+say "  switches ai.all, agent.gatekeeper, agent.judge and agent.draft-part on, in this throwaway database only ..."
+for sw in ai.all agent.gatekeeper agent.judge agent.draft-part; do
   if [ "$EL_MODE" = mac ]; then
     py none -m core.killswitch set "$sw" on --reason "$SWITCH_REASON" --actor process:eval >>"$EL_ERR" 2>&1 \
       || stop "exit $?" "switches"
