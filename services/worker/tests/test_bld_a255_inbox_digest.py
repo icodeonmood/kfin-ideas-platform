@@ -13,6 +13,8 @@ tests/test_bld_a255_inbox_digest_db.py."""
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +32,19 @@ REVIEWER, MEMBER = desk.REVIEWER, desk.MEMBER  # Meera Iyer, at the review desk;
 ENTRY = {"entry_id": "4c2e8a6d-0f1b-4d39-b7e5-9a3c1d5f7b28"}
 AT_ONCE_KINDS = {"decision", "decision_reversed", "desk_merge", "answer_reminder"}
 DIGEST_KINDS = sorted(notify.INBOX_KINDS - AT_ONCE_KINDS)
+
+
+class _Conn(desk._Conn):
+    """The desk test's reads, plus the savepoint `compose_inbox` opens for each item (`savepoints` counts them)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.savepoints = 0
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        self.savepoints += 1
+        yield
 
 
 class _Writes:
@@ -217,7 +232,7 @@ def test_bld_a255_compose_routes_the_inbox_digest_and_nothing_left_is_none(
     monkeypatch.setattr(digest, "waiting_items", waiting)
     refs = {"since": None, "until": "2026-11-18T05:00:00+00:00"}
     row = {"kind": None, "event": digest.INBOX_EVENT}
-    assert send.compose(desk._Conn(), SHARER, digest.INBOX_EVENT, digest.INBOX_TEMPLATE, refs, row) is None  # type: ignore[arg-type]
+    assert send.compose(_Conn(), SHARER, digest.INBOX_EVENT, digest.INBOX_TEMPLATE, refs, row) is None  # type: ignore[arg-type]
     assert seen == [(SHARER, refs)]
 
 
@@ -241,7 +256,7 @@ def test_bld_a255_l_notify_3_dec111_dec113_the_digest_names_senders_as_the_inbox
         _waiting("worth_revised", REVIEWER, 64),
     ]
     monkeypatch.setattr(digest, "waiting_items", lambda *_: items)
-    conn = desk._Conn()
+    conn = _Conn()
     mail = digest.compose_inbox(conn, SHARER, {"since": None, "until": "2026-11-18T06:30:00+00:00"}, NOW)  # type: ignore[arg-type]
     assert mail is not None
     assert mail.subject == "Your 1% Club update: 4 new"
@@ -292,7 +307,9 @@ def test_bld_a255_an_item_that_cannot_be_rendered_is_left_out_and_the_others_sti
     monkeypatch.setattr(digest.inbox_render, "variables", flaky)
     monkeypatch.setattr(digest.log, "warning", lambda event, **fields: logged.append((event, fields)))
     until = {"since": None, "until": "2026-11-18T06:30:00+00:00"}
-    mail = digest.compose_inbox(desk._Conn(), SHARER, until, NOW)  # type: ignore[arg-type]
+    conn = _Conn()
+    mail = digest.compose_inbox(conn, SHARER, until, NOW)  # type: ignore[arg-type]
+    assert conn.savepoints == 3  # one per item, so a database error in one rolls back that item only
     assert mail is not None and mail.subject == "Your 1% Club update: 2 new"
     assert "Ravi Nair commented on your idea" in mail.text and "Ravi Nair joined your crew" in mail.text
     assert "mentioned you" not in mail.text
@@ -303,7 +320,7 @@ def test_bld_a255_an_item_that_cannot_be_rendered_is_left_out_and_the_others_sti
         )
     ]
     monkeypatch.setattr(digest, "waiting_items", lambda *_: [items[1]])
-    assert digest.compose_inbox(desk._Conn(), SHARER, until, NOW) is None  # type: ignore[arg-type]
+    assert digest.compose_inbox(_Conn(), SHARER, until, NOW) is None  # type: ignore[arg-type]
 
 
 def test_bld_a255_the_greeting_and_the_sign_off_are_said_once_in_the_templates_own_words(
@@ -316,7 +333,7 @@ def test_bld_a255_the_greeting_and_the_sign_off_are_said_once_in_the_templates_o
 
     items = [_waiting("comment", CREW, 61, ENTRY), _waiting("crew_joined", CREW, 63)]
     monkeypatch.setattr(digest, "waiting_items", lambda *_: items)
-    mail = digest.compose_inbox(desk._Conn(), SHARER, {"since": None, "until": "x"}, NOW)  # type: ignore[arg-type]
+    mail = digest.compose_inbox(_Conn(), SHARER, {"since": None, "until": "x"}, NOW)  # type: ignore[arg-type]
     assert mail is not None
     for part in (mail.text, mail.html):
         assert part.count("Hi Kavya,") == 1 and part.count("The 1% Club team") == 1

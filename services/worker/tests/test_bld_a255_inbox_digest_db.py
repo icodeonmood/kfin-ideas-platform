@@ -85,6 +85,16 @@ def _window(row: dict[str, Any]) -> tuple[dt.datetime, dt.datetime]:
     )
 
 
+def _pin(db: Any, user: str, at: dt.datetime) -> None:
+    """Date the person's queued emails other than digests at `at`, so no test reads the real clock: an email queued
+    at the real now() would not yet be due at a fixed time once that time is in the past (a date bomb)."""
+    db.execute(
+        "UPDATE notifications SET send_after = %s WHERE user_id = %s AND channel = 'email' AND state = 'queued' "
+        "AND event <> %s",
+        (at, user, digest.INBOX_EVENT),
+    )
+
+
 def _switch(db: Any, name: str, state: str) -> None:
     db.execute("UPDATE kill_switches SET state = %s WHERE name = %s", (state, name))
     killswitch.clear_cache()
@@ -118,7 +128,7 @@ def test_bld_a255_l_notify_2_4_5_the_at_once_cases_still_go_at_once_db(cast: Any
         ("email", "comment"),
     ]
     queued = db.execute(
-        "SELECT urgency, state, send_after <= now() AS due FROM notifications WHERE user_id = %s "
+        "SELECT urgency, state, send_after = created_at AS due FROM notifications WHERE user_id = %s "
         "AND channel = 'email'",
         (kavya,),
     ).fetchall()
@@ -155,7 +165,7 @@ def test_bld_a255_l_notify_1_dec138_any_other_kind_gets_teams_at_once_and_no_ema
             assert _urgency(db, item) == "routine", kind
         assert _outside(db, kavya) == [("teams", kind) for kind in kinds]
         teams = db.execute(
-            "SELECT urgency, state, send_after <= now() AS due FROM notifications WHERE user_id = %s "
+            "SELECT urgency, state, send_after = created_at AS due FROM notifications WHERE user_id = %s "
             "AND channel = 'teams'",
             (kavya,),
         ).fetchall()
@@ -292,6 +302,7 @@ def test_bld_a255_a_backlog_is_one_digest_sent_in_working_hours_and_after_the_at
         _post(db, "comment", kavya, ideas["mine"], WED - dt.timedelta(hours=1), sender=ravi, refs=ENTRY)
         assert digest.queue_inbox(db, now=WED) == 1
         _post(db, "decision", kavya, ideas["mine"], sender=meera, refs=AT_ONCE_REFS["decision"])
+        _pin(db, kavya, WED)  # queued on Wednesday while email was off, whatever today's date is
         assert send_due(db, now=WED + dt.timedelta(minutes=1)) == 0
         _post(db, "crew_joined", kavya, ideas["mine"], THU - dt.timedelta(hours=1), sender=ravi)
         assert digest.queue_inbox(db, now=THU) == 1  # carried on, not a second row
@@ -331,9 +342,9 @@ def test_bld_a255_an_at_once_email_queued_after_many_digests_goes_first_db(
         _post(db, "comment", person, ideas["ravis"], WED - dt.timedelta(hours=1), sender=ravi, refs=ENTRY)
     assert digest.queue_inbox(db, now=WED) == 3
     db.execute(
-        "UPDATE notifications SET send_after = now() - interval '1 hour' WHERE event = %s",
-        (digest.INBOX_EVENT,),
-    )
+        "UPDATE notifications SET send_after = %s WHERE event = %s",
+        (WED - dt.timedelta(hours=2), digest.INBOX_EVENT),
+    )  # three digests, older by send_after than the email below
     if kind == "needs_you":
         _post(db, "comment", kavya, ideas["mine"], sender=ravi, refs=ENTRY, needs_you=True)
     elif kind == "decision_reversed":
@@ -342,8 +353,9 @@ def test_bld_a255_an_at_once_email_queued_after_many_digests_goes_first_db(
         _post(db, kind, kavya, ideas["mine"], sender=meera, refs=desk_refs(db, kind, p, ideas),
               needs_you=kind == "answer_reminder",
               due_at=WED if kind == "answer_reminder" else None)  # fmt: skip
+    _pin(db, kavya, WED - dt.timedelta(hours=1))
     sent = _mail_to(monkeypatch)
-    assert send_due(db, now=dt.datetime.now(dt.UTC) + dt.timedelta(minutes=1), limit=1) == 1
+    assert send_due(db, now=WED + dt.timedelta(minutes=1), limit=1) == 1
     (to, mail), *_ = sent
     assert to == p["kavya"]["email"] and not mail.subject.startswith(DIGEST_SUBJECT), mail.subject
     assert {r["state"] for r in _digests(db)} == {"queued"}
@@ -499,3 +511,64 @@ def test_bld_a255_l_notify_3_dec111_dec113_the_digest_says_what_the_inbox_says_a
         assert mail.text.index("Hi Kavya,") < where[0] and mail.text.rindex("The 1% Club team") > where[-1]
     finally:
         db.execute("DELETE FROM role_grants WHERE user_id = %s", (rohan,))
+
+
+def test_bld_a255_a_database_error_in_one_item_rolls_back_that_item_and_the_digest_is_still_sent_db(
+    cast: Any, monkeypatch: Any
+) -> None:
+    """Each item is rendered under its own savepoint inside send_due's claim: a SQL error in one item's render leaves
+    that item out, the claim transaction stays usable, the others go, and the row is marked sent (nothing escapes to
+    the ticker, which would stop the worker and pick the same row again)."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya, ravi = p["kavya"]["id"], p["ravi"]["id"]
+    before = WED - dt.timedelta(hours=1)
+    _post(db, "comment", kavya, ideas["mine"], before, sender=ravi, refs=ENTRY)
+    bad = _post(db, "mention", kavya, ideas["mine"], before + dt.timedelta(minutes=1), sender=ravi)
+    _post(db, "crew_joined", kavya, ideas["mine"], before + dt.timedelta(minutes=2), sender=ravi)
+    assert digest.queue_inbox(db, now=WED) == 1
+    real = digest.inbox_render.variables
+
+    def broken(conn: Any, row: dict[str, Any], viewer: str, now: dt.datetime, **kw: Any) -> Any:
+        if row["id"] == bad:
+            conn.execute("SELECT 1 / 0")  # a database error inside this item's render
+        return real(conn, row, viewer, now, **kw)
+
+    monkeypatch.setattr(digest.inbox_render, "variables", broken)
+    sent = _mail_to(monkeypatch)
+    assert send_due(db, now=WED + dt.timedelta(minutes=1)) == 1
+    (to, mail), *_ = sent
+    assert to == p["kavya"]["email"] and mail.subject == "Your 1% Club update: 2 new"
+    assert "Ravi Nair commented on your idea" in mail.text and "Ravi Nair joined your crew" in mail.text
+    assert "mentioned you" not in mail.text
+    assert _digests(db, kavya)[0]["state"] == "sent"
+
+
+def test_bld_a255_a_digest_that_failed_for_good_does_not_end_the_next_window_db(
+    cast: Any, monkeypatch: Any
+) -> None:
+    """The previous window ends at the last digest that did not fail. Wednesday's digest fails for good; Thursday's
+    starts where Monday's sent one ended, so it carries Wednesday's still-unread item with Thursday's."""
+    db, p, ideas = cast["db"], cast["p"], cast["ideas"]
+    kavya, ravi = p["kavya"]["id"], p["ravi"]["id"]
+    monday = dt.datetime(2026, 11, 30, 10, 30, tzinfo=IST)
+    sent = _mail_to(monkeypatch)
+    _post(db, "stage_moved", kavya, ideas["mine"], monday - dt.timedelta(hours=1), refs={"to": "picked"})
+    assert digest.queue_inbox(db, now=monday) == 1
+    assert send_due(db, now=monday + dt.timedelta(minutes=1)) == 1  # Monday's digest is sent
+    _post(db, "comment", kavya, ideas["mine"], WED - dt.timedelta(hours=1), sender=ravi, refs=ENTRY)
+    assert digest.queue_inbox(db, now=WED) == 1
+    wednesday = _digests(db, kavya)[-1]
+    db.execute(  # as `_failed` leaves it after its last try
+        "UPDATE notifications SET state = 'failed', attempts = 3, error_code = 'oserror' WHERE id = %s",
+        (wednesday["id"],),
+    )
+    _post(db, "crew_joined", kavya, ideas["mine"], THU - dt.timedelta(hours=1), sender=ravi)
+    assert digest.queue_inbox(db, now=THU) == 1
+    thursday = _digests(db, kavya)[-1]
+    assert thursday["id"] != wednesday["id"]
+    assert _window(thursday) == (monday - GRACE, THU - GRACE)
+    assert send_due(db, now=THU + dt.timedelta(minutes=1)) == 1
+    mail = sent[-1][1]
+    assert mail.subject == "Your 1% Club update: 2 new"
+    assert "Ravi Nair commented on your idea" in mail.text and "Ravi Nair joined your crew" in mail.text
+    assert "moved to Picked" not in mail.text  # Monday's, sent on Monday

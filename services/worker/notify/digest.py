@@ -172,9 +172,10 @@ def waiting_items(conn: Conn, user_id: str, since: object, until: object) -> lis
 
 def queue_inbox(conn: Conn, now: dt.datetime | None = None) -> int:
     """Queue today's Inbox digest (DEC-138, BLD-A255), in working hours on a working day only: for each active person
-    with an email address and email on, the items that waited since the `until` of their last digest (no earlier than
-    `LOOKBACK` before now) and up to `GRACE` before now. A weekend's or a holiday's items roll into the next working
-    day's window. A person whose last digest is still queued (email off, an outage) has that row's window carried on
+    with an email address and email on, the items that waited since the `until` of their last digest that has not
+    failed (no earlier than `LOOKBACK` before now) and up to `GRACE` before now. A digest that failed for good, or
+    ended `nothing_to_send`, does not end a window, so its still-unread items go in the next one. A weekend's or a
+    holiday's items roll into the next working day's window. A person whose last digest is still queued (email off, an outage) has that row's window carried on
     to now and its key moved to today, so a backlog sends one digest; anyone else with something waiting gets a new
     row, at most one a day (the key holds the IST date). Returns how many rows were queued or carried on."""
     now = now or dt.datetime.now(dt.UTC)
@@ -196,7 +197,7 @@ def queue_inbox(conn: Conn, now: dt.datetime | None = None) -> int:
         "WHERE d.user_id = u.id AND u.active AND u.email <> '' AND coalesce(p.email, true) "
         "AND d.channel = 'email' AND d.event = %(event)s::text AND d.state = 'queued' "
         "AND d.id = (SELECT max(x.id) FROM notifications x WHERE x.user_id = d.user_id AND x.channel = 'email' "
-        "AND x.event = %(event)s::text) "
+        "AND x.event = %(event)s::text AND x.state <> 'failed') "
         "AND EXISTS (SELECT 1 FROM notifications n WHERE n.user_id = d.user_id AND " + _WAITING + " "
         "AND n.created_at > (d.payload->>'until')::timestamptz AND n.created_at <= %(until)s::timestamptz) "
         "RETURNING d.id",
@@ -210,7 +211,7 @@ def queue_inbox(conn: Conn, now: dt.datetime | None = None) -> int:
         "GREATEST(last.until, %(floor)s::timestamptz) AS since, last.state AS last_state "
         "FROM users u LEFT JOIN comms_prefs p ON p.user_id = u.id "
         "LEFT JOIN LATERAL (SELECT (d.payload->>'until')::timestamptz AS until, d.state FROM notifications d "
-        "WHERE d.user_id = u.id AND d.channel = 'email' AND d.event = %(event)s::text "
+        "WHERE d.user_id = u.id AND d.channel = 'email' AND d.event = %(event)s::text AND d.state <> 'failed' "
         "ORDER BY d.id DESC LIMIT 1) last ON true "
         "WHERE u.active AND u.email <> '' AND coalesce(p.email, true)) w "
         "WHERE w.last_state IS DISTINCT FROM 'queued' "
@@ -229,15 +230,18 @@ def compose_inbox(
 ) -> email_html.Email | None:
     """The Inbox digest as it stands when it is sent (BLD-A255): its window's items still unread, oldest first, one
     section each as that item's own email reads, its link opening the in-app item. An item that cannot be rendered is
-    left out, as the Inbox leaves it out (`notify.inbox`), and logged by its ID and kind only. None when nothing is
-    left (the row ends `nothing_to_send`)."""
+    left out, as the Inbox leaves it out (`notify.inbox`), and logged by its ID and kind only. Each item is read under
+    its own savepoint, so a database error in one rolls back that item's reads only: `send_due`'s claim transaction
+    stays usable and the row is still marked (a failure here never escapes to the ticker). None when nothing is left
+    (the row ends `nothing_to_send`)."""
     now = now or dt.datetime.now(dt.UTC)
     sections = []
     for item in waiting_items(conn, user_id, refs.get("since"), refs.get("until")):
         try:
-            sections.append(
-                inbox_render.variables(conn, item, user_id, now, absolute=True, item_id=item["id"])
-            )
+            with conn.transaction():  # a savepoint inside send_due's transaction
+                sections.append(
+                    inbox_render.variables(conn, item, user_id, now, absolute=True, item_id=item["id"])
+                )
         except Exception as exc:  # one item we cannot render must not hold back the others
             # IDs and the kind only: never the item's words, nor the exception's text (non-negotiable 3).
             log.warning(
