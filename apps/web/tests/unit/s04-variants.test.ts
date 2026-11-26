@@ -52,6 +52,7 @@ vi.mock("@/lib/use-voice-capture", async () => {
 });
 
 const { Compose, noteOutcomes, clock } = await import("@/app/share/compose");
+const { InterviewCard } = await import("@/components/compose/interview");
 
 const DRAFT = "6f1c2a8e-3b4d-4e5f-8a9b-0c1d2e3f4a5b";
 const WORDS =
@@ -612,5 +613,107 @@ describe("S3's second metric: a voice note sent as heard or corrected (BLD-C175)
     ).toEqual(["corrected"]);
     expect(clock(14)).toBe("0:14");
     expect(clock(75)).toBe("1:15");
+  });
+});
+
+// --- A new business idea's own three questions (lane C, BLD-C203) -------------------------------------------------
+
+/** A draft the sorting shows as a new business idea (the draft-part agent's kind, BLD-C201). */
+function businessDraft(): Draft {
+  return draft({
+    sorting: {
+      kind: { value: "business_idea", source: "suggested" },
+    } as Draft["sorting"],
+  });
+}
+
+describe("S1 Interview for a new business idea, S-04B (BLD-C203, L-DRAFT.parts/10)", () => {
+  for (const where of ["desktop", "phone"] as const) {
+    it(`on a ${where}: how many would use it, who it is for and what it could earn, each with Skip`, async () => {
+      phone = where === "phone";
+      let step = 0;
+      route = (s) => {
+        if (s.method === "GET" && s.url.startsWith(`/api/drafts/${DRAFT}`))
+          return { status: 200, body: businessDraft() };
+        if (s.method !== "POST" || s.url !== `/api/drafts/${DRAFT}/interview`) return null;
+        step += 1;
+        const done: InterviewPlace["done"] =
+          step === 1 ? { often: "skipped" } : { often: "skipped", who: "skipped" };
+        return { status: 200, body: { interview: { started: true, done, ended: null }, run_id: null } };
+      };
+      await mount({ draftId: DRAFT, flags: INTERVIEW, interviewPlace: STARTED });
+      const q = () => host.querySelector(".ivq")!;
+      const answer = () => host.querySelector(".iv input") as HTMLInputElement;
+      expect(q().tagName).toBe(where === "phone" ? "H3" : "H2");
+      expect(q().textContent).toBe("How many would use it, roughly?");
+      expect(answer().placeholder).toBe("For example, about 300 distributors");
+      expect(document.getElementById(answer().getAttribute("aria-labelledby")!)?.textContent).toBe(
+        "How many would use it, roughly?",
+      );
+      expect(text()).toContain("Question 1 of 3. Skip any of them.");
+      // The draft's "how often" words answer the drawn question only: no "Use “…”" here.
+      expect(button("Use “About 25 times a week at one branch”")).toBeUndefined();
+
+      await act(async () => button("Skip this one")!.click());
+      await settle();
+      expect(posts(`/api/drafts/${DRAFT}/interview`).at(-1)!.body).toEqual({
+        action: "skip",
+        question: "often",
+      });
+      expect(q().textContent).toBe("Who is it for?");
+      expect(answer().placeholder).toBe("");
+
+      await act(async () => button("Skip this one")!.click());
+      await settle();
+      expect(q().textContent).toBe("What could it earn, roughly?");
+      expect(answer().placeholder).toBe("For example, 10 to 20 lakh a year");
+      // The keys are the same three: the worker files the answers as before.
+      expect(posts(`/api/drafts/${DRAFT}/interview`).at(-1)!.body).toEqual({
+        action: "skip",
+        question: "who",
+      });
+    });
+  }
+
+  it("a problem keeps the drawn questions", async () => {
+    interviewRoute(() => STARTED);
+    await mount({ draftId: DRAFT, flags: INTERVIEW, interviewPlace: STARTED });
+    expect(host.querySelector(".ivq")!.textContent).toBe("How often does it happen, roughly?");
+  });
+});
+
+describe("InterviewCard: the kind landing while a question is shown (BLD-C203)", () => {
+  let cardRoot: Root;
+  let cardHost: HTMLDivElement;
+  const show = (business: boolean) =>
+    act(() =>
+      cardRoot.render(
+        createElement(InterviewCard, { question: "often", business, onAnswer: vi.fn(), onSkip: vi.fn() }),
+      ),
+    );
+  const q = () => cardHost.querySelector(".ivq")!.textContent;
+
+  beforeEach(() => {
+    cardHost = document.createElement("div");
+    document.body.appendChild(cardHost);
+    cardRoot = createRoot(cardHost);
+  });
+  afterEach(() => {
+    act(() => cardRoot.unmount());
+    cardHost.remove();
+  });
+
+  it("follows the kind until the person types, then holds until the box is empty again", () => {
+    show(false);
+    expect(q()).toBe("How often does it happen, roughly?");
+    show(true);
+    expect(q()).toBe("How many would use it, roughly?"); // nothing typed yet: the wording follows
+    show(false);
+    expect(q()).toBe("How often does it happen, roughly?");
+    typeInto(cardHost.querySelector(".iv input") as HTMLInputElement, "About 40");
+    show(true);
+    expect(q()).toBe("How often does it happen, roughly?"); // never changes under an answer
+    typeInto(cardHost.querySelector(".iv input") as HTMLInputElement, "");
+    expect(q()).toBe("How many would use it, roughly?");
   });
 });

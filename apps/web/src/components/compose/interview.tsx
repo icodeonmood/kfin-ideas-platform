@@ -121,9 +121,13 @@ export function InterviewCard({
   const input = useRef<HTMLInputElement>(null);
   const n = INTERVIEW_QUESTIONS.indexOf(question) + 1;
   const last = n === INTERVIEW_QUESTIONS.length;
-  const q = ((heldBusiness ?? business) ? BUSINESS_QUESTIONS : QUESTIONS)[question];
+  const asBusiness = heldBusiness ?? business;
+  const q = (asBusiness ? BUSINESS_QUESTIONS : QUESTIONS)[question];
   const H = headingLevel === 3 ? "h3" : "h2";
-  const offer = suggestion && question === "often" && text.trim() !== suggestion ? suggestion : null;
+  // "Use “…”" offers the draft's own "how often" words: an answer to the drawn question only, not to "How many would
+  // use it?" (BLD-C203).
+  const offer =
+    suggestion && question === "often" && !asBusiness && text.trim() !== suggestion ? suggestion : null;
 
   useEffect(() => {
     if (focusOnShow) input.current?.focus();
