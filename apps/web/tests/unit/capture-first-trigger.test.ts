@@ -1,8 +1,9 @@
 /**
- * Capture first's trigger (DEC-125, BLD-C212; pinned by BLD-C224): `captureFirstOn()` in server/drafts.ts is true
- * exactly when `ai.all` is not "on" in the switch table, read as the "The assistant is taking a break" banner reads it
- * (components/banners.tsx: a missing row counts as off). Nothing else turns it on: another switch off, with `ai.all`
- * on, keeps Full mode, and a table that cannot be read keeps Full mode too. Both Share a problem pages (`/share` and
+ * Capture first's trigger (DEC-125, BLD-C212; pinned by BLD-C224; DEC-143 (g), BLD-B281): `captureFirstOn()` in
+ * server/drafts.ts is true exactly when `ai.all` or `agent.draft-part` is not "on" in the switch table, read as the
+ * "The assistant is taking a break" banner reads it (components/banners.tsx: a missing row counts as off, as the
+ * worker's `killswitch.is_on`). Nothing else turns it on: another switch off, with both on, keeps Full mode, and a
+ * table that cannot be read keeps Full mode too. Both Share a problem pages (`/share` and
  * `/share/:id`) hand that answer to Compose as `captureFirst`. The switch table is mocked; synthetic ids only.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,26 +45,38 @@ const { default: TellIt } = await import("@/app/share/page");
 const { default: TellItConversation } = await import("@/app/share/[id]/page");
 
 const table = (rows: Record<string, string>) => new Map(Object.entries(rows));
+const BOTH_ON = { "ai.all": "on", "agent.draft-part": "on" };
 
 /** Each case: the switch table, and whether Capture first is on. */
 const CASES: Array<[string, Map<string, string> | null, boolean]> = [
-  ["ai.all on", table({ "ai.all": "on", "agent.gatekeeper": "on", submissions: "on" }), false],
-  ["ai.all off", table({ "ai.all": "off", "agent.gatekeeper": "on", submissions: "on" }), true],
-  ["no ai.all row (counts as off)", table({ "agent.gatekeeper": "on", submissions: "on" }), true],
+  [
+    "ai.all and agent.draft-part on",
+    table({ ...BOTH_ON, "agent.gatekeeper": "on", submissions: "on" }),
+    false,
+  ],
+  ["ai.all off", table({ "ai.all": "off", "agent.draft-part": "on", "agent.gatekeeper": "on" }), true],
+  ["no ai.all row (counts as off)", table({ "agent.draft-part": "on", "agent.gatekeeper": "on" }), true],
+  [
+    "agent.draft-part alone off",
+    table({ "ai.all": "on", "agent.draft-part": "off", "agent.gatekeeper": "on" }),
+    true,
+  ],
+  ["no agent.draft-part row (counts as off)", table({ "ai.all": "on", "agent.gatekeeper": "on" }), true],
+  ["both off", table({ "ai.all": "off", "agent.draft-part": "off" }), true],
   ["an empty table (counts as off)", table({}), true],
   [
-    "every other switch off, ai.all on",
-    table({ "ai.all": "on", "agent.gatekeeper": "off", "agent.canvas-assist": "off", submissions: "off" }),
+    "every other switch off, ai.all and agent.draft-part on",
+    table({ ...BOTH_ON, "agent.gatekeeper": "off", "agent.canvas-assist": "off", submissions: "off" }),
     false,
   ],
   ["the table cannot be read", null, false],
 ];
 
 beforeEach(() => {
-  state.switches = table({ "ai.all": "on" });
+  state.switches = table(BOTH_ON);
 });
 
-describe("DEC-125: Capture first is ai.all off and nothing else (BLD-C212, BLD-C224)", () => {
+describe("DEC-125, DEC-143 (g): Capture first is ai.all or agent.draft-part off (BLD-C212, C224, B281)", () => {
   for (const [name, switches, on] of CASES) {
     it(`captureFirstOn() is ${on} when ${name}`, async () => {
       state.switches = switches;
