@@ -244,9 +244,9 @@ def test_dec_111_bld_f087_readers_at_the_desk_or_on_the_committee_read_names_wha
 
 @pytest.fixture
 def desk_lines(db: Any, world: dict[str, Any]) -> dict[str, Any]:
-    """Lane E's seeded `desk.decided` and `desk.merged` (BLD-F112), and lane B's `desk.decided`, `desk.merged`, `desk.worth_revised`
-    and `desk.decide_by_moved`, on Kavya's idea; Harish (a second reviewer, not the idea's `reviewer_id`) acts on two
-    of them. Nisha's idea is joined into Kavya's."""
+    """Lane E's seeded `desk.decided` and `desk.merged` (BLD-F112), and lane B's `desk.decided`,
+    `desk.merged`, `desk.worth_revised` and `desk.decide_by_moved`, on Kavya's idea; Harish (a second
+    reviewer, not the idea's `reviewer_id`) acts on two of them. Nisha's idea is joined into Kavya's."""
     from psycopg.types.json import Jsonb
 
     w = world
