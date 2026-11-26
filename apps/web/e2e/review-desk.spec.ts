@@ -13,6 +13,7 @@ import {
   navLabels,
   PERSONAS,
   PHONE_TABS,
+  settleMotion,
   signIn,
 } from "./helpers";
 import { esc } from "./club";
@@ -409,6 +410,59 @@ test('S-R3, C-PROMPT.anatomy/2, C-PROMPT.voice, BLD-B276: "Say your answer" foll
   // Typing still works beside it, and the box keeps its keys
   await s.getByRole("textbox", { name: "Your answer to question 1" }).fill("About 15 calls a week.");
   await expect(s.getByRole("button", { name: "Next" })).toBeVisible();
+});
+
+/** S-R3 on a phone held at 320 × 640, one question waiting (lane D's narrow-width checks). */
+async function answerAt320(browser: Browser, project: string): Promise<Page> {
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const ideaId = await sharedIdea(sharer.code, `Rejection SMS gives a code only (${project} ${Date.now()})`);
+  const sent = await reviewer.page.request.post(`/api/desk/ideas/${ideaId}/question-sets`, {
+    data: {
+      questions: [{ part: "often", text: "How many calls a week reach the branch about it?" }],
+      time_to_answer: "3d",
+    },
+  });
+  expect(sent.status()).toBe(201);
+  const s = sharer.page;
+  await s.setViewportSize({ width: 320, height: 640 });
+  await s.goto(`/ideas/${ideaId}/answer`);
+  await expect(s.getByRole("textbox", { name: "Your answer to question 1" })).toBeVisible();
+  await settleMotion(s);
+  return s;
+}
+
+test("BLD-D034, C-PHONE-TABS.nav, S-R3: at 320px the phone bar shows Answer in full, Back reads Home in full, and the two keep their 8px", async ({
+  browser,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "phone-360", "the compact bar is a phone's");
+  const s = await answerAt320(browser, testInfo.project.name);
+  const bar = s.locator(".pnav");
+  await expect(bar.locator(".pnav-t")).toHaveText("Answer");
+  await expect(bar.locator(".pback span")).toHaveText("Home");
+  const m = await bar.evaluate((el) => {
+    const title = el.querySelector<HTMLElement>(".pnav-t")!;
+    const back = el.querySelector<HTMLElement>(".pback")!;
+    const label = back.querySelector<HTMLElement>("span")!;
+    const t = title.getBoundingClientRect();
+    const b = el.getBoundingClientRect();
+    return {
+      title: {
+        scroll: title.scrollWidth,
+        client: title.clientWidth,
+        left: t.left,
+        centre: t.left + t.width / 2,
+      },
+      label: { scroll: label.scrollWidth, client: label.clientWidth },
+      backRight: back.getBoundingClientRect().right,
+      barCentre: b.left + b.width / 2,
+    };
+  });
+  expect(m.title.scroll, "the title is not cut").toBeLessThanOrEqual(m.title.client);
+  expect(m.label.scroll, "Back's label is not cut").toBeLessThanOrEqual(m.label.client);
+  expect(m.title.left - m.backRight, "Back and the title never touch").toBeGreaterThanOrEqual(7.5);
+  expect(Math.abs(m.title.centre - m.barCentre), "the title stays centred").toBeLessThanOrEqual(1);
+  await expectNoSeriousAxeIssues(s);
 });
 
 test("V-ACC.review/14: a reviewer opening their own idea cannot act on it", async ({ browser }, testInfo) => {
