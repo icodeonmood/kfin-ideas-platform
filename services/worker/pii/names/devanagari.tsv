@@ -2,12 +2,13 @@
 # name lists, not records of any person, as given.txt and surnames.txt are. One name per line: the name, a tab, then
 # `given`, `surname` or `stop` (a word that ends a name: postpositions, "and", the verbs that follow a name, the
 # respectful "जी"). Names that are also everyday Hindi words are left out (for example विकास, आशा, किरण, कविता,
-# सीमा, पूजा, दीपक, प्रकाश, आकाश, विजय, रेखा, रानी, लाल), as English words are left out of the Latin lists. NFC.
+# सीमा, पूजा, दीपक, प्रकाश, आकाश, विजय, रेखा, रानी, लाल, and since the review अभिनव, नवीन, संतोष, गौरव, विशाल,
+# अखिल, किशोर, विनय), as English words are left out of the Latin lists. NFC; looked up with the nukta, the joiners
+# and the abbreviation sign folded out, so इरफान finds इरफ़ान.
 आरव	given
 आर्या	given
 अब्दुल	given
 अभिजीत	given
-अभिनव	given
 अभिषेक	given
 अदिति	given
 आदित्य	given
@@ -16,7 +17,6 @@
 आयशा	given
 अजय	given
 अजीत	given
-अखिल	given
 अक्षय	given
 अमीना	given
 अमित	given
@@ -60,7 +60,6 @@
 फ़रहान	given
 फ़रीदा	given
 फ़ातिमा	given
-गौरव	given
 गायत्री	given
 गीता	given
 गिरीश	given
@@ -85,7 +84,6 @@
 करण	given
 कार्तिक	given
 कीर्ति	given
-किशोर	given
 कृष्णा	given
 कुणाल	given
 लक्ष्मी	given
@@ -105,7 +103,6 @@
 नादिया	given
 नंदिनी	given
 नरेश	given
-नवीन	given
 नेहा	given
 निखिल	given
 निलेश	given
@@ -141,7 +138,6 @@
 संदीप	given
 संगीता	given
 संजय	given
-संतोष	given
 सरिता	given
 सतीश	given
 शबनम	given
@@ -175,11 +171,12 @@
 वेंकट	given
 विहान	given
 विक्रम	given
-विनय	given
 विनोद	given
-विशाल	given
 योगेश	given
 ज़ोया	given
+अनिता	given
+सुनिता	given
+अंजली	given
 अग्रवाल	surname
 अहलूवालिया	surname
 अहमद	surname
@@ -274,6 +271,7 @@
 वर्मा	surname
 वेंकटेश	surname
 यादव	surname
+पाण्डेय	surname
 ने	stop
 को	stop
 से	stop

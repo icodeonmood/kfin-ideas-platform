@@ -237,18 +237,32 @@ def _lexicon_people(text: str, stop: frozenset[str]) -> list[tuple[int, int, flo
 # Devanagari letters and signs and the joiners; never the danda (U+0964, U+0965) or the digits (U+0966 to U+096F).
 _DEVA = "\u0900-\u0963\u0970-\u097f\u200c\u200d"
 _DEVA_WORD = re.compile(f"[{_DEVA}]+")
-_DEVA_HONORIFIC = re.compile(f"(?<![{_DEVA}])(?:श्रीमती|श्रीमान|सुश्री|श्री|कुमारी|डॉक्टर|डॉ\\.?)(?=[ \u00a0])")
+# डॉक्टर is not one: it is an everyday word ("मैं डॉक्टर बनना चाहता था"), and stays a stop word.
+_DEVA_HONORIFIC = re.compile(f"(?<![{_DEVA}])(?:श्रीमती|श्रीमान|सुश्री|श्री|कुमारी|डॉ[.\u0970]?)(?=[ \u00a0])")
+# Folded out of every lookup key: the nukta (इरफ़ान, typed इरफान), the joiners and the abbreviation sign (डॉ॰).
+_DEVA_FOLD = str.maketrans("", "", "\u093c\u200c\u200d\u0970")
+_JI = "जी"  # joined to a name it is respect, not part of the name: शर्माजी
+
+
+def _deva_key(word: str) -> str:
+    """The form a word is looked up by: NFC, then the nukta, the joiners and the abbreviation sign folded out."""
+    return unicodedata.normalize("NFC", word).translate(_DEVA_FOLD)
 
 
 @lru_cache(maxsize=1)
 def _deva_table() -> dict[str, frozenset[str]]:
     """names/devanagari.tsv by kind: `given`, `surname` and `stop` (the words that end a name in Hindi)."""
     kinds: dict[str, set[str]] = {"given": set(), "surname": set(), "stop": set()}
-    for line in (NAMES_DIR / "devanagari.tsv").read_text(encoding="utf-8").splitlines():
+    lines = (NAMES_DIR / "devanagari.tsv").read_text(encoding="utf-8").splitlines()
+    for n, line in enumerate(lines, start=1):
         if not line.strip() or line.startswith("#"):
             continue
-        word, kind = line.split("\t")
-        kinds[kind.strip()].add(unicodedata.normalize("NFC", word.strip()))
+        cells = line.split("\t")
+        if len(cells) != 2 or cells[1].strip() not in kinds or not cells[0].strip():
+            raise ValueError(
+                f"pii/names/devanagari.tsv line {n}: expected a word, a tab, then given, surname or stop"
+            )
+        kinds[cells[1].strip()].add(_deva_key(cells[0].strip()))
     return {k: frozenset(v) for k, v in kinds.items()}
 
 
@@ -262,7 +276,17 @@ def _deva_stop() -> frozenset[str]:
 
 
 def _deva_tokens(text: str) -> list[tuple[int, int, str]]:
-    return [(m.start(), m.end(), unicodedata.normalize("NFC", m.group(0))) for m in _DEVA_WORD.finditer(text)]
+    """(start, end, lookup key) per Devanagari word; the spans are the text's own, only the key is folded. A name
+    with जी joined to it is looked up without it, and tagged whole."""
+    given, surnames = _deva_lexicon()
+    names = given | surnames
+    out = []
+    for m in _DEVA_WORD.finditer(text):
+        key = _deva_key(m.group(0))
+        if key not in names and key.endswith(_JI) and key[: -len(_JI)] in names:
+            key = key[: -len(_JI)]
+        out.append((m.start(), m.end(), key))
+    return out
 
 
 def _adjacent(text: str, a: tuple[int, int, str], b: tuple[int, int, str]) -> bool:
@@ -313,6 +337,30 @@ def _devanagari_people(text: str) -> list[tuple[int, int, float]]:
             taken.append(t)
         if taken:
             out.append((taken[0][0], taken[-1][1], 0.9))
+    return _merged(text, out)
+
+
+def _merged(text: str, spans: list[tuple[int, int, float]]) -> list[tuple[int, int, float]]:
+    """One span per name: spans that overlap ("अमित प्रकाश" and "प्रकाश शर्मा", प्रकाश not in the table) or touch
+    with only spaces between become one, as the Latin path keeps "Amit Prakash Sharma" whole. Never across a danda
+    or a comma."""
+    out: list[tuple[int, int, float]] = []
+    for s, e, score in sorted(spans):
+        if out and (s <= out[-1][1] or text[out[-1][1] : s].strip(" \u00a0") == ""):
+            ps, pe, pscore = out[-1]
+            out[-1] = (ps, max(pe, e), max(pscore, score))
+        else:
+            out.append((s, e, score))
+    return out
+
+
+def _deva_found(text: str, never: set[str]) -> list[Found]:
+    """`_people` for a text with no capital letter: the Devanagari names only, at the same threshold."""
+    out = []
+    for s, e, score in _devanagari_people(text):
+        value = text[s:e]
+        if score >= 0.5 and value.casefold() not in never:
+            out.append(Found(s, e, "PERSON", value, priority=5))
     return out
 
 
@@ -412,6 +460,10 @@ def detect(
             found.append(Found(m.start(), m.end(), typ, m.group(0), 4))
     if people and any(ch.isupper() for ch in text):
         found.extend(_people(text, d.never_person))
+    elif people and _DEVA_WORD.search(text):
+        # Hindi in Devanagari has no capital letters, so the gate above never opens for it (the review of BLD-C247):
+        # the table alone, without the English NER model, which reads nothing in this script but noise.
+        found.extend(_deva_found(text, d.never_person))
 
     chosen: list[Found] = []
     for f in sorted(found, key=lambda f: (f.priority, -(f.end - f.start), f.start)):

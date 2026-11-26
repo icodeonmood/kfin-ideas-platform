@@ -18,7 +18,10 @@ TABLE = ROOT / "services" / "worker" / "pii" / "names" / "devanagari.tsv"
 DEVANAGARI = range(0x0900, 0x0980)
 # Everyday Hindi words that are also names: never in the table, as English words are not in the Latin lists.
 EVERYDAY = ("विकास", "आशा", "किरण", "कविता", "सीमा", "पूजा", "दीपक", "प्रकाश", "आकाश", "विजय", "रेखा", "रानी", "लाल",
-            "आरती", "ज्योति", "भारत", "दिया")  # fmt: skip
+            "आरती", "ज्योति", "भारत", "दिया",
+            # From the review: words this product's own ideas use (innovative, new, satisfaction, pride, huge, all,
+            # teenager, humility).
+            "अभिनव", "नवीन", "संतोष", "गौरव", "विशाल", "अखिल", "किशोर", "विनय")  # fmt: skip
 
 
 def _rows() -> list[tuple[str, str]]:
@@ -71,6 +74,16 @@ def test_bld_c247_no_new_dependency() -> None:
         ("विकास की बात करो, आशा है", []),
         ("शाखा में हर बैंक बदलने का फॉर्म दो बार टाइप होता है, क्योंकि स्कैन साफ़ नहीं होता।", []),
         ("निवेशक का नंबर नौ आठ सात छह पांच चार तीन दो एक शून्य है, फॉर्म वापस आ गया।", []),
+        # From the review of a160dac2.
+        ("यह एक अभिनव विचार है", []),
+        ("ग्राहक संतोष नहीं है", []),
+        ("मैं डॉक्टर बनना चाहता था", []),  # डॉक्टर the job, not an honorific
+        ("अमित प्रकाश शर्मा ने PAN भेजा", ["अमित प्रकाश शर्मा"]),  # one span, not two that overlap
+        ("इरफान ने बताया", ["इरफान"]),  # typed without the nukta: the table has इरफ़ान
+        ("इरफ़ान ने बताया", ["इरफ़ान"]),
+        ("ज़ोया और फातिमा ने कहा", ["ज़ोया", "फातिमा"]),
+        ("शर्माजी ने कहा", ["शर्माजी"]),  # जी joined: the name is found, and tagged whole
+        ("अनिता पाण्डेय से पूछो", ["अनिता पाण्डेय"]),
     ],
 )
 def test_bld_c247_names_in_devanagari_are_found(text: str, names: list[str]) -> None:
@@ -83,6 +96,7 @@ def test_bld_c247_an_honorific_marks_the_name_after_it_and_is_not_part_of_it() -
         ("डॉ. रघुनाथन को फ़ोन करो", "रघुनाथन"),
         ("श्री शर्मा जी आए", "शर्मा"),
         ("कुमारी वसुधा खुरानिया से पूछो", "वसुधा खुरानिया"),  # made up: not in the table, found by the honorific
+        ("डॉ॰ वसुधा खुरानिया से पूछो", "वसुधा खुरानिया"),  # the abbreviation sign after डॉ
     ):
         found = _found(text)
         assert name in found, (text, found)
@@ -106,3 +120,28 @@ def test_bld_c247_the_recogniser_tags_them_before_any_model_call() -> None:
     text = "देविका रघुनाथन ने बताया कि Ravi Sharma भी आए थे"
     people = {f.value for f in detect._people(text, set()) if f.type == "PERSON"}
     assert "देविका रघुनाथन" in people and "Ravi Sharma" in people
+
+
+def test_bld_c247_a_text_in_devanagari_only_is_tagged_too() -> None:
+    """The review of a160dac2 (Critical): `detect` runs the name recognisers only on a text with a capital letter, and
+    Devanagari has none. A sentence in Hindi alone, as most are, now goes through the table too (without the English
+    NER model); this is the call `tagger.tag_text` makes before every model call (non-negotiable 2)."""
+    d = detect.Directory().compile()
+    text = "देविका रघुनाथन ने बताया कि फ़ॉर्म दो बार टाइप होता है"
+    assert not any(ch.isupper() for ch in text)
+    found = detect.detect(text, d, kfin_domains=[])
+    assert [(f.type, f.value) for f in found] == [("PERSON", "देविका रघुनाथन")]
+    assert detect.detect("विकास की बात करो, आशा है", d, kfin_domains=[]) == []
+    assert detect.detect(text, d, kfin_domains=[], people=False) == []
+
+
+def test_bld_c247_a_malformed_row_says_which_line(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "devanagari.tsv").write_text("# header\nअमित\tgiven\nशर्मा surname\n", encoding="utf-8")
+    monkeypatch.setattr(detect, "NAMES_DIR", tmp_path)
+    detect._deva_table.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="line 3"):
+            detect._deva_table()
+    finally:
+        monkeypatch.undo()
+        detect._deva_table.cache_clear()
