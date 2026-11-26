@@ -1,7 +1,7 @@
 # draft-part — one part of the live draft (L-DRAFT.parts), asked once per part, the parts in parallel. Bump `version`
 # and add a CHANGELOG line on any change; `make eval` must pass.
 name: draft-part
-version: 0.2.0
+version: 0.2.1
 tier: fast
 model: claude-haiku-5-5
 effort: low             # no temperature: current models reject non-default sampling (BLD-070)
@@ -39,3 +39,4 @@ pass_gates:
   expectations_min: 0.8
   dropped_max: 1                   # of 20: answers still unbacked after the re-ask, dropped by the gateway (BLD-C035)
   first_attempt_problems_max: 3    # of 20: answers the checks refused on the first ask (each re-ask doubles a part's wait); 2 of 12 until 0.2.0
+  kind_accuracy_min: 0.8           # of the 6 cases that expect a kind (5 business ideas): at most one wrong (0.2.1)

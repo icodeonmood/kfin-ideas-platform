@@ -3,8 +3,8 @@ words (never the English copy of a voice note, DEC-108), holds only their number
 carries no tags in what the person reads. The expectations per case measure whether the part found what the words
 say; `dropped` and `first_attempt_problems` measure the model before the gateway mends it (BLD-C035). Since 0.2.0 the
 title also says what kind it is, with a quote of the person's own words (`kind_evidence`, held by the same checks), and
-a business idea's summary describes the new offer (BLD-C201, BLD-C202, BLD-C205): `kind_accuracy` is reported over the
-cases that expect a kind. Synthetic cases only."""
+a business idea's summary describes the new offer (BLD-C201, BLD-C202, BLD-C205): `kind_accuracy` over the cases that
+expect a kind is a model gate since 0.2.1 (`kind_accuracy_min`). Synthetic cases only."""
 
 from __future__ import annotations
 
@@ -137,6 +137,8 @@ def run(ctx: Context) -> dict[str, Any]:
         "expectations": metrics["expectations"] >= gates.get("expectations_min", 0.8),
         "dropped": dropped <= gates.get("dropped_max", 1),
         "first_attempt_problems": first_attempt <= gates.get("first_attempt_problems_max", 2),
+        # 0.2.1: a model that reads business ideas as problems fails here, not only in the expectations count
+        "kind_accuracy": metrics["kind_accuracy"] >= gates.get("kind_accuracy_min", 0.8),
     }
     # The harness: no case may fail outright, and nothing the gateway lets through may break the rules, whatever
     # the route (the checks run on every answer, so this holds in fake mode too).
