@@ -39,6 +39,10 @@ SUMMARY = re.compile(
 # What the fakes hear and translate: synthetic, with a word of each spoken sentence.
 HEARD_TEXT = "The printer near the lift is out of paper. Please order more chairs for the meeting room."
 ENGLISH = "The office printer has not worked since yesterday, please order new toner."
+# The check's Hinglish before BLD-C247 put a customer's name in it: for the identity checks of a path that sends what
+# it should not, so they fail on the identity check and not first on the name at the network edge.
+PLAIN_HINGLISH = "ऑफिस का printer कल से काम नहीं कर रहा, कृपया नया toner मंगवा दीजिए।"
+TAG = re.compile(r"\[\[[A-Z][A-Z_]*_[0-9]+\]\]")
 PCM = bytes(3 * sarvam_live.CHUNK_BYTES)  # three seconds of silence: the fakes do not decode audio
 
 
@@ -62,9 +66,15 @@ def rest_fake(monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
                     },
                 },
             )
-        if request.url.path == "/translate":
+        if request.url.path == "/translate":  # a translator keeps every tag it was sent (BLD-C200)
+            tags = TAG.findall(json.loads(request.content)["input"])
             return httpx.Response(
-                200, json={"request_id": "req-2", "translated_text": ENGLISH, "source_language_code": "hi-IN"}
+                200,
+                json={
+                    "request_id": "req-2",
+                    "translated_text": " ".join([ENGLISH, *tags]),
+                    "source_language_code": "hi-IN",
+                },
             )
         return httpx.Response(404, json={"error": {"message": "not here", "code": "not_found_error"}})
 
@@ -167,6 +177,9 @@ def test_BLD_C177_L_DRAFT_voice_all_four_calls_pass_through_the_workers_paths_ag
     translate = [json.loads(r.content) for r in rest if r.url.path == "/translate"]
     assert translate and all(t["model"] == "mayura:v1" and t["mode"] == "code-mixed" for t in translate)
     assert "speaker_gender" not in translate[-1]
+    # The customer's name in Devanagari went as a tag, no part of it as written (BLD-C247).
+    assert all("[[PERSON_" in t["input"] for t in translate)
+    assert not any(part in t["input"] for t in translate for part in sarvam_live.DEVA_NAME.split())
 
 
 def test_BLD_C177_without_afconvert_speech_to_text_fails_with_no_decoder_and_tts_still_runs(
@@ -707,6 +720,7 @@ def test_BLD_C177_L_DRAFT_voice_translate_that_discards_the_masking_output_fails
         return got.text, got.translated, None
 
     monkeypatch.setattr(drafts, "_english", discarding)
+    monkeypatch.setattr(sarvam_live, "HINGLISH", PLAIN_HINGLISH)
     code, lines, _fake, _rest = all_four(monkeypatch, test_database)
     assert code == 1 and lines[3].startswith("translate ") and lines[3].endswith("FAIL not_masked")
 
@@ -772,6 +786,7 @@ def test_BLD_C200_L_DRAFT_voice_translate_that_sends_the_untagged_text_fails(
         return drafts.hide_text(got.text).text, got.translated, None
 
     monkeypatch.setattr(drafts, "_english", untagged)
+    monkeypatch.setattr(sarvam_live, "HINGLISH", PLAIN_HINGLISH)
     code, lines, _fake, _rest = all_four(monkeypatch, test_database)
     assert code == 1 and lines[3].startswith("translate ") and lines[3].endswith("FAIL not_masked")
 
@@ -788,3 +803,57 @@ def test_BLD_C200_L_DRAFT_voice_a_tagging_step_that_tags_nothing_fails_and_the_n
         r.content.decode("utf-8", "replace") for r in rest
     )
     assert sarvam_live.TAG_NAME not in sent and sarvam_live.TAG_NAME not in "\n".join(lines)
+    # Translate refused before any network call: the Hinglish holds a customer's name (BLD-C247).
+    assert not [r for r in rest if r.url.path == "/translate"]
+    assert not any(part in sent for part in sarvam_live.DEVA_NAME.split())
+
+
+def test_BLD_C247_L_DRAFT_voice_the_tagging_step_check_needs_a_devanagari_name_tagged(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    """A tagger that tags the colleague and the vector but leaves a customer's name in Devanagari as written fails
+    its check, and nothing it made is left behind."""
+    from pii import detect
+
+    monkeypatch.setattr(detect, "_devanagari_people", lambda text: [])
+    with connect(helpers.db_url(test_database), autocommit=True) as conn:
+        assert sarvam_live.tagger_tags(conn) is False
+        assert conn.execute("SELECT 1 FROM users WHERE name = %s", (sarvam_live.TAG_NAME,)).fetchone() is None
+
+
+def test_BLD_C247_L_DRAFT_voice_a_tagger_that_misses_the_devanagari_name_never_sends_it(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    """The tagging step's check fails, so translate refuses before any network call: the name never leaves."""
+    from pii import detect
+
+    monkeypatch.setattr(detect, "_devanagari_people", lambda text: [])
+    code, lines, fake, rest = all_four(monkeypatch, test_database)
+    assert code == 1 and lines[0].endswith("PASS") and lines[1].endswith("PASS")
+    assert lines[3].startswith("translate ") and lines[3].endswith("FAIL masking_no_op")
+    sent = json.dumps(fake.received, ensure_ascii=False) + "".join(
+        r.content.decode("utf-8", "replace") for r in rest
+    )
+    assert not [r for r in rest if r.url.path == "/translate"]
+    assert not any(part in sent for part in sarvam_live.DEVA_NAME.split())
+    printed_is_clean("\n".join(lines))
+
+
+def test_BLD_C247_L_DRAFT_voice_a_name_in_the_text_is_refused_at_the_network_edge_even_when_the_checks_pass(
+    monkeypatch: pytest.MonkeyPatch, test_database: str
+) -> None:
+    """If the checks before the call passed and the path still held the name as written, the wrapper on
+    `sarvam.translate` refuses it before it is sent (`name_outgoing`)."""
+    from pii import detect
+
+    monkeypatch.setattr(sarvam_live, "tagger_tags", lambda conn: True)
+    monkeypatch.setattr(detect, "_devanagari_people", lambda text: [])
+    code, lines, fake, rest = all_four(monkeypatch, test_database)
+    assert code == 1 and lines[3].startswith("translate ") and lines[3].endswith("FAIL name_outgoing")
+    assert LINE.match(lines[3]), lines[3]
+    sent = json.dumps(fake.received, ensure_ascii=False) + "".join(
+        r.content.decode("utf-8", "replace") for r in rest
+    )
+    assert not [r for r in rest if r.url.path == "/translate"]
+    assert not any(part in sent for part in sarvam_live.DEVA_NAME.split())
+    printed_is_clean("\n".join(lines))
