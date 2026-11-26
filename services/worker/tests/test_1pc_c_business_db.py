@@ -228,3 +228,47 @@ def test_l_draft_parts_bld_c201_a_kind_the_checks_drop_leaves_the_title_landing(
     assert call["error_code"] == DROPPED
     # No kind from the agent: the area's rule, and here a problem to fix.
     assert sorting.read_draft(db, idea, owner.user_id)["kind"]["why_line"] == PROBLEM_LINE
+
+
+# ---- DEC-141, DEC-125: Capture first, the r7 launch state (ai.all off until the model key) -----------------------
+
+
+def _switch(db: Any, name: str, state: str) -> None:
+    db.execute("UPDATE kill_switches SET state = %s WHERE name = %s", (state, name))
+    killswitch.clear_cache()
+
+
+def test_dec141_bld_c204_capture_first_offers_a_business_idea_only_when_picked_by_hand(
+    drafting: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the assistant off (Capture first, DEC-125; r7 launches so, DEC-141) the draft-part agent never runs: no
+    gateway call, no kind of its own, today's next prompts. The sorting offers "A new business idea" only when the
+    person picks New business by hand (BLD-C204); moving away takes it back to a problem to fix."""
+    db, owner = drafting
+    _switch(db, "ai.all", "off")
+
+    def no_gateway(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("draft-part asked the gateway while ai.all is off")
+
+    monkeypatch.setattr(runs, "run_agent", no_gateway)
+    idea = _told(db, owner, BUSINESS_SENTENCE)  # words that would be a business idea with the assistant on
+    assert db.execute("SELECT count(*) AS n FROM llm_calls WHERE agent = 'draft-part'").fetchone()["n"] == 0
+    row = db.execute(
+        "SELECT value FROM idea_parts WHERE idea_uuid = %s AND key = 'title'", (idea,)
+    ).fetchone()
+    assert row is None or not (row["value"] or {}).get("kind")
+    v = sorting.read_draft(db, idea, owner.user_id)
+    assert v["kind"]["value"] == "problem" and v["kind"]["source"] == "suggested"
+    draft = store.view(db, owner, idea, LAPTOP)
+    assert draft["sorting"]["kind"]["value"] == "problem"
+    assert not set(draft["suggestions"]) & set(parts.BUSINESS_PROMPTS.values())
+
+    v = _patch(db, owner, idea, {"area": "New business"})
+    assert v["kind"]["value"] == "business_idea" and v["kind"]["source"] == "suggested"
+    assert v["kind"]["why_line"] == BUSINESS_LINE
+    assert store.view(db, owner, idea, LAPTOP)["sorting"]["kind"]["value"] == "business_idea"
+    v = _patch(db, owner, idea, {"area": "Operations"})
+    assert v["kind"]["value"] == "problem" and v["kind"]["source"] == "suggested"
+    v = _patch(db, owner, idea, {"area": "New business", "confirm": True})
+    assert v["kind"]["value"] == "business_idea" and v["kind"]["source"] == "confirmed"
+    assert db.execute("SELECT count(*) AS n FROM llm_calls WHERE agent = 'draft-part'").fetchone()["n"] == 0

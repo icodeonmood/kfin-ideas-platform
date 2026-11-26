@@ -185,6 +185,7 @@ async function mount(props: {
   draftId: string | null;
   flags?: ComposeFlags | null;
   interviewPlace?: InterviewPlace | null;
+  captureFirst?: boolean;
 }) {
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -674,6 +675,30 @@ describe("S1 Interview for a new business idea, S-04B (BLD-C203, L-DRAFT.parts/1
       });
     });
   }
+
+  it("Capture first on a desk (DEC-125, DEC-141): no draft panel; a business idea picked by hand still gets its own words", async () => {
+    // With the assistant off the kind is never the agent's: it is a business idea only when the person picked New
+    // business by hand on Check it (BLD-C204). The questions are words only: nothing here asks the assistant.
+    route = (s) => {
+      if (s.method === "GET" && s.url.startsWith(`/api/drafts/${DRAFT}`))
+        return {
+          status: 200,
+          body: { ...businessDraft(), sorting: { kind: { value: "business_idea", source: "suggested" } } },
+        };
+      if (s.method === "POST" && s.url === `/api/drafts/${DRAFT}/interview`)
+        return { status: 200, body: { interview: STARTED, run_id: null } };
+      return null;
+    };
+    await mount({ draftId: DRAFT, flags: INTERVIEW, interviewPlace: STARTED, captureFirst: true });
+    expect(host.querySelector(".canvas")).toBeNull(); // no draft panel on a desk (DEC-125)
+    expect(host.querySelector(".ivg .ivq")!.textContent).toBe("How many would use it, roughly?");
+    expect(host.querySelector(".iv input")!.getAttribute("aria-describedby")).toBeNull(); // no error under it
+    expect(
+      sent.filter(
+        (s) => s.method !== "GET" && !s.url.startsWith("/api/flags/") && !s.url.endsWith("/interview"),
+      ),
+    ).toEqual([]);
+  });
 
   it("a problem keeps the drawn questions", async () => {
     interviewRoute(() => STARTED);
