@@ -13,6 +13,7 @@ import {
   navLabels,
   PERSONAS,
   PHONE_TABS,
+  settleMotion,
   signIn,
 } from "./helpers";
 import { esc } from "./club";
@@ -409,6 +410,112 @@ test('S-R3, C-PROMPT.anatomy/2, C-PROMPT.voice, BLD-B276: "Say your answer" foll
   // Typing still works beside it, and the box keeps its keys
   await s.getByRole("textbox", { name: "Your answer to question 1" }).fill("About 15 calls a week.");
   await expect(s.getByRole("button", { name: "Next" })).toBeVisible();
+});
+
+/** S-R3 on a phone held at 320 × 640, one question waiting (lane D's narrow-width checks). */
+async function answerAt320(browser: Browser, project: string): Promise<Page> {
+  const sharer = await person(browser, PERSONAS.contributor);
+  const reviewer = await person(browser, PERSONAS.reviewer);
+  const ideaId = await sharedIdea(sharer.code, `Rejection SMS gives a code only (${project} ${Date.now()})`);
+  const sent = await reviewer.page.request.post(`/api/desk/ideas/${ideaId}/question-sets`, {
+    data: {
+      questions: [{ part: "often", text: "How many calls a week reach the branch about it?" }],
+      time_to_answer: "3d",
+    },
+  });
+  expect(sent.status()).toBe(201);
+  const s = sharer.page;
+  await s.setViewportSize({ width: 320, height: 640 });
+  await s.goto(`/ideas/${ideaId}/answer`);
+  await expect(s.getByRole("textbox", { name: "Your answer to question 1" })).toBeVisible();
+  await settleMotion(s);
+  return s;
+}
+
+test("BLD-D034, C-PHONE-TABS.nav, S-R3: at 320px the phone bar shows Answer in full, Back reads Home in full, and the two keep their 8px", async ({
+  browser,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "phone-360", "the compact bar is a phone's");
+  const s = await answerAt320(browser, testInfo.project.name);
+  const bar = s.locator(".pnav");
+  await expect(bar.locator(".pnav-t")).toHaveText("Answer");
+  await expect(bar.locator(".pback span")).toHaveText("Home");
+  const m = await bar.evaluate((el) => {
+    const title = el.querySelector<HTMLElement>(".pnav-t")!;
+    const back = el.querySelector<HTMLElement>(".pback")!;
+    const label = back.querySelector<HTMLElement>("span")!;
+    const t = title.getBoundingClientRect();
+    const b = el.getBoundingClientRect();
+    return {
+      title: {
+        scroll: title.scrollWidth,
+        client: title.clientWidth,
+        left: t.left,
+        centre: t.left + t.width / 2,
+      },
+      label: { scroll: label.scrollWidth, client: label.clientWidth },
+      backRight: back.getBoundingClientRect().right,
+      barCentre: b.left + b.width / 2,
+    };
+  });
+  expect(m.title.scroll, "the title is not cut").toBeLessThanOrEqual(m.title.client);
+  expect(m.label.scroll, "Back's label is not cut").toBeLessThanOrEqual(m.label.client);
+  expect(m.title.left - m.backRight, "Back and the title never touch").toBeGreaterThanOrEqual(7.5);
+  expect(Math.abs(m.title.centre - m.barCentre), "the title stays centred").toBeLessThanOrEqual(1);
+  await expectNoSeriousAxeIssues(s);
+});
+
+test("BLD-D037, C-FIELD.tools, S-R3: at 320px the \"+\" and the mic sit on their own row under the words, at the end; the words take the frame's width; a focused tool's ring stays 2px inside the frame", async ({
+  browser,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "phone-360", "the narrow frame is a phone's");
+  const s = await answerAt320(browser, testInfo.project.name);
+  const box = s.getByRole("textbox", { name: "Your answer to question 1" });
+  const m = await s.locator(".ans-box .fld-frame").evaluate((frame) => {
+    const r = (e: Element) => {
+      const b = e.getBoundingClientRect();
+      return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width };
+    };
+    return {
+      frame: r(frame),
+      wrap: r(frame.parentElement!),
+      text: r(frame.querySelector("textarea")!),
+      tools: [...frame.querySelectorAll(".fld-tools button")].map(r),
+    };
+  });
+  // The frame keeps its place's width; the words take all of it inside the 1px border
+  expect(Math.abs(m.frame.width - m.wrap.width), "the frame keeps its width").toBeLessThanOrEqual(0.5);
+  expect(m.text.width, "the words take the frame's width").toBeGreaterThanOrEqual(m.frame.width - 2.5);
+  expect(m.text.width, "from 125px beside the tools").toBeGreaterThanOrEqual(220);
+  expect(m.tools).toHaveLength(2);
+  for (const t of m.tools)
+    expect(t.top, "the tools' row is under the words").toBeGreaterThanOrEqual(m.text.bottom);
+  expect(m.frame.right - m.tools[1]!.right, "the tools sit at the end").toBeLessThan(12);
+  expect(m.tools[0]!.left).toBeGreaterThan(m.frame.left + m.frame.width / 2);
+  // Tab from the words to each tool: its ring (2px, 2px out) stays at least 2px inside the frame's border box
+  await box.focus();
+  for (const name of ["Attach files to this answer", "Say your answer"]) {
+    await s.keyboard.press("Tab");
+    const tool = s.getByRole("button", { name, exact: true });
+    await expect(tool).toBeFocused();
+    const ring = await tool.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const out = Number.parseFloat(cs.outlineWidth) + Number.parseFloat(cs.outlineOffset);
+      const b = el.getBoundingClientRect();
+      const f = el.closest(".fld-frame")!.getBoundingClientRect();
+      return {
+        style: cs.outlineStyle,
+        left: b.left - out - f.left,
+        right: f.right - (b.right + out),
+        top: b.top - out - f.top,
+        bottom: f.bottom - (b.bottom + out),
+      };
+    });
+    expect(ring.style, `${name}: a ring shows`).not.toBe("none");
+    for (const side of ["left", "right", "top", "bottom"] as const)
+      expect(ring[side], `${name}: ${side}`).toBeGreaterThanOrEqual(2);
+  }
+  await expectNoSeriousAxeIssues(s);
 });
 
 test("V-ACC.review/14: a reviewer opening their own idea cannot act on it", async ({ browser }, testInfo) => {
