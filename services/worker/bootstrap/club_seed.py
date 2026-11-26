@@ -388,10 +388,9 @@ def _decide_by(shared: dt.datetime) -> dt.datetime:
     return clock.decide_by(shared, config.promises())
 
 
-# Time for a walk after loading before T6's deadline or an open idea's decide-by passes; T6's day-before reminder
-# has gone by then (L-NOTIFY/5).
+# Time for a walk after loading before T6's deadline or an open idea's decide-by passes. No T6 reminder threshold
+# falls inside it, so the sweep sends no second reminder during the walk (BLD-E077).
 WALK_ROOM = dt.timedelta(hours=2)
-DAY_BEFORE = dt.timedelta(hours=24)  # L-NOTIFY/5, L-QUESTIONS.clock/2: the first reminder, 24 hours before
 # Ideas still with the desk, no decision yet: their decide-by is a promise still ahead.
 WITH_THE_DESK = ("checking", "with_review_desk")
 
@@ -427,15 +426,31 @@ def _answer_due(sent: dt.datetime, time_to_answer: str = "3d") -> dt.datetime:
     return clock.answer_due(sent, time_to_answer, promises.get(), clock.office_calendar())
 
 
+def _reminder_thresholds(due: dt.datetime) -> list[dt.datetime]:
+    """When an open set is reminded (L-QUESTIONS.clock/2): 1 day and 2 hours before its deadline. T6 is sent three
+    days before (`_sent_for`), so every threshold falls after the sending, as `desk.clock.reminders` counts them."""
+    from desk import promises
+
+    return sorted(due - dt.timedelta(hours=h) for h in promises.get().reminders_before_hours)
+
+
 def _due_within_a_day(now: dt.datetime) -> dt.datetime:
     """T6's deadline: 6 pm office time (L-QUESTIONS.clock/5) on the first day whose 6 pm is at least `WALK_ROOM`
-    after loading. So it is under a day away (just over, for a load in the last two hours before 6 pm), the
-    day-before reminder (L-NOTIFY/5) has gone, and a walk straight after the load never finds it overdue."""
+    after loading and has no reminder threshold inside the `WALK_ROOM` after the load (BLD-E077). So a walk straight
+    after the load never finds it overdue and never meets a second reminder from the sweep (`desk.asking.remind_due`
+    sends one per threshold). With a 6 pm deadline: a load before 2 pm gets 6 pm that day (its day-before reminder
+    has gone); from 2 pm to 4 pm, 6 pm the next day (its day-before reminder comes at 6 pm, after the walk); from 4
+    pm to 6 pm, 6 pm the day after next (no reminder crossed yet, so it reads "2 days"); from 6 pm, 6 pm the next
+    day (its day-before reminder went at 6 pm)."""
     from desk import clock, promises
 
     cal, hour = clock.office_calendar(), promises.get().deadline_hour
-    due = cal.at(now.astimezone(cal.tz).date(), hour)
-    return due if due - now >= WALK_ROOM else cal.at(due.date() + dt.timedelta(days=1), hour)
+    day = now.astimezone(cal.tz).date()
+    while True:
+        due = cal.at(day, hour)
+        if due - now >= WALK_ROOM and not any(now < x <= now + WALK_ROOM for x in _reminder_thresholds(due)):
+            return due
+        day += dt.timedelta(days=1)
 
 
 def _sent_for(due: dt.datetime, time_to_answer: str = "3d", hour: int = 11, minute: int = 20) -> dt.datetime:
@@ -451,9 +466,10 @@ def _sent_for(due: dt.datetime, time_to_answer: str = "3d", hour: int = 11, minu
 
 
 def _day_before(due: dt.datetime, now: dt.datetime) -> dt.datetime:
-    """When the day-before reminder went (L-NOTIFY/5): 24 hours before the deadline, or the load itself when that is
-    still ahead (a load in the last two hours before 6 pm; `_due_within_a_day`). Either way it reads "1 day left"."""
-    return min(due - DAY_BEFORE, now)
+    """When T6's reminder went (L-NOTIFY/5): the latest threshold already crossed at the load (BLD-E077), so the
+    sweep, which sends once per threshold, never sends that one again. When none has been crossed yet (a load from
+    2 pm to 6 pm, `_due_within_a_day`), the load itself; T6's next threshold then falls after the walk."""
+    return max((x for x in _reminder_thresholds(due) if x <= now), default=now)
 
 
 def _email(name: str) -> str:
@@ -937,8 +953,9 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
              encrypt_json({"title": m["T5"].spec.title, "n": n}, sealed_context("idea_versions", "snapshot_encrypted", f"{m['T5'].uuid}:{n}")),
              _ago(1.0 - 0.1 * n, now)),
         )  # fmt: skip
-    # T6: questions sent and seen, one answer saved but not sent (Needs you). Due at 6 pm within the day, so its
-    # day-before reminder has gone (L-NOTIFY/5; the Inbox item in `_inbox`), sent 3 days before at 11:20 am.
+    # T6: questions sent and seen, one answer saved but not sent (Needs you). Due at 6 pm with no reminder threshold
+    # inside the walk after the load (BLD-E077), its reminder recorded at the latest threshold crossed or at the load
+    # (L-NOTIFY/5; the Inbox item in `_inbox`), sent 3 days before at 11:20 am.
     t6_due = _due_within_a_day(now)
     _questions(conn, m["T6"], p["harish"]["id"], tanvi["code"], now, state="seen", sent=_sent_for(t6_due),
                reminded=_day_before(t6_due, now),
@@ -1589,7 +1606,7 @@ def _inbox(
         stored = None if as_the_desk(kind, refs) else sender
         if days is None:
             # The set's own clock, as lane B posts them: the questions arrive when it is sent, the reminder when it
-            # went (24 hours before the deadline, L-NOTIFY/5), and both are due when the set is (L-QUESTIONS.clock/5)
+            # went (`_day_before`, L-NOTIFY/5), and both are due when the set is (L-QUESTIONS.clock/5)
             qset = sets[m[key].uuid]
             at = qset["reminded_at"] if kind == "answer_reminder" else qset["sent_at"]
             due_at = qset["due_at"]

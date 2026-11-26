@@ -798,8 +798,8 @@ def test_gap_seed_l_questions_clock_5_every_seeded_set_is_due_at_6_pm_ist_as_the
 ) -> None:
     """GAP-SEED, L-QUESTIONS.clock/5 (J-TRACK/3, /5, /6; J-BROWSE/4): "Deadlines are at 6 pm local office time on the
     due day". Every seeded set is due when lane B's send would make it due (`desk.clock.answer_due`), never at the
-    load's hour. Z1 stays overdue, B1 answered, and T6 is due at 6 pm within the day, at least 2 hours after the
-    load, so a walk straight after never finds it overdue."""
+    load's hour. Z1 stays overdue, B1 answered, and T6 is due at 6 pm at least 2 hours after the load and at most
+    two days on (BLD-E077: no reminder threshold inside the walk), so a walk straight after never finds it overdue."""
     from desk import clock, promises
 
     conn = office
@@ -814,7 +814,7 @@ def test_gap_seed_l_questions_clock_5_every_seeded_set_is_due_at_6_pm_ist_as_the
                 s["sent_at"], s["time_to_answer"], promises.get(), clock.office_calendar()
             ), (now, ref)
         t6, z1, b1 = sets[m["T6"].ref], sets[m["Z1"].ref], sets[m["B1"].ref]
-        assert now + club_seed.WALK_ROOM <= t6["due_at"] <= now + dt.timedelta(hours=26), now
+        assert now + club_seed.WALK_ROOM <= t6["due_at"] <= now + dt.timedelta(hours=50), now
         assert t6["state"] == "seen" and t6["seen_at"] < now
         # Overdue, as J-REVIEW/A4 walks it (Remind Zoya, Give 2 more days)
         assert z1["state"] == "sent" and z1["due_at"] < now, now
@@ -829,9 +829,11 @@ def test_gap_seed_l_questions_clock_5_every_seeded_set_is_due_at_6_pm_ist_as_the
 
 def test_gap_seed_l_notify_5_t6_reminder_went_a_day_before_its_deadline_and_says_so(office: Any) -> None:
     """GAP-SEED, L-NOTIFY/5, L-QUESTIONS.clock/2 (J-TRACK/2, /6): an open set is reminded 24 hours and 2 hours before
-    its deadline. T6's "Answer reminder" went 24 hours before (or at the load, when that is still ahead), its set
-    records it, and both of T6's Inbox items and Z1's are due when their set is. So the reminder reads "1 day" or
-    hours and minutes left, never "2 days", before midnight and after it."""
+    its deadline. T6's "Answer reminder" went at the latest threshold crossed at the load, or at the load when none
+    has been crossed yet (BLD-E077), its set records it, and both of T6's Inbox items and Z1's are due when their set
+    is. So the reminder reads "1 day" or hours and minutes left, before midnight and after it; "2 days" only for a
+    load from 4 pm to 6 pm, whose deadline is 6 pm the day after next and has no threshold crossed yet."""
+    from desk import clock, promises
     from notify import render
 
     conn = office
@@ -852,7 +854,8 @@ def test_gap_seed_l_notify_5_t6_reminder_went_a_day_before_its_deadline_and_says
             (m["Z1"].uuid, "questions"),
         }
         reminder = items[(m["T6"].uuid, "answer_reminder")]
-        assert reminder["created_at"] == min(t6["due_at"] - dt.timedelta(hours=24), now) == t6["reminded_at"]
+        crossed = [x for x in clock.reminders(t6["sent_at"], t6["due_at"], promises.get()) if x <= now]
+        assert reminder["created_at"] == max(crossed, default=now) == t6["reminded_at"]
         assert reminder["created_at"] <= now
         for (idea, kind), item in items.items():
             s = t6 if idea == m["T6"].uuid else sets[m["Z1"].ref]
@@ -861,7 +864,53 @@ def test_gap_seed_l_notify_5_t6_reminder_went_a_day_before_its_deadline_and_says
                 assert item["created_at"] == s["sent_at"]
         for read_at in (now, now + dt.timedelta(minutes=30)):  # a load before midnight, read after it
             left = render._left(dict(reminder), read_at)
-            assert left == "1 day" or re.fullmatch(r"\d{2}:\d{2}", left), (now, read_at, left)
+            assert (
+                left == "1 day" or re.fullmatch(r"\d{2}:\d{2}", left) or (not crossed and left == "2 days")
+            ), (
+                now,
+                read_at,
+                left,
+            )
+        club_seed.remove(conn)
+
+
+# BLD-E077: loads either side of 2 pm, 4 pm and 6 pm office time on a working day, and a Friday 5 pm load whose
+# deadline falls on Sunday.
+E077_LOADS = (
+    dt.datetime(2026, 11, 18, 13, 59, tzinfo=IST),
+    dt.datetime(2026, 11, 18, 14, 0, tzinfo=IST),
+    dt.datetime(2026, 11, 18, 15, 50, tzinfo=IST),
+    dt.datetime(2026, 11, 18, 16, 0, tzinfo=IST),
+    dt.datetime(2026, 11, 18, 16, 30, tzinfo=IST),
+    dt.datetime(2026, 11, 18, 17, 59, tzinfo=IST),
+    dt.datetime(2026, 11, 18, 18, 0, tzinfo=IST),
+    dt.datetime(2026, 11, 18, 23, 50, tzinfo=IST),
+    dt.datetime(2026, 11, 20, 17, 0, tzinfo=IST),
+)
+
+
+def test_bld_e077_a_walk_after_the_load_meets_one_t6_reminder_not_two(office: Any) -> None:
+    """BLD-E077, L-QUESTIONS.clock/2, L-NOTIFY/5 (J-TRACK/6): the reminder sweep (`desk.asking.remind_due`, unchanged)
+    sends once per threshold. T6's deadline has no threshold inside the `WALK_ROOM` after the load and its set records
+    the latest threshold already crossed, so the sweep sends nothing during a walk straight after the load: a load
+    just before 4 pm or between 4 pm and 6 pm gives one answer reminder, not two."""
+    from desk import asking, clock, promises
+
+    conn = office
+    for now in E077_LOADS:
+        m = club_seed.load(conn, now)
+        t6 = _sets(conn)[m["T6"].ref]
+        thresholds = clock.reminders(t6["sent_at"], t6["due_at"], promises.get())
+        assert not [x for x in thresholds if now < x <= now + club_seed.WALK_ROOM], now
+        assert t6["reminded_at"] == max((x for x in thresholds if x <= now), default=now), now
+        assert t6["due_at"] - now >= club_seed.WALK_ROOM, now
+        for at in (now + dt.timedelta(minutes=1), now + club_seed.WALK_ROOM):
+            assert asking.remind_due(conn, str(t6["id"]), at=at) is False, (now, at)
+        reminders = conn.execute(
+            "SELECT count(*) AS n FROM notifications WHERE kind = 'answer_reminder' AND idea_uuid = %s",
+            (m["T6"].uuid,),
+        ).fetchone()
+        assert reminders["n"] == 1, now
         club_seed.remove(conn)
 
 
