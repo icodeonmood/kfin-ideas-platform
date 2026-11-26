@@ -1,7 +1,8 @@
 """The names backfill (BLD-C252; DEC-142, the product lead's choice of 27 Nov) against a migrated test database: a text
 written under r6, whose lower-case customer name stayed visible beside a hidden PAN, gets the name hidden with no
 model call; a second copy of the idea holding the name is swept; `gatekeeper_done_at` stays NULL so the gatekeeper's
-re-check still runs later; and a second run changes nothing. Synthetic values only (non-negotiable 11)."""
+re-check still runs later; a detail the gatekeeper found and the person chose to show stays shown; and a second run
+changes nothing. Synthetic values only (non-negotiable 11)."""
 
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from hide import backfill
+from hide import backfill, show
 from hide import detect as hide_detect
 from hide.core import scope_for
 from tests.test_hide_store import count, hdb, idea, made_up, masked_message, message, person, sealed_done
@@ -68,7 +69,8 @@ def test_bld_c252_dec142_the_backfill_hides_a_name_r6_left_visible_with_no_model
             "SELECT actor, entity, after FROM audit_log WHERE action = %s ORDER BY id DESC LIMIT 1",
             (backfill.DONE,),
         ).fetchone()
-        assert audit["actor"] == "system:hide" and audit["entity"] == "job:hide.names_backfill"
+        # A run limited to some ideas audits apart from a full one, so it never stops the worker's run.
+        assert audit["actor"] == "system:hide" and audit["entity"] == backfill.SOME
         assert set(audit["after"]) == {"texts", "details", "other_copies"}  # counts only, never a value
 
         # Safe to run again: the same details, the same masked copies.
@@ -83,17 +85,67 @@ def test_bld_c252_dec142_the_backfill_hides_a_name_r6_left_visible_with_no_model
         killswitch.clear_cache()
 
 
-def test_bld_c252_queued_once_until_it_has_finished(hdb: Any) -> None:
-    """Queued at worker start under one dedupe key; never again once its audit row says it finished."""
+def test_bld_c252_a_detail_the_person_chose_to_show_stays_shown(
+    hdb: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The backfill leaves the gatekeeper out, so it does not find again what the gatekeeper found; one the person
+    chose to show ("Show it") is not among the values hidden on the idea either. It only adds (`add_only`): that
+    detail keeps its row, its state and its reason, while the name beside the PAN hides (the C252 review)."""
+    db = hdb
+    pan = made_up()[1]
+    ref = "QZ-" + uuid.uuid4().hex[:4].upper() + "-MK"
+    uid, code = person(db)
+    iid = idea(db, code)
+    text = f"ravi kumar ka PAN {pan} hai. Ledger ref {ref} bhi dekhiye."
+    start = text.index(ref)
+    found = hide_detect.Found(start, start + len(ref), "account", ref, "gatekeeper")
+    with monkeypatch.context() as r6:
+        r6.setattr(hide_detect, "people_in", lambda *_a, **_k: [])
+        r6.setattr(hide_detect, "gatekeeper_finds", lambda *_a, **_k: hide_detect.Gate([found], checked=True))
+        mid, _ = message(db, iid, uid, text, gatekeeper=True)
+    row = db.execute(
+        "SELECT id FROM hidden_details WHERE idea_uuid = %s AND source_id = %s AND found_by = 'gatekeeper'",
+        (iid, mid),
+    ).fetchone()
+    assert row is not None
+    hid = str(row["id"])
+    show(db, iid, hid, reason="internal_reference", by=uid)
+    assert ref in masked_message(db, mid) and "ravi kumar" in masked_message(db, mid)
+
+    out = backfill.run(db, {"ideas": [iid]})
+
+    assert out["texts"] == 1 and out["details"] >= 1
+    kept = db.execute("SELECT state, reason, found_by FROM hidden_details WHERE id = %s", (hid,)).fetchone()
+    assert kept is not None
+    assert (kept["state"], kept["reason"], kept["found_by"]) == ("shown", "internal_reference", "gatekeeper")
+    seen = masked_message(db, mid)
+    assert ref in seen and "ravi kumar" not in seen and pan not in seen
+    assert backfill.run(db, {"ideas": [iid]}) == {"texts": 1, "details": 0, "other_copies": 0}
+    assert masked_message(db, mid) == seen
+
+
+def test_bld_c252_queued_once_until_a_full_run_has_finished(
+    hdb: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Queued at worker start under one dedupe key; never again once a full run's audit row says it finished. A run
+    limited to some ideas does not count."""
     db = hdb
     db.execute("DELETE FROM jobs WHERE type = %s AND state IN ('queued', 'running')", (backfill.JOB,))
     finished = (
-        db.execute("SELECT 1 FROM audit_log WHERE action = %s", (backfill.DONE,)).fetchone() is not None
+        db.execute(
+            "SELECT 1 FROM audit_log WHERE action = %s AND entity = %s", (backfill.DONE, backfill.ENTITY)
+        ).fetchone()
+        is not None
     )
     if not finished:
         assert backfill.queue_once(db) is not None
         assert backfill.queue_once(db) is None  # one queued at a time
         db.execute("DELETE FROM jobs WHERE type = %s AND state = 'queued'", (backfill.JOB,))
-        backfill.run(db, {"ideas": [str(uuid.uuid4())]})  # a run with nothing to do: it finishes, and says so
+        backfill.run(db, {"ideas": [str(uuid.uuid4())]})  # some ideas only: not finished
+        assert backfill.queue_once(db) is not None
+        db.execute("DELETE FROM jobs WHERE type = %s AND state = 'queued'", (backfill.JOB,))
+        # A full run, every text stood in for (the test database holds other tests' texts): it finishes, and says so.
+        monkeypatch.setattr(backfill, "_one", lambda *_a, **_k: None)
+        assert backfill.run(db, {}) == {"texts": 0, "details": 0, "other_copies": 0}
     assert backfill.queue_once(db) is None
     assert count(db, "SELECT count(*) AS n FROM jobs WHERE type = %s AND state = 'queued'", backfill.JOB) == 0

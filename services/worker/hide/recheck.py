@@ -96,9 +96,11 @@ def settle(
     conversation messages; a team-up text through lane F's writer, BLD-F097), then mask each detail found for the
     first time in every other copy of the idea (`desk._sweep`). Returns (new details, other copies changed).
 
-    Every new detail is swept, whoever found it (BLD-C252, the product lead's choice of 27 Nov): before, only the
-    gatekeeper's were, so a name the name rule found beside a new detail stayed in the idea's other copies. A
-    detail found before keeps its vault tag and is not new (`before`), so settling again changes nothing."""
+    Every new detail the patterns or the gatekeeper found is swept (BLD-C252, the product lead's choice of 27 Nov):
+    before, only the gatekeeper's were, so a name the name rule found beside a new detail stayed in the idea's other
+    copies. A value the desk hid is not swept from here: the desk's "Hide this" swept it when it was hidden, and a
+    sweep as the desk's would hide again a detail its typer chose to show. A detail found before keeps its vault tag
+    and is not new (`before`), so settling again changes nothing."""
     from hide import desk
 
     if source in ("message", "answer", "conversation"):
@@ -112,6 +114,8 @@ def settle(
     fresh = [d for d in kept if str(d["vault_tag"]) not in before]
     copies = 0
     for d in fresh:
+        if d["found_by"] == "reviewer":
+            continue
         value = words[int(d["span_start"]) : int(d["span_end"])]
         copies += desk._sweep(conn, idea_uuid, value, str(d["kind"]), found_by=str(d["found_by"])).copies
     return len(fresh), copies
