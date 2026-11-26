@@ -110,6 +110,20 @@ describe("C-FILE.row, BLD-D030: the compact rows are styled in the shared sheet,
     expect(decl(".flist.compact .frow-a", "width", "@media (max-width: 640px)")).toBe("auto");
   });
 
+  it("BLD-C246 (lane D): on a phone the prompt box's rows fill the list, one to a line, beside the wrap BLD-C244 kept", () => {
+    const box = cssRules("app/share/compose.css");
+    const phone = "@media (max-width: 640px)";
+    const at = (selector: string, prop: string) =>
+      box.find((r) => r.at === phone && r.selectors.includes(selector) && r.decls.has(prop))?.decls.get(prop);
+    expect(at(".cz .cfiles .flist.compact > .frow", "flex-basis")).toBe("100%");
+    expect(at(".cz .cfiles .flist.compact .frow-in", "flex-wrap")).toBe("wrap");
+    expect(at(".cz .cfiles .flist.compact .frow-a", "width")).toBe("100%");
+    // Only on a phone: on a desk the shared 260px rows stand.
+    expect(box.some((r) => r.at === "" && r.selectors.includes(".cz .cfiles .flist.compact > .frow"))).toBe(
+      false,
+    );
+  });
+
   it("F-SPACE.targets: FileRemove is 32px, its focus ring 2px blue, and padded to 44px on touch", () => {
     expect(decl(".frow-x", "width")).toBe("32px");
     expect(decl(".frow-x", "height")).toBe("32px");
