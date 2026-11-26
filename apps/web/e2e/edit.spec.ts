@@ -8,7 +8,7 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, PERSONAS, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, signIn } from "./helpers";
 
 const REF = "IDEA-2026-001481";
 const UUID = "7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f";
@@ -260,5 +260,81 @@ test("S-06B.rules/5 V-ACC: on a phone the edit page is one column with Save chan
     }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "Save changes" })).toBeVisible();
+  await expectNoSeriousAxeIssues(page);
+});
+
+test("BLD-D035, C-PHONE-TABS.dock, S-06B: at 320 × 640 the capped dock is one column; the shared dock, capped with no page rules, stays one column and scrolls to both ends", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone-360", "the dock is fixed to the foot on a phone only");
+  await page.setViewportSize({ width: 320, height: 640 });
+  await openEdit(page);
+  // An unsaved change, then Cancel: the confirm joins the declaration and the buttons in the dock
+  await page.getByRole("button", { name: "Change title" }).click();
+  const title = page.getByRole("textbox", { name: "Title" });
+  await title.fill("Investors call about a redemption not processed");
+  await title.press("Enter");
+  await expect(page.getByRole("status").filter({ hasText: "Unsaved changes" })).toBeVisible();
+  await page.getByRole("link", { name: "Cancel" }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Nothing changes for anyone else until you save." }),
+  ).toBeVisible();
+  await settleMotion(page);
+
+  // S-06B's dock, capped at 45% of the window: every line in it and the buttons' row share one left edge
+  const capped = await page.locator(".dock.ed-dock").evaluate((el) => {
+    const shown = [...el.children].filter(
+      (c) => getComputedStyle(c).position !== "absolute" && c.getBoundingClientRect().height > 0,
+    );
+    return {
+      count: shown.length,
+      lefts: [...new Set(shown.map((c) => Math.round(c.getBoundingClientRect().left)))],
+      height: el.getBoundingClientRect().height,
+    };
+  });
+  expect(capped.count).toBeGreaterThanOrEqual(3); // the confirm, the declaration, Cancel and Save changes
+  expect(capped.lefts, "one column").toHaveLength(1);
+  expect(capped.height).toBeLessThanOrEqual(640 * 0.45 + 1);
+
+  // The shared dock alone (no page class), capped the same way and given more than fits: one column, and both its
+  // first button (at the foot) and its last (at the top) are reached by scrolling the dock
+  const shared = await page.evaluate(() => {
+    const dock = document.createElement("div");
+    dock.className = "dock";
+    dock.style.maxHeight = "160px";
+    dock.style.overflowY = "auto";
+    for (const n of [1, 2, 3, 4]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "btn";
+      b.textContent = `Step ${n}`;
+      dock.append(b);
+    }
+    document.body.append(dock);
+    const buttons = [...dock.querySelectorAll("button")];
+    const seen = (b: Element) => {
+      const r = b.getBoundingClientRect();
+      const box = dock.getBoundingClientRect();
+      return r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
+    };
+    const out = {
+      lefts: [...new Set(buttons.map((b) => Math.round(b.getBoundingClientRect().left)))],
+      overflows: dock.scrollHeight > dock.clientHeight,
+      first: false,
+      last: false,
+    };
+    // Both ends of the scroll, whichever sign the browser gives a reversed column's scrollTop
+    for (const top of [dock.scrollHeight, -dock.scrollHeight]) {
+      dock.scrollTop = top;
+      out.first ||= seen(buttons[0]!);
+      out.last ||= seen(buttons[buttons.length - 1]!);
+    }
+    dock.remove();
+    return out;
+  });
+  expect(shared.overflows, "the cap bites").toBe(true);
+  expect(shared.lefts, "one column").toHaveLength(1);
+  expect(shared.first, "the first button, at the foot, is reached").toBe(true);
+  expect(shared.last, "the last button, at the top, is reached").toBe(true);
   await expectNoSeriousAxeIssues(page);
 });

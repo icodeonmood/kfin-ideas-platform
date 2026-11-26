@@ -1223,6 +1223,11 @@
     bottom: 0;
     z-index: var(--z-sidebar);
     flex-direction: column-reverse;
+    /* One column on every page (BLD-D035). A dock with a height cap (S-06B's 45vh) needs both: with wrap, a capped
+       column starts a second column sideways; packed to the end (the top, in a reversed column), what passes the cap
+       leaves by the foot, where no scroll reaches it. From the start (the foot) it leaves by the top, and scrolls */
+    flex-wrap: nowrap;
+    justify-content: flex-start;
     align-items: stretch;
     gap: 8px;
     margin: 0;
