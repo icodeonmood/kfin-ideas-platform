@@ -6,6 +6,7 @@
 import type { CurrentUser } from "./auth/current";
 import { SubmissionError } from "./submissions";
 import { workerFetch } from "./worker";
+import { refusalCode } from "./worker-codes";
 
 export type Person = { name: string; email: string };
 export type Track = "build" | "fix" | "procurement";
@@ -280,7 +281,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const out = (await res.json().catch(() => ({ error: "delivery_unavailable" }))) as Record<string, unknown>;
   if (!res.ok) {
     const missing = Array.isArray(out.missing) ? out.missing.map(String) : undefined;
-    throw new SubmissionError(res.status, String(out.error ?? "delivery_unavailable"), missing);
+    throw new SubmissionError(res.status, refusalCode(out, "delivery_unavailable"), missing); // DEC-143 (f), BLD-B282
   }
   return out as T;
 }
