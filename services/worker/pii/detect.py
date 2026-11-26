@@ -232,34 +232,6 @@ def _lexicon_people(text: str, stop: frozenset[str]) -> list[tuple[int, int, flo
 # A Latin word, with an apostrophe inside it ("d'souza", "d’souza") or a possessive or closing quote after it
 # ("kumar's", "kumar'"), which the lookup leaves out (the review of a94add9f).
 _LATIN_WORD = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*['’]?")
-# "das" is also "ten" in Hinglish: "das baje", "das din" are a time and a count, not a surname (the review).
-_TEN = "das"
-_AFTER_A_NUMBER = frozenset(
-    [
-        "baje",
-        "din",
-        "minute",
-        "minutes",
-        "mins",
-        "ghante",
-        "ghanta",
-        "saal",
-        "mahine",
-        "mahina",
-        "hafte",
-        "hafta",
-        "baar",
-        "log",
-        "logon",
-        "rupaye",
-        "rupees",
-        "rs",
-        "hazaar",
-        "lakh",
-        "crore",
-        "percent",
-    ]
-)
 _MIDDLE_NAMES_MAX = 2  # "ravi shankar anand kumar"
 
 
@@ -286,7 +258,9 @@ def _name_pairs(text: str) -> list[tuple[int, int]]:
     """BLD-C251 (DEC-142): a name typed in lower case, as in "my client ravi kumar called" or Hinglish in Latin
     script ("devika raghunathan ne bataya"). The capitalised runs above never see it, so a known given name
     followed by one or more known surnames counts in any case, with at most two more given names between them
-    ("ravi shankar kumar"). One word alone never counts: "asha", "kiran" and "prakash" are everyday words too."""
+    ("ravi shankar kumar"). One word alone never counts: "asha", "kiran" and "prakash" are everyday words too. Two
+    list words that happen to sit together are tagged even when they mean something else ("kar diya das baje": gave, ten
+    o'clock): too much tagged is the safe way to be wrong, and a rule to tell them apart left real names visible."""
     given, surnames = _lexicon()
     words = _latin_words(text)
     out: list[tuple[int, int]] = []
@@ -307,8 +281,6 @@ def _name_pairs(text: str) -> list[tuple[int, int]]:
         end = j
         while end < len(words) and words[end][2] in surnames and _spaced(text, words[end - 1], words[end]):
             end += 1
-        if end > j and words[end - 1][2] == _TEN and end < len(words) and words[end][2] in _AFTER_A_NUMBER:
-            end -= 1  # "karan das din": a reason and ten days
         if end > j:
             out.append((words[i][0], words[end - 1][1]))
             i = end

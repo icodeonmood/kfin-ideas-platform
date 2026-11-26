@@ -37,13 +37,25 @@ def hidden(text: str) -> list[tuple[str, str]]:
         ("the customer 'ravi kumar' called", ["ravi kumar"]),
         ("anita d’souza and anita d'souza", ["anita d’souza", "anita d'souza"]),
         ("ravi shankar anand kumar sent it", ["ravi shankar anand kumar"]),
-        ("karan das called", ["karan das"]),  # "das" ends a name when no time or count follows it
+        # From the re-review: a name followed by an everyday word is still a name, never let through.
+        ("ravi das baar baar call kar rahe hain", ["ravi das"]),
+        ("mera client karan das. din mein do baar call kiya", ["karan das"]),
+        # Two list words that mean something else are tagged too: the safe way to be wrong (BLD-C251).
+        ("maine form submit kar diya das baje", ["diya das"]),
     ],
 )
 def test_bld_c251_a_known_given_name_and_surname_in_lower_case_is_a_person(
     text: str, names: list[str]
 ) -> None:
     assert people(text) == names
+
+
+def test_bld_c251_a_name_followed_by_an_everyday_word_is_tagged_and_hidden_beside_the_pan() -> None:
+    """The re-review of 443d3771: "das log in" must not undo the name. In mixed text with a capital letter the English
+    NER model may tag more besides; never less."""
+    text = "customer ravi das log in nahi kar pa raha, PAN ABCPE1234F"
+    assert "ravi das" in people(text)
+    assert ("name", "ravi das") in hidden(text)
 
 
 def test_bld_c251_hinglish_in_latin_script() -> None:
@@ -63,9 +75,6 @@ def test_bld_c251_hinglish_in_latin_script() -> None:
         "ravi, kumar and the others",  # never across a comma
         "send it to ravi.kumar@kfintech.example",  # an address is not a name
         "ravi\nkumar",  # never across a new line
-        # From the review: "das" is ten in Hinglish, and "diya" (gave) and "karan" (reason) are words too.
-        "maine form submit kar diya das baje",
-        "isi karan das din lag gaye",
     ],
 )
 def test_bld_c251_a_single_word_or_a_broken_pair_stays_untagged(text: str) -> None:
