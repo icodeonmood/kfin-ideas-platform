@@ -438,6 +438,22 @@ def test_v_eval_bld_c249_a_draft_part_gate_or_report_missing_fails_the_run() -> 
     assert "agent draft-part: no report (the golden set did not finish)" in lines
 
 
+def test_v_eval_bld_c249_bld_c205_draft_part_with_nothing_answered_reads_n_a_and_fails() -> None:
+    """Lane A's read of the keyless proof: with no draft-part call answered, its expectations and kind accuracy are
+    None in the report (BLD-C205, cbiz 9e98fb90) and their gates False; the paste block says n/a and FAIL for both,
+    never 100% or PASS."""
+    three = ("gatekeeper", "judge", "draft-part")
+    silent = dp_report(expectations=False, kind_accuracy=False)
+    silent["metrics"] |= {"expectations": None, "kind_accuracy": None}
+    reports = {"gatekeeper": gk_report(), "judge": judge_report(), "draft-part": silent}
+    lines, passed = paste.render(reports, PASS_GATES | {"draft-part": DP_GATES}, CALLS, meta(agents=three))
+    for name in ("draft-part expectations", "draft-part kind_accuracy"):
+        got = row(lines, name)[1]
+        assert " n/a " in got and "FAIL" in got and "%" not in got.split(">=")[0], got
+    assert not passed and lines[-2].startswith("EVAL-LIVE: FAIL (")
+    assert "draft-part.expectations" in lines[-2] and "draft-part.kind_accuracy" in lines[-2]
+
+
 def test_at_b4_03_c229_server_block_shows_the_install_and_fails_if_its_llm_calls_moved() -> None:
     reports = {"gatekeeper": gk_report(), "judge": judge_report()}
     same = meta(mode="server", installed_tag="launch-2026-11-23-r5", installed_sha="b" * 40, install_before=7,
