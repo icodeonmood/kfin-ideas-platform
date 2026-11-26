@@ -931,7 +931,14 @@ def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: boo
     }
     if done:
         out["receipt"] = list(done["receipt"] or [])
-        out["suggestions"] = list(done["suggestions"] or [])
+        # The next prompts follow the parts and the kind the sorting shows now (BLD-C203), not as they were when the
+        # run ended: New business picked by hand on Check it brings its own prompts to the draft page at once, with
+        # the assistant on or off (the product lead's 14:30 note of 26 Nov; the run's stored list is the same until
+        # something changes).
+        now_parts = runs.current(conn, idea_uuid)
+        out["suggestions"] = parts.suggestions(
+            {k: v for k, (_, v) in now_parts.items()}, kind=runs.kind_now(conn, idea_uuid, now_parts)
+        )
     origin = open_text("ideas", "origin_encrypted", idea_uuid, row["origin_encrypted"])
     if origin:
         from draft.channels import origin_label
