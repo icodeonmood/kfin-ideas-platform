@@ -30,6 +30,14 @@ def hidden(text: str) -> list[tuple[str, str]]:
         ("ravi shankar kumar sent it", ["ravi shankar kumar"]),  # a middle name
         ("ravi prasad sent it", ["ravi prasad"]),  # prasad is a given name and a surname
         ("Ravi kumar called", ["Ravi kumar"]),  # one span, not "Ravi" alone
+        ("RAVI KUMAR called", ["RAVI KUMAR"]),
+        # From the review of a94add9f: a possessive, a quote, the curly apostrophe phones type, two middle names.
+        ("my client ravi kumar's pan is late", ["ravi kumar"]),
+        ("my client ravi kumar’s pan is late", ["ravi kumar"]),
+        ("the customer 'ravi kumar' called", ["ravi kumar"]),
+        ("anita d’souza and anita d'souza", ["anita d’souza", "anita d'souza"]),
+        ("ravi shankar anand kumar sent it", ["ravi shankar anand kumar"]),
+        ("karan das called", ["karan das"]),  # "das" ends a name when no time or count follows it
     ],
 )
 def test_bld_c251_a_known_given_name_and_surname_in_lower_case_is_a_person(
@@ -54,6 +62,10 @@ def test_bld_c251_hinglish_in_latin_script() -> None:
         "kiran ne prakash ko bataya",  # two given names, no surname
         "ravi, kumar and the others",  # never across a comma
         "send it to ravi.kumar@kfintech.example",  # an address is not a name
+        "ravi\nkumar",  # never across a new line
+        # From the review: "das" is ten in Hinglish, and "diya" (gave) and "karan" (reason) are words too.
+        "maine form submit kar diya das baje",
+        "isi karan das din lag gaye",
     ],
 )
 def test_bld_c251_a_single_word_or_a_broken_pair_stays_untagged(text: str) -> None:

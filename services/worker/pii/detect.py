@@ -8,6 +8,8 @@ Sources, in priority order (a higher-priority find wins an overlap; then the lon
 5. Other person names: Microsoft Presidio with the small spaCy English model, plus two KFin recognisers
    (honorifics such as "Shri" or "Mrs", and a lexicon of common Indian given names and surnames, because the
    small model often labels Indian names as organisations or places). BLD-067.
+6. A known given name followed by a known surname in any case, the way a name typed in lower case looks ("ravi
+   kumar"); one word alone never counts. BLD-C251, DEC-142.
 
 Not tagged: KFin product and system names (the glossary), public competitor and vendor names, amounts, dates.
 """
@@ -227,21 +229,66 @@ def _lexicon_people(text: str, stop: frozenset[str]) -> list[tuple[int, int, flo
     return out
 
 
-_LATIN_WORD = re.compile(r"[A-Za-z][A-Za-z'’]*")
+# A Latin word, with an apostrophe inside it ("d'souza", "d’souza") or a possessive or closing quote after it
+# ("kumar's", "kumar'"), which the lookup leaves out (the review of a94add9f).
+_LATIN_WORD = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*['’]?")
+# "das" is also "ten" in Hinglish: "das baje", "das din" are a time and a count, not a surname (the review).
+_TEN = "das"
+_AFTER_A_NUMBER = frozenset(
+    [
+        "baje",
+        "din",
+        "minute",
+        "minutes",
+        "mins",
+        "ghante",
+        "ghanta",
+        "saal",
+        "mahine",
+        "mahina",
+        "hafte",
+        "hafta",
+        "baar",
+        "log",
+        "logon",
+        "rupaye",
+        "rupees",
+        "rs",
+        "hazaar",
+        "lakh",
+        "crore",
+        "percent",
+    ]
+)
+_MIDDLE_NAMES_MAX = 2  # "ravi shankar anand kumar"
+
+
+def _latin_words(text: str) -> list[tuple[int, int, str]]:
+    """(start, end, lookup key) per Latin word: the curly apostrophe read as a straight one, and a possessive 's or a
+    closing quote left out of both the key and the span."""
+    out = []
+    for m in _LATIN_WORD.finditer(text):
+        start, end, key = m.start(), m.end(), m.group(0).replace("’", "'").casefold()
+        if key.endswith("'s") and len(key) > 2:
+            key, end = key[:-2], end - 2
+        elif key.endswith("'"):
+            key, end = key[:-1], end - 1
+        out.append((start, end, key))
+    return out
 
 
 def _spaced(text: str, a: tuple[int, int, str], b: tuple[int, int, str]) -> bool:
-    """Two words with only spaces between them: never across a comma, a full stop or a new line."""
+    """Two words with only spaces between them: never across a comma, a full stop, a new line or an apostrophe."""
     return a[1] < b[0] and text[a[1] : b[0]].strip(" \t\u00a0") == ""
 
 
 def _name_pairs(text: str) -> list[tuple[int, int]]:
     """BLD-C251 (DEC-142): a name typed in lower case, as in "my client ravi kumar called" or Hinglish in Latin
     script ("devika raghunathan ne bataya"). The capitalised runs above never see it, so a known given name
-    followed by one or more known surnames counts in any case, with at most one more given name between them
+    followed by one or more known surnames counts in any case, with at most two more given names between them
     ("ravi shankar kumar"). One word alone never counts: "asha", "kiran" and "prakash" are everyday words too."""
     given, surnames = _lexicon()
-    words = [(m.start(), m.end(), m.group(0).casefold()) for m in _LATIN_WORD.finditer(text)]
+    words = _latin_words(text)
     out: list[tuple[int, int]] = []
     i = 0
     while i < len(words):
@@ -249,16 +296,19 @@ def _name_pairs(text: str) -> list[tuple[int, int]]:
             i += 1
             continue
         j = i + 1
-        if (
+        while (
             j < len(words)
+            and j - i <= _MIDDLE_NAMES_MAX
             and words[j][2] in given
             and words[j][2] not in surnames
-            and _spaced(text, words[i], words[j])
+            and _spaced(text, words[j - 1], words[j])
         ):
             j += 1  # a middle name
         end = j
         while end < len(words) and words[end][2] in surnames and _spaced(text, words[end - 1], words[end]):
             end += 1
+        if end > j and words[end - 1][2] == _TEN and end < len(words) and words[end][2] in _AFTER_A_NUMBER:
+            end -= 1  # "karan das din": a reason and ten days
         if end > j:
             out.append((words[i][0], words[end - 1][1]))
             i = end
