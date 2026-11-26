@@ -5,7 +5,7 @@
  * it saves once the assistant is back, and keeps the words as typed in its field. fetch is a stub answering as the
  * web app's routes do (`{ error: "assistant_off" }`, 503); synthetic people and words only.
  */
-import { act, createElement } from "react";
+import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,7 +18,7 @@ import type { ShowcaseBrief } from "@/server/ones";
 const refresh = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh, push: vi.fn(), replace: vi.fn() }) }));
 vi.mock("next/link", () => ({
-  default: ({ href, children }: { href: string; children: unknown }) =>
+  default: ({ href, children }: { href: string; children?: ReactNode }) =>
     createElement("a", { href }, children),
 }));
 
@@ -181,7 +181,9 @@ describe("DEC-143 (f), BLD-B282: the assistant off, the words stay", () => {
   it("the Showcase brief says it saves once the assistant is back and keeps every part as typed", async () => {
     act(() => root.render(createElement(ShowcaseSheet, { onClose: () => undefined })));
     await settle();
-    const [idea, progress] = [...host.querySelectorAll("textarea")];
+    const fields = [...host.querySelectorAll("textarea")];
+    expect(fields).toHaveLength(2);
+    const [idea, progress] = fields as [HTMLTextAreaElement, HTMLTextAreaElement];
     type(idea, "Fewer returned forms at the branch.");
     type(progress, "Two branches use it.");
     await submit(formWith("Save your brief"));
