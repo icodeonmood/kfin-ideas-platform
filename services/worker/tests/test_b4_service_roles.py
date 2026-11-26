@@ -104,3 +104,21 @@ def test_the_web_role_cannot_read_the_experiments_metrics() -> None:
             assert row is not None
             assert row["web"] is False, view
             assert row["worker"] is True, view
+
+
+def test_dec122_suggestion_outcomes_are_append_only_for_the_worker() -> None:
+    """DEC-122 (BLD-C207): the worker adds and reads suggestion outcomes, never changes or removes one; the web app
+    has no access at all. Rows go with their idea through the cascade, which runs as the table's owner."""
+    with connect(autocommit=True) as owner:
+        row = owner.execute(
+            "SELECT "
+            + ", ".join(
+                f"has_table_privilege('{role}', 'public.suggestion_outcomes', '{priv}') AS {role[6:-4]}_{priv.lower()}"
+                for role in ("ideas_worker_svc", "ideas_web_svc")
+                for priv in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")
+            )
+        ).fetchone()
+    assert row is not None
+    assert row["worker_select"] is True and row["worker_insert"] is True
+    assert not (row["worker_update"] or row["worker_delete"] or row["worker_truncate"])
+    assert not any(row[f"web_{p}"] for p in ("select", "insert", "update", "delete", "truncate"))
