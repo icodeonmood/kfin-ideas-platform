@@ -1,6 +1,9 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, settleMotion, signIn } from "./helpers";
 
 /**
  * S-03 Home (`/home`, BLD-C143 to C147), against the local stack. The question and the box, the sections in order
@@ -138,4 +141,211 @@ test("C-ONES-FAN on Home: the Ones' posts, the arrows and the cheer toggle, axe 
   await cheer.click();
   expect((await unliked).ok()).toBe(true);
   await expect(cheer).toHaveAttribute("aria-pressed", "false");
+});
+
+/**
+ * QA ONLY, lane D's branch d/qa-c246-1, never merged: BLD-C246 (c157ca9d) on Home and Share. (1) The box's file rows:
+ * at 640 and below each row is the list's width, one to a line; on a desk (1440) short rows stay side by side at 260px
+ * at most. (2) Closing the picker (a tap on the "+", Enter on it, Escape from inside) after the page was scrolled down
+ * to the "+": the box comes back into view when it fits between the bars, and the "+" is on screen with the focus.
+ * Screenshots and measures go to test-results/qa-shots. Synthetic files only; the good files upload to this run's stack.
+ */
+const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
+const QA_LIST = '.cbox.prompt ul.flist[aria-label="Your files and links"]';
+
+async function qaGeom(page: Page) {
+  return page.evaluate((sel) => {
+    const box = (el: Element | null | undefined) => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height };
+    };
+    const ul = document.querySelector(sel);
+    const plus = document.querySelector<HTMLElement>(".cbox.prompt .attach-btn");
+    const top = document.querySelector(".ptop, .pnav");
+    const bars = [...document.querySelectorAll<HTMLElement>(".ptabs, .dock")].filter(
+      (e) => getComputedStyle(e).position === "fixed",
+    );
+    return {
+      vh: window.innerHeight,
+      scrollY: window.scrollY,
+      sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      topBar: top && getComputedStyle(top).display !== "none" ? top.getBoundingClientRect().bottom : 0,
+      bottomBar: bars.length
+        ? Math.min(...bars.map((t) => t.getBoundingClientRect().top))
+        : window.innerHeight,
+      cbox: box(document.querySelector(".cbox.prompt")),
+      words: box(document.querySelector(".cbox.prompt textarea")),
+      plus: box(plus),
+      focused: !!plus && document.activeElement === plus,
+      ring: plus ? getComputedStyle(plus).outlineStyle : "",
+      list: box(ul),
+      rows: [...(ul?.querySelectorAll(":scope > .frow") ?? [])].map((li) => ({
+        name: li.querySelector(".frow-n")?.textContent ?? "",
+        isMsg: li.classList.contains("frow-msg"),
+        row: box(li)!,
+      })),
+    };
+  }, QA_LIST);
+}
+
+async function qaAdd(page: Page, name: string, buffer: Buffer) {
+  const plus = page
+    .locator(".cbox.prompt")
+    .getByRole("button", { name: "Add files, a folder or a link", exact: true });
+  const picker = page.locator(".fpick.cpick");
+  const rows = page.locator(`${QA_LIST} > .frow`);
+  const before = await rows.count();
+  if (!(await picker.isVisible())) await plus.click();
+  await expect(picker).toBeVisible();
+  const chooser = page.waitForEvent("filechooser");
+  await picker.getByRole("button", { name: "browse", exact: true }).click();
+  await (await chooser).setFiles({ name, mimeType: "text/markdown", buffer });
+  await expect(rows).toHaveCount(before + 1, { timeout: 30_000 });
+}
+
+test("QA (lane D, never merged): BLD-C246, the box's file rows fill the list at 640 and below; desk rows unchanged; Home and Share at 1440, 640, 360, 320", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "the sizes are set here");
+  test.setTimeout(900_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+  await signInFresh(page, "Q");
+  await page.waitForURL((url) => url.pathname === "/home");
+  // The file named upload-fails-… is refused as a server error, so its row carries a message and Try again
+  await page.route("**/api/files", (route) => {
+    const body = route.request().postDataBuffer();
+    if (route.request().method() === "POST" && body && body.includes("upload-fails-"))
+      return route.fulfill({
+        status: 500,
+        json: { error: { code: "internal", message: "Something went wrong." } },
+      });
+    return route.fallback();
+  });
+  for (const path of ["/home", "/share"] as const) {
+    for (const [w, h] of [
+      [1440, 900],
+      [640, 800],
+      [360, 740],
+      [320, 640],
+    ] as const) {
+      const phone = w <= 640;
+      const at = `c246${path.replace("/", "-")}-${w}x${h}`;
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto(path);
+      await expect(page.locator(".cbox.prompt textarea")).toBeVisible();
+      await settleMotion(page);
+      await qaAdd(page, "a.md", Buffer.from("Synthetic: 15 calls a week."));
+      await qaAdd(page, "b.md", Buffer.from("Synthetic: 40 a day."));
+      await qaAdd(page, "upload-fails-log.md", Buffer.from("Synthetic: this upload is refused by the test."));
+      await expect(page.getByRole("button", { name: "Try again" }).first()).toBeVisible({ timeout: 30_000 });
+      await page.locator(QA_LIST).evaluate((el) => el.scrollIntoView({ block: "center" }));
+      await settleMotion(page);
+      const g = await qaGeom(page);
+      log[at] = g;
+      await page.screenshot({ path: join(QA_SHOTS, `${at}.png`) });
+      expect.soft(g.sideways, `${at}: no sideways scroll`).toBeLessThanOrEqual(0);
+      expect.soft(g.rows.length, `${at}: three rows`).toBe(3);
+      for (const [i, r] of g.rows.entries()) {
+        const row = `${at} row ${i + 1} (${r.name})`;
+        if (!g.list) continue;
+        expect.soft(r.row.left, `${row}: starts inside the list`).toBeGreaterThanOrEqual(g.list.left - 0.5);
+        expect.soft(r.row.right, `${row}: ends inside the list`).toBeLessThanOrEqual(g.list.right + 0.5);
+        if (phone || r.isMsg) {
+          expect.soft(Math.abs(r.row.width - g.list.width), `${row}: the list's width`).toBeLessThan(1);
+        } else {
+          expect.soft(r.row.width, `${row}: 260px at most on a desk`).toBeLessThanOrEqual(260.5);
+        }
+        if (phone && i > 0)
+          expect
+            .soft(r.row.top, `${row}: on its own line`)
+            .toBeGreaterThanOrEqual(g.rows[i - 1].row.bottom - 0.5);
+      }
+      if (!phone && g.rows.length >= 2)
+        expect
+          .soft(Math.abs(g.rows[0].row.top - g.rows[1].row.top), `${at}: two short rows side by side`)
+          .toBeLessThan(1);
+      await expectNoSeriousAxeIssues(page);
+    }
+  }
+  writeFileSync(join(QA_SHOTS, "c246-rows.json"), JSON.stringify(log, null, 2));
+});
+
+test('QA (lane D, never merged): BLD-C246, closing the picker brings the box, then the "+", into view; Home and Share at 640, 360, 320', async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone-360", "phone only");
+  test.setTimeout(600_000);
+  mkdirSync(QA_SHOTS, { recursive: true });
+  const log: Record<string, unknown> = {};
+  await signInFresh(page, "Z");
+  await page.waitForURL((url) => url.pathname === "/home");
+  const plus = page
+    .locator(".cbox.prompt")
+    .getByRole("button", { name: "Add files, a folder or a link", exact: true });
+  const picker = page.locator(".fpick.cpick");
+  const openAtPlus = async (name: string) => {
+    if (!(await picker.isVisible())) await plus.click();
+    await expect(picker).toBeVisible();
+    await settleMotion(page);
+    // Scrolled down to the "+", under the open picker, as a person reaching for it would be
+    await plus.evaluate((el) => el.scrollIntoView({ block: "end" }));
+    await settleMotion(page);
+    const g = await qaGeom(page);
+    log[`${name}-open`] = g;
+    await page.screenshot({ path: join(QA_SHOTS, `${name}-open.png`) });
+  };
+  const seen = async (name: string, ring: boolean) => {
+    await expect(picker).toHaveCount(0);
+    await settleMotion(page);
+    const g = await qaGeom(page);
+    log[name] = g;
+    await page.screenshot({ path: join(QA_SHOTS, `${name}.png`) });
+    expect.soft(g.focused, `${name}: the "+" has the focus`).toBe(true);
+    expect
+      .soft(g.plus?.top ?? -1, `${name}: the "+" is below the top bar`)
+      .toBeGreaterThanOrEqual(g.topBar - 0.5);
+    expect
+      .soft(g.plus?.bottom ?? 1e9, `${name}: the "+" is above the bottom bar`)
+      .toBeLessThanOrEqual(g.bottomBar + 0.5);
+    if (ring) expect.soft(g.ring, `${name}: the "+" shows its ring`).toBe("solid");
+    if (g.cbox && g.cbox.height <= g.bottomBar - g.topBar) {
+      expect.soft(g.cbox.top, `${name}: the box's top is in view`).toBeGreaterThanOrEqual(g.topBar - 0.5);
+      expect.soft(g.cbox.bottom, `${name}: the box's foot is in view`).toBeLessThanOrEqual(g.bottomBar + 0.5);
+    }
+    if (g.words)
+      expect.soft(g.words.top, `${name}: the words' top is in view`).toBeGreaterThanOrEqual(g.topBar - 0.5);
+  };
+  for (const path of ["/home", "/share"] as const) {
+    for (const [w, h] of [
+      [640, 800],
+      [360, 740],
+      [320, 640],
+    ] as const) {
+      const at = `c246close${path.replace("/", "-")}-${w}x${h}`;
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto(path);
+      await expect(page.locator(".cbox.prompt textarea")).toBeVisible();
+      await settleMotion(page);
+      await qaAdd(page, "a.md", Buffer.from("Synthetic: 15 calls a week."));
+      await qaAdd(page, "b.md", Buffer.from("Synthetic: 40 a day."));
+      // A tap on the "+"
+      await openAtPlus(`${at}-1-tap`);
+      await plus.click();
+      await seen(`${at}-1-tap`, false);
+      // Enter on the "+"
+      await openAtPlus(`${at}-2-enter`);
+      await plus.focus();
+      await page.keyboard.press("Enter");
+      await seen(`${at}-2-enter`, true);
+      // Escape from inside the picker
+      await openAtPlus(`${at}-3-escape`);
+      await picker.getByRole("button", { name: "Choose a folder", exact: true }).focus();
+      await page.keyboard.press("Escape");
+      await seen(`${at}-3-escape`, true);
+      await expectNoSeriousAxeIssues(page);
+    }
+  }
+  writeFileSync(join(QA_SHOTS, "c246-close.json"), JSON.stringify(log, null, 2));
 });
