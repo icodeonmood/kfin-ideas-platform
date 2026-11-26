@@ -189,6 +189,15 @@ async function qaGeom(page: Page) {
   }, QA_LIST);
 }
 
+// The rows' check finishes a moment after the upload and the rows get shorter then ("Checking for personal details"
+// wraps; "Checked" does not), so every measure waits for it: a box measured as it shrinks reads as out of view
+async function qaRowsSettled(page: Page) {
+  await expect(page.locator(`${QA_LIST} > .frow-uploading, ${QA_LIST} > .frow-checking`)).toHaveCount(0, {
+    timeout: 90_000,
+  });
+  await settleMotion(page);
+}
+
 async function qaAdd(page: Page, name: string, buffer: Buffer) {
   const plus = page
     .locator(".cbox.prompt")
@@ -240,6 +249,7 @@ test("QA (lane D, never merged): BLD-C246, the box's file rows fill the list at 
       await qaAdd(page, "b.md", Buffer.from("Synthetic: 40 a day."));
       await qaAdd(page, "upload-fails-log.md", Buffer.from("Synthetic: this upload is refused by the test."));
       await expect(page.getByRole("button", { name: "Try again" }).first()).toBeVisible({ timeout: 30_000 });
+      await qaRowsSettled(page);
       await page.locator(QA_LIST).evaluate((el) => el.scrollIntoView({ block: "center" }));
       await settleMotion(page);
       const g = await qaGeom(page);
@@ -286,6 +296,7 @@ test('QA (lane D, never merged): BLD-C246, closing the picker brings the box, th
     .getByRole("button", { name: "Add files, a folder or a link", exact: true });
   const picker = page.locator(".fpick.cpick");
   const openAtPlus = async (name: string) => {
+    await qaRowsSettled(page);
     if (!(await picker.isVisible())) await plus.click();
     await expect(picker).toBeVisible();
     await settleMotion(page);
