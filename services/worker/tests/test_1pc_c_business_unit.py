@@ -334,6 +334,15 @@ def test_l_draft_bld_c205_the_kind_is_a_model_gate(monkeypatch: pytest.MonkeyPat
     said[:] = ["business_idea"] * 6  # one wrong (the problem): 5 of 6
     assert harness.run(ctx)["model_gates"]["kind_accuracy"] is True
 
+    # Nothing answered (no key on the server): n/a and FAIL, never 100% over no answers (lane A's review, 27 Nov).
+    def failed(*_a: Any, **_k: Any) -> Any:
+        raise harness.AgentFailed("agent_failed")
+
+    monkeypatch.setattr(harness, "run_agent", failed)
+    none = harness.run(ctx)
+    assert none["metrics"]["expectations"] is None and none["metrics"]["kind_accuracy"] is None
+    assert none["model_gates"]["expectations"] is False and none["model_gates"]["kind_accuracy"] is False
+
 
 def test_l_draft_bld_c205_the_harness_checks_the_kind_its_quote_and_the_offer() -> None:
     sent = {"words": [{"n": 1, "text": PRIM, "english": "A set-up kit for PRIM launches."}]}

@@ -247,7 +247,9 @@ def test_dec141_bld_c204_capture_first_offers_a_business_idea_only_when_picked_b
 ) -> None:
     """With the assistant off (Capture first, DEC-125; r7 launches so, DEC-141) the draft-part agent never runs: no
     gateway call, no kind of its own, today's next prompts. The sorting offers "A new business idea" only when the
-    person picks New business by hand (BLD-C204); moving away takes it back to a problem to fix."""
+    person picks New business by hand (BLD-C204); moving away takes it back to a problem to fix. The draft page's next
+    prompts follow at once, without another run (the product lead's 14:30 note of 26 Nov), and no agent's call is
+    logged other than a switched-off one."""
     db, owner = drafting
     _switch(db, "ai.all", "off")
 
@@ -265,14 +267,23 @@ def test_dec141_bld_c204_capture_first_offers_a_business_idea_only_when_picked_b
     assert v["kind"]["value"] == "problem" and v["kind"]["source"] == "suggested"
     draft = store.view(db, owner, idea, LAPTOP)
     assert draft["sorting"]["kind"]["value"] == "problem"
-    assert not set(draft["suggestions"]) & set(parts.BUSINESS_PROMPTS.values())
+    assert draft["suggestions"] and not set(draft["suggestions"]) & set(parts.BUSINESS_PROMPTS.values())
 
     v = _patch(db, owner, idea, {"area": "New business"})
     assert v["kind"]["value"] == "business_idea" and v["kind"]["source"] == "suggested"
     assert v["kind"]["why_line"] == BUSINESS_LINE
-    assert store.view(db, owner, idea, LAPTOP)["sorting"]["kind"]["value"] == "business_idea"
+    draft = store.view(db, owner, idea, LAPTOP)
+    assert draft["sorting"]["kind"]["value"] == "business_idea"
+    # The business prompts at once: who it is for, then how many would use it (BLD-C203), no run in between.
+    assert draft["suggestions"] == [parts.BUSINESS_PROMPTS["who"], parts.BUSINESS_PROMPTS["often"]]
     v = _patch(db, owner, idea, {"area": "Operations"})
     assert v["kind"]["value"] == "problem" and v["kind"]["source"] == "suggested"
+    draft = store.view(db, owner, idea, LAPTOP)
+    assert draft["suggestions"] and not set(draft["suggestions"]) & set(parts.BUSINESS_PROMPTS.values())
     v = _patch(db, owner, idea, {**FILLED, "area": "New business", "confirm": True})
     assert v["kind"]["value"] == "business_idea" and v["kind"]["source"] == "confirmed"
     assert db.execute("SELECT count(*) AS n FROM llm_calls WHERE agent = 'draft-part'").fetchone()["n"] == 0
+    # DEC-141: no agent reached the model; the only rows any agent wrote are the gateway's switched-off ones.
+    assert (
+        db.execute("SELECT count(*) AS n FROM llm_calls WHERE outcome <> 'switched_off'").fetchone()["n"] == 0
+    )
