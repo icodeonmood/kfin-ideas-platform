@@ -384,16 +384,13 @@ test("QA (lane D, never merged): BLD-D036 on S-08's picker with BLD-F106, at 144
   mkdirSync(QA_SHOTS, { recursive: true });
   const log: Record<string, unknown> = {};
   await answer(page);
-  const sizes =
-    info.project.name === "phone-360"
-      ? ([
-          [360, 740],
-          [320, 640],
-        ] as const)
-      : ([
-          [1440, 900],
-          [640, 800],
-        ] as const);
+  // This spec runs in the desktop project only (its beforeEach); the sizes are set here, so all four run in it
+  const sizes = [
+    [1440, 900],
+    [640, 800],
+    [360, 740],
+    [320, 640],
+  ] as const;
   for (const [w, h] of sizes) {
     const at = `d036-s08-${w}x${h}`;
     await page.setViewportSize({ width: w, height: h });
