@@ -54,7 +54,24 @@ jobs:
         run: |
           set -o pipefail
           make .env   # the rehearsal stops the dev stack first (make down), which reads .env; a fresh runner has none
+          W="$PWD/.data-uat-rehearsal"
+          # On Linux, deploy.sh wants the data folder owned by the worker's uid 10001 and ops/ and backups/ writable
+          # by the deploy account: what IT did once on the server (docs/UAT.md), as a/a241-proof-1 did. The rehearsal
+          # makes $W/data itself and refuses one that is there already, so this waits for it.
+          (
+            for _ in $(seq 1 3000); do
+              if [[ -d "$W/data" ]]; then
+                sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" "$W/data/ops" "$W/data/backups"
+                sudo chown 10001 "$W/data"
+                echo "runner: $W/data owned by uid 10001; ops/ and backups/ by $(id -un), mode 700"
+                exit 0
+              fi
+              sleep 0.1
+            done
+            echo "runner: $W/data did not appear in 300 s"
+          ) &
           KEEP=1 make uat-rehearsal 2>&1 | tee "$RUNNER_TEMP/rehearsal.log"
+          wait
           grep -x 'Production-mode rehearsal passed.' "$RUNNER_TEMP/rehearsal.log"
           echo "== kept"
           docker ps --filter label=com.docker.compose.project=kfin-ideas-uat-rehearsal --format '{{.Names}} {{.Status}}' \
