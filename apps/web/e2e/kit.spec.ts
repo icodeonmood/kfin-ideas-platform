@@ -170,15 +170,17 @@ test('C-FIELD, C-PROMPT.anatomy/2 (BLD-D029): a field\'s own "+" sits inside its
   // The kit's arrival scales its cards in; measure once it has finished (CI 45117067515 caught it mid-way at 0.99)
   await settleMotion(page);
   const [f, p, t] = await Promise.all([frame.boundingBox(), plus.boundingBox(), field.boundingBox()]);
-  // Inside the frame, 4px in from its right and bottom edges (1px border + 4px), right of the text, 44px
+  // Inside the frame, 6px in from its right and bottom edges (1px border + 6px: the ring's 2px and 2px offset keep 2px
+  // clear inside the border, BLD-D037), 44px; right of the text, or under it in a frame under 300px (a phone's)
   expect(await plus.evaluate((el) => [getComputedStyle(el).width, getComputedStyle(el).height])).toEqual([
     "44px",
     "44px",
   ]);
   expect(p!.width).toBeCloseTo(44, 0);
-  expect(f!.x + f!.width - (p!.x + p!.width)).toBeCloseTo(5, 0);
-  expect(f!.y + f!.height - (p!.y + p!.height)).toBeCloseTo(5, 0);
-  expect(p!.x).toBeGreaterThanOrEqual(t!.x + t!.width);
+  expect(f!.x + f!.width - (p!.x + p!.width)).toBeCloseTo(7, 0);
+  expect(f!.y + f!.height - (p!.y + p!.height)).toBeCloseTo(7, 0);
+  if (f!.width >= 300) expect(p!.x).toBeGreaterThanOrEqual(t!.x + t!.width);
+  else expect(p!.y).toBeGreaterThanOrEqual(t!.y + t!.height);
   // The text starts where a field's without tools does: the other text area on the page
   const plain = page.getByRole("textbox", { name: /Anything else the desk should know/ });
   const textLeft = (l: Locator) =>

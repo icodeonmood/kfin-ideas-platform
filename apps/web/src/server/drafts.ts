@@ -40,12 +40,16 @@ export const DRAFT_MESSAGES: Record<string, string> = {
 };
 const FALLBACK = "Something went wrong. Please try again.";
 
-/** Capture first (DEC-125, BLD-C212): `ai.all` is off. Read exactly as the "The assistant is taking a break…" banner
- * reads it (components/banners.tsx: the switch table, anything but "on" is off); a table that cannot be read shows no
- * banner, so Tell it stays in Full mode too. Nothing else turns it on: a run that fails every part keeps Full mode. */
+/** Capture first (DEC-125, BLD-C212): `ai.all` is off, or `agent.draft-part` alone is off (DEC-143 (g), BLD-B281),
+ * the two switches without which the worker runs no draft part (draft/runs.py `ai_on`), so the panel would only
+ * fill with parts nobody can work out. Read as the "The assistant is taking a break…" banner reads `ai.all`
+ * (components/banners.tsx: the switch table, anything but "on" is off, a missing row too, as the worker's
+ * `killswitch.is_on`); a table that cannot be read shows no banner, so Tell it stays in Full mode too. Nothing else
+ * turns it on: another switch off keeps Full mode, and so does a run that fails every part. */
 export async function captureFirstOn(): Promise<boolean> {
   try {
-    return (await switchStates()).get("ai.all") !== "on";
+    const states = await switchStates();
+    return states.get("ai.all") !== "on" || states.get("agent.draft-part") !== "on";
   } catch {
     return false;
   }
