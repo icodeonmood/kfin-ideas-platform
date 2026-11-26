@@ -244,7 +244,7 @@ def test_dec_111_bld_f087_readers_at_the_desk_or_on_the_committee_read_names_wha
 
 @pytest.fixture
 def desk_lines(db: Any, world: dict[str, Any]) -> dict[str, Any]:
-    """Lane E's seeded `decided` and `desk_merged`, and lane B's `desk.decided`, `desk.merged`, `desk.worth_revised`
+    """Lane E's seeded `desk.decided` and `desk.merged` (BLD-F112), and lane B's `desk.decided`, `desk.merged`, `desk.worth_revised`
     and `desk.decide_by_moved`, on Kavya's idea; Harish (a second reviewer, not the idea's `reviewer_id`) acts on two
     of them. Nisha's idea is joined into Kavya's."""
     from psycopg.types.json import Jsonb
@@ -264,14 +264,15 @@ def desk_lines(db: Any, world: dict[str, Any]) -> dict[str, Any]:
         (idea["id"], other["id"], harish["id"], fx.at(16, 15, 30)),
     ).fetchone()["id"]
 
-    def seeded(code: str, at: Any, payload: dict[str, Any]) -> None:  # as lane E's seed writes it: no author
+    def seeded(code: str, at: Any, payload: dict[str, Any], user: str) -> None:  # as lane E's seed writes it
         db.execute(
-            "INSERT INTO conversation_entries (idea_uuid, type, event, payload, at) VALUES (%s, 'event', %s, %s, %s)",
-            (idea["id"], code, Jsonb(payload), at),
+            "INSERT INTO conversation_entries (idea_uuid, type, event, author_user_id, payload, at) "
+            "VALUES (%s, 'event', %s, %s, %s, %s)",
+            (idea["id"], code, user, Jsonb(payload), at),
         )
 
-    seeded("decided", fx.at(16, 15), {"decision_id": str(decision)})
-    seeded("desk_merged", fx.at(16, 15, 30), {"merge_id": str(merge)})
+    seeded("desk.decided", fx.at(16, 15), {"decision_id": str(decision), "choice": "pick"}, meera["id"])
+    seeded("desk.merged", fx.at(16, 15, 30), {"merge_id": str(merge)}, harish["id"])
     post(db, str(idea["id"]), "desk.decided", author_user_id=harish["id"], payload={"choice": "not_now"},
          at=fx.at(16, 16))  # fmt: skip
     post(db, str(idea["id"]), "desk.merged", author_user_id=harish["id"], payload={"merge_id": str(merge)},
@@ -293,8 +294,8 @@ def test_dec_111_l_convo_3_the_desks_event_lines_read_the_review_desk(
     ref = w["other"]["idea_id"]
     assert [t for t in _texts(view) if t.startswith("The review desk")] == [
         "The review desk opened it. Monday 16 November, 9:50 am",
-        "The review desk picked it. 3:00 pm",  # lane E's seeded `decided`
-        f"The review desk joined it with {ref}. 3:30 pm",  # lane E's seeded `desk_merged`
+        "The review desk picked it. 3:00 pm",  # lane E's seeded `desk.decided`
+        f"The review desk joined it with {ref}. 3:30 pm",  # lane E's seeded `desk.merged`
         "The review desk chose Not now. 4:00 pm",  # Harish, not the idea's reviewer
         f"The review desk joined it with {ref}. 4:30 pm",
         "The review desk revised what it’s worth. 5:00 pm",

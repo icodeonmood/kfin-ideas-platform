@@ -729,7 +729,7 @@ def test_s06_layout_8_l_merge_effects_6_j_similar_7_merged_pages_never_say_no_me
         assert "messages" not in conv, key
     t11_before = view(club, ref(club, "T11"), "tanvi")["page"]["conversation"]["count"]
     conn.execute(
-        "DELETE FROM conversation_entries WHERE idea_uuid = ANY(%s) AND event = 'desk_merged'",
+        "DELETE FROM conversation_entries WHERE idea_uuid = ANY(%s) AND event = 'desk.merged'",  # BLD-F112
         ([m["T11"].uuid, m["R2"].uuid],),
     )
     conv = view(club, ref(club, "T11"), "tanvi")["page"]["conversation"]
