@@ -53,6 +53,7 @@ jobs:
       - name: "1. Install this checkout in UAT mode with throwaway secrets, kept (KEEP=1 make uat-rehearsal)"
         run: |
           set -o pipefail
+          make .env   # the rehearsal stops the dev stack first (make down), which reads .env; a fresh runner has none
           KEEP=1 make uat-rehearsal 2>&1 | tee "$RUNNER_TEMP/rehearsal.log"
           grep -x 'Production-mode rehearsal passed.' "$RUNNER_TEMP/rehearsal.log"
           echo "== kept"
