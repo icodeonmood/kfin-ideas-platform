@@ -86,6 +86,11 @@ def _offer(summary: Any, want: dict[str, list[str]]) -> bool:
     return all(any(w.casefold() in s for w in want.get(k) or []) for k in ("what", "for"))
 
 
+def _at_least(value: float | None, floor: float) -> bool:
+    """A share gate: False when nothing was measured (None)."""
+    return value is not None and value >= floor
+
+
 def run(ctx: Context) -> dict[str, Any]:
     spec = load("draft-part")
     cases: list[dict[str, Any]] = []
@@ -126,19 +131,21 @@ def run(ctx: Context) -> dict[str, Any]:
         "tags_in_text": tags,
         "dropped": dropped,
         "first_attempt_problems": first_attempt,
-        "expectations": round(met / total, 4) if total else 1.0,
-        "kind_accuracy": round(kinds_right / kinds, 4) if kinds else 1.0,
+        # Nothing measured (every case failed, as with no key on the server) is n/a and fails, as judge's metrics do:
+        # never "100.0% PASS" in the paste block over no answers (lane A's review of the keyless proof, 27 Nov).
+        "expectations": round(met / total, 4) if total else None,
+        "kind_accuracy": round(kinds_right / kinds, 4) if kinds else None,
     }
     gates = spec.raw.get("pass_gates") or {}
     model_gates = {
         "ungrounded_after_gateway": ungrounded <= gates.get("ungrounded_after_gateway", 0),
         "out_of_list": out_of_list <= gates.get("out_of_list", 0),
         "tags_in_text": tags <= gates.get("tags_in_text", 0),
-        "expectations": metrics["expectations"] >= gates.get("expectations_min", 0.8),
+        "expectations": _at_least(metrics["expectations"], gates.get("expectations_min", 0.8)),
         "dropped": dropped <= gates.get("dropped_max", 1),
         "first_attempt_problems": first_attempt <= gates.get("first_attempt_problems_max", 2),
         # 0.2.1: a model that reads business ideas as problems fails here, not only in the expectations count
-        "kind_accuracy": metrics["kind_accuracy"] >= gates.get("kind_accuracy_min", 0.8),
+        "kind_accuracy": _at_least(metrics["kind_accuracy"], gates.get("kind_accuracy_min", 0.8)),
     }
     # The harness: no case may fail outright, and nothing the gateway lets through may break the rules, whatever
     # the route (the checks run on every answer, so this holds in fake mode too).
