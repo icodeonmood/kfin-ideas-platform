@@ -80,7 +80,7 @@ def run(conn: Conn, payload: dict[str, Any]) -> dict[str, int]:
         "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, %s, %s, %s)",
         (ACTOR, DONE, SOME if only else ENTITY, Jsonb(counts)),
     )
-    log.info("hide.names_backfilled", text_count=texts, hidden_count=details, other_copies=copies)
+    log.info("hide.names_backfilled", checked_count=texts, hidden_count=details, other_copies=copies)
     return counts
 
 
