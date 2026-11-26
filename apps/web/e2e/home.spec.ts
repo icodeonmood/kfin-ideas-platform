@@ -260,11 +260,11 @@ test("QA (lane D, never merged): BLD-C246, the box's file rows fill the list at 
         if (phone && i > 0)
           expect
             .soft(r.row.top, `${row}: on its own line`)
-            .toBeGreaterThanOrEqual(g.rows[i - 1].row.bottom - 0.5);
+            .toBeGreaterThanOrEqual(g.rows[i - 1]!.row.bottom - 0.5);
       }
       if (!phone && g.rows.length >= 2)
         expect
-          .soft(Math.abs(g.rows[0].row.top - g.rows[1].row.top), `${at}: two short rows side by side`)
+          .soft(Math.abs(g.rows[0]!.row.top - g.rows[1]!.row.top), `${at}: two short rows side by side`)
           .toBeLessThan(1);
       await expectNoSeriousAxeIssues(page);
     }
