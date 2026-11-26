@@ -58,6 +58,7 @@ jobs:
             done
             echo "runner: $W/data did not appear in 300 s"
           ) &
+          make .env   # the dev env file, as the usual gates make it: rehearse.sh first stops the dev stack (make down)
           KEEP=1 REHEARSE_APP_ENV=${{ matrix.app_env }} make uat-rehearsal 2>&1 | tee "$RUNNER_TEMP/install.log"
           wait
 
