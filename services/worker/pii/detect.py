@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -227,6 +228,94 @@ def _lexicon_people(text: str, stop: frozenset[str]) -> list[tuple[int, int, flo
     return out
 
 
+# ---- names written in Devanagari (DEC-139 (d), BLD-C247) ------------------------------------------------------------
+# A table in the repo (names/devanagari.tsv), no new dependency. Devanagari has no capitals, so a name is a word in the
+# table; a given name takes one unknown word after it and a surname one before it ("देविका रघुनाथन"), never a word
+# that ends a name in Hindi (the table's `stop` rows: postpositions, "and", the verbs that follow a name, the respectful "जी").
+# Other scripts wait for r8.
+
+# Devanagari letters and signs and the joiners; never the danda (U+0964, U+0965) or the digits (U+0966 to U+096F).
+_DEVA = "\u0900-\u0963\u0970-\u097f\u200c\u200d"
+_DEVA_WORD = re.compile(f"[{_DEVA}]+")
+_DEVA_HONORIFIC = re.compile(f"(?<![{_DEVA}])(?:श्रीमती|श्रीमान|सुश्री|श्री|कुमारी|डॉक्टर|डॉ\\.?)(?=[ \u00a0])")
+
+
+@lru_cache(maxsize=1)
+def _deva_table() -> dict[str, frozenset[str]]:
+    """names/devanagari.tsv by kind: `given`, `surname` and `stop` (the words that end a name in Hindi)."""
+    kinds: dict[str, set[str]] = {"given": set(), "surname": set(), "stop": set()}
+    for line in (NAMES_DIR / "devanagari.tsv").read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        word, kind = line.split("\t")
+        kinds[kind.strip()].add(unicodedata.normalize("NFC", word.strip()))
+    return {k: frozenset(v) for k, v in kinds.items()}
+
+
+def _deva_lexicon() -> tuple[frozenset[str], frozenset[str]]:
+    t = _deva_table()
+    return t["given"], t["surname"]
+
+
+def _deva_stop() -> frozenset[str]:
+    return _deva_table()["stop"]
+
+
+def _deva_tokens(text: str) -> list[tuple[int, int, str]]:
+    return [(m.start(), m.end(), unicodedata.normalize("NFC", m.group(0))) for m in _DEVA_WORD.finditer(text)]
+
+
+def _adjacent(text: str, a: tuple[int, int, str], b: tuple[int, int, str]) -> bool:
+    """Two Devanagari words with only spaces between them (no danda, comma or other word)."""
+    return a[1] < b[0] and text[a[1] : b[0]].strip(" \u00a0") == ""
+
+
+def _devanagari_people(text: str) -> list[tuple[int, int, float]]:
+    """Person names in Devanagari: (start, end, score), as `_lexicon_people` gives them for Latin script."""
+    given, surnames = _deva_lexicon()
+    stop = _deva_stop()
+    known = given | surnames
+    tokens = _deva_tokens(text)
+    out: list[tuple[int, int, float]] = []
+    i = 0
+    while i < len(tokens):
+        if tokens[i][2] not in known or tokens[i][2] in stop:
+            i += 1
+            continue
+        first = last = i
+        while (
+            last + 1 < len(tokens)
+            and tokens[last + 1][2] in known
+            and _adjacent(text, tokens[last], tokens[last + 1])
+        ):
+            last += 1
+        head, tail = tokens[first][2], tokens[last][2]
+        if head in surnames and head not in given and first > 0:
+            before = tokens[first - 1]
+            if before[2] not in stop and _adjacent(text, before, tokens[first]):
+                first -= 1
+        if tail in given and tail not in surnames and last + 1 < len(tokens):
+            after = tokens[last + 1]
+            if after[2] not in stop and _adjacent(text, tokens[last], after):
+                last += 1
+        names = [t[2] for t in tokens[first : last + 1]]
+        both = any(n in given for n in names) and any(n in surnames for n in names)
+        out.append((tokens[first][0], tokens[last][1], 0.85 if both or last > first else 0.6))
+        i = last + 1
+    for m in _DEVA_HONORIFIC.finditer(text):
+        following = [t for t in tokens if t[0] >= m.end()][:3]
+        taken: list[tuple[int, int, str]] = []
+        for t in following:
+            if t[2] in stop or (taken and not _adjacent(text, taken[-1], t)):
+                break
+            if not taken and text[m.end() : t[0]].strip(" \u00a0"):
+                break
+            taken.append(t)
+        if taken:
+            out.append((taken[0][0], taken[-1][1], 0.9))
+    return out
+
+
 @lru_cache(maxsize=1)
 def _analyzer() -> Any:
     from presidio_analyzer import AnalyzerEngine, EntityRecognizer, RecognizerRegistry, RecognizerResult
@@ -242,6 +331,7 @@ def _analyzer() -> Any:
 
         def analyze(self, text: str, entities: list[str], nlp_artifacts: Any = None) -> list[Any]:
             results = [RecognizerResult("PERSON", s, e, score) for s, e, score in _lexicon_people(text, stop)]
+            results += [RecognizerResult("PERSON", s, e, score) for s, e, score in _devanagari_people(text)]
             results += [
                 RecognizerResult("PERSON", m.start(1), m.end(1), 0.9) for m in _HONORIFIC.finditer(text)
             ]
