@@ -60,8 +60,10 @@ describe("DEC-143 (f), BLD-B282: refusalCode", () => {
   it.each([
     ["switched_off", ASSISTANT_OFF],
     ["daily_budget", ASSISTANT_OFF],
-    ["route_unavailable", "checks_unavailable"],
-    ["leak_abort", "checks_unavailable"],
+    ["leak_check", "checks_unavailable"],
+    ["rate_limited", "checks_unavailable"],
+    ["connection", "checks_unavailable"],
+    ["invalid_output", "checks_unavailable"],
     [undefined, "checks_unavailable"],
   ])("checks_unavailable with code %s reads as %s", (code, shown) => {
     expect(refusalCode({ error: "checks_unavailable", code }, "x_unavailable")).toBe(shown);
@@ -80,7 +82,7 @@ describe("DEC-143 (f), BLD-B282: the saves the lead names", () => {
     it(`${name}: the assistant off is assistant_off; the checks down stay checks_unavailable`, async () => {
       reply.body = { error: "checks_unavailable", code: "switched_off" };
       expect(await refusal(save)).toBe(ASSISTANT_OFF);
-      reply.body = { error: "checks_unavailable", code: "route_unavailable" };
+      reply.body = { error: "checks_unavailable", code: "leak_check" };
       expect(await refusal(save)).toBe("checks_unavailable");
     });
   }

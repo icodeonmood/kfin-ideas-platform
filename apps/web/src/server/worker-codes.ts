@@ -1,7 +1,7 @@
 import { ASSISTANT_OFF } from "@/lib/assistant-off";
 
-/** The gateway's codes when it made no call because the assistant is off: `ai.all` or the agent's own switch
- * (`kill_switch`), or the day's model budget spent (`daily_budget`), both raised as `AgentSwitchedOff`
+/** The gateway's codes when it made no call because the assistant is off: `switched_off` for `ai.all` or the
+ * agent's own switch off, `daily_budget` for the day's model budget spent, both raised as `AgentSwitchedOff`
  * (services/worker/gateway/core.py). The worker's Ones, Ember and delivery calls answer them as 503
  * `{ error: "checks_unavailable", code }` (api/app.py `_ones_call`, `_delivery_call`). */
 const SWITCHED_OFF = new Set(["switched_off", "daily_budget"]);

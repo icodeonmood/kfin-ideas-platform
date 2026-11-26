@@ -41,15 +41,15 @@ const BRIEF: ShowcaseBrief = {
   ],
 };
 
-const DELIVERY = {
+const DELIVERY: DeliveryDetail = {
   id: 12,
   subject_id: "IDEA-2026-000123",
   subject_type: "idea",
   label: "Fewer returned KYC forms",
   track: "fix",
   track_words: "Fix",
-  state: "shipped",
-  state_words: "Measuring",
+  state: "in_delivery",
+  state_words: "In delivery",
   owner: null,
   sponsor: null,
   pm: null,
@@ -68,20 +68,7 @@ const DELIVERY = {
   completion_notes: null,
   completed_at: null,
   milestones: [],
-  measurements: [
-    {
-      mark: "day_30",
-      due_at: "2026-12-20T10:00:00+05:30",
-      results: {},
-      notes: null,
-      filled_at: null,
-      confirmed_at: null,
-      finance_confirmed: false,
-      can_fill: true,
-      can_confirm: false,
-      can_finance_confirm: false,
-    },
-  ],
+  measurements: [],
   evidence: [],
   checkins: {
     recent: [],
@@ -115,7 +102,31 @@ const DELIVERY = {
     approve_completion: false,
     add_evidence: false,
   },
-} as unknown as DeliveryDetail;
+};
+
+/** The same fix once shipped: its 30-day results are due, the check-ins and the completion are over. */
+const MEASURING: DeliveryDetail = {
+  ...DELIVERY,
+  state: "shipped",
+  state_words: "Measuring",
+  completion: { before: 10, after: 2, unit: "days" },
+  checkins: null,
+  can: { ...DELIVERY.can, complete: false },
+  measurements: [
+    {
+      mark: "day_30",
+      due_at: "2026-12-20T10:00:00+05:30",
+      results: {},
+      notes: null,
+      filled_at: null,
+      confirmed_at: null,
+      finance_confirmed: false,
+      can_fill: true,
+      can_confirm: false,
+      can_finance_confirm: false,
+    },
+  ],
+};
 
 let host: HTMLElement;
 let root: Root;
@@ -189,8 +200,11 @@ describe("DEC-143 (f), BLD-B282: the assistant off, the words stay", () => {
     await submit(formWith("Save your brief"));
     expect(saves).toEqual([{ url: "/api/me/one/showcase", method: "PUT" }]);
     expect(host.textContent).toContain(SAVES_ONCE_BACK);
-    expect(idea.value).toBe("Fewer returned forms at the branch.");
-    expect(progress.value).toBe("Two branches use it.");
+    expect(idea.isConnected && progress.isConnected).toBe(true); // the same fields, not a fresh form
+    expect([...host.querySelectorAll("textarea")].map((t) => t.value)).toEqual([
+      "Fewer returned forms at the branch.",
+      "Two branches use it.",
+    ]);
   });
 
   it("the Ember note says so and keeps the chair's words", async () => {
@@ -200,23 +214,35 @@ describe("DEC-143 (f), BLD-B282: the assistant off, the words stay", () => {
     await submit(formWith("Save the note"));
     expect(saves).toEqual([{ url: "/api/ember/7/note", method: "PUT" }]);
     expect(host.querySelector('[role="alert"]')?.textContent).toBe(SAVES_ONCE_BACK);
-    expect(note.value).toBe("We look for problems people meet every week.");
+    expect(note.isConnected).toBe(true);
+    expect((host.querySelector("textarea") as HTMLTextAreaElement).value).toBe(
+      "We look for problems people meet every week.",
+    );
     expect(refresh).not.toHaveBeenCalled();
   });
 
   it.each([
-    ["the Friday check-in's note", "How is it going this week?", "/api/delivery/12/checkin", "POST"],
-    ["the completion's notes", "send the numbers", "/api/delivery/12/complete", "POST"],
-    ["a result's notes", "Fill in the results", "/api/delivery/12/measurements/day_30", "PUT"],
-  ])("%s says so and keeps the words", async (_name, heading, url, method) => {
-    act(() => root.render(createElement(DeliveryView, { d: DELIVERY })));
+    [
+      "the Friday check-in's note",
+      DELIVERY,
+      "How is it going this week?",
+      "/api/delivery/12/checkin",
+      "POST",
+    ],
+    ["the completion's notes", DELIVERY, "send the numbers", "/api/delivery/12/complete", "POST"],
+    ["a result's notes", MEASURING, "Fill in the results", "/api/delivery/12/measurements/day_30", "PUT"],
+  ])("%s says so and keeps the words", async (_name, d, heading, url, method) => {
+    act(() => root.render(createElement(DeliveryView, { d })));
     const form = formWith(heading);
     const note = form.querySelector("textarea") as HTMLTextAreaElement;
     type(note, "Counted at six branches this week.");
     await submit(form);
     expect(saves).toEqual([{ url, method }]);
     expect(form.querySelector('[role="alert"]')?.textContent ?? host.textContent).toContain(SAVES_ONCE_BACK);
-    expect(note.value).toBe("Counted at six branches this week.");
+    expect(note.isConnected).toBe(true);
+    expect((formWith(heading).querySelector("textarea") as HTMLTextAreaElement).value).toBe(
+      "Counted at six branches this week.",
+    );
     expect(refresh).not.toHaveBeenCalled();
   });
 });
