@@ -22,6 +22,7 @@ HIDDEN_FROM_WEB = {
     "voice_notes",  # recordings and what was heard reach the owner through the worker only (DEC-096, BLD-C002)
     "idea_words_sealed",  # the sharer's unmasked words, readable by them alone (DEC-103, L-HIDE.rules/4)
     "voice_streams",  # what a voice note heard, sealed for the person until the draft takes it (DEC-108, BLD-C112)
+    "suggestion_outcomes",  # the assistant's suggestions and what people did with them, masked (DEC-122, BLD-C207)
 }  # fmt: skip
 # Final or audit-like records of the handoff cut-over: the web role inserts and reads them, never changes or removes
 # them (L-DECIDE.rules/9, L-COMMITTEE.rules/4, L-SUBMIT.edit/4, L-AUDIT.flags; "Take off the Wall", DEC-106).

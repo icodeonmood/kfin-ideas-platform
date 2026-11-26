@@ -17,6 +17,7 @@ export type SwitchName =
   | "clusters.batch"
   | "scan.live"
   | "learning.jobs"
+  | "learning.outcomes"
   | "ember.send"
   | "solutions.publish"
   | "committee.flow"
@@ -203,6 +204,8 @@ export const BANNERS: Record<SwitchName, string> = {
   "clusters.batch": "Weekly grouping of similar ideas is paused for now.",
   "scan.live": "Live progress is off. This page checks for updates every few seconds instead.",
   "learning.jobs": "Learning reports and proposals are paused for now. Nothing changes without a person.",
+  // DEC-122 (BLD-C207): starts off until the privacy notice names the purpose. Shown on the admin page only.
+  "learning.outcomes": "Keeping the assistant's suggestions for learning is off. Nothing is kept.",
   "ember.send": "Sending The Ember is paused for now.",
   "solutions.publish":
     "Publishing new write-ups is paused for now. Your write-up is saved and can be approved later.",

@@ -25,7 +25,7 @@ from psycopg.types.json import Jsonb
 
 from core.db import Conn
 from core.logging import get_logger
-from draft import adapters, labels, parts, runs
+from draft import adapters, labels, outcomes, parts, runs
 from draft.config import rules
 from hide import core as hide_core
 from onepc import enums
@@ -546,14 +546,26 @@ def set_part(
         row = _load(conn, owner, idea_uuid, lock=True)
         _writable(row, device)
         got = conn.execute(
-            "SELECT state, value FROM idea_parts WHERE idea_uuid = %s AND key = %s FOR UPDATE",
+            "SELECT state, value, run_id FROM idea_parts WHERE idea_uuid = %s AND key = %s FOR UPDATE",
             (idea_uuid, row_key),
         ).fetchone()
         old = got["value"] if got else None
+        # DEC-122: the assistant's suggestion for this field, kept before it is overwritten (BLD-C208).
+        was = outcomes.model_part_value(dict(got) if got else None, wire_key)
+        was_run = str(got["run_id"]) if got and got["run_id"] else None
         run_id = None
         if "value" not in body and body.get("pinned") is False:
             if not runs.ai_on(conn):
                 raise DraftError(409, "assistant_off")
+            outcomes.record(
+                conn,
+                idea_uuid,
+                wire_key,
+                suggested=was,
+                final=None,
+                outcome="suggested_again",
+                run_id=was_run,
+            )
             new: Any
             if row_key == "title":
                 kept = parts.pinned_fields(old) - {wire_key}
@@ -574,6 +586,9 @@ def set_part(
             except parts.PartValueError as exc:
                 raise DraftError(422, exc.code, field="value") from None
             masked = _mask_value(conn, owner, idea_uuid, wire_key, cleaned, gates)
+            outcomes.record(
+                conn, idea_uuid, wire_key, suggested=was, final=masked, outcome="pinned", run_id=was_run
+            )
             if row_key == "title":
                 base = old if isinstance(old, dict) else {}
                 pinned = parts.pinned_fields(base) | {wire_key}
