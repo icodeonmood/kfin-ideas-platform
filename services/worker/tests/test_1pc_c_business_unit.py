@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -70,11 +71,12 @@ def test_l_draft_parts_bld_c201_every_example_validates_and_passes_the_checks() 
 
 def test_l_draft_parts_bld_c201_the_version_and_the_prompt_say_it() -> None:
     spec = load("draft-part", ROOT / "agents")
-    assert spec.version == "0.2.0"
+    assert spec.version == "0.2.1"
     assert "07-business-title.json" in spec.raw["examples_in_prompt"]
     prompt = (AGENT / "prompt.md").read_text(encoding="utf-8")
-    assert "(v0.2.0)" in prompt and "`kind_evidence`" in prompt and "describe the new offer" in prompt
-    assert "| 0.2.0 |" in (AGENT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "(v0.2.1)" in prompt and "`kind_evidence`" in prompt and "describe the new offer" in prompt
+    changelog = (AGENT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "| 0.2.0 |" in changelog and "| 0.2.1 |" in changelog
 
 
 def test_l_draft_parts_bld_c201_the_schema_allows_only_the_two_kinds_or_none() -> None:
@@ -304,6 +306,33 @@ def test_l_draft_bld_c205_the_fake_passes_its_own_checks_on_every_golden_case(ca
         pytest.skip("planted: the fake quotes a figure nobody gave, so the gateway drops it (DEC-095)")
     out = fakes.draft_part(load("draft-part", ROOT / "agents"), sent)
     assert checks.draft_part(sent, out, None) == []
+
+
+def test_l_draft_bld_c205_the_kind_is_a_model_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """0.2.1 (the cbiz review): `kind_accuracy` is gated, not only reported. A model that reads the business ideas as
+    problems fails the golden set, as eval-live will show it on a real route; one wrong kind of six still passes."""
+    cases = [
+        {"id": f"K-{i}", "input": {"words": []}, "expected": {"kind": "business_idea"}} for i in range(5)
+    ]
+    cases.append({"id": "K-5", "input": {"words": []}, "expected": {"kind": "problem"}})
+    said: list[str] = []
+    monkeypatch.setattr(harness, "read_jsonl", lambda name: cases)
+    monkeypatch.setattr(harness, "check", lambda sent, out, prior: [])
+
+    def answer(agent: str, sent: dict[str, Any], scope: str, **kw: Any) -> SimpleNamespace:
+        return SimpleNamespace(data={"kind": said.pop(0)}, sent=sent, outcome="ok", dropped=[])
+
+    monkeypatch.setattr(harness, "run_agent", answer)
+    ctx: Any = SimpleNamespace(fill=lambda sent: sent, scope=lambda: "eval-scope", conn=None)
+    assert load("draft-part", ROOT / "agents").raw["pass_gates"]["kind_accuracy_min"] == 0.8
+
+    said[:] = ["problem"] * 6  # every business idea read as a problem: 1 of 6
+    report = harness.run(ctx)
+    assert report["metrics"]["kind_accuracy"] < 0.2 and report["model_gates"]["kind_accuracy"] is False
+    said[:] = ["business_idea"] * 3 + ["problem"] * 3  # two business ideas read as problems: 4 of 6
+    assert harness.run(ctx)["model_gates"]["kind_accuracy"] is False
+    said[:] = ["business_idea"] * 6  # one wrong (the problem): 5 of 6
+    assert harness.run(ctx)["model_gates"]["kind_accuracy"] is True
 
 
 def test_l_draft_bld_c205_the_harness_checks_the_kind_its_quote_and_the_offer() -> None:
