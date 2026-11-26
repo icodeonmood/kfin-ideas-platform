@@ -374,6 +374,38 @@ describe("C-PROMPT.attach on Home (S-03; DEC-124, BLD-C213, C214)", () => {
     );
   });
 
+  it('BLD-C248: "Choose a folder" leaves out files inside a folder whose name starts with ".", as well as dot files', async () => {
+    routes.push((c) =>
+      c.method === "POST" && c.url === "/api/drafts"
+        ? { status: 201, body: { draft: { id: DRAFT, messages: [] }, run_id: null } }
+        : undefined,
+    );
+    const inFolder = (path: string) => {
+      const f = pdf(path.split("/").pop()!);
+      Object.defineProperty(f, "webkitRelativePath", { value: path });
+      return f;
+    };
+    await showHome();
+    await openPicker();
+    const folder = host.querySelector<HTMLInputElement>(".cpick input[type=file][webkitdirectory]")!;
+    expect(folder).not.toBeNull();
+    Object.defineProperty(folder, "files", {
+      value: [
+        inFolder("Reports/Week 47 call log.pdf"),
+        inFolder("Reports/.git/config"),
+        inFolder("Reports/.DS_Store"),
+        inFolder("Reports/notes/.cache/summary.pdf"),
+      ],
+      configurable: true,
+    });
+    await act(async () => {
+      folder.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    for (let i = 0; i < 3; i++) await flush();
+    const sent = calls.filter((c) => c.method === "POST" && c.url === "/api/files");
+    expect(sent.map((c) => (c.form!.get("file") as File).name)).toEqual(["Week 47 call log.pdf"]);
+  });
+
   it("BLD-C224: a folder dropped on the drop area adds its files through the directory entries; without them it says to use Choose a folder", async () => {
     routes.push((c) =>
       c.method === "POST" && c.url === "/api/drafts"
