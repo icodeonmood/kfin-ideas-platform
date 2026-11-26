@@ -1638,6 +1638,8 @@ textarea:is(.fld, .textarea) {
    over the drop area, then the link field with its icon. One look for the prompt box and the conversation box, as both
    drew it (compose.css `.cz .cpick`, conversation.css `.cv-pick`); each screen sets only its place (margin, grid area) */
 .fpick {
+  /* Its own width sets the link row (BLD-D036): its place on each screen gives it its width, never its content */
+  container: fpick / inline-size;
   display: grid;
   gap: 10px;
   padding: 12px;
@@ -1703,6 +1705,36 @@ textarea:is(.fld, .textarea) {
   font-size: 12.5px;
   line-height: 1.4;
   color: var(--mute);
+}
+
+/* A picker under 300px wide (under 276px inside its 12px padding) stacks its link row (BLD-D036, C-FILE.uploader):
+   beside "Add link" (about 114px and the 8px gap) the field kept 119px in Home's phone box at 360 and 79px at 320.
+   The field takes the row and "Add link" goes under it, full width, 44px tall (`.btn-sm`, F-SPACE.targets); the
+   link icon shares the field's own row, so it stays centred on the field, not on the two rows */
+@container fpick (max-width: 275px) {
+  .fpick-link {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fpick-link .fld {
+    grid-area: 1 / 1;
+  }
+
+  .fpick-li {
+    position: static;
+    z-index: 1;
+    grid-area: 1 / 1;
+    align-self: center;
+    justify-self: start;
+    margin-left: 14px;
+    transform: none;
+  }
+
+  .fpick-link > .btn {
+    grid-area: 2 / 1;
+    width: 100%;
+  }
 }
 
 @media (max-width: 640px) {
