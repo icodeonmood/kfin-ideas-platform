@@ -446,6 +446,8 @@ def test_at_b4_03_c229_server_block_shows_the_install_and_fails_if_its_llm_calls
     text = "\n".join(lines)
     assert passed and "installed: launch-2026-11-23-r5 at " + "b" * 40 in text and "checkout:" not in text
     assert lines[-3] == "install database: llm_calls unchanged (7)" and lines[-2] == "EVAL-LIVE: PASS"
+    # DEC-141 (3), DEC-143: the server run is IT's at full-mode step 3, and the block says which command it was.
+    assert lines[2] == "server: sudo scripts/eval/live.sh --server, full-mode step 3 (docs/UAT.md)"
     moved = meta(mode="server", installed_sha="b" * 40, install_before=7, install_after=8)
     lines, passed = paste.render(reports, PASS_GATES, CALLS, moved)
     assert not passed and "install database: llm_calls CHANGED (7 to 8)" in lines

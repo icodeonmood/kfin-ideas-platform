@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# `make eval-live` (BLD-C229; V-EVAL, AT-B4-03, AT-B5-04): the golden sets for gatekeeper, judge and draft-part (BLD-C249:
+# eval-live (BLD-C229; V-EVAL, AT-B4-03, AT-B5-04): on the server, KFin IT's `sudo scripts/eval/live.sh --server` at
+# full-mode step 3 of docs/UAT.md (Monday 30 Nov, before `ai.all` goes on, DEC-141 (3)); on the product lead's Mac,
+# `make eval-live`. The golden sets for gatekeeper, judge and draft-part (BLD-C249:
 # the draft and the kind it suggests, DEC-141) on the REAL model route, on a throwaway database, with a pass/fail block
 # to paste back. Never in CI.
 #

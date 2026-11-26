@@ -1,4 +1,6 @@
-"""`make eval-live`'s paste block (BLD-C229; V-EVAL, AT-B4-03, AT-B5-04).
+"""eval-live's paste block (BLD-C229, BLD-C249; V-EVAL, AT-B4-03, AT-B5-04): on the server, KFin IT's
+`sudo scripts/eval/live.sh --server` at full-mode step 3 of docs/UAT.md, before the assistant goes on (DEC-141 (3));
+on the product lead's Mac, `make eval-live`.
 
 `scripts/eval/live.sh` runs `python -m evalrunner --only gatekeeper,judge,draft-part` on a throwaway database with the real model
 route, then this, which reads the reports that run wrote and prints the block the product lead (or KFin IT, in server
@@ -160,6 +162,7 @@ def render(
     booleans from the reports: a case's rows (`cases`) are never read."""
     out = [BEGIN, "eval-live (BLD-C229): the real-model golden sets on a throwaway database"]
     if meta.mode == "server":
+        out.append("server: sudo scripts/eval/live.sh --server, full-mode step 3 (docs/UAT.md)")
         out.append(f"installed: {meta.installed_tag or 'no tag'} at {meta.installed_sha or 'unknown'}")
     else:
         changes = " with local changes" if meta.checkout_changes else ""
@@ -258,7 +261,9 @@ def _gates_of(agent: str) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     from core.config import get_settings
 
-    p = argparse.ArgumentParser(description="make eval-live's paste block (BLD-C229)")
+    p = argparse.ArgumentParser(
+        description="eval-live's paste block (BLD-C229): live.sh --server or make eval-live"
+    )
     p.add_argument("--reports", type=Path, required=True)
     p.add_argument("--route", required=True, choices=["anthropic", "bedrock"])
     p.add_argument("--mode", required=True, choices=["mac", "server"])
