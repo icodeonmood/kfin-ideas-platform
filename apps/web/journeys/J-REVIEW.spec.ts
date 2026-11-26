@@ -10,18 +10,22 @@
  * The ask path (A1 to A3) has a record of its own, K1 (Kiran's, at To review, never opened, no question set; lane E):
  * A1 is K1's first open, and "Ask about this" on How often queues that part's suggestion. A question set can't be
  * queued before the first open (L-REVIEW.open/1, L-QUESTIONS.ask/4), so the seed has none.
- * Z1 (Zoya's, with Harish, questions overdue) is the clock (A4); B1
- * (Bhavesh's, with Lavanya, both answered) has its answers read (A5). The merge previews Z1 from T6's page (T6 is
- * J-TRACK's and lists Z1 as similar; read only here). The desk merge (M3) joins F2 (Faisal's) and J2 (Jatin's), both
- * opened by Lavanya and listing each other as similar; F2 was shared first, so it leads by default (L-MERGE.desk/2).
+ * Z1 (Zoya's, with Harish, questions overdue) is the clock (A4); B1 (Bhavesh's, with Lavanya, both answered)
+ * has its answers read (A5), then Lavanya picks it with email switched off (6s). The merge previews Z1 from
+ * T6's page (T6 is J-TRACK's and lists Z1 as similar; read only here). The desk merge (M3) joins F2
+ * (Faisal's) and J2 (Jatin's), both opened by Lavanya and listing each other as similar; F2 was shared first,
+ * so it leads by default (L-MERGE.desk/2).
  */
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Browser, type Locator, type Page, type TestInfo } from "@playwright/test";
 
+import { restoreSwitches, setSwitch, type SwitchState } from "../e2e/helpers";
+import { withSwitchLock } from "../e2e/switch-lock";
 import {
   CLUB_EMAIL,
   expectClubMail,
   expectDeskCard,
+  expectNoMail,
   expectNoSeriousAxeIssues,
   ideaUrl,
   mailLink,
@@ -45,6 +49,9 @@ const COUNTDOWN = String.raw`(?:\d+ days?|\d{2}:\d{2})`; // "3 days", "07:38"
 /** The reason Lavanya gives when she picks P1 (J-REVIEW/6); Pallavi reads it word for word (J-REVIEW/6, /7). */
 const REASON =
   "Distributors re-send these papers because the check list is kept in two places. One list fixes it.";
+/** The reason Lavanya gives when she picks B1 with email off (J-REVIEW/6s); Bhavesh reads it in the app. */
+const REASON_B1 =
+  "Courier returns get lost in a paper log. One scan and a search box find any of them in seconds.";
 const WORTH_NOTE =
   "Every distributor desk re-checks these papers, so I counted the hours across all of them.";
 const WORTH_HOURS = "40 to 60";
@@ -459,7 +466,7 @@ step(
   },
 );
 
-// --- J-REVIEW.ask: ask first (K1 for A1–A3; Z1 for the clock; B1 for answers) ---------------
+// --- J-REVIEW.ask: ask first (K1 for A1–A3; Z1 for the clock; B1 for answers, then 6s) ---------------
 
 step(
   "J-REVIEW/A1",
@@ -711,6 +718,76 @@ step(
     await expect(page.getByRole("heading", { name: "Decide on this idea" })).toBeVisible();
     await page.getByRole("button", { name: "Back", exact: true }).click();
     await expect(answered).toBeVisible();
+  },
+);
+
+// --- Row 6 with email switched off (B1, after A5's answers; BLD-G010) --------------------------------------
+
+step(
+  "J-REVIEW/6s",
+  "S-06",
+  "With email switched off, Lavanya picks B1: Bhavesh's Inbox has it at once and no email goes; switched back on, the email comes within a minute and opens it",
+  {
+    needs: ["S-R2", "L-DECIDE", "S-H5", "L-INBOX", "L-NOTIFY", "S-06"],
+    changes: ["B1"],
+    after: ["J-REVIEW/A5"],
+  },
+  async ({ page, browser }, info) => {
+    // Two admin visits, the worker's 10 s switch cache, 30 s with no email and up to 60 s for it: past the
+    // default 60 s, and a step that times out must still reach its `finally` and put email back on.
+    info.setTimeout(180_000);
+    const b1 = await seeded("B1");
+    const subject = "A decision on your idea";
+
+    // DEC-133: while `comms.email` is off, email waits in the queue and the Inbox carries on. Switched on the
+    // admin page, as an admin would, and always put back.
+    await withSwitchLock("comms.email", async () => {
+      // DEC-088: every switch starts on, so "on" is the state to put back if setSwitch fails half-way.
+      let before: SwitchState = "on";
+      try {
+        before = await setSwitch(browser, "comms.email", "off");
+        // The worker reads switches through a 10 s cache (core/killswitch.py): after it, no send sees "on".
+        await new Promise((resolve) => setTimeout(resolve, 11_000));
+
+        await signInAs(page, "lavanya");
+        await page.goto(deskUrl(b1));
+        await decideButton(page).click();
+        await page.getByRole("radio", { name: /^Pick/ }).click();
+        await page.getByRole("textbox", { name: "Why are you picking it?" }).fill(REASON_B1);
+        await page.getByRole("button", { name: "Send decision to Bhavesh" }).click();
+        await expect(page.getByRole("heading", { name: "Decision sent to Bhavesh" })).toBeVisible();
+
+        // L-NOTIFY/1: the Inbox always gets it, whatever happens to email.
+        await asOther(browser, info, "bhavesh", { ref: "J-REVIEW/6s", screen: "S-H5" }, async (sharer) => {
+          await sharer.goto("/inbox");
+          await expect(
+            sharer.getByRole("button", {
+              name: new RegExp(`^The review desk picked your idea, ${esc(b1.title)}, `),
+            }),
+          ).toBeVisible();
+        });
+        // comms/send.py reads the switch before every email and sends nothing while it is off.
+        await expectNoMail(page, CLUB_EMAIL.bhavesh, subject, b1.title, 30_000);
+      } finally {
+        await restoreSwitches(browser, [["comms.email", before]]);
+      }
+    });
+
+    // Back on, the waiting email goes with the worker's next send: the title and a link, never the reason or
+    // Lavanya's name (L-NOTIFY/3, DEC-111), and the link opens the decision.
+    const mail = await mailTo(page, CLUB_EMAIL.bhavesh, subject, b1.title);
+    expectClubMail(mail, CLUB_EMAIL.bhavesh);
+    expect(mail.text).toContain("Hi Bhavesh,");
+    expect(mail.text).toContain(`The review desk picked your idea: ${b1.title}.`);
+    expect(mail.text).not.toContain("Lavanya");
+    expect(mail.text).not.toContain(REASON_B1);
+    expect(mail.html).not.toContain(REASON_B1);
+    const link = mailLink(mail, "Read the decision");
+    expect(link.pathname).toBe(ideaUrl(b1));
+    await signInAs(page, "bhavesh");
+    await page.goto(link.pathname);
+    await expect(page.getByText("Picked. A team is being chosen to build it.").first()).toBeVisible();
+    await expect(page.getByText(REASON_B1).first()).toBeVisible();
   },
 );
 
