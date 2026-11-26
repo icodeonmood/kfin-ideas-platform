@@ -725,7 +725,7 @@ step(
 
 step(
   "J-REVIEW/6s",
-  "S-06",
+  "S-R2",
   "With email switched off, Lavanya picks B1: Bhavesh's Inbox has it at once and no email goes; switched back on, the email comes within a minute and opens it",
   {
     needs: ["S-R2", "L-DECIDE", "S-H5", "L-INBOX", "L-NOTIFY", "S-06"],
@@ -784,10 +784,12 @@ step(
     expect(mail.html).not.toContain(REASON_B1);
     const link = mailLink(mail, "Read the decision");
     expect(link.pathname).toBe(ideaUrl(b1));
-    await signInAs(page, "bhavesh");
-    await page.goto(link.pathname);
-    await expect(page.getByText("Picked. A team is being chosen to build it.").first()).toBeVisible();
-    await expect(page.getByText(REASON_B1).first()).toBeVisible();
+    // Bhavesh in a context of his own: Lavanya is signed in on `page`, and /sign-in sends her straight on.
+    await asOther(browser, info, "bhavesh", { ref: "J-REVIEW/6s", screen: "S-06" }, async (sharer) => {
+      await sharer.goto(link.pathname);
+      await expect(sharer.getByText("Picked. A team is being chosen to build it.").first()).toBeVisible();
+      await expect(sharer.getByText(REASON_B1).first()).toBeVisible();
+    });
   },
 );
 
