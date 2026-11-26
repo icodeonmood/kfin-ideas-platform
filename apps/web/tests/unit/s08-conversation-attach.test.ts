@@ -20,7 +20,7 @@ vi.mock("next/link", () => ({
 
 const { Conversation } = await import("@/components/convo/conversation");
 const { S08_COPY, putLink } = await import("@/components/convo/compose");
-const { convoRowView, sendable } = await import("@/components/convo/attach");
+const { convoRowView, inDotFolder, sendable } = await import("@/components/convo/attach");
 const { PHONE } = await import("@/components/convo/pin");
 const { ATTACH_NAME } = await import("@/components/ui/attach-button");
 const { BOX_FILES_COPY } = await import("@/app/share/box-files");
@@ -663,6 +663,52 @@ describe("C-FILE.row in S-08's box: upload, Remove, a found file (DEC-107, BLD-F
 });
 
 // --- Sending -----------------------------------------------------------------------------------------------------
+/** A file "Choose a folder" found at `path` (its `webkitRelativePath`, which jsdom does not set). */
+function inFolder(path: string): File {
+  const file = md(path.split("/").pop()!);
+  Object.defineProperty(file, "webkitRelativePath", { value: path });
+  return file;
+}
+
+describe("C-FILE.uploader in S-08's box: \"Choose a folder\" leaves out the system's folders (BLD-F109)", () => {
+  it("BLD-F109: nothing inside a folder whose name starts with “.” goes up, nor a dot-file; the person's files do", async () => {
+    wide();
+    await show(sharerView());
+    await openPicker();
+    const input = host.querySelector<HTMLInputElement>(".cv-pick input[webkitdirectory]")!;
+    const chosen = [
+      inFolder("week-47/.git/config"),
+      inFolder("week-47/notes/.vscode/settings.json"),
+      inFolder("week-47/.DS_Store"),
+      inFolder("week-47/branch-call-log.md"),
+      inFolder("week-47/notes/R07-calls.md"),
+    ];
+    Object.defineProperty(input, "files", { value: chosen, configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flush();
+    await frame();
+    const sent = posts("/api/files").map((c) => (c.form!.get("file") as File).name);
+    expect(sent).toEqual(["branch-call-log.md", "R07-calls.md"]);
+    expect([...rows()!.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
+      expect.stringContaining("branch-call-log.md"),
+      expect.stringContaining("R07-calls.md"),
+    ]);
+  });
+
+  it("BLD-F109 inDotFolder: only the folders on the path count, never the file's own name; no path is no folder", () => {
+    expect(inDotFolder(inFolder("week-47/.git/config"))).toBe(true);
+    expect(inDotFolder(inFolder(".notes/R07-calls.md"))).toBe(true);
+    expect(inDotFolder(inFolder("week-47/R07-calls.md"))).toBe(false);
+    expect(inDotFolder(inFolder("week-47/.env"))).toBe(false); // a dot-file is the name filter's
+    expect(inDotFolder(md("R07-calls.md"))).toBe(false); // chosen on its own: jsdom gives no path
+    const plain = md("R07-calls.md");
+    Object.defineProperty(plain, "webkitRelativePath", { value: "" }); // a browser's empty path
+    expect(inDotFolder(plain)).toBe(false);
+  });
+});
+
 describe("L-CONVO/5, L-CONVO/7: Send carries the files (BLD-F095)", () => {
   it("send carries file_ids with the words; once sent the rows leave the box and the message shows its file with View", async () => {
     wide();
