@@ -238,6 +238,33 @@ describe("C-PHONE-TABS.nav: Back and the title never touch", () => {
       /<a href="\/ideas\/IDEA-2026-000301" class="pback"><svg[^>]*>.*<\/svg><span>The idea<\/span><\/a>/,
     );
   });
+
+  it("BLD-D034, C-PHONE-TABS.nav: below 360px each side keeps only its own content, so at 320 a short title shows in full; Back keeps its longest label and its 8px from the title", () => {
+    const narrow = (a: string) => a === "@media (max-width: 359px)";
+    // Inter's advance widths at the bar's weights: "Home" at 500 16px, "Answer" and "Conversation" at 600 15px
+    const HOME = 45.2;
+    const ANSWER = 56;
+    const CONVERSATION = 97.7;
+    const bar = style("shell.css", ".pnav", narrow);
+    expect(bar.get("grid-template-columns")).toBe("minmax(max-content, 1fr) auto minmax(max-content, 1fr)");
+    // The gaps and padding are the phone bar's own: Back and the title stay 8px apart
+    expect(bar.has("gap")).toBe(false);
+    expect(bar.has("padding")).toBe(false);
+    expect(style("shell.css", ".pnav", phone).get("gap")).toBe("8px");
+    // Back stops at a cap over its longest label, so "Your idea" never ends in an ellipsis and a longer one still does
+    const cap = Number.parseFloat(style("shell.css", ".pback", narrow).get("max-width") ?? "");
+    expect(cap).toBeGreaterThanOrEqual(BACK_NEEDS);
+    expect(style("shell.css", ".pback span", phone).get("text-overflow")).toBe("ellipsis");
+    // At 320 beside a 15px classic scrollbar (CI's desktop Chrome): 305 - 16 padding - 16 gaps = 273px inside
+    const inside = 320 - 15 - 32;
+    // Before: two 110px sides left 53px, under "Answer"
+    expect(inside - 2 * 110).toBeLessThan(ANSWER);
+    // S-R3: Back "Home", no actions: "Answer" fits, and the sides then share the rest equally, so it stays centred
+    expect(inside - (36 + HOME)).toBeGreaterThanOrEqual(ANSWER);
+    expect((inside - ANSWER) / 2).toBeGreaterThanOrEqual(36 + HOME);
+    // S-08: Back at its cap and the 44px info button: "Conversation" still fits
+    expect(inside - cap - 44).toBeGreaterThanOrEqual(CONVERSATION);
+  });
 });
 
 describe("S-08.rules/4: the conversation is a task screen on a phone only", () => {

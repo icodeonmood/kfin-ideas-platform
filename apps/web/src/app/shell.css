@@ -1182,6 +1182,24 @@
   }
 }
 
+/* Under 360px the two 110px sides leave the title too little (BLD-D034, C-PHONE-TABS.nav). At 320 the bar's inside is
+   320 - 2 × 8px padding - 2 × 8px gaps = 288px, 220 of it the sides', so 68px is left, 53px beside a 15px classic
+   scrollbar, and S-R3's "Answer" (600 15px Inter, 56px) showed as "Ans…". Here each side's minimum is its own
+   content: Back is 4 + 22 (chevron) + 2 + 8 = 36px plus its label at 500 16px ("Home" 45px, "Your idea" 71px), the
+   actions none or 44px each. The title takes what is left after both, then the sides share the rest equally, so it
+   stays centred whenever both fit (S-R3 at 320: 116px a side). Back stops at 128px, so a longer label still ends in
+   an ellipsis and "Conversation" (98px) keeps room beside "Your idea" and the 44px info button: 273 - 128 - 44 = 101px.
+   The 8px gaps are the bar's own, so Back and the title never touch */
+@media (max-width: 359px) {
+  .pnav {
+    grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+  }
+
+  .pback {
+    max-width: 128px;
+  }
+}
+
 /* ---------- The dock (C-PHONE-TABS.dock; F-SPACE.cta): the forward action ---------- */
 /* The shell's slot for a phone's dock, last in main (BLD-D028): no box of its own, so nothing on it can move the dock */
 .dock-root {
@@ -1205,6 +1223,11 @@
     bottom: 0;
     z-index: var(--z-sidebar);
     flex-direction: column-reverse;
+    /* One column on every page (BLD-D035). A dock with a height cap (S-06B's 45vh) needs both: with wrap, a capped
+       column starts a second column sideways; packed to the end (the top, in a reversed column), what passes the cap
+       leaves by the foot, where no scroll reaches it. From the start (the foot) it leaves by the top, and scrolls */
+    flex-wrap: nowrap;
+    justify-content: flex-start;
     align-items: stretch;
     gap: 8px;
     margin: 0;
