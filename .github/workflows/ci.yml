@@ -72,7 +72,9 @@ jobs:
           ) &
           KEEP=1 make uat-rehearsal 2>&1 | tee "$RUNNER_TEMP/rehearsal.log"
           wait
-          grep -x 'Production-mode rehearsal passed.' "$RUNNER_TEMP/rehearsal.log"
+          # Without REHEARSE_APP_ENV=prod the rehearsal ends after the deploy: its smoke line and its last line.
+          grep -x 'smoke: all checks passed' "$RUNNER_TEMP/rehearsal.log"
+          grep -F 'UAT stack is up:' "$RUNNER_TEMP/rehearsal.log"
           echo "== kept"
           docker ps --filter label=com.docker.compose.project=kfin-ideas-uat-rehearsal --format '{{.Names}} {{.Status}}' \
             | LC_ALL=C sort
