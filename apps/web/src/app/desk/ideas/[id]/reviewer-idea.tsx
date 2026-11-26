@@ -1068,8 +1068,9 @@ function Artefacts({
   );
 }
 
-/** A question the desk asked, under its part: who asked and when, its state, the words, then the answer. */
-function AskedQuestion({ q, ideaId }: { q: ReviewerQuestion; ideaId: string }) {
+/** A question the desk asked, under its part: who asked and when, its state, the words, then the answer. Exported
+ * for its unit test (BLD-B280). */
+export function AskedQuestion({ q, ideaId }: { q: ReviewerQuestion; ideaId: string }) {
   return (
     <div className="ri-q">
       <p className="meta">{q.asked_line}</p>
@@ -1086,6 +1087,12 @@ function AskedQuestion({ q, ideaId }: { q: ReviewerQuestion; ideaId: string }) {
               source={{ kind: "answer", id: q.answer.id }}
               text={q.answer.text}
             />
+          ) : null}
+          {/* BLD-B280: a sent file-only answer whose file was removed says so, as an empty part does, never blank */}
+          {q.answer.files_removed ? (
+            <p className="body">
+              <span className="muted">{q.answer.files_removed}</span>
+            </p>
           ) : null}
           {q.answer.files.length ? (
             <ul className="ri-a-files" aria-label="Files with this answer">
