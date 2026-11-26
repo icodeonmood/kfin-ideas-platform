@@ -43,6 +43,15 @@ ENGLISH = "The office printer has not worked since yesterday, please order new t
 # it should not, so they fail on the identity check and not first on the name at the network edge.
 PLAIN_HINGLISH = "ऑफिस का printer कल से काम नहीं कर रहा, कृपया नया toner मंगवा दीजिए।"
 TAG = re.compile(r"\[\[[A-Z][A-Z_]*_[0-9]+\]\]")
+
+
+def hinglish_sent(rest: list[httpx.Request]) -> list[dict[str, Any]]:
+    """The translate check's own requests: its Hinglish holds "toner". The stream sends one too, the English copy of
+    what it heard (no name in it), which this leaves out."""
+    bodies = [json.loads(r.content) for r in rest if r.url.path == "/translate"]
+    return [b for b in bodies if "toner" in b["input"]]
+
+
 PCM = bytes(3 * sarvam_live.CHUNK_BYTES)  # three seconds of silence: the fakes do not decode audio
 
 
@@ -177,8 +186,9 @@ def test_BLD_C177_L_DRAFT_voice_all_four_calls_pass_through_the_workers_paths_ag
     translate = [json.loads(r.content) for r in rest if r.url.path == "/translate"]
     assert translate and all(t["model"] == "mayura:v1" and t["mode"] == "code-mixed" for t in translate)
     assert "speaker_gender" not in translate[-1]
-    # The customer's name in Devanagari went as a tag, no part of it as written (BLD-C247).
-    assert all("[[PERSON_" in t["input"] for t in translate)
+    # The customer's name in Devanagari went as a tag, no part of it as written (BLD-C247); no request held it.
+    ours = hinglish_sent(rest)
+    assert len(ours) == 1 and "[[PERSON_" in ours[0]["input"]
     assert not any(part in t["input"] for t in translate for part in sarvam_live.DEVA_NAME.split())
 
 
@@ -804,7 +814,7 @@ def test_BLD_C200_L_DRAFT_voice_a_tagging_step_that_tags_nothing_fails_and_the_n
     )
     assert sarvam_live.TAG_NAME not in sent and sarvam_live.TAG_NAME not in "\n".join(lines)
     # Translate refused before any network call: the Hinglish holds a customer's name (BLD-C247).
-    assert not [r for r in rest if r.url.path == "/translate"]
+    assert hinglish_sent(rest) == []  # the stream's English copy of what it heard holds no name
     assert not any(part in sent for part in sarvam_live.DEVA_NAME.split())
 
 
@@ -834,7 +844,7 @@ def test_BLD_C247_L_DRAFT_voice_a_tagger_that_misses_the_devanagari_name_never_s
     sent = json.dumps(fake.received, ensure_ascii=False) + "".join(
         r.content.decode("utf-8", "replace") for r in rest
     )
-    assert not [r for r in rest if r.url.path == "/translate"]
+    assert hinglish_sent(rest) == []  # the stream's English copy of what it heard holds no name
     assert not any(part in sent for part in sarvam_live.DEVA_NAME.split())
     printed_is_clean("\n".join(lines))
 
@@ -854,6 +864,6 @@ def test_BLD_C247_L_DRAFT_voice_a_name_in_the_text_is_refused_at_the_network_edg
     sent = json.dumps(fake.received, ensure_ascii=False) + "".join(
         r.content.decode("utf-8", "replace") for r in rest
     )
-    assert not [r for r in rest if r.url.path == "/translate"]
+    assert hinglish_sent(rest) == []  # the stream's English copy of what it heard holds no name
     assert not any(part in sent for part in sarvam_live.DEVA_NAME.split())
     printed_is_clean("\n".join(lines))
