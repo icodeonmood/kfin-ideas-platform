@@ -288,10 +288,12 @@ def names_near(text: str, people: Iterable[tuple[int, int]], others: list[Found]
 
 
 def people_in(conn: Conn | None, text: str, d: Any = None) -> list[tuple[int, int]]:
-    """Spans of people's names that are not colleagues (Presidio + KFin recognisers, `pii.detect`)."""
-    if not any(ch.isupper() for ch in text):
+    """Spans of people's names that are not colleagues (Presidio + KFin recognisers, `pii.detect`). A known given
+    name and surname typed in lower case is read too (BLD-C251)."""
+    from pii.detect import Directory, detect, directory, may_hold_names
+
+    if not may_hold_names(text):
         return []
-    from pii.detect import Directory, detect, directory
 
     if d is None:
         d = directory(conn) if conn is not None else Directory().compile()

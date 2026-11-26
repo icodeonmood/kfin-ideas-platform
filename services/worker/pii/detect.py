@@ -227,6 +227,60 @@ def _lexicon_people(text: str, stop: frozenset[str]) -> list[tuple[int, int, flo
     return out
 
 
+_LATIN_WORD = re.compile(r"[A-Za-z][A-Za-z'’]*")
+
+
+def _spaced(text: str, a: tuple[int, int, str], b: tuple[int, int, str]) -> bool:
+    """Two words with only spaces between them: never across a comma, a full stop or a new line."""
+    return a[1] < b[0] and text[a[1] : b[0]].strip(" \t\u00a0") == ""
+
+
+def _name_pairs(text: str) -> list[tuple[int, int]]:
+    """BLD-C251 (DEC-142): a name typed in lower case, as in "my client ravi kumar called" or Hinglish in Latin
+    script ("devika raghunathan ne bataya"). The capitalised runs above never see it, so a known given name
+    followed by one or more known surnames counts in any case, with at most one more given name between them
+    ("ravi shankar kumar"). One word alone never counts: "asha", "kiran" and "prakash" are everyday words too."""
+    given, surnames = _lexicon()
+    words = [(m.start(), m.end(), m.group(0).casefold()) for m in _LATIN_WORD.finditer(text)]
+    out: list[tuple[int, int]] = []
+    i = 0
+    while i < len(words):
+        if words[i][2] not in given:
+            i += 1
+            continue
+        j = i + 1
+        if (
+            j < len(words)
+            and words[j][2] in given
+            and words[j][2] not in surnames
+            and _spaced(text, words[i], words[j])
+        ):
+            j += 1  # a middle name
+        end = j
+        while end < len(words) and words[end][2] in surnames and _spaced(text, words[end - 1], words[end]):
+            end += 1
+        if end > j:
+            out.append((words[i][0], words[end - 1][1]))
+            i = end
+        else:
+            i += 1
+    return out
+
+
+def may_hold_names(text: str) -> bool:
+    """Whether the name recognisers have anything to read: a capital letter, or a known given name and surname in
+    lower case (BLD-C251). `hide.detect.people_in` asks the same."""
+    return any(ch.isupper() for ch in text) or bool(_name_pairs(text))
+
+
+def _pair_people(text: str, never: set[str]) -> list[Found]:
+    return [
+        Found(s, e, "PERSON", text[s:e], priority=5)
+        for s, e in _name_pairs(text)
+        if text[s:e].casefold() not in never
+    ]
+
+
 @lru_cache(maxsize=1)
 def _analyzer() -> Any:
     from presidio_analyzer import AnalyzerEngine, EntityRecognizer, RecognizerRegistry, RecognizerResult
@@ -320,6 +374,8 @@ def detect(
     for rx, typ in d._client_res:
         for m in rx.finditer(text):
             found.append(Found(m.start(), m.end(), typ, m.group(0), 4))
+    if people:  # BLD-C251 (DEC-142): names typed in lower case, whatever else the text holds
+        found.extend(_pair_people(text, d.never_person))
     if people and any(ch.isupper() for ch in text):
         found.extend(_people(text, d.never_person))
 
