@@ -33,11 +33,13 @@ export type JourneyId =
   | "J-TRACK"
   | "J-COMMITTEE"
   | "J-ONE"
-  | "J-BROWSE";
+  | "J-BROWSE"
+  | "J-BUSINESS";
 
 /** The order of the board and of the walkers' briefs. */
 export const JOURNEYS: readonly JourneyId[] = [
   "J-SHARE",
+  "J-BUSINESS",
   "J-RESUME",
   "J-RECOVER",
   "J-SIMILAR",
@@ -338,6 +340,18 @@ export async function decisionWindow(idea: { uuid: string }): Promise<{ opensAt:
     const row = rows[0];
     if (!row) throw new Error("the idea has no decision window: load the seed with make demo DEMO_SET=1pc");
     return { opensAt: new Date(row.opens_at), closesAt: new Date(row.closes_at) };
+  } finally {
+    await client.end();
+  }
+}
+
+/** The kind a sent idea is kept as (read only; E-ENUMS.kind): S-06 shows the area, not the kind. */
+export async function ideaKind(ref: string): Promise<string | null> {
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query("SELECT kind FROM ideas WHERE idea_id = $1", [ref]);
+    return rows[0]?.kind ?? null;
   } finally {
     await client.end();
   }
