@@ -18,6 +18,8 @@
   lane C's hide or `forget`, before `store.lock_ideas` takes the ideas' rows in the same order (BLD-B247, BLD-F096).
 - `drop_queued`: lane B's `desk.asking.drop_queued`: a merged idea's queued question sets go, and first what lane C's
   hide kept for each of their questions (L-MERGE.effects/5, BLD-B272).
+- `resolve_questions`: lane B's `desk.adapters.resolve` with its `questions_key`: a merged idea's closed question set
+  leaves the sharer's "Needs you", its reminders with it (L-INBOX.rules/3, BLD-F108), as a desk merge's does.
 - `note_min`: the team-up note's minimum length, a promise in the company repo's `rules/promises.md`.
 """
 
@@ -243,6 +245,15 @@ def drop_queued(conn: Conn, idea_uuid: str) -> list[str]:
     from desk.asking import drop_queued as desk_drop_queued  # lane B's module, loaded when a merge needs it
 
     return desk_drop_queued(conn, idea_uuid)
+
+
+def resolve_questions(conn: Conn, set_id: str) -> int:
+    """L-INBOX.rules/3 (BLD-F108): a closed question set's "Needs you" item, and every reminder keyed under it, leave
+    the list. Lane B's `desk.adapters.resolve` with its `questions_key`, so the key is written in one place and a
+    lead's merge clears what a desk merge clears. Returns how many items it cleared (0 without lane A's resolve)."""
+    from desk import adapters as desk_adapters  # lane B's module, loaded when a merge needs it
+
+    return desk_adapters.resolve(conn, desk_adapters.questions_key(set_id))
 
 
 def note_min() -> int:
