@@ -153,7 +153,7 @@ function json(status: number, data: unknown) {
 // =================================================================================================================
 // V-ACC.teamup/4
 // =================================================================================================================
-describe("V-ACC.teamup/4: Waiting for Ravi with Withdraw, the same on every screen that shows that idea", () => {
+describe("V-ACC.teamup/4: Waiting for Ravi with Withdraw on the cards; the preview shows the status only (DEC-140)", () => {
   // Find your crew and Home's crew cards are on f/crew-search-4, not on main yet: covered in crew-screen.test.ts.
   it.todo("V-ACC.teamup/4: S-H2 crew card (after f/crew-search)");
 
