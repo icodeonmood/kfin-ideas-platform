@@ -1,9 +1,13 @@
 """L-NOTIFY and L-INBOX: the one entry point other lanes call to tell people something (BLD-A180, BLD-A200).
 
-`post` writes one inbox item per recipient (in-app, at once) and queues the other channels the person's
-preferences allow: email now, Teams once IT approves it (DEC-105, the `comms.teams` switch, off). It is called
-inside the caller's transaction, so the item exists exactly when the change that caused it does. Delivery happens
-later, in `comms.send.send_due`, with its own retries: a failing mail server never blocks the caller (L-NOTIFY/6).
+`post` writes one inbox item per recipient (in-app, at once). DEC-138 (BLD-A255, DEC-133's after-launch rule): a
+decision, a reversal, a merge notice, an answer reminder, or anything posted as Needs you also goes out at once, on
+the channels the person's preferences allow: email now, Teams once IT approves it (DEC-105, the `comms.teams` switch,
+off). Every other item waits in the Inbox for the day's digest email (`notify.digest.queue_inbox`, 10:30 IST on
+working days), which leaves out what the person has read by then; its in-app row is stored with `urgency = 'routine'`,
+the mark the digest reads. It is called inside the caller's transaction, so the item exists exactly when the change
+that caused it does. Delivery happens later, in `comms.send.send_due`, with its own retries: a failing mail server
+never blocks the caller (L-NOTIFY/6).
 
 What goes in: IDs and enums only (non-negotiable 3). The line a person reads is rendered from the HR-signed
 templates (`comms/templates/inbox/<kind>.md`) by kind when the inbox is read or the email is sent, never stored.
@@ -56,6 +60,18 @@ INBOX_KINDS: frozenset[str] = frozenset(InboxKind.__args__)  # type: ignore[attr
 ALWAYS_OUTSIDE: frozenset[str] = frozenset({"decision", "decision_reversed", "desk_merge"})
 # L-NOTIFY/2: "Reminders before a question is due" is its own setting.
 REMINDER_KINDS: frozenset[str] = frozenset({"answer_reminder"})
+# DEC-138 (BLD-A255): the kinds that always go out at once (with anything posted as Needs you); the rest wait for the
+# day's digest email.
+AT_ONCE: frozenset[str] = ALWAYS_OUTSIDE | REMINDER_KINDS
+
+
+def goes_at_once(kind: str, needs_you: bool) -> bool:
+    """DEC-138 (BLD-A255): an item goes outside the app when it is posted, on `outside_channels`, if it is a decision,
+    a reversal or a merge notice (L-NOTIFY/4), an answer reminder (L-NOTIFY/5), or posted as Needs you. Any other item
+    queues no outside message: the Inbox digest emails it the next working day at 10:30 IST if it is still unread."""
+    return kind in AT_ONCE or bool(needs_you)
+
+
 # Kinds that carry no refs at all: the item says only that something happened (L-HIDE/7, /8: a hidden detail is never
 # in a notification, not even as an ID that points at it).
 NO_REFS_KINDS: frozenset[str] = frozenset({"detail_hidden_by_desk"})
@@ -212,7 +228,11 @@ def post(
       still waiting to go takes the new date and refs. No new row is written and no second outside message is queued;
       read and archived stay as they were (BLD-A188: lane B's "Give 2 more days" posts `questions` again under
       `qs:<set>` with the new `due_at`, so every screen shows one countdown, V-ACC.track/3). Once the item is resolved,
-      a repeat post leaves it as it is and posts nothing.
+      a repeat post leaves it as it is and posts nothing. One exception (BLD-A255): a repeat that marks Needs you on
+      an item that was waiting for the digest queues its outside messages at once, that one time.
+
+    Outside the app (DEC-138, BLD-A255): only what `goes_at_once` names is queued at once; every other item waits for
+    the day's digest email, marked by its in-app row's `urgency = 'routine'`.
 
     The sender is never also a recipient; a recipient listed twice gets one item; people who have left get none.
     """
@@ -252,23 +272,45 @@ def post(
         Jsonb(refs),
         Jsonb([{k: v for k, v in asdict(a).items() if v is not None} for a in actions]),
     )
+    # DEC-138 (BLD-A255): the in-app row records how its outside messages go: 'immediate' (queued now, below) or
+    # 'routine' (none now; the day's digest email carries it while it is unread).
+    urgency = "immediate" if goes_at_once(kind, needs_you) else "routine"
     ids: list[int] = []
     updated: list[int] = []
+
+    def go_outside(person: str, pref: Mapping[str, object], sent_by: str | None) -> None:
+        channels = outside_channels(
+            kind,
+            email=bool(pref["email"]),
+            teams=bool(pref["teams"]),
+            reminders=bool(pref["reminders"]),
+            teams_on=teams_on,
+        )
+        for channel in channels:
+            # Sent at once, never held for quiet hours or a digest: a 2-hour reminder cannot wait (L-NOTIFY/5).
+            conn.execute(
+                "INSERT INTO notifications (user_id, channel, template, payload, event, urgency, state, send_after, "
+                "kind, from_user_id, idea_uuid, due_at, dedupe_key) "
+                "VALUES (%s, %s, %s, %s, %s, 'immediate', 'queued', now(), %s, %s, %s, %s, %s) "
+                "ON CONFLICT (user_id, channel, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING",
+                (person, channel, template, payload, event, kind, sent_by, idea, due_at, dedupe_key),
+            )
+
     for person in people:
         pref = prefs.get(person)
         if pref is None:
             continue
         sent_by = stored_from if named is None or person in named else None
         # A repeat key updates the open item in place (`xmax = 0` only on a fresh insert); a resolved one is left
-        # alone and returns nothing.
+        # alone and returns nothing. The update leaves `urgency` as stored, so RETURNING reads how it was posted.
         item = conn.execute(
-            "INSERT INTO notifications (user_id, channel, template, payload, event, urgency, state, sent_at, kind, "
-            "from_user_id, idea_uuid, needs_you, due_at, actions, dedupe_key) "
-            "VALUES (%s, 'in_app', %s, %s, %s, 'immediate', 'sent', now(), %s, %s, %s, %s, %s, %s, %s) "
+            "INSERT INTO notifications (user_id, channel, template, payload, event, state, sent_at, kind, "
+            "from_user_id, idea_uuid, needs_you, due_at, actions, dedupe_key, urgency) "
+            "VALUES (%s, 'in_app', %s, %s, %s, 'sent', now(), %s, %s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT (user_id, channel, dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET "
             "due_at = EXCLUDED.due_at, payload = EXCLUDED.payload, actions = EXCLUDED.actions, "
             "needs_you = EXCLUDED.needs_you WHERE notifications.resolved_at IS NULL "
-            "RETURNING id, (xmax = 0) AS inserted",
+            "RETURNING id, (xmax = 0) AS inserted, urgency",
             (
                 person,
                 template,
@@ -281,6 +323,7 @@ def post(
                 due_at,
                 buttons,
                 dedupe_key,
+                urgency,
             ),
         ).fetchone()
         if item is None:  # this person had it, and it is resolved: nothing to post
@@ -292,22 +335,23 @@ def post(
                 "AND channel <> 'in_app' AND state = 'queued'",
                 (due_at, payload, person, dedupe_key),
             )
+            if needs_you and item.get("urgency") == "routine":
+                # BLD-A255: it waited for the digest and now needs the person, so it goes out at once, this once;
+                # marked 'immediate', it leaves the digest and a later repeat queues nothing more.
+                conn.execute("UPDATE notifications SET urgency = 'immediate' WHERE id = %s", (item["id"],))
+                go_outside(person, pref, sent_by)
             continue
         ids.append(int(item["id"]))
-        channels = outside_channels(
-            kind, email=pref["email"], teams=pref["teams"], reminders=pref["reminders"], teams_on=teams_on
-        )
-        for channel in channels:
-            # Sent at once, never held for quiet hours or a digest: a 2-hour reminder cannot wait (L-NOTIFY/5).
-            conn.execute(
-                "INSERT INTO notifications (user_id, channel, template, payload, event, urgency, state, send_after, "
-                "kind, from_user_id, idea_uuid, due_at, dedupe_key) "
-                "VALUES (%s, %s, %s, %s, %s, 'immediate', 'queued', now(), %s, %s, %s, %s, %s) "
-                "ON CONFLICT (user_id, channel, dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING",
-                (person, channel, template, payload, event, kind, sent_by, idea, due_at, dedupe_key),
-            )
+        if urgency == "immediate":
+            go_outside(person, pref, sent_by)
     if ids or updated:
-        log.info("notify.posted", inbox_kind=kind, item_count=len(ids), updated_count=len(updated))
+        log.info(
+            "notify.posted",
+            inbox_kind=kind,
+            item_count=len(ids),
+            updated_count=len(updated),
+            urgency=urgency,
+        )
     return Posted(ids=ids, updated=updated)
 
 

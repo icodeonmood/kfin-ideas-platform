@@ -94,12 +94,17 @@ def compose(
     row: dict[str, Any] | None = None,
 ) -> email_html.Email | None:
     """The email for one queued notification. An Inbox item (`row["kind"]`) is rendered by `notify.render` from its
-    IDs (L-NOTIFY/3); the decide-by digest lists the ideas as they are now, and is None when none is late any more or it is off."""
+    IDs (L-NOTIFY/3); the Inbox digest lists its items still unread, and is None when all are read (BLD-A255); the
+    decide-by digest lists the ideas as they are now, and is None when none is late any more or it is off."""
     base = get_settings().app_base_url
     if row is not None and row.get("kind"):
         from notify.render import email as inbox_email
 
         return inbox_email(conn, row)
+    if event == "inbox.digest":  # DEC-138 (BLD-A255): the day's Inbox items, as they are when it goes
+        from notify import digest as inbox_digest
+
+        return inbox_digest.compose_inbox(conn, user_id, dict(refs or {}))
     if event == "review.decide_by_digest":
         from notify import digest
 

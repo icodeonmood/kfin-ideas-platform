@@ -80,10 +80,14 @@ def test_DEC_111_L_NOTIFY_L_INBOX_a_desk_item_and_its_email_never_name_the_revie
             "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email' AND kind = %s",
             (kavya, kind),
         ).fetchone()
-        mail = nrender.email(db, dict(row), WORKDAY_NOON) if row is not None else None
-        seen = json.dumps(item, ensure_ascii=False) + (
-            (mail.subject + mail.text + mail.html) if mail is not None else ""
+        # A revised worth is not sent at once: the Inbox digest carries it, in the same words (DEC-138, BLD-A255)
+        assert (row is None) == (kind == "worth_revised"), kind
+        mail = (
+            nrender.email(db, dict(row), WORKDAY_NOON) if row is not None else l_notify.digest_mail(db, kavya)
         )
+        seen = json.dumps(item, ensure_ascii=False) + mail.subject + mail.text + mail.html
+        if kind == "worth_revised":
+            assert "The review desk revised what your idea is worth" in mail.text
         assert "Meera" not in seen and "Iyer" not in seen and meera not in seen, seen
         if kind == "questions":
             assert (item["line"], mail and mail.subject) == (
@@ -228,7 +232,8 @@ def test_l_notify_dec113_a_repeat_as_committee_key_keeps_no_sender_db(cast: Any)
             "SELECT channel, from_user_id FROM notifications WHERE user_id = %s AND dedupe_key = %s",
             (kavya, key),
         ).fetchall()
-        assert sorted(r["channel"] for r in rows) == ["email", "in_app"]
+        # a comment waits for the Inbox digest (BLD-A255): no email row of its own
+        assert sorted(r["channel"] for r in rows) == ["in_app"]
         assert all(r["from_user_id"] is None for r in rows)
         item = inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]
         assert (item["from"], item["body"]["sender"]) == (AS_ONE, "The Ones Committee")

@@ -204,7 +204,8 @@ def test_l_notify_dec113_as_committee_stores_no_sender(kind: str, monkeypatch: p
     posted = notify.post(conn, kind, [SHARER, MEMBER], idea_id=IDEA, sender=MEMBER,  # type: ignore[arg-type]
                          refs={**ENTRY, "as_committee": True})  # fmt: skip
     assert len(posted.ids) == 1 and conn.role_reads == 0
-    assert conn.stored() == [(SHARER, "in_app", None), (SHARER, "email", None)]
+    # a comment or mention waits for the Inbox digest (DEC-138, BLD-A255): no outside row is written when it is posted
+    assert conn.stored() == [(SHARER, "in_app", None)]
 
 
 def test_l_notify_dec113_other_kinds_keep_their_sender_and_read_no_role(
@@ -213,7 +214,8 @@ def test_l_notify_dec113_other_kinds_keep_their_sender_and_read_no_role(
     monkeypatch.setattr(notify.killswitch, "is_on", lambda *_: False)
     conn = _Writes()
     notify.post(conn, "comment", [SHARER], idea_id=IDEA, sender=CREW, refs=ENTRY)  # type: ignore[arg-type]
-    assert conn.stored() == [(SHARER, "in_app", CREW), (SHARER, "email", CREW)] and conn.role_reads == 0
+    # the Inbox digest carries the comment (BLD-A255): no email row of its own
+    assert conn.stored() == [(SHARER, "in_app", CREW)] and conn.role_reads == 0
 
 
 def test_l_notify_dec113_the_seam_constants() -> None:
@@ -227,7 +229,8 @@ def test_l_notify_dec113_the_seam_constants() -> None:
 
 class _Repeat(_Writes):
     """A repeat post with the same key: the first post inserts, the second meets the open in-app item and brings it up
-    to date (`ON CONFLICT … DO UPDATE`), then refreshes the outside messages still waiting (`UPDATE`)."""
+    to date (`ON CONFLICT … DO UPDATE`), then refreshes the outside messages still waiting (`UPDATE`). A comment has
+    no outside row of its own since DEC-138 (BLD-A255), so the in-app item is the first insert."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -237,7 +240,7 @@ class _Repeat(_Writes):
         if sql.startswith("UPDATE notifications"):
             self.updates.append(sql)
             return desk._Rows([])
-        if sql.startswith("INSERT INTO notifications") and len(self.inserts) >= 2:  # the in-app item is there
+        if sql.startswith("INSERT INTO notifications") and len(self.inserts) >= 1:  # the in-app item is there
             self.inserts.append((sql, params))
             return desk._Rows([{"id": 1, "inserted": False}])
         return super().execute(sql, params)
@@ -256,7 +259,8 @@ def test_l_notify_dec113_a_repeat_as_committee_key_never_restores_the_member(
     first = notify.post(conn, "comment", [SHARER], idea_id=IDEA, sender=MEMBER, refs=refs, dedupe_key=key)  # type: ignore[arg-type]
     again = notify.post(conn, "comment", [SHARER], idea_id=IDEA, sender=MEMBER, refs=refs, dedupe_key=key)  # type: ignore[arg-type]
     assert (first.ids, again.ids, again.updated) == ([1], [], [1])
-    assert [stored for _, _, stored in conn.stored()] == [None, None, None]  # in-app, email, then the repeat
+    # in-app, then the repeat; no email, the Inbox digest carries a comment (BLD-A255)
+    assert [stored for _, _, stored in conn.stored()] == [None, None]
     repeat_sql, _ = conn.inserts[-1]
     assert "from_user_id" not in repeat_sql.split("DO UPDATE SET", 1)[1]
     assert conn.updates and all("from_user_id" not in u for u in conn.updates)

@@ -1,8 +1,9 @@
 """L-NOTIFY and L-INBOX in the database (BLD-A180, BLD-A200 to A203): `notify.post` writes one in-app item per
-recipient and queues email by preference; decisions, reversals and merges always go out (L-NOTIFY/4); Teams waits
-for its switch (DEC-105); no message carries anyone's words or a reason (L-NOTIFY/3); `resolve` takes an item off
-"Needs you"; the Inbox's tabs and counts agree; the decide-by digest is off at launch (BLD-B241) and, once switched
-on, goes to the review desk."""
+recipient and queues email by preference for what goes at once (DEC-138, BLD-A255: the rest waits for the Inbox
+digest, tests/test_bld_a255_inbox_digest_db.py); decisions, reversals and merges always go out (L-NOTIFY/4); Teams
+waits for its switch (DEC-105); no message carries anyone's words or a reason (L-NOTIFY/3); `resolve` takes an item
+off "Needs you"; the Inbox's tabs and counts agree; the decide-by digest is off at launch (BLD-B241) and, once
+switched on, goes to the review desk."""
 
 from __future__ import annotations
 
@@ -81,22 +82,35 @@ def _rows(db: Any, user: str) -> list[dict[str, Any]]:
     ).fetchall()
 
 
+def digest_mail(db: Any, user: str) -> Any:
+    """BLD-A255: the Inbox digest as it would go to `user` now, over every item that waited for it. A kind that is not
+    sent at once has no email row of its own; this is the email that carries it."""
+    until = (dt.datetime.now(dt.UTC) + dt.timedelta(minutes=1)).isoformat()
+    mail = digest.compose_inbox(db, user, {"since": None, "until": until}, WORKDAY_NOON)
+    assert mail is not None, "nothing waited for the digest"
+    return mail
+
+
 def test_L_NOTIFY_post_writes_in_app_at_once_and_queues_email_by_preference(cast: Any) -> None:
     db, p, ideas = cast["db"], cast["p"], cast["ideas"]
     posted = notify.post(db, "comment", [p["kavya"]["id"], p["kavya"]["id"], p["ravi"]["id"]],
                          idea_id=ideas["mine"], sender=p["ravi"]["id"], refs={"entry_id": 42})  # fmt: skip
     assert len(posted.ids) == 1  # the sender is never a recipient; a name listed twice gets one item
-    assert [(r["channel"], r["kind"]) for r in _rows(db, p["kavya"]["id"])] == [
-        ("in_app", "comment"),
-        ("email", "comment"),
-    ]
+    # A comment waits for the Inbox digest (DEC-138, BLD-A255): no outside row when it is posted.
+    assert [(r["channel"], r["kind"]) for r in _rows(db, p["kavya"]["id"])] == [("in_app", "comment")]
     assert _rows(db, p["ravi"]["id"]) == []
+    ask = {"request_id": str(uuid.uuid4()), "request": "teamup"}
+    notify.post(db, "teamup_request", [p["kavya"]["id"]], idea_id=ideas["mine"], sender=p["ravi"]["id"],
+                needs_you=True, refs=ask)  # fmt: skip
+    assert [(r["channel"], r["kind"]) for r in _rows(db, p["kavya"]["id"])][1:] == [
+        ("in_app", "teamup_request"),
+        ("email", "teamup_request"),
+    ]  # Needs you goes at once, by email as her settings allow
     db.execute(
         "INSERT INTO comms_prefs (user_id, email, teams) VALUES (%s, false, false)", (p["rohan"]["id"],)
     )
-    notify.post(
-        db, "mention", [p["rohan"]["id"], p["left"]["id"]], idea_id=ideas["mine"], sender=p["ravi"]["id"]
-    )
+    notify.post(db, "teamup_request", [p["rohan"]["id"], p["left"]["id"]], idea_id=ideas["mine"],
+                sender=p["ravi"]["id"], needs_you=True, refs=ask)  # fmt: skip
     assert [r["channel"] for r in _rows(db, p["rohan"]["id"])] == ["in_app"]  # email off: in-app only
     assert _rows(db, p["left"]["id"]) == []  # people who have left get nothing
 
@@ -133,10 +147,7 @@ def test_L_NOTIFY_3_no_words_reasons_or_free_text_go_in(cast: Any) -> None:
             notify.post(db, "teamup_answer", [p["kavya"]["id"]], idea_id=ideas["mine"], refs=bad)
     notify.post(db, "teamup_answer", [p["kavya"]["id"]], idea_id=ideas["mine"], sender=p["ravi"]["id"],
                 refs={"request_id": str(uuid.uuid4()), "answer": "decline", "has_reason": True})  # fmt: skip
-    row = db.execute(
-        "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email'", (p["kavya"]["id"],)
-    ).fetchone()
-    mail = nrender.email(db, dict(row), WORKDAY_NOON)
+    mail = digest_mail(db, p["kavya"]["id"])  # an answer waits for the Inbox digest (BLD-A255)
     assert (
         "declined your team-up request, with a reason" in mail.text and "/ideas/IDEA-2026-000900" in mail.text
     )
@@ -358,15 +369,16 @@ def test_L_HIDE_7_detail_hidden_by_desk_comes_from_the_review_desk_with_one_acti
         ]
         assert "Meera" not in repr(item)
         row = db.execute(
-            "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email'", (kavya,)
+            "SELECT * FROM notifications WHERE user_id = %s AND channel = 'in_app'", (kavya,)
         ).fetchone()
         assert row["payload"] == {}
-        # Not even stored: the item and its email carry no sender, so no later read can name the reviewer.
+        # Not even stored: the item carries no sender, so no later read can name the reviewer. It is not Needs you,
+        # so it waits for the Inbox digest (BLD-A255), which reads this item.
         senders = db.execute(
             "SELECT channel, from_user_id FROM notifications WHERE user_id = %s ORDER BY id", (kavya,)
         ).fetchall()
-        assert [(r["channel"], r["from_user_id"]) for r in senders] == [("in_app", None), ("email", None)]
-        mail = nrender.email(db, dict(row), WORKDAY_NOON)
+        assert [(r["channel"], r["from_user_id"]) for r in senders] == [("in_app", None)]
+        mail = digest_mail(db, kavya)
         assert "The review desk hid a customer’s detail in your idea" in mail.text
         assert "Only you can still see it." in mail.text and "Meera" not in mail.text + mail.html
     finally:
@@ -394,9 +406,9 @@ def test_DEC_111_a_comment_as_the_desk_stores_and_shows_no_reviewer_and_a_crew_c
             "SELECT kind, channel, from_user_id, dedupe_key FROM notifications WHERE user_id = %s ORDER BY id",
             (kavya,),
         ).fetchall()
+        # a comment or mention waits for the Inbox digest (BLD-A255): no email row of its own
         assert {(r["channel"], r["from_user_id"]) for r in stored if r["dedupe_key"].endswith(":desk")} == {
             ("in_app", None),
-            ("email", None),
         }
         items = inbox.items(db, kavya, now=WORKDAY_NOON)["items"]
         lines = sorted((it["body"]["sender"], it["line"]) for it in items)
@@ -409,12 +421,12 @@ def test_DEC_111_a_comment_as_the_desk_stores_and_shows_no_reviewer_and_a_crew_c
             if it["body"]["sender"] == "The review desk":
                 assert it["from"] == "system" and "Meera" not in json.dumps(it, ensure_ascii=False)
                 assert p["meera"]["id"] not in json.dumps(it)
-        for row in db.execute(
-            "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email' AND dedupe_key LIKE '%%:desk'",
-            (kavya,),
-        ).fetchall():
-            mail = nrender.email(db, dict(row), WORKDAY_NOON)
-            assert "The review desk" in mail.text and "Meera" not in mail.subject + mail.text + mail.html
+        mail = digest_mail(db, kavya)
+        assert mail.text.count("The review desk commented on your idea") == 1
+        assert (
+            "The review desk mentioned you" in mail.text and "Ravi Nair commented on your idea" in mail.text
+        )
+        assert "Meera" not in mail.subject + mail.text + mail.html
     finally:
         db.execute("DELETE FROM notifications WHERE user_id = %s", (kavya,))
 
@@ -482,10 +494,7 @@ def test_L_INBOX_J_RESUME_5_6_draft_kept_reads_and_acts_by_via(
     got = inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]
     assert (got["body"]["sender"], got["line"]) == ("1% Club", line)
     assert got["actions"] == [{"label": label, "style": "primary", "to": f"/share/{ideas['draft']}"}]
-    row = db.execute(
-        "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email'", (kavya,)
-    ).fetchone()
-    mail = nrender.email(db, dict(row), WORKDAY_NOON)
+    mail = digest_mail(db, kavya)  # a kept draft waits for the Inbox digest (BLD-A255)
     assert f"1% Club {line}: " in mail.text
     assert f"{label}" in mail.text and f"/share/{ideas['draft']}" in mail.text
     assert ("Carry on" if label == "Check and send" else "Check and send") not in mail.text + mail.html
@@ -697,18 +706,15 @@ def test_DEC_104_teamup_answer_names_the_lead_only_to_a_requester_who_may_see_th
     notify.post(db, "teamup_answer", [kavya], idea_id=ideas["ravis"], sender=ravi,
                 refs={"request_id": str(uuid.uuid4()), "request": "teamup", "answer": answer, "has_reason": True})  # fmt: skip
     item = inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]
-    row = db.execute(
-        "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email' AND kind = 'teamup_answer'",
-        (kavya,),
-    ).fetchone()
-    mail = nrender.email(db, dict(row), WORKDAY_NOON)
+    # an answer waits for the Inbox digest, where its section is headed by its own subject (BLD-A255)
+    mail = digest_mail(db, kavya)
     seen = json.dumps(item, ensure_ascii=False) + mail.subject + mail.text + mail.html
     if case in ("hid their name", "has left"):
         assert item["from"]["name"] == "A colleague" and item["from"]["initials"] == ""
         assert item["from"]["id"].startswith("p") and item["body"]["sender"] == "The lead"
-        assert mail.subject == "The lead answered your team-up request"
+        assert mail.text.startswith("The lead answered your team-up request\n")
         assert "The lead declined your team-up request, with a reason" in mail.text
         assert ravi not in seen and "Ravi" not in seen
     else:
         assert item["from"]["id"] == ravi and item["body"]["sender"] == "Ravi Nair"
-        assert mail.subject == "Ravi Nair answered your team-up request"
+        assert mail.text.startswith("Ravi Nair answered your team-up request\n")
