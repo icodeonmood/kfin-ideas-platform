@@ -354,6 +354,12 @@ def _merged(text: str, spans: list[tuple[int, int, float]]) -> list[tuple[int, i
     return out
 
 
+def may_hold_names(text: str) -> bool:
+    """Whether the name recognisers have anything to read: a capital letter (Latin script), or a word in Devanagari,
+    which has no capitals (the review of BLD-C247). `hide.detect.people_in` asks the same."""
+    return any(ch.isupper() for ch in text) or _DEVA_WORD.search(text) is not None
+
+
 def _deva_found(text: str, never: set[str]) -> list[Found]:
     """`_people` for a text with no capital letter: the Devanagari names only, at the same threshold."""
     out = []
@@ -460,7 +466,7 @@ def detect(
             found.append(Found(m.start(), m.end(), typ, m.group(0), 4))
     if people and any(ch.isupper() for ch in text):
         found.extend(_people(text, d.never_person))
-    elif people and _DEVA_WORD.search(text):
+    elif people and may_hold_names(text):
         # Hindi in Devanagari has no capital letters, so the gate above never opens for it (the review of BLD-C247):
         # the table alone, without the English NER model, which reads nothing in this script but noise.
         found.extend(_deva_found(text, d.never_person))

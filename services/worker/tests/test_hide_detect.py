@@ -73,6 +73,17 @@ def test_l_hide_detect_a_name_hides_only_in_the_same_sentence_as_another_detail(
     assert ("folio", FOLIO) in found
 
 
+def test_l_hide_detect_bld_c247_a_name_in_devanagari_hides_beside_a_detail_with_no_capital_letter() -> None:
+    """BLD-C247 (the review): a Hindi sentence has no capital letter, so `people_in` read no names in it and the phone
+    number hid alone. Now the name in its sentence hides too; a name in another sentence does not."""
+    text = "मेरे ग्राहक रमेश शर्मा का फ़ोन 9876543210 है। अमित से बात हुई।"
+    assert not any(ch.isupper() for ch in text)
+    found = kinds(text)
+    assert ("name", "रमेश शर्मा") in found
+    assert any(k == "phone" for k, _ in found)
+    assert all("अमित" not in v for _, v in found)
+
+
 def test_l_hide_detect_values_match_as_whole_words_in_any_case() -> None:
     """Review fix 3 (BLD-C066): "kiran rao" goes with "Kiran Rao", a longer word stays, a mask is never re-masked."""
     text = "Ask kiran  rao, then Kiran Rao again, not Kiran Raona"
