@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 /** S-04, Tell it (a new problem): `/share` (P-ROUTES). `?new=1` is "Start a new one instead" from a saved draft.
  * The S1 and S3 variants come from lane A's reader on the server, which logs the exposure as the screen renders
  * (P-DECISIONS.experiments, BLD-A216, BLD-C170); a flag never fails the page. Capture first (DEC-125) is `ai.all`
- * off, read as the "taking a break" banner reads it (BLD-C212). */
+ * or `agent.draft-part` off (DEC-143 (g)), read as the "taking a break" banner reads it (BLD-C212). */
 export default async function TellIt({ searchParams }: { searchParams: Promise<{ new?: string }> }) {
   const me = await currentUser();
   if (!me) redirect("/sign-in");
