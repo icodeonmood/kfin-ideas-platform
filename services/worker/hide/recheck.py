@@ -52,8 +52,6 @@ DESK_TEXT_RECHECK = "desk.text_recheck"
 
 
 def run(conn: Conn, payload: dict[str, Any]) -> None:
-    from hide import desk
-
     idea_uuid, source = str(payload.get("idea_uuid") or ""), str(payload.get("source") or "")
     source_id, by = str(payload.get("source_id") or ""), str(payload.get("by") or "")
     if source not in SEALED_SOURCES or not is_uuid(idea_uuid) or not source_id:
@@ -80,22 +78,43 @@ def run(conn: Conn, payload: dict[str, Any]) -> None:
             conn, idea_uuid, words, by=by, source=source, source_id=source_id, gatekeeper=True, recheck=True,
             gate=asked,
         )  # fmt: skip
-        if source in ("message", "answer", "conversation"):
-            found = desk.load_sealed(conn, idea_uuid, source, source_id)
-            if found:
-                desk._write_sealed(conn, idea_uuid, found[0], details_for(conn, idea_uuid, source, source_id))
-        elif source == "teamup":  # a team-up note, reason or ask: lane F's writer (BLD-F097)
-            from teamup.adapters import write_masked
+        fresh, copies = settle(conn, idea_uuid, source, source_id, words, done.masked, kept, before)
+    log.info("hide.rechecked", idea_id=idea_uuid, source_code=source, hidden_count=fresh, other_copies=copies)
 
-            write_masked(conn, source_id, done.masked)
-        fresh = [d for d in kept if d["found_by"] == "gatekeeper" and str(d["vault_tag"]) not in before]
-        copies = 0
-        for d in fresh:
-            value = words[int(d["span_start"]) : int(d["span_end"])]
-            copies += desk._sweep(conn, idea_uuid, value, str(d["kind"]), found_by="gatekeeper").copies
-    log.info(
-        "hide.rechecked", idea_id=idea_uuid, source_code=source, hidden_count=len(fresh), other_copies=copies
-    )
+
+def settle(
+    conn: Conn,
+    idea_uuid: str,
+    source: str,
+    source_id: str,
+    words: str,
+    masked: str,
+    kept: list[dict[str, Any]],
+    before: set[str],
+) -> tuple[int, int]:
+    """After `_hide` on a sealed text, inside its hide locks: rebuild the text's masked copy (messages, answers and
+    conversation messages; a team-up text through lane F's writer, BLD-F097), then mask each detail found for the
+    first time in every other copy of the idea (`desk._sweep`). Returns (new details, other copies changed).
+
+    Every new detail is swept, whoever found it (BLD-C252, the product lead's choice of 27 Nov): before, only the
+    gatekeeper's were, so a name the name rule found beside a new detail stayed in the idea's other copies. A
+    detail found before keeps its vault tag and is not new (`before`), so settling again changes nothing."""
+    from hide import desk
+
+    if source in ("message", "answer", "conversation"):
+        found = desk.load_sealed(conn, idea_uuid, source, source_id)
+        if found:
+            desk._write_sealed(conn, idea_uuid, found[0], details_for(conn, idea_uuid, source, source_id))
+    elif source == "teamup":
+        from teamup.adapters import write_masked
+
+        write_masked(conn, source_id, masked)
+    fresh = [d for d in kept if str(d["vault_tag"]) not in before]
+    copies = 0
+    for d in fresh:
+        value = words[int(d["span_start"]) : int(d["span_end"])]
+        copies += desk._sweep(conn, idea_uuid, value, str(d["kind"]), found_by=str(d["found_by"])).copies
+    return len(fresh), copies
 
 
 def _also_locked(conn: Conn, idea_uuid: str, source: str, source_id: str) -> list[str]:

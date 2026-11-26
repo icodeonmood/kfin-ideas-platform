@@ -383,6 +383,16 @@ def hide_recheck(conn: Conn, payload: dict[str, Any]) -> None:
     recheck.run(conn, payload)
 
 
+@handler("hide.names_backfill")
+def hide_names_backfill(conn: Conn, payload: dict[str, Any]) -> None:
+    """BLD-C252 (DEC-142): once, with no model call, hide in the texts written before r7 the names r7's rules find
+    (lower case, BLD-C251; Devanagari, BLD-C247) and sweep them into the idea's other copies. Queued at worker start
+    until it has finished once (`hide.backfill.queue_once`); a failure is tried again by the runner, safely."""
+    from hide import backfill
+
+    backfill.run(conn, payload)
+
+
 @on_dead("hide.recheck")
 def hide_recheck_gave_up(conn: Conn, payload: dict[str, Any]) -> None:
     """The re-check's last attempt failed: audited with IDs and the code only (BLD-C067)."""

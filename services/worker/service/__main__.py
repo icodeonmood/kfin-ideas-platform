@@ -116,6 +116,20 @@ def _file_start_sweep() -> None:
         log.error("service.file_start_sweep_skipped", error_type=type(exc).__name__)
 
 
+def _names_backfill() -> None:
+    """BLD-C252 (DEC-142): once per worker start, queue the one-off names backfill unless it has finished before
+    (`hide.backfill.queue_once`). Only queued here: the job runner runs it, with no model call."""
+    from core.db import connect
+    from hide.backfill import queue_once
+
+    try:
+        with connect(autocommit=True) as conn:
+            if queue_once(conn) is not None:
+                log.info("service.names_backfill_queued")
+    except Exception as exc:  # the database not up: the next start queues it
+        log.error("service.names_backfill_skipped", error_type=type(exc).__name__)
+
+
 def main() -> None:
     settings = get_settings()
     roles = settings.roles
@@ -125,6 +139,7 @@ def main() -> None:
     _speech_route_guard()
     if "jobs" in roles:
         _file_start_sweep()  # before the name model's warm-up and before the job runner starts
+        _names_backfill()
     if "repo_writer" in roles:
         _guard("repo_writer", RepoWriter(settings).run_forever)
     if "indexer" in roles:
