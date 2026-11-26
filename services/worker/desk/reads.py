@@ -11,6 +11,7 @@ import dataclasses
 import datetime as dt
 from typing import Any
 
+from attachments.files import gatekeeper_ran
 from core.db import Conn
 from desk import clock, promises, queue, when
 from desk.questions import SetFacts
@@ -302,6 +303,14 @@ def _said_at(t: dt.datetime, at: dt.datetime) -> str:
     return f"{d} {when.clock(t)}" if d == "today" else f"{d}, {when.clock(t)}"
 
 
+def _checked(f: dict[str, Any]) -> bool:
+    """The desk's green "Checked for personal details" badge (DEC-144 (1), BLD-B284): every file the desk lists has
+    passed the virus scan and the personal-data check, except an old-pipeline row marked clean on the patterns alone
+    (`attachments.files.gatekeeper_ran`, DEC-127), which gets no badge and no other words. The listing itself
+    (`SHOWN_FILE`, `DESK_SEES`) is unchanged."""
+    return gatekeeper_ran(f)
+
+
 def _checked_files(
     conn: Conn, idea_uuid: Any, states: tuple[str, ...] = FILES_CHECKED
 ) -> list[dict[str, Any]]:
@@ -310,11 +319,12 @@ def _checked_files(
     sharer's until the answer is sent. Only the idea's own files (`IDEA_OWN`, BLD-B274): a file added for the
     conversation (DEC-124), sent or not, is never among them. This one read feeds the Attachments card
     (S-R2.left/2), the Attached part (`_evidence_text`, S-R2.left/3), every merged contribution (L-MERGE.effects/3),
-    the Listen script (L-LISTEN/2, which lane C's hosted voice reads too) and the committee's read of the page."""
+    the Listen script (L-LISTEN/2, which lane C's hosted voice reads too) and the committee's read of the page. Each
+    is `checked` once both checks have passed (`_checked`)."""
     return [
-        {**f, "customer_detail": f["file_state"] == CUSTOMER_DETAIL}
+        {**f, "customer_detail": f["file_state"] == CUSTOMER_DETAIL, "checked": _checked(f)}
         for f in conn.execute(
-            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at, file_state, "  # noqa: S608 (SHOWN_FILE, IDEA_OWN are fixed text)
+            "SELECT id, name, bytes, pages, hidden_note, uploaded_by_code, answer_id, created_at, file_state, checks, "  # noqa: S608 (SHOWN_FILE, IDEA_OWN are fixed text)
             "(SELECT a.sent_at FROM answers a WHERE a.id = attachments.answer_id) AS answer_sent_at, "
             "(SELECT a.by_code FROM answers a WHERE a.id = attachments.answer_id) AS answer_by "
             f"FROM attachments WHERE idea_uuid = %s AND kind = 'file' AND {SHOWN_FILE} AND {IDEA_OWN} "
@@ -356,7 +366,7 @@ def _questions(
         if r["answer_id"]:
             by = person_by_code(conn, r["by_code"])
             files = conn.execute(
-                "SELECT id, name, hidden_note, file_state FROM attachments WHERE answer_id = %s AND "  # noqa: S608 (fixed text)
+                "SELECT id, name, hidden_note, file_state, checks FROM attachments WHERE answer_id = %s AND "  # noqa: S608 (fixed text)
                 f"{SHOWN_FILE} AND {IDEA_OWN} ORDER BY created_at, id",  # never a conversation file (BLD-B274)
                 (r["answer_id"], list(DESK_SEES)),
             ).fetchall()
@@ -367,7 +377,8 @@ def _questions(
                 "at": r["answered_at"].isoformat(), "by": by.first_name,
                 "line": f"{by.first_name} answered, {_said_at(r['answered_at'], at)}",
                 "files": [{"id": f["id"], "name": f["name"], "hidden": f["hidden_note"],
-                           "customer_detail": f["file_state"] == CUSTOMER_DETAIL} for f in files],
+                           "customer_detail": f["file_state"] == CUSTOMER_DETAIL, "checked": _checked(f)}
+                          for f in files],
                 "files_removed": ANSWER_FILES_REMOVED if not files and not (text or "").strip() else None,
             }  # fmt: skip
         out.setdefault(str(r["part"]), []).append(item)
@@ -391,7 +402,7 @@ def _file_artefacts(conn: Conn, files: list[dict[str, Any]], at: dt.datetime) ->
             pages = f", {f['pages']} page{'s' * (f['pages'] != 1)}" if f["pages"] else ""
             line = f"Attached by {by}. {_size(int(f['bytes']))}{pages}.{hidden}"
         out.append({"kind": "file", "id": f["id"], "title": f["name"], "line": line, "action": "Open",
-                    "customer_detail": f["customer_detail"]})  # fmt: skip
+                    "customer_detail": f["customer_detail"], "checked": f["checked"]})  # fmt: skip
     return out
 
 
