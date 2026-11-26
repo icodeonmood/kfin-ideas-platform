@@ -229,6 +229,40 @@ describe("C-FILE.uploader, BLD-D031: the look is the shared sheet's; each screen
     expect(decl(".fpick-h", "font-size")).toBe("12.5px");
   });
 
+  it("BLD-D036, C-FILE.picker: below 300px the link field and Add link stack: the field takes the row, Add link goes under it full width and 44px tall, and the icon stays on the field's row", () => {
+    // The picker's own width decides: its content box under 276px is a picker under 300px with its 12px padding
+    expect(decl(".fpick", "container")).toBe("fpick / inline-size");
+    const narrow = "@container fpick (max-width: 275px)";
+    const at = (selector: string, prop: string) =>
+      shared
+        .find((r) => r.at === narrow && r.selectors.includes(selector) && r.decls.has(prop))
+        ?.decls.get(prop);
+    expect(275 + 2 * Number.parseFloat(decl(".fpick", "padding") ?? "")).toBe(299);
+    // Home's phone box is 265px at 360 and 225px at 320 (CI); the picker inside its 12px margins, 241px and 201px, gave
+    // the field 119px and 79px beside Add link. Both are under 300px, so the field takes the row: 217px and 177px
+    for (const picker of [265 - 24, 225 - 24]) expect(picker - 24).toBeLessThanOrEqual(275);
+    expect(at(".fpick-link", "display")).toBe("grid");
+    expect(at(".fpick-link", "grid-template-columns")).toBe("minmax(0, 1fr)");
+    expect(at(".fpick-link .fld", "grid-area")).toBe("1 / 1");
+    expect(at(".fpick-link > .btn", "grid-area")).toBe("2 / 1");
+    expect(at(".fpick-link > .btn", "width")).toBe("100%");
+    // The icon in the field's own cell, centred on it, painted over it, where the field's 38px left padding leaves room
+    expect(at(".fpick-li", "grid-area")).toBe("1 / 1");
+    expect(at(".fpick-li", "position")).toBe("static");
+    expect(at(".fpick-li", "align-self")).toBe("center");
+    expect(at(".fpick-li", "z-index")).toBe("1");
+    expect(at(".fpick-li", "margin-left")).toBe("14px");
+    expect(at(".fpick-li", "transform")).toBe("none");
+    // Add link is the small button, 44px tall (F-SPACE.targets: --ctl-sm)
+    show(base());
+    expect(named(PICKER_COPY.addLink).classList.contains("btn-sm")).toBe(true);
+    expect(host.querySelector(".fpick-link > .btn")).toBe(named(PICKER_COPY.addLink));
+    const sm = cssRules("app/offer.css").find((r) => r.at === "" && r.selectors.includes(".btn-sm"));
+    expect(sm?.decls.get("min-height")).toBe("var(--ctl-sm)");
+    const root = cssRules("app/foundation.css").find((r) => r.at === "" && r.decls.has("--ctl-sm"));
+    expect(root?.decls.get("--ctl-sm")).toBe("44px");
+  });
+
   it("compose.css and conversation.css keep the picker's place only", () => {
     const compose = cssRules("app/share/compose.css");
     const convo = cssRules("components/convo/conversation.css");
