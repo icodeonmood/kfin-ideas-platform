@@ -555,9 +555,9 @@ def draft_part(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
     choices = [c for c in (inputs.get("options") or {}).get("choices") or [] if isinstance(c, dict)]
     if part == "area" and _holds_business_sentence(texts):
         label = next((str(c["label"]) for c in choices if str(c.get("label")) == NEW_BUSINESS), None)
-        quote = next((q for t in texts if (q := _cue_quote(t, "new product"))), None)
-        if label and quote:
-            out.update(area=label, reason="it's about a new product", evidence=[quote])
+        said_new = next((q for t in texts if (q := _cue_quote(t, "new product"))), None)
+        if label and said_new:
+            out.update(area=label, reason="it's about a new product", evidence=[said_new])
             return out
     if part in ("who", "area"):
         picked, quotes, said = [], [], []
