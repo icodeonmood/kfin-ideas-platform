@@ -6,7 +6,7 @@
  * Words: `gateway.fakes.BUSINESS_SENTENCE` (BLD-C206), the one sentence the fake route (LLM_MODE=fake) reads
  * as a new business idea under New business, for AMC clients, with a quote of the person's words. With the
  * assistant off (Capture first, DEC-125; r7 launches so, DEC-141), New business picked by hand is the only
- * way to a business idea (BLD-C204): row v1.
+ * way to a business idea (BLD-C204), and with every part filled by hand it sends as one: row v1.
  * Not pinned: the business next prompts and the three S1 questions (BLD-C203), new words HR has yet to
  * confirm (DEC-123 (2)).
  * Cast: new synthetic employees (non-negotiable 11). The idea row 3 sends reaches the review desk before the
@@ -32,6 +32,12 @@ const BUSINESS_SENTENCE =
  * new business idea's is the NOT DRAWN default, shown for New business picked by hand (BLD-C204). */
 const PROBLEM_LINE = "Suggested because you described something that goes wrong today.";
 const BUSINESS_LINE = "Suggested because you described something new KFintech could offer.";
+
+/** v1's title and what happens, typed by hand: with the assistant off no agent writes them (DEC-105).
+ * Synthetic. */
+const CAPTURE_TITLE = "Factsheet checks as a new product";
+const CAPTURE_SUMMARY =
+  "Factsheets go out before anyone checks them. A new product could check each one first.";
 
 // --- People: new synthetic employees, one per path (offsets J-SHARE and J-RECOVER leave free) -------------
 
@@ -75,15 +81,51 @@ function partValue(page: Page, label: string): Locator {
     .first();
 }
 
+type Sorting = { kind: Locator; kindWhy: Locator; area: Locator; affects: Locator; brings: Locator };
+
 /** Check it's sorting part (S-05, L-SORT.fields): each field, and the kind's reason under it. */
-function sortingOf(page: Page): { kind: Locator; kindWhy: Locator; area: Locator; affects: Locator } {
+function sortingOf(page: Page): Sorting {
   const kind = page.getByRole("radiogroup", { name: "What kind it is" });
   return {
     kind,
     kindWhy: page.locator(".ck-sf", { has: kind }).locator(".ck-why"),
     area: page.getByRole("radiogroup", { name: "Area" }),
     affects: page.getByRole("group", { name: "Who it affects" }),
+    brings: page.getByRole("group", { name: "What it would bring" }),
   };
+}
+
+/** Check it from part 3 to the idea page, as J-SHARE/9 and /10 go: Next past the similar ideas, the three
+ * optional parts skipped, then Submit on Send it, which shows the title from part 1. */
+async function sendFromSimilar(page: Page, title: string): Promise<void> {
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Has someone raised this already?" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Anything that shows it?" })).toBeVisible();
+  await page.getByRole("button", { name: "Skip for now" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Got an idea how to solve it?" })).toBeVisible();
+  await page.getByRole("button", { name: "Skip for now" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Who would help?" })).toBeVisible();
+  await page.getByRole("button", { name: "Skip for now" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Ready to send?" })).toBeVisible();
+  await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
+  await page
+    .getByRole("button", { name: "Submit" })
+    .or(page.getByRole("link", { name: "Submit" }))
+    .click();
+  await page.waitForURL(new RegExp(`/ideas/${REF}(?:\\?from=share)?$`));
+}
+
+/** S-06 straight after Send it: with the review desk, under New business and for AMC clients as the sorting
+ * confirmed, and kept as a new business idea (E-ENUMS.kind, the kind the review desk reads; read only). */
+async function expectSentAsBusiness(page: Page, title: string): Promise<void> {
+  await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
+  await expectWithDesk(page);
+  await expect(partValue(page, "Area")).toContainText("New business");
+  await expect(partValue(page, "Who it affects")).toContainText("AMC clients");
+  const ref = new URL(page.url()).pathname.split("/").pop() ?? "";
+  expect(await ideaKind(ref)).toBe("business_idea");
 }
 
 // --- What the main path carries from row to row ------------------------------------------------------------
@@ -180,34 +222,9 @@ step(
     await signInAsFresh(page, OFFERER);
     await page.goto(`${need("draft", "J-BUSINESS/1")}/check`);
     await page.getByRole("button", { name: /^(?:\d )?Similar ideas\b/ }).click();
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Has someone raised this already?" }),
-    ).toBeVisible();
-    // Parts 3 to 6 as in J-SHARE/9 and /10, then Send it with the title from part 1.
-    await page.getByRole("button", { name: "Next", exact: true }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Anything that shows it?" })).toBeVisible();
-    await page.getByRole("button", { name: "Skip for now" }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Got an idea how to solve it?" })).toBeVisible();
-    await page.getByRole("button", { name: "Skip for now" }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Who would help?" })).toBeVisible();
-    await page.getByRole("button", { name: "Skip for now" }).click();
-    await expect(page.getByRole("heading", { level: 1, name: "Ready to send?" })).toBeVisible();
     const title = need("title", "J-BUSINESS/2");
-    await expect(page.getByText(title, { exact: true }).first()).toBeVisible();
-    await page
-      .getByRole("button", { name: "Submit" })
-      .or(page.getByRole("link", { name: "Submit" }))
-      .click();
-    await page.waitForURL(new RegExp(`/ideas/${REF}(?:\\?from=share)?$`));
-
-    // S-06: with the review desk, under the area and for the group the sorting confirmed.
-    await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
-    await expectWithDesk(page);
-    await expect(partValue(page, "Area")).toContainText("New business");
-    await expect(partValue(page, "Who it affects")).toContainText("AMC clients");
-    // E-ENUMS.kind: kept as a new business idea, the kind the review desk reads (read only).
-    const ref = new URL(page.url()).pathname.split("/").pop() ?? "";
-    expect(await ideaKind(ref)).toBe("business_idea");
+    await sendFromSimilar(page, title);
+    await expectSentAsBusiness(page, title);
   },
 );
 
@@ -216,12 +233,12 @@ step(
 step(
   "J-BUSINESS/v1",
   "S-05",
-  "Capture first (the assistant off): the same words stay a problem to fix until New business is picked by hand, which suggests a new business idea; another area takes it back",
-  { needs: ["S-04", "S-04B", "S-05", "L-SORT", "BLD-C204"] },
+  "Capture first (the assistant off): the same words stay a problem to fix until New business is picked by hand, which suggests a new business idea; another area takes it back; filled in by hand, it sends as a new business idea",
+  { needs: ["S-04", "S-04B", "S-05", "L-SORT", "L-SUBMIT", "S-06", "BLD-C204"] },
   async ({ page, browser }, info) => {
-    // Two admin visits, two waits of 11 s and the draft: past the default 60 s, and a step that times
-    // out must still reach its `finally` and put the assistant back on.
-    info.setTimeout(150_000);
+    // Two admin visits, two waits of 11 s, the draft and Check it to the idea page: past the default 60 s,
+    // and a step that times out must still reach its `finally` and put the assistant back on.
+    info.setTimeout(180_000);
     // DEC-125 (1): Capture first is `ai.all` off. Switched on the admin page, as an admin would, and
     // always put back.
     await withSwitchLock("ai.all", async () => {
@@ -243,7 +260,22 @@ step(
         await expect(move).toHaveAttribute("href", new RegExp(`${esc(draft)}/check$`), { timeout: 30_000 });
         await move.click();
         await page.waitForURL(new RegExp(`${esc(draft)}/check$`));
-        await page.getByRole("button", { name: /^(?:\d )?Sorting\b/ }).click();
+        await expect(page.getByText("Check it, part 1 of 6")).toBeVisible();
+
+        // DEC-105: no agent wrote the title or what happens, so the person writes both
+        // (V-FIELDS.checkit/1-2).
+        await page.getByRole("button", { name: "Change the title" }).click();
+        const titleBox = page.getByRole("textbox", { name: "Title", exact: true });
+        await titleBox.fill(CAPTURE_TITLE);
+        await titleBox.press("Enter");
+        await expect(page.getByRole("heading", { level: 3, name: CAPTURE_TITLE })).toBeVisible();
+        await page.getByRole("button", { name: "Change what happens" }).click();
+        const summaryBox = page.getByRole("textbox", { name: "What happens", exact: true });
+        await summaryBox.fill(CAPTURE_SUMMARY);
+        await summaryBox.press("Tab");
+        await expect(page.getByText(CAPTURE_SUMMARY, { exact: true }).first()).toBeVisible();
+        await page.getByRole("button", { name: "Looks right" }).click();
+        await expect(page.getByText("Check it, part 2 of 6")).toBeVisible();
         await expect(page.getByRole("heading", { level: 1, name: "Is it sorted right?" })).toBeVisible();
 
         // DEC-141, BLD-C204: no agent runs, so words that would be a business idea stay a problem to fix.
@@ -254,7 +286,8 @@ step(
 
         // New business sits behind the area search (rules/sorting.md `more`); picked there by hand, it
         // suggests a new business idea, still a suggestion.
-        await page.getByRole("combobox", { name: /^Another area\? Search all \d+$/ }).fill("New business");
+        const areaSearch = page.getByRole("combobox", { name: /^Another area\? Search all \d+$/ });
+        await areaSearch.fill("New business");
         await page.getByRole("option", { name: "New business", exact: true }).click();
         await expect(s.area.getByRole("radio", { name: "New business" })).toBeChecked();
         await expect(s.kind.getByRole("radio", { name: "A new business idea" })).toBeChecked();
@@ -269,6 +302,27 @@ step(
         await expect(s.area.getByRole("radio", { name: "Operations" })).toBeChecked();
         await expect(s.kind.getByRole("radio", { name: "A problem to fix" })).toBeChecked();
         await expect(s.kindWhy).toHaveText(PROBLEM_LINE);
+
+        // L-SUBMIT, the assistant still off: New business again, the two fields no agent filled picked by
+        // hand (AMC clients from the search, "Not sure yet"), Confirm sorting, then Send it.
+        await areaSearch.fill("New business");
+        await page.getByRole("option", { name: "New business", exact: true }).click();
+        await expect(s.kind.getByRole("radio", { name: "A new business idea" })).toBeChecked();
+        await page.getByRole("combobox", { name: /^Someone else\? Search all \d+$/ }).fill("AMC clients");
+        await page.getByRole("option", { name: "AMC clients", exact: true }).click();
+        await expect(s.affects.getByRole("button", { name: "AMC clients" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await s.brings.getByRole("button", { name: "Not sure yet" }).click();
+        await expect(s.brings.getByRole("button", { name: "Not sure yet" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await page.getByRole("button", { name: "Confirm sorting" }).click();
+        await expect(page.getByText("Check it, part 3 of 6")).toBeVisible();
+        await sendFromSimilar(page, CAPTURE_TITLE);
+        await expectSentAsBusiness(page, CAPTURE_TITLE);
       } finally {
         await restoreSwitches(browser, [["ai.all", before]]);
         // The worker's own 10 s cache: wait it out, pass or fail, so the journeys after this one meet
