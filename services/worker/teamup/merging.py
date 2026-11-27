@@ -157,10 +157,15 @@ def apply_lead_merge(
             "UPDATE ideas SET status = 'merged', merged_into = %s WHERE id = %s", (leader["id"], joiner["id"])
         )
         adapters.drop_queued(conn, str(joiner["id"]))
-        conn.execute(
-            "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed'",
+        closed = conn.execute(
+            "UPDATE question_sets SET state = 'closed', closed_at = %s WHERE idea_uuid = %s AND state <> 'closed' "
+            "RETURNING id",
             (t, joiner["id"]),
-        )
+        ).fetchall()
+        # L-INBOX.rules/3 (BLD-F108): the merged idea's questions leave the sharer's Needs you with their reminders,
+        # as they do when the review desk merges (lane B's `desk.merging`)
+        for done in closed:
+            adapters.resolve_questions(conn, str(done["id"]))
         # Requests waiting on the merged idea close with it (L-TEAMUP.states: "closed … if merged away first")
         from teamup.requests import close_requests_for
 

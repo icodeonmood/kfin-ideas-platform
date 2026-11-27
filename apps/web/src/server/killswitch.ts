@@ -5,6 +5,7 @@
  */
 import { getDb } from "./db";
 import { log } from "./log";
+import { workerJson } from "./worker";
 
 export type SwitchState = "on" | "off";
 export const CACHE_MS = 10_000;
@@ -29,6 +30,22 @@ export function isOn(states: Map<string, SwitchState>, name: string): boolean {
 }
 
 export class KillSwitchError extends Error {}
+
+/** The switch the Admin page switches on only where the worker has a real model route (DEC-143 (h), BLD-F111). */
+export const ROUTE_GUARDED = "ai.all";
+
+/**
+ * Whether the worker has a real model route, so `ai.all` may be switched on (BLD-F111). Only the worker can tell: the
+ * web container never gets the route's credentials (BLD-A246). `null` when the worker could not be asked.
+ */
+export async function modelRouteReady(): Promise<boolean | null> {
+  try {
+    const out = await workerJson<{ ready?: unknown }>("/internal/model-route");
+    return out.ready === true;
+  } catch {
+    return null;
+  }
+}
 
 export async function setKillSwitch(input: {
   name: string;

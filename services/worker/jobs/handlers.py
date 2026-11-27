@@ -25,9 +25,10 @@ def archive_drafts(conn: Conn, payload: dict[str, Any]) -> None:
 @handler("files.sweep")
 def sweep_files(conn: Conn, payload: dict[str, Any]) -> None:
     """Every hour (BLD-C242, L-HIDE.files): a failed upload's quarantine copy goes once it is past
-    `attachments.rejected_retention_hours`, and a conversation file never put on an entry goes a day after it was
-    added (`attachments.files.sweep_failed_copies`). Their only caller was drafts.purge, retired with drafts.archive
-    (BLD-C074), so neither ran on any build before this. Nothing goes until a worker start sweep has finished once."""
+    `attachments.rejected_retention_hours`, and a conversation file never put on an entry goes a day after its last
+    change, never while it is still being checked (`attachments.files.sweep_failed_copies`, BLD-A256). Their only
+    caller was drafts.purge, retired with drafts.archive (BLD-C074), so neither ran on any build before this.
+    Nothing goes until a worker start sweep has finished once."""
     from attachments import files as onepc_files
 
     log.info("files.swept", swept_count=onepc_files.sweep_failed_copies(conn))
@@ -180,9 +181,10 @@ def comms_nudges(conn: Conn, payload: dict[str, Any]) -> None:
 @handler("comms.digest")
 def comms_digest(conn: Conn, payload: dict[str, Any]) -> None:
     """The decide-by digest to the review desk (L-REVIEW.clock/3, BLD-A203), every working day once
-    `DECIDE_BY_DIGEST` is on; off at launch (BLD-B241), so `digest.queue` queues nothing. The pack has no personal
-    digest: no 1% Club Inbox kind is ever held for one. Mail the old routes held before that is still flushed on
-    Mondays, whatever the setting, so nothing already queued is dropped, until those routes retire after launch."""
+    `DECIDE_BY_DIGEST` is on; off at launch (BLD-B241), so `digest.queue` queues nothing. Then the Inbox digest
+    (DEC-138, BLD-A255): on working days, one email per person with the Inbox items that waited for it, still unread.
+    Mail the old routes held before that is still flushed on Mondays, whatever the setting, so nothing already queued
+    is dropped, until those routes retire after launch."""
     import datetime as dt
     from zoneinfo import ZoneInfo
 
@@ -190,6 +192,7 @@ def comms_digest(conn: Conn, payload: dict[str, Any]) -> None:
     from notify import digest
 
     digest.queue(conn)
+    digest.queue_inbox(conn)
     if dt.datetime.now(ZoneInfo("Asia/Kolkata")).weekday() == 0 or payload.get("force"):
         send_digests(conn)
 

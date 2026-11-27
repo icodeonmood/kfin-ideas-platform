@@ -7,6 +7,7 @@ import { getDb } from "./db";
 import { log } from "./log";
 import { SubmissionError } from "./submissions";
 import { workerFetch } from "./worker";
+import { refusalCode } from "./worker-codes";
 
 export type Measures = Partial<
   Record<"time" | "money" | "effort" | "scale", { value: number; unit: string; finance_confirmed?: boolean }>
@@ -80,7 +81,7 @@ async function call<T>(
     signal: AbortSignal.timeout(timeoutMs),
   });
   const out = (await res.json().catch(() => ({ error: fallback }))) as Record<string, unknown>;
-  if (!res.ok) throw new SubmissionError(res.status, String(out.error ?? fallback));
+  if (!res.ok) throw new SubmissionError(res.status, refusalCode(out, fallback)); // DEC-143 (f), BLD-B282
   return out as T;
 }
 

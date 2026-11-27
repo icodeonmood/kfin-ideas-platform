@@ -3,8 +3,9 @@ person's own value is checked, the "why" line under a suggestion, the receipt af
 No database and no model here, so all of it is unit-tested without the stack.
 
 Stored per part (`idea_parts.value`, masked text only):
-- `title`: {"title": str | None, "summary": str | None, "pinned": ["title" | "summary", …]} (the summary rides with
-  the title, E-ENUMS.draft; each can be pinned on its own);
+- `title`: {"title": str | None, "summary": str | None, "pinned": ["title" | "summary", …], "kind": str,
+  "kind_quote": str} (the summary rides with the title, E-ENUMS.draft; each can be pinned on its own; the kind the
+  agent suggested, with the quote it rests on, rides with them too and is only ever a suggestion, BLD-C201);
 - `often`: str | None; `who`: [str]; `value`: [Brings]; `area`: str | None;
 - `similar`: [SimilarMatch] | None (from L-SIMILAR).
 """
@@ -256,6 +257,69 @@ def why_for(
     return None
 
 
+# ---- what kind it is (E-ENUMS.kind on Check it, L-SORT.fields; DEC-118 (2) and (4); BLD-C196, BLD-C201, BLD-C204) --
+
+KINDS = ("problem", "business_idea")  # Check it offers two; `fix` is a problem shared with a fix
+KIND_KEYS = ("kind", "kind_quote")  # kept in the title part's value
+NEW_BUSINESS = "New business"  # the area (rules/drafting.md, rules/sorting.md) that suggests a business idea
+KIND_WHY = {
+    "problem": "because you described something that goes wrong today.",  # Review.md, Edit.md
+    "business_idea": "because you described something new KFintech could offer.",  # NOT DRAWN: default
+}
+
+
+def kind_on_check_it(kind: object) -> str | None:
+    """E-ENUMS.kind: a problem shared with a fix is stored as `fix` (the Wall's label) and sorted as a problem."""
+    if kind in ("problem", "fix", "problem_with_solution"):
+        return "problem"
+    if kind == "business_idea":
+        return "business_idea"
+    return None
+
+
+def is_new_business(area: object) -> bool:
+    return isinstance(area, str) and " ".join(area.split()).casefold() == NEW_BUSINESS.casefold()
+
+
+def agent_kind(title_value: Any) -> tuple[str | None, str | None]:
+    """The kind the draft-part agent suggested with the title, and the masked quote it rests on (BLD-C201)."""
+    v = title_value if isinstance(title_value, dict) else {}
+    kind, quote = v.get("kind"), v.get("kind_quote")
+    if kind in KINDS and isinstance(quote, str) and quote.strip():
+        return str(kind), quote
+    return None, None
+
+
+def kind_suggestion(title_value: Any, area: object, *, area_by_hand: bool) -> tuple[str, str]:
+    """(kind, reason) suggested while the person has not set or confirmed the kind. In order:
+    1. New business picked by hand on Check it suggests a business idea (BLD-C204); moving away undoes only that;
+    2. the agent's kind, with its quote (BLD-C201). A business idea reads "Suggested because you said “…”."; a
+       problem keeps the drawn line (Review.md), its quote backing the suggestion without being shown;
+    3. an area of New business suggests a business idea (BLD-C196); anything else, a problem to fix.
+    A kind the person set, confirmed or changed is the caller's, and is never passed here."""
+    if area_by_hand and is_new_business(area):
+        return "business_idea", KIND_WHY["business_idea"]
+    kind, quote = agent_kind(title_value)
+    if kind == "business_idea" and quote:
+        return kind, because(None, [quote])
+    if kind:
+        return kind, KIND_WHY[kind]
+    fallback = "business_idea" if is_new_business(area) else "problem"
+    return fallback, KIND_WHY[fallback]
+
+
+def kind_now(idea_kind: object, sources: Any, idea_area: object, title_value: Any, area_part: object) -> str:
+    """The kind the sorting shows now (L-SORT): the person's own (set, confirmed or changed), else the suggestion,
+    with the area the person picked by hand (confirmed or changed) in place of the draft's."""
+    stored = kind_on_check_it(idea_kind)
+    if stored:
+        return stored
+    rec = ((sources or {}) if isinstance(sources, dict) else {}).get("area") or {}
+    by_person = rec.get("source") in ("confirmed", "changed")
+    area = idea_area if by_person else area_part
+    return kind_suggestion(title_value, area, area_by_hand=rec.get("source") == "changed")[0]
+
+
 # ---- the receipt after a run (L-DRAFT.parts rule 8, C-DRAFT-PANEL.behaviour/5) --------------------------------------
 
 
@@ -324,14 +388,32 @@ def receipt(
     return lines
 
 
-def suggestions(after: dict[str, Any]) -> list[str]:
-    """Up to two next prompts (L-DRAFT.parts rule 8)."""
+# A new business idea's next prompts, in the drawn ones' pattern (Compose.md "Say how often it happens", "Add what you
+# already tried"; BLD-C126's "Say who feels it most"). NEW WORDS for HR (docs/hr-wording/lane-c.md, BLD-C203).
+BUSINESS_PROMPTS = {
+    "who": "Say who it is for",
+    "often": "Say how many would use it",
+    "offered": "Add who offers it today",
+}
+
+
+def suggestions(after: dict[str, Any], *, kind: str | None = None) -> list[str]:
+    """Up to two next prompts (L-DRAFT.parts rule 8). A new business idea (the kind the sorting shows, `kind_now`)
+    gets its own (BLD-C203): who it is for first, then how many would use it, then who offers it today. A problem
+    keeps the drawn ones."""
     out = []
-    if not after.get("often"):
-        out.append("Say how often it happens")
-    if not after.get("who"):
-        out.append("Say who feels it most")
-    out.append("Add what you already tried")
+    if kind == "business_idea":
+        if not after.get("who"):
+            out.append(BUSINESS_PROMPTS["who"])
+        if not after.get("often"):
+            out.append(BUSINESS_PROMPTS["often"])
+        out.append(BUSINESS_PROMPTS["offered"])
+    else:
+        if not after.get("often"):
+            out.append("Say how often it happens")
+        if not after.get("who"):
+            out.append("Say who feels it most")
+        out.append("Add what you already tried")
     got = after.get("title")
     title: dict[str, Any] = got if isinstance(got, dict) else {}
     if title.get("title") and "title" not in pinned_fields(title):

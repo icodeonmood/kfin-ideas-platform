@@ -8,6 +8,8 @@
     "part",
     "title",
     "summary",
+    "kind",
+    "kind_evidence",
     "often",
     "who",
     "worth",
@@ -40,7 +42,30 @@
         "null"
       ],
       "maxLength": 600,
-      "description": "part title: 2 to 3 sentences using only what the person said"
+      "description": "part title: 2 to 3 sentences using only what the person said; for a business idea, the new offer: what it is and for whom"
+    },
+    "kind": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "problem",
+            "business_idea"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "part title: what kind it is (E-ENUMS.kind): business_idea for something new KFintech could offer, problem for something that goes wrong today, or null"
+    },
+    "kind_evidence": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200,
+      "description": "part title: one exact quote from words[].text that shows the kind; null when kind is null"
     },
     "often": {
       "type": [

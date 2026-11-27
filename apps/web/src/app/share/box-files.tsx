@@ -128,8 +128,11 @@ export function useBoxFiles({
   };
 
   const addFiles = (files: File[]) => {
-    // A folder's own entries for the system (".DS_Store" and the like) are not the person's files.
-    const kept = files.filter((f) => !f.name.startsWith("."));
+    // A folder's own entries for the system (".DS_Store", ".git/…" and the like) are not the person's files: the
+    // name, or any folder on its path, starts with "." (BLD-C248).
+    const kept = files.filter(
+      (f) => !(f.webkitRelativePath || f.name).split("/").some((part) => part.startsWith(".")),
+    );
     if (!kept.length) {
       setNote(files.length ? BOX_FILES_COPY.onlyDotFiles : null); // the picker stays open and says why
       return;
