@@ -9,7 +9,9 @@
  * - The controls are, in order, "Choose a folder", "browse", the link field and "Add link"; both file inputs carry the
  *   `hidden` attribute, so S-08's focus carry across 640px (BLD-F098) finds the same four by index.
  * - A dropped folder adds every file in it through the browser's directory entries; where the browser gives none, the
- *   picker says to use "Choose a folder" (BLD-C224). Every file goes through the screen's `onFiles`.
+ *   picker says to use "Choose a folder" (BLD-C224). Every file goes through the screen's `onFiles`. The walk leaves
+ *   out the system's own entries, a file whose name or any folder on its path starts with "." (".git/", ".DS_Store"),
+ *   by the rule "Choose a folder" uses on both screens (BLD-D040, BLD-C248, BLD-F109).
  * - Escape closes it from anywhere inside; the screen puts the focus back on the "+".
  * - Links are kept as typed and never fetched (BLD-E001): `onLinks` gets them, and either takes them at once (S-08 puts
  *   them in the words) or answers with those it could not add (Home adds them as rows, with "Add link" busy meanwhile).
@@ -34,6 +36,9 @@ export const PICKER_COPY = {
   linkLine: "SharePoint, Teams and 1% Club links are marked internal. Anything else is marked external.",
   /** To confirm later (HR, DEC-123; BLD-C224): a folder dropped where the browser gives no way to read it. */
   useFolder: "Use Choose a folder to add a folder.",
+  /** A dropped folder with only the system's files: the share box's line for the same pick, word for word
+   * (BOX_FILES_COPY.onlyDotFiles, BLD-C224, BLD-C248; BLD-D040). */
+  onlyDotFiles: "Nothing was added. Files whose names start with a dot are left out.",
 } as const;
 
 /** The link field's words, and whether "Add link" found they are not a link. */
@@ -46,6 +51,11 @@ export const NO_LINK: LinkDraft = { text: "", bad: false };
 
 /** What became of the links handed over: those still to add stay in the field, with why. */
 export type LinksAnswer = { left: string[]; problem: "not_a_link" | "failed" | null };
+
+/** The link field as the screen keeps it, so a picker drawn again still holds it (BLD-F102); else the picker's own.
+ * Both or neither: a field passed without its setter could never change (BLD-D040). */
+type LinkField =
+  { link: LinkDraft; onLinkDraft(next: LinkDraft): void } | { link?: undefined; onLinkDraft?: undefined };
 
 export function FilePicker({
   id,
@@ -72,16 +82,13 @@ export function FilePicker({
   /** A line the screen keeps (why nothing was added); without `onNote` the picker keeps its own. */
   note?: string | null;
   onNote?(note: string | null): void;
-  /** The link field as the screen keeps it, so a picker drawn again still holds it (BLD-F102); else the picker's. */
-  link?: LinkDraft;
-  onLinkDraft?(next: LinkDraft): void;
   /** The line under the link field (Home: internal and external links). */
   linkHelp?: string;
   onFiles(files: File[]): void;
   /** The links, and the field's words as typed. Nothing back: all taken; an answer: what is left, and why. */
   onLinks(links: string[], typed: string): Promise<LinksAnswer> | void;
   onClose(): void;
-}) {
+} & LinkField) {
   const [dragging, setDragging] = useState(false);
   const [ownNote, setOwnNote] = useState<string | null>(null);
   const [ownLink, setOwnLink] = useState<LinkDraft>(NO_LINK);
@@ -134,7 +141,8 @@ export function FilePicker({
     if (dropped.some((d) => d.entry?.isDirectory)) {
       // A folder dropped here: its files through the browser's directory entries (BLD-C224)
       void filesOfDrop(dropped).then(
-        (got) => (got.length ? onFiles(got) : say(PICKER_COPY.useFolder)),
+        ({ got, leftOut }) =>
+          got.length ? onFiles(got) : say(leftOut ? PICKER_COPY.onlyDotFiles : PICKER_COPY.useFolder),
         () => say(PICKER_COPY.useFolder),
       );
       return;
@@ -240,6 +248,8 @@ export function FilePicker({
 }
 
 type Entry = {
+  /** The entry's own name: a dropped File carries no path, so only the walk sees ".git/" (BLD-D040). */
+  name?: string;
   isFile: boolean;
   isDirectory: boolean;
   file?(ok: (f: File) => void, err: (e: unknown) => void): void;
@@ -257,19 +267,30 @@ function droppedOf(data: DataTransfer | null): Dropped[] {
   });
 }
 
-/** The files of a drop with a folder in it: every file in every folder, one level of nesting at a time. */
-async function filesOfDrop(dropped: Dropped[]): Promise<File[]> {
-  const out: File[] = [];
+/** The files of a drop with a folder in it: every file in every folder, one level of nesting at a time, and whether
+ * the walk left any out. A file dropped on its own keeps its name as its path, so the screen's own check sees it. */
+async function filesOfDrop(dropped: Dropped[]): Promise<{ got: File[]; leftOut: boolean }> {
+  const got: File[] = [];
+  const walk = { leftOut: false };
   for (const d of dropped) {
-    if (d.entry?.isDirectory) out.push(...(await filesOfEntry(d.entry, 0)));
-    else if (d.file) out.push(d.file);
+    if (d.entry?.isDirectory) got.push(...(await filesOfEntry(d.entry, 0, walk)));
+    else if (d.file) got.push(d.file);
   }
-  return out;
+  return { got, leftOut: walk.leftOut };
 }
 
 const FOLDER_DEPTH = 8;
 
-async function filesOfEntry(entry: Entry, depth: number): Promise<File[]> {
+/** A folder's own entries for the system (".git/", ".svn/", ".vscode/", ".DS_Store"): the name starts with ".". The
+ * walk never enters such a folder, so a file is left out when its name or any folder on its path starts with ".",
+ * as in "Choose a folder" on both screens (BLD-C248, BLD-F109; BLD-D040). */
+const isSystemEntry = (entry: Entry) => entry.name?.startsWith(".") ?? false;
+
+async function filesOfEntry(entry: Entry, depth: number, walk: { leftOut: boolean }): Promise<File[]> {
+  if (isSystemEntry(entry)) {
+    walk.leftOut = true;
+    return [];
+  }
   if (entry.isFile && entry.file) return [await new Promise<File>((ok, err) => entry.file!(ok, err))];
   if (!entry.isDirectory || !entry.createReader || depth > FOLDER_DEPTH) return [];
   const reader = entry.createReader();
@@ -277,7 +298,7 @@ async function filesOfEntry(entry: Entry, depth: number): Promise<File[]> {
   for (;;) {
     const batch = await new Promise<Entry[]>((ok, err) => reader.readEntries(ok, err));
     if (!batch.length) return out;
-    for (const e of batch) out.push(...(await filesOfEntry(e, depth + 1)));
+    for (const e of batch) out.push(...(await filesOfEntry(e, depth + 1, walk)));
   }
 }
 
