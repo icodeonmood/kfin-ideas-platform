@@ -1,7 +1,7 @@
 """DEC-143 (h), BLD-F111: on a server with no model route, the gateway refuses every agent with its own
 `switched_off`, even with `ai.all` left on in the table, so the fake route never answers people. The call is logged as
 a kill-switch refusal, as any switched-off call is, and the table's "on" is left for upgrade.sh to name. Once the
-route is set, the same table lets the call through. Synthetic text only; the route is a spy."""
+route is set, `ai.all` follows the same table. Synthetic text only; the route is a spy."""
 
 from __future__ import annotations
 
@@ -72,10 +72,18 @@ def test_BLD_F111_the_gateway_refuses_on_a_server_with_no_model_route(
     assert dict(killswitch.states(db, now=float("inf")))["ai.all"] == "on"
 
 
-def test_BLD_F111_with_the_route_set_the_same_table_lets_the_call_through(
+def test_BLD_F111_with_the_route_set_the_same_table_reads_on(
     gw: tuple[Any, Spy, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    db, spy, d = gw
+    """The guard lets `ai.all` follow the table once a route is set. Only the switch read is checked here: past it, a
+    server's own rules apply (its vault refuses CI's placeholder key), and a full call is the dev and test path that
+    test_b4_gateway.py already covers."""
+    db, _spy, _d = gw
     _server(monkeypatch, LLM_MODE="bedrock")
-    core.run_agent("gatekeeper", INPUTS, SCOPE, conn=db, d=d)
-    assert spy.calls == 1
+    assert killswitch.is_on("ai.all", db) and killswitch.is_on_fresh("ai.all", db)
+    killswitch.set_switch(db, "ai.all", "off", reason="Testing the route guard here", actor="REV-0001")
+    assert not killswitch.is_on("ai.all", db) and not killswitch.is_on_fresh("ai.all", db)
+    _server(monkeypatch, LLM_MODE="fake")
+    killswitch.set_switch(db, "ai.all", "on", reason="Testing the route guard here", actor="REV-0001")
+    assert not killswitch.is_on("ai.all", db) and not killswitch.is_on_fresh("ai.all", db)
+    assert db.execute("SELECT state FROM kill_switches WHERE name = 'ai.all'").fetchone()["state"] == "on"
