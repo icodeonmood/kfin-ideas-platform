@@ -15,6 +15,7 @@ import {
   openAccountMenu,
   PERSONAS,
   PHONE_TABS,
+  settleMotion,
   signIn,
 } from "./helpers";
 
@@ -338,4 +339,47 @@ test("sign out ends the session", async ({ page }) => {
   ).toBeVisible();
   await page.goto("/my-ideas");
   await expect(page).toHaveURL(/\/sign-in\?next=%2Fmy-ideas/);
+});
+
+test("BLD-D041, C-PHONE-TABS.nav, S-H2: at 360 and 390 the phone bar on Find your crew shows its title and Back in full", async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== "phone-360", "the compact bar is a phone's");
+  await signIn(page, PERSONAS.contributor);
+  // Lane F's 16px phone padding on /crew insets the bar; two fixed 110px sides showed "Find y…" up to about 391px
+  for (const size of [
+    { width: 360, height: 740 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(size);
+    await page.goto("/crew");
+    const bar = page.locator(".pnav");
+    await expect(bar.locator(".pnav-t")).toHaveText("Find your crew");
+    await expect(bar.locator(".pback span")).toHaveText("Home");
+    await settleMotion(page);
+    const m = await bar.evaluate((el) => {
+      const title = el.querySelector<HTMLElement>(".pnav-t")!;
+      const back = el.querySelector<HTMLElement>(".pback")!;
+      const label = back.querySelector<HTMLElement>("span")!;
+      const t = title.getBoundingClientRect();
+      const b = el.getBoundingClientRect();
+      return {
+        title: {
+          scroll: title.scrollWidth,
+          client: title.clientWidth,
+          left: t.left,
+          centre: t.left + t.width / 2,
+        },
+        label: { scroll: label.scrollWidth, client: label.clientWidth },
+        backRight: back.getBoundingClientRect().right,
+        barCentre: b.left + b.width / 2,
+      };
+    });
+    const at = `at ${size.width}`;
+    expect(m.title.scroll, `${at}, the title is not cut`).toBeLessThanOrEqual(m.title.client);
+    expect(m.label.scroll, `${at}, Back's label is not cut`).toBeLessThanOrEqual(m.label.client);
+    expect(m.title.left - m.backRight, `${at}, Back and the title never touch`).toBeGreaterThanOrEqual(7.5);
+    expect(Math.abs(m.title.centre - m.barCentre), `${at}, the title stays centred`).toBeLessThanOrEqual(1);
+    await expectNoSeriousAxeIssues(page);
+  }
 });

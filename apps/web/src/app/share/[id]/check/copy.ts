@@ -155,6 +155,9 @@ export const CHECK_COPY = {
     count: (files: number, links: number) =>
       [files ? plural(files, "file") : "", links ? plural(links, "link") : ""].filter(Boolean).join(" and "),
     checking: "Checking for personal details",
+    /** Submit with a file still uploading (DEC-144 (1), BLD-B283): the server's words for it too (submit/ready.py
+     * `STILL_UPLOADING`). New words, under BUILD_LOG "To confirm later". */
+    stillUploading: "This file is still uploading. Wait a moment, or remove it.",
     checked: "Checked",
     failed: "Didn’t upload. Your other files are fine.",
     tooBig: (mb: number) => `Too big. Files can be up to ${mb} MB.`,

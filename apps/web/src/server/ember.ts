@@ -6,6 +6,7 @@ import type { CurrentUser } from "./auth/current";
 import type { Measures } from "./ones";
 import { SubmissionError } from "./submissions";
 import { workerFetch } from "./worker";
+import { refusalCode } from "./worker-codes";
 
 export type EmberOne = {
   number: number;
@@ -55,7 +56,7 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
     signal: AbortSignal.timeout(30_000),
   });
   const out = (await res.json().catch(() => ({ error: "ember_unavailable" }))) as Record<string, unknown>;
-  if (!res.ok) throw new SubmissionError(res.status, String(out.error ?? "ember_unavailable"));
+  if (!res.ok) throw new SubmissionError(res.status, refusalCode(out, "ember_unavailable")); // DEC-143 (f), BLD-B282
   return out as T;
 }
 

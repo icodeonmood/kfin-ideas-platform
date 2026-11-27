@@ -1074,7 +1074,16 @@ export interface ReviewerQuestion {
     at: IsoDate;
     by: string;
     line: string; // "Kavya answered, today 4:32 pm"
-    files: { id: string; name: string; hidden: string | null; customer_detail: boolean }[]; // DEC-107
+    files: {
+      id: string;
+      name: string;
+      hidden: string | null;
+      customer_detail: boolean; // DEC-107
+      checked?: boolean; // DEC-144 (1), BLD-B284: both checks passed, so the desk shows its green badge
+    }[];
+    /** BLD-B280: an answer sent with no words whose file its sharer removed after sending (DEC-107) reads "The file
+     * sent with this answer was removed." in place of the words, so the desk never sees an empty answer; else null */
+    files_removed: string | null;
   } | null;
 }
 export interface ReviewerPart {
@@ -1108,6 +1117,7 @@ export interface ReviewerArtefact {
   line: string;
   action: string; // "Open", "Read", "Compare", "See changes"
   customer_detail?: boolean; // a file: the scan found a customer detail (DEC-107); the desk opens it, marked
+  checked?: boolean; // a file: both checks passed (DEC-144 (1), BLD-B284), so it carries the green badge
 }
 export interface ReviewerSimilar {
   idea_id: string;

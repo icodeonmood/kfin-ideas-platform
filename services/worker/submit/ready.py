@@ -2,8 +2,10 @@
 
 1. The draft is ready: a title, a summary and an area (`L-DRAFT.parts/7`; the area is part of the sorting).
 2. The sorting is confirmed (`L-SORT.rules/2`).
-3. No file is still uploading or being checked. A file in which a customer detail was found can be sent (DEC-107,
-   which refines `L-SUBMIT.pre/3`): it opens only for the sharer, the review desk and the Ones Committee.
+3. No file is still uploading (DEC-144 (1), which amends `L-SUBMIT.pre/3`, BLD-B283). A file still being checked can
+   be sent (DEC-127 (3)): it opens for nobody but its uploader until both checks pass, and reaches the desk only then.
+   A file in which a customer detail was found can be sent too (DEC-107): it opens only for the sharer, the review
+   desk and the Ones Committee.
 4. No merge request is waiting on a lead (`L-MERGE.request/4`); a merged draft is not sent at all.
 5. The declaration is shown beside the button; pressing Submit is the acceptance (`submit.send` records it).
 6. Everything else is optional: proof, a fix, who would help (S-05.fix and part 6 count nothing toward these).
@@ -22,8 +24,12 @@ from submit.errors import Refused
 from submit.words import join
 
 TITLE_MAX = 70  # V-FIELDS.checkit/1
-WAITING_FILE = ("uploading", "checking")
-OLD_WAITING_FILE = ("quarantine", "processing", "awaiting_check")
+# A file still uploading holds Submit; one still being checked does not (DEC-144 (1), BLD-B283). The worker inserts a
+# row only once its bytes are stored (attachments/files.py, as `checking`), so this is the twin of the Check it page's
+# hold on a file still uploading in the browser (check-it.tsx `submit`). An old-pipeline row (no `file_state`) has
+# its bytes too: its waiting states read as checking (attachments/files.py `effective_state`), so none holds Submit.
+WAITING_FILE = ("uploading",)
+STILL_UPLOADING = "This file is still uploading. Wait a moment, or remove it."
 
 
 def title_and_summary(conn: Conn, idea: dict[str, Any]) -> tuple[str, str]:
@@ -52,8 +58,8 @@ def waiting_files(conn: Conn, idea_uuid: str) -> list[str]:
     rows = conn.execute(
         "SELECT id FROM attachments WHERE idea_uuid = %s AND kind = 'file' AND answer_id IS NULL "
         "AND purpose = 'idea' AND conversation_entry_id IS NULL "
-        "AND (file_state = ANY(%s) OR (file_state IS NULL AND state = ANY(%s))) ORDER BY created_at",
-        (idea_uuid, list(WAITING_FILE), list(OLD_WAITING_FILE)),
+        "AND file_state = ANY(%s) ORDER BY created_at",
+        (idea_uuid, list(WAITING_FILE)),
     ).fetchall()
     return [str(r["id"]) for r in rows]
 
@@ -121,11 +127,7 @@ def problems(conn: Conn, idea: dict[str, Any], li: config.Lists) -> list[Refused
     elif not sorting.is_complete(choices):
         out.append(Refused(422, "sorting_unconfirmed", sorting.INCOMPLETE, "sorting"))
     for file_id in waiting_files(conn, str(idea["id"])):
-        out.append(
-            Refused(
-                422, "file_blocked", "This file is still being checked. Wait a moment, or remove it.", file_id
-            )
-        )
+        out.append(Refused(422, "file_blocked", STILL_UPLOADING, file_id))
     lead = waiting_merge(conn, str(idea["id"]))
     if lead:
         out.append(

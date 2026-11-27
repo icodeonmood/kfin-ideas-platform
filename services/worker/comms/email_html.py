@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import html
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from comms.templates import Template, _lookup, render_text
@@ -399,10 +399,53 @@ def compose(tpl: Template, data: dict[str, Any], base: str, theme: Theme = "auto
 
 def digest(sections: list[tuple[Template, dict[str, Any]]], base: str, theme: Theme = "auto") -> Email:
     """Several held messages in one email: each keeps its subject as a heading."""
+    return _digest(sections, base, theme)
+
+
+# An Inbox template's opening line (every `inbox/<kind>.md` starts with it, and ends with one plain sign-off line).
+_GREETING = re.compile(r"^Hi \{\{recipient\.first_name\}\},$")
+_PARAS = re.compile(r"\n\s*\n")
+
+
+def inbox_digest(sections: list[tuple[Template, dict[str, Any]]], base: str, theme: Theme = "auto") -> Email:
+    """The Inbox digest (BLD-A255): as `digest`, but when every section's template opens with the same greeting and
+    closes with the same plain sign-off (each Inbox template's "Hi {{recipient.first_name}}," and "The 1% Club team"),
+    they are said once, at the top and at the end, in the templates' own words. Anything else reads as `digest`."""
+    parts = [[p.strip() for p in _PARAS.split(tpl.body.strip())] for tpl, _ in sections]
+    heads, tails = {p[0] for p in parts}, {p[-1] for p in parts}
+    if not sections or any(len(p) < 3 for p in parts) or len(heads) != 1 or len(tails) != 1:
+        return _digest(sections, base, theme)
+    head, tail = heads.pop(), tails.pop()
+    if not _GREETING.match(head) or "{{" in tail or "\n" in tail or _LINK.search(tail):
+        return _digest(sections, base, theme)
+    trimmed = [
+        (replace(tpl, body="\n\n".join(p[1:-1])), data)
+        for (tpl, data), p in zip(sections, parts, strict=True)
+    ]
+    return _digest(trimmed, base, theme, said=(head, tail))
+
+
+def _digest(
+    sections: list[tuple[Template, dict[str, Any]]],
+    base: str,
+    theme: Theme,
+    said: tuple[str, str] | None = None,
+) -> Email:
+    """Each section under its subject; with `said`, a greeting paragraph before them and a sign-off after them."""
     colours = PALETTES["dark" if theme == "dark" else "light"]
     subject = f"Your 1% Club update: {len(sections)} new"
     inner: list[str] = []
     texts: list[str] = []
+
+    def once(
+        paragraph: str,
+    ) -> None:  # the greeting or the sign-off, in the first section's data (one reader)
+        values: list[str] = []
+        inner.extend(_blocks(_render_slots(paragraph, sections[0][1], values), values, base, colours))
+        texts.append(to_text(render_text(paragraph, sections[0][1])).strip())
+
+    if said is not None:
+        once(said[0])
     for tpl, data in sections:
         s = render_text(tpl.subject, data).strip()
         inner.append(
@@ -412,4 +455,6 @@ def digest(sections: list[tuple[Template, dict[str, Any]]], base: str, theme: Th
         )
         inner.extend(message_body(tpl, data, base, theme))
         texts.append(f"{s}\n\n{text_part(tpl, data)}")
+    if said is not None:
+        once(said[1])
     return Email(subject, "\n\n".join(texts), shell(subject, inner, base, theme))

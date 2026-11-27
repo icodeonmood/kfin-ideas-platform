@@ -60,6 +60,15 @@ def token_check() -> dict[str, bool]:
     return {"ok": True}
 
 
+@app.get("/internal/model-route", dependencies=[Depends(require_token)])
+def model_route() -> dict[str, bool]:
+    """Whether `ai.all` may be switched on here (DEC-143 (h), BLD-F111). The Admin page asks before it switches it on:
+    the web container never gets the route's credentials (BLD-A246), so only the worker can tell."""
+    from core import killswitch
+
+    return {"ready": not killswitch.model_route_missing()}
+
+
 @app.post("/internal/index", dependencies=[Depends(require_token)])
 def index_now() -> dict[str, Any]:
     result = Indexer().run_once()
