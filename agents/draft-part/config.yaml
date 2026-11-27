@@ -1,7 +1,7 @@
 # draft-part — one part of the live draft (L-DRAFT.parts), asked once per part, the parts in parallel. Bump `version`
 # and add a CHANGELOG line on any change; `make eval` must pass.
 name: draft-part
-version: 0.1.2
+version: 0.2.1
 tier: fast
 model: claude-haiku-5-5
 effort: low             # no temperature: current models reject non-default sampling (BLD-070)
@@ -21,6 +21,7 @@ examples_in_prompt:
 - 01-title.json
 - 03-who.json
 - 06-not-in-the-words.json
+- 07-business-title.json
 fake_mode_default: 06-not-in-the-words.json
 golden_set: eval/golden/draft_part.jsonl
 post_checks:
@@ -28,6 +29,7 @@ post_checks:
 - every answer quotes the person's own words (words[].text, never the English copy); unsupported answers are dropped after one re-ask (DEC-095)
 - numbers only as the person gave them; no figures worked out and no assumptions (DEC-097 lists none for the draft)
 - who and area only from options.choices; worth only from its ids, "not sure yet" alone
+- kind and kind_evidence only with the title: a kind quotes the person's own words that show it (kind_evidence, word for word, one message), or both are null; a kind the checks cannot back after the re-ask is dropped on its own, the title and summary kept
 - no tags in title, summary, often or reason (they are shown to the person and, once shared, to others)
 - title at most 70 characters; summary at most 3 sentences ("Rs." and "e.g." do not end one)
 pass_gates:
@@ -35,5 +37,6 @@ pass_gates:
   out_of_list: 0
   tags_in_text: 0
   expectations_min: 0.8
-  dropped_max: 1                   # of 12: answers still unbacked after the re-ask, dropped by the gateway (BLD-C035)
-  first_attempt_problems_max: 2    # of 12: answers the checks refused on the first ask (each re-ask doubles a part's wait)
+  dropped_max: 1                   # of 20: answers still unbacked after the re-ask, dropped by the gateway (BLD-C035)
+  first_attempt_problems_max: 3    # of 20: answers the checks refused on the first ask (each re-ask doubles a part's wait); 2 of 12 until 0.2.0
+  kind_accuracy_min: 0.8           # of the 6 cases that expect a kind (5 business ideas): at most one wrong (0.2.1)

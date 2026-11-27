@@ -577,8 +577,9 @@ def set_part(
             if row_key == "title":
                 base = old if isinstance(old, dict) else {}
                 pinned = parts.pinned_fields(base) | {wire_key}
-                new = {"title": base.get("title"), "summary": base.get("summary"), wire_key: masked,
-                       "pinned": sorted(pinned)}  # fmt: skip
+                new = {"title": base.get("title"), "summary": base.get("summary"),
+                       **{k: base[k] for k in parts.KIND_KEYS if k in base},  # the agent's kind stays (BLD-C201)
+                       wire_key: masked, "pinned": sorted(pinned)}  # fmt: skip
                 state = "pinned" if pinned >= {"title", "summary"} else "filled"
             else:
                 new, state = masked, "pinned"
@@ -710,9 +711,16 @@ def _wire_parts(rows: list[dict[str, Any]], means: dict[str, int]) -> dict[str, 
     return out
 
 
-def _sorting(row: dict[str, Any], wire: dict[str, Any]) -> dict[str, Any]:
-    """E-ENTITIES Sorting: what the person confirmed or changed (L-SORT) wins; until then the parts suggest."""
+def _sorting(row: dict[str, Any], wire: dict[str, Any], part_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """E-ENTITIES Sorting: what the person confirmed or changed (L-SORT) wins; until then the parts suggest. The
+    kind is the one the sorting shows (`parts.kind_now`): Tell it words S1's questions for a business idea by it
+    (BLD-C203)."""
     sources = row["sorting_sources"] or {}
+    shown = {
+        str(r["key"]): r["value"]
+        for r in part_rows
+        if r["state"] in ("filled", "pinned") and r["value"] is not None
+    }
 
     def choice(field: str, own: Any, part: str) -> dict[str, Any]:
         src = (sources.get(field) or {}).get("source")
@@ -727,7 +735,10 @@ def _sorting(row: dict[str, Any], wire: dict[str, Any]) -> dict[str, Any]:
     kind_src = (sources.get("kind") or {}).get("source")
     return {
         "affects": choice("affects", list(row["affects"] or []), "who"),
-        "kind": {"value": row["kind"] or "problem", "source": kind_src or "suggested"},
+        "kind": {
+            "value": parts.kind_now(row["kind"], sources, row["area"], shown.get("title"), shown.get("area")),
+            "source": kind_src or "suggested",
+        },
         "area": choice("area", row["area"] or "", "area"),
         "brings": choice("brings", list(row["brings"] or []), "value"),
         "confirmed": row["sorting_confirmed_at"] is not None,
@@ -897,7 +908,7 @@ def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: boo
         "messages": messages,
         "parts": wire,
         "hidden": hidden,
-        "sorting": _sorting(row, wire),
+        "sorting": _sorting(row, wire, part_rows),
         "files": files,
         "step": row["step"] or "tell",
         **_saved(row, device, now),
@@ -920,7 +931,14 @@ def view(conn: Conn, owner: Owner, idea_uuid: str, device: Device, *, open_: boo
     }
     if done:
         out["receipt"] = list(done["receipt"] or [])
-        out["suggestions"] = list(done["suggestions"] or [])
+        # The next prompts follow the parts and the kind the sorting shows now (BLD-C203), not as they were when the
+        # run ended: New business picked by hand on Check it brings its own prompts to the draft page at once, with
+        # the assistant on or off (the product lead's 14:30 note of 26 Nov; the run's stored list is the same until
+        # something changes).
+        now_parts = runs.current(conn, idea_uuid)
+        out["suggestions"] = parts.suggestions(
+            {k: v for k, (_, v) in now_parts.items()}, kind=runs.kind_now(conn, idea_uuid, now_parts)
+        )
     origin = open_text("ideas", "origin_encrypted", idea_uuid, row["origin_encrypted"])
     if origin:
         from draft.channels import origin_label

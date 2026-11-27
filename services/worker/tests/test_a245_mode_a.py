@@ -376,7 +376,7 @@ def test_bld_a248_full_mode_step_7_waits_for_the_words_and_step_8_waits_for_step
     section = _section(UAT_DOC.read_text("utf-8"), "Switching to full mode (mode A)")
     [step1] = [line for line in section.splitlines() if line.startswith("1. **")]
     assert "(BLD-C231, with BLD-C234)" in step1 and "(BLD-B278)" in step1
-    assert "the tag that has all five" in step1
+    assert "the tag that has all six" in step1 and "the draft-part golden set in it (BLD-C249)" in step1
     step7, reads = _words_reads()
     order = [
         "FROM jobs WHERE type = 'file.check' GROUP BY 1, 2",

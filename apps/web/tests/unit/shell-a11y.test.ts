@@ -205,14 +205,18 @@ describe("C-PHONE-TABS.nav: Back and the title never touch", () => {
   // Measured at 500 16px Inter: "Your idea" 71.2px, "The idea" 65.5px; Back adds 4 + 22 (chevron) + 2 + 8 = 36px
   const BACK_NEEDS = 36 + 71.2;
 
-  it("each side keeps the same room, enough for Back with 'The idea' or 'Your idea' in full, so the title stays centred", () => {
-    const cols = style("shell.css", ".pnav", phone).get("grid-template-columns") ?? "";
-    const m = cols.match(/^minmax\((\d+)px, 1fr\) auto minmax\((\d+)px, 1fr\)$/);
-    expect(m, cols).not.toBeNull();
-    expect(m![1]).toBe(m![2]);
-    expect(Number(m![1])).toBeGreaterThanOrEqual(BACK_NEEDS);
-    // At 360px the 40-character title still gets room: 360 - 16 padding - 16 gaps - both sides
-    expect(360 - 32 - 2 * Number(m![1])).toBeGreaterThanOrEqual(100);
+  it("BLD-D041, C-PHONE-TABS.nav: at every phone width each side keeps its own content and shares the rest equally, so the title stays centred; Back fits 'Your idea' under its 128px cap and a longer label ends in an ellipsis", () => {
+    const cols = style("shell.css", ".pnav", phone).get("grid-template-columns");
+    expect(cols).toBe("minmax(max-content, 1fr) auto minmax(max-content, 1fr)");
+    // No narrower query sets the bar apart any more: one rule from 0 to 640px
+    const apart = rules(read("shell.css")).filter(
+      (r) => (r.selectors.includes(".pnav") || r.selectors.includes(".pback")) && r.at !== "" && !phone(r.at),
+    );
+    expect(apart).toEqual([]);
+    const cap = Number.parseFloat(style("shell.css", ".pback", phone).get("max-width") ?? "");
+    expect(cap).toBe(128);
+    expect(cap).toBeGreaterThanOrEqual(BACK_NEEDS);
+    expect(style("shell.css", ".pback span", phone).get("text-overflow")).toBe("ellipsis");
   });
 
   it("a longer Back label ends in an ellipsis inside its own column; targets stay 44px; the title caps at 180px", () => {
@@ -239,22 +243,27 @@ describe("C-PHONE-TABS.nav: Back and the title never touch", () => {
     );
   });
 
-  it("BLD-D034, C-PHONE-TABS.nav: below 360px each side keeps only its own content, so at 320 a short title shows in full; Back keeps its longest label and its 8px from the title", () => {
-    const narrow = (a: string) => a === "@media (max-width: 359px)";
-    // Inter's advance widths at the bar's weights: "Home" at 500 16px, "Answer" and "Conversation" at 600 15px
+  it("BLD-D041, C-PHONE-TABS.nav (BLD-D034's case, now at every phone width): at 320 a short title shows in full, and at 360 on /crew so does 'Find your crew'; Back keeps its longest label and its 8px from the title", () => {
+    // Inter's advance widths at the bar's weights: "Home" at 500 16px; "Answer", "Conversation" and "Find your crew"
+    // at 600 15px
     const HOME = 45.2;
     const ANSWER = 56;
     const CONVERSATION = 97.7;
-    const bar = style("shell.css", ".pnav", narrow);
+    const FIND_YOUR_CREW = 108;
+    const bar = style("shell.css", ".pnav", phone);
     expect(bar.get("grid-template-columns")).toBe("minmax(max-content, 1fr) auto minmax(max-content, 1fr)");
     // The gaps and padding are the phone bar's own: Back and the title stay 8px apart
-    expect(bar.has("gap")).toBe(false);
-    expect(bar.has("padding")).toBe(false);
-    expect(style("shell.css", ".pnav", phone).get("gap")).toBe("8px");
+    expect(bar.get("gap")).toBe("8px");
+    expect(bar.get("padding")).toBe("max(8px, env(safe-area-inset-top)) 8px 6px");
     // Back stops at a cap over its longest label, so "Your idea" never ends in an ellipsis and a longer one still does
-    const cap = Number.parseFloat(style("shell.css", ".pback", narrow).get("max-width") ?? "");
+    const cap = Number.parseFloat(style("shell.css", ".pback", phone).get("max-width") ?? "");
     expect(cap).toBeGreaterThanOrEqual(BACK_NEEDS);
     expect(style("shell.css", ".pback span", phone).get("text-overflow")).toBe("ellipsis");
+    // The title gives way and ends in an ellipsis when even what the sides leave is too little
+    const title = style("shell.css", ".pnav-t", phone);
+    expect(title.get("overflow")).toBe("hidden");
+    expect(title.get("text-overflow")).toBe("ellipsis");
+    expect(title.get("white-space")).toBe("nowrap");
     // At 320 beside a 15px classic scrollbar (CI's desktop Chrome): 305 - 16 padding - 16 gaps = 273px inside
     const inside = 320 - 15 - 32;
     // Before: two 110px sides left 53px, under "Answer"
@@ -264,6 +273,17 @@ describe("C-PHONE-TABS.nav: Back and the title never touch", () => {
     expect((inside - ANSWER) / 2).toBeGreaterThanOrEqual(36 + HOME);
     // S-08: Back at its cap and the 44px info button: "Conversation" still fits
     expect(inside - cap - 44).toBeGreaterThanOrEqual(CONVERSATION);
+    // /crew at 360, inside lane F's 16px phone padding a side (crew.css): 360 - 32 - 16 padding - 16 gaps = 296px
+    const crew = 360 - 32 - 16 - 16;
+    expect(crew).toBe(296);
+    // Before: two 110px sides left the title 76px on a real phone and 61px beside CI's scrollbar: "Find y…"
+    expect(crew - 2 * 110).toBe(76);
+    expect(crew - 15 - 2 * 110).toBeLessThan(FIND_YOUR_CREW);
+    // Back "Home", no actions: "Find your crew" fits whole and centred, on a real phone and beside CI's scrollbar
+    for (const room of [crew, crew - 15]) {
+      expect(room - (36 + HOME)).toBeGreaterThanOrEqual(FIND_YOUR_CREW);
+      expect((room - FIND_YOUR_CREW) / 2).toBeGreaterThanOrEqual(36 + HOME);
+    }
   });
 });
 

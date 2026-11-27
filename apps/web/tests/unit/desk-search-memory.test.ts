@@ -29,7 +29,8 @@ vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: ReactNode }) =>
     createElement("a", { href, ...rest }, children),
 }));
-vi.mock("@/lib/motion/flip", () => ({ useFlipList: () => undefined }));
+// The desk ends a running glide with finishGlide (BLD-D039); no row animates here, so it is never called
+vi.mock("@/lib/motion/flip", () => ({ useFlipList: () => undefined, finishGlide: () => undefined }));
 
 const { DeskView } = await import("@/app/desk/desk-view");
 const route = await import("@/app/api/desk/route");

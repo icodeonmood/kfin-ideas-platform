@@ -963,6 +963,7 @@ export function Compose({
     <InterviewCard
       key={question}
       question={question}
+      business={draft?.sorting?.kind?.value === "business_idea"}
       suggestion={typeof oftenWords === "string" && oftenWords.trim() ? oftenWords : null}
       busy={ivBusy}
       error={ivError}

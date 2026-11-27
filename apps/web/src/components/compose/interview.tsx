@@ -1,7 +1,8 @@
 "use client";
 /**
  * Flag S1 "Interview" on Tell it (P-DECISIONS.experiments, L-DRAFT.parts/10; BLD-C172): after the first telling, up
- * to three short questions, one at a time, each skippable, then the draft. Copy word for word from the boards: the
+ * to three short questions, one at a time, each skippable, then the draft. A new business idea is asked its own three
+ * (BLD-C203). Copy word for word from the boards: the
  * intro and its list (Compose.md, `simulatorS1=Interview`) and the phone's question card (PhoneCompose.md, same
  * state). Lines the boards do not draw are made from a drawn one ("Question 2 of 3", the "So far we …" forms) or kept
  * for HR ("Show my draft"); docs/hr-wording/lane-c.md lists them.
@@ -34,13 +35,24 @@ export const INTERVIEW_COPY = {
   done: "Done",
 } as const;
 
+type Question = { question: string; example: string | null };
+
 /** Each question, in order, as drawn: the phone's first (PhoneCompose.md), the intro's list for the others
  * (Compose.md). "Who feels it most?" is a text answer here (BLD-C172): every answer goes into the draft as the
  * person's own words. */
-export const QUESTIONS: Record<InterviewQuestion, { question: string; example: string | null }> = {
+export const QUESTIONS: Record<InterviewQuestion, Question> = {
   often: { question: "How often does it happen, roughly?", example: "For example, about 20 times a week" },
   who: { question: "Who feels it most?", example: null },
   size: { question: "Any rough size?", example: "For example, 70 to 150" },
+};
+
+/** The same three for a new business idea (BLD-C203), in the drawn ones' pattern: how many would use it, who it is
+ * for, what it could earn. NEW WORDS, awaiting HR's sign-off (docs/hr-wording/lane-c.md). The intro before the first
+ * telling keeps the drawn list: nothing is known about the kind until the person has said something. */
+export const BUSINESS_QUESTIONS: Record<InterviewQuestion, Question> = {
+  often: { question: "How many would use it, roughly?", example: "For example, about 300 distributors" },
+  who: { question: "Who is it for?", example: null },
+  size: { question: "What could it earn, roughly?", example: "For example, 10 to 20 lakh a year" },
 };
 
 /** The phone sheet's line on what the draft found so far (PhoneCompose.md: "So far we hid 3 personal details,
@@ -76,6 +88,8 @@ export function InterviewIntro() {
 
 export type InterviewCardProps = {
   question: InterviewQuestion;
+  /** The sorting shows a new business idea (`Draft.sorting.kind`): its own questions (BLD-C203). */
+  business?: boolean;
   /** "How often" from the person's own words, offered as "Use “…”" (the first question only, as drawn). */
   suggestion?: string | null;
   busy?: boolean;
@@ -90,6 +104,7 @@ export type InterviewCardProps = {
 
 export function InterviewCard({
   question,
+  business = false,
   suggestion,
   busy = false,
   error,
@@ -100,12 +115,19 @@ export function InterviewCard({
 }: InterviewCardProps) {
   const id = useId();
   const [text, setText] = useState("");
+  // The kind can land while a question is shown (the first telling's draft is still building): the wording follows
+  // it until the person starts typing, then holds, so the question never changes under their answer.
+  const [heldBusiness, holdBusiness] = useState<boolean | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const n = INTERVIEW_QUESTIONS.indexOf(question) + 1;
   const last = n === INTERVIEW_QUESTIONS.length;
-  const q = QUESTIONS[question];
+  const asBusiness = heldBusiness ?? business;
+  const q = (asBusiness ? BUSINESS_QUESTIONS : QUESTIONS)[question];
   const H = headingLevel === 3 ? "h3" : "h2";
-  const offer = suggestion && question === "often" && text.trim() !== suggestion ? suggestion : null;
+  // "Use “…”" offers the draft's own "how often" words: an answer to the drawn question only, not to "How many would
+  // use it?" (BLD-C203).
+  const offer =
+    suggestion && question === "often" && !asBusiness && text.trim() !== suggestion ? suggestion : null;
 
   useEffect(() => {
     if (focusOnShow) input.current?.focus();
@@ -136,6 +158,7 @@ export function InterviewCard({
             className="chip"
             onClick={() => {
               setText(offer);
+              holdBusiness((held) => held ?? business);
               input.current?.focus();
             }}
           >
@@ -154,7 +177,11 @@ export function InterviewCard({
         enterKeyHint="next"
         aria-labelledby={`${id}-q`}
         aria-describedby={error ? `${id}-e` : undefined}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          const value = e.target.value;
+          setText(value);
+          holdBusiness((held) => (value ? (held ?? business) : null));
+        }}
         onKeyDown={(e) => {
           if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
           e.preventDefault();

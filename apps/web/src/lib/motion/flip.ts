@@ -37,6 +37,15 @@ export function isStill(t: Inverse): boolean {
 /** A layout morph measures at most this many elements per change (F-MOTION.rules/7). */
 export const FLIP_LIMIT = 180;
 
+/**
+ * Ends an animation that has an end; one that never ends (a loop: a skeleton's shimmer, a spinner) keeps running,
+ * because finish() throws on it (BLD-D039, F-MOTION.rules/5). One with no effect ends as before: its end is 0.
+ */
+export function finishGlide(a: Animation): void {
+  const end = a.effect?.getComputedTiming().endTime;
+  if (end === undefined || (typeof end === "number" && Number.isFinite(end))) a.finish();
+}
+
 /** A press holds a glide at most this long, so a press that never ends cannot leave it paused (BLD-D038). */
 export const HOLD_MAX_MS = 2_000;
 /** After a press ends with no click (dragged off, the right button), the held glide ends this much later. A phone's
@@ -63,7 +72,7 @@ export function yieldToInput(running: readonly Animation[]): Promise<void> {
   };
   const finishAll = () => {
     clear();
-    running.forEach((a) => a.finish());
+    running.forEach(finishGlide);
   };
   const finishIn = (ms: number) => {
     window.clearTimeout(soon);
@@ -139,7 +148,7 @@ export async function flip(
     if (seen++ >= FLIP_LIMIT) break;
     // A glide still running from a quick earlier change (a press holds it mid-glide) ends first, so the new one
     // starts from where elements really are (BLD-D038)
-    el.getAnimations().forEach((a) => a.finish());
+    el.getAnimations().forEach(finishGlide);
     const k = key(el);
     if (k) first.set(k, el.getBoundingClientRect());
   }
@@ -192,7 +201,7 @@ export function useFlipList(container: { current: HTMLElement | null }, key: unk
     if (!el) return;
     const rows = Array.from(el.querySelectorAll<HTMLElement>("[data-flip]")).slice(0, FLIP_LIMIT);
     // A glide still running from a quick earlier sort ends first, so the new one starts from where rows really are
-    rows.forEach((r) => r.getAnimations().forEach((a) => a.finish()));
+    rows.forEach((r) => r.getAnimations().forEach(finishGlide));
     const page = (r: HTMLElement): Box => {
       const b = r.getBoundingClientRect();
       return { left: b.left + window.scrollX, top: b.top + window.scrollY, width: b.width, height: b.height };
