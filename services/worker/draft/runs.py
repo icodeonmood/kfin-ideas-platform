@@ -26,6 +26,7 @@ from core.logging import get_logger
 from draft import adapters, parts
 from draft.config import PART_KEYS, rules
 from gateway import AgentFailed, run_agent
+from gateway.checks import KIND_FIELDS
 from gateway.core import DROPPED
 from onepc import enums
 from onepc.context import open_text
@@ -299,6 +300,17 @@ def result_of(
             "summary": old.get("summary") if "summary" in pinned else data.get("summary"),
             "pinned": sorted(pinned),
         }
+        # The kind rides with the title (BLD-C201). An answer with none keeps the kind before it while that kind's
+        # quote still stands in the words (a kind the checks dropped, or a run that said nothing new about it).
+        kind, kind_quote = parts.agent_kind(
+            {"kind": data.get("kind"), "kind_quote": data.get("kind_evidence")}
+        )
+        if kind is None:
+            kind, kind_quote = parts.agent_kind(old)
+            if kind is not None and not parts.still_said(kind_quote, texts):
+                kind = kind_quote = None
+        if kind is not None:
+            value.update(kind=kind, kind_quote=kind_quote)
         if not value["title"] and not value["summary"]:
             value = None if not pinned else value
     elif key == "value":
@@ -342,7 +354,9 @@ def _run_part(run_id: str, idea_uuid: str, key: str, said: list[dict[str, Any]])
                 if out.dropped:
                     code = DROPPED  # the gateway's own code, on llm_calls as on this line
                 texts = [str(w["text"]) for w in said]
-                state = parts.landing(key, value, prior, prior_quote, texts, dropped=bool(out.dropped))
+                # A title that lost only its kind still lands; the kind falls back as `result_of` says (BLD-C201).
+                dropped = bool(set(out.dropped) - set(KIND_FIELDS))
+                state = parts.landing(key, value, prior, prior_quote, texts, dropped=dropped)
                 if state == "failed" and key != "title":
                     value = None  # emptied: what it showed is no longer in the words
                 if state == "failed":
@@ -416,6 +430,21 @@ def ready(conn: Conn, idea_uuid: str) -> bool:
     return building is None
 
 
+def kind_now(conn: Conn, idea_uuid: str, now: dict[str, tuple[str, Any]] | None = None) -> str:
+    """The kind the sorting shows for this draft now (`parts.kind_now`): the person's own, else the suggestion from
+    the title's kind and the area. `now` is row key -> (state, value), read when not given."""
+    row = conn.execute("SELECT kind, area, sorting_sources FROM ideas WHERE id = %s", (idea_uuid,)).fetchone()
+    if row is None:
+        return "problem"
+    now = now if now is not None else current(conn, idea_uuid)
+
+    def shown(key: str) -> Any:
+        state, value = now.get(key, ("waiting", None))
+        return value if state in ("filled", "pinned") else None
+
+    return parts.kind_now(row["kind"], row["sorting_sources"], row["area"], shown("title"), shown("area"))
+
+
 def finish(conn: Conn, run_id: str, *, before: dict[str, Any] | None) -> None:
     run = conn.execute(
         "SELECT r.idea_uuid, r.message_id, r.parts, i.channel, "
@@ -443,6 +472,7 @@ def finish(conn: Conn, run_id: str, *, before: dict[str, Any] | None) -> None:
     if "similar" in run["parts"] and now.get("similar", ("", None))[0] == "filled":
         similar_found = len(now["similar"][1] or [])
     is_ready = ready(conn, idea_uuid)
+    kind = kind_now(conn, idea_uuid, now)
     lines = parts.receipt(
         before if before is not None else after,
         after,
@@ -457,6 +487,6 @@ def finish(conn: Conn, run_id: str, *, before: dict[str, Any] | None) -> None:
     conn.execute(
         "UPDATE draft_runs SET state = 'done', receipt = %s, suggestions = %s, ready = %s, finished_at = now() "
         "WHERE id = %s AND state = 'running'",
-        (Jsonb(lines), Jsonb(parts.suggestions(after)), is_ready, run_id),
+        (Jsonb(lines), Jsonb(parts.suggestions(after, kind=kind)), is_ready, run_id),
     )
     log.info("draft.run_done", run_id=run_id, ready=is_ready, line_count=len(lines))
