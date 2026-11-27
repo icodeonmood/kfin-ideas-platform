@@ -23,8 +23,8 @@
  * screen is exactly the default.
  * Attach (C-PROMPT.attach, DEC-124, BLD-C213, C214): the "+" first in the box's tool row; files are the draft's rows
  * in the box (`useBoxFiles`), made on the first file when S-04 has no draft yet, put back in the box on S-04B.
- * Capture first (DEC-125, BLD-C212): with `ai.all` off, a desk shows no draft panel, the full width, and Move to
- * Review with its readiness line after the "+"; the phone is unchanged.
+ * Capture first (DEC-125, BLD-C212): with `ai.all` or `agent.draft-part` off (DEC-143 (g)), a desk shows no draft
+ * panel, the full width, and Move to Review with its readiness line after the "+"; the phone is unchanged.
  */
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type MouseEvent } from "react";
@@ -219,9 +219,10 @@ export function Compose({
 }: {
   firstName: string;
   draftId: string | null;
-  /** Capture first (DEC-125): `ai.all` is off, the state that shows "The assistant is taking a break…", read on the
-   * server from the same switch table as that banner. On a desk the draft panel is hidden, the conversation and the
-   * box take the full width, and Move to Review sits after the "+" in the tool row. The phone is unchanged. */
+  /** Capture first (DEC-125): `ai.all` is off, the state that shows "The assistant is taking a break…", or
+   * `agent.draft-part` alone is off (DEC-143 (g)), read on the server from the same switch table as that banner. On a
+   * desk the draft panel is hidden, the conversation and the box take the full width, and Move to Review sits after
+   * the "+" in the tool row. The phone is unchanged. */
   captureFirst?: boolean;
   /** `/share?new=1`: "Start a new one instead", so no offer of the earlier draft. */
   startNew?: boolean;

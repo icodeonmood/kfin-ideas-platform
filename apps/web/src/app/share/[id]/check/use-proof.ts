@@ -90,6 +90,7 @@ export function useProof(
         item: r.body,
         localState: undefined,
         refusal: undefined,
+        note: undefined, // "still uploading" no longer holds (BLD-B283)
         name: r.body?.name || file.name,
       });
       return;
@@ -268,10 +269,11 @@ export function useProof(
     return () => clearTimeout(t);
   }, [proof, pollTick, replace]);
 
-  /** A refusal about one file (Submit's `file_blocked`): the server's words under its row. */
+  /** A refusal about one file (Submit's `file_blocked`): the server's words under its row. `id` is the file's id, or
+   * the row's own key for a file still uploading in this browser, which has no id yet (BLD-B283). */
   const noteFile = useCallback(
-    (fileId: string, note: string) =>
-      setProof((list) => list.map((p) => (p.item?.id === fileId ? { ...p, note } : p))),
+    (id: string, note: string) =>
+      setProof((list) => list.map((p) => (p.item?.id === id || p.key === id ? { ...p, note } : p))),
     [],
   );
 

@@ -302,26 +302,31 @@ class _Writes:
         ("comment", ENTRY, REVIEWER),  # a reviewer on the build team writes as themselves
     ],
 )
+@pytest.mark.parametrize("needs_you", (False, True), ids=("digest", "at-once"))
 def test_DEC_111_L_NOTIFY_post_stores_no_sender_for_an_item_as_the_desk(
-    kind: str, refs: dict[str, Any], stored: str | None, monkeypatch: pytest.MonkeyPatch
+    kind: str, refs: dict[str, Any], stored: str | None, needs_you: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With `as_desk: true` the reviewer is not stored on the in-app item or its email, so no later read, by any
-    route, can name them (as L-HIDE/7's kind, BLD-A205). The sender is still never one of the recipients."""
+    route, can name them (as L-HIDE/7's kind, BLD-A205). The sender is still never one of the recipients. A comment
+    or mention waits for the Inbox digest, which reads the in-app item; marked Needs you, it is emailed at once
+    (DEC-138, BLD-A255)."""
     import notify
 
     monkeypatch.setattr(notify.killswitch, "is_on", lambda *_: False)
     conn = _Writes()
-    posted = notify.post(conn, kind, [SHARER, REVIEWER], idea_id=IDEA, sender=REVIEWER, refs=refs)  # type: ignore[arg-type]
+    posted = notify.post(conn, kind, [SHARER, REVIEWER], idea_id=IDEA, sender=REVIEWER, refs=refs,  # type: ignore[arg-type]
+                         needs_you=needs_you)  # fmt: skip
     assert posted.ids == [1]
     channels = [(params[1], params) for _, params in conn.inserts]
-    assert [c for c, _ in channels] == ["inbox/" + kind, "email"]
-    in_app, email = (params for _, params in conn.inserts)
+    assert [c for c, _ in channels] == ["inbox/" + kind] + (["email"] if needs_you else [])
+    in_app = conn.inserts[0][1]
     assert (
         in_app[0] == SHARER and in_app[5] == stored
     )  # (user_id, template, payload, event, kind, from_user_id, …)
-    assert (
-        email[0] == SHARER and email[6] == stored
-    )  # (user_id, channel, template, payload, event, kind, from, …)
+    for _, email in conn.inserts[1:]:
+        assert (
+            email[0] == SHARER and email[6] == stored
+        )  # (user_id, channel, template, payload, event, kind, from, …)
 
 
 # ---------------------------------------------------------------------------------------------------------------

@@ -80,10 +80,14 @@ def test_DEC_111_L_NOTIFY_L_INBOX_a_desk_item_and_its_email_never_name_the_revie
             "SELECT * FROM notifications WHERE user_id = %s AND channel = 'email' AND kind = %s",
             (kavya, kind),
         ).fetchone()
-        mail = nrender.email(db, dict(row), WORKDAY_NOON) if row is not None else None
-        seen = json.dumps(item, ensure_ascii=False) + (
-            (mail.subject + mail.text + mail.html) if mail is not None else ""
+        # A revised worth is not sent at once: the Inbox digest carries it, in the same words (DEC-138, BLD-A255)
+        assert (row is None) == (kind == "worth_revised"), kind
+        mail = (
+            nrender.email(db, dict(row), WORKDAY_NOON) if row is not None else l_notify.digest_mail(db, kavya)
         )
+        seen = json.dumps(item, ensure_ascii=False) + mail.subject + mail.text + mail.html
+        if kind == "worth_revised":
+            assert "The review desk revised what your idea is worth" in mail.text
         assert "Meera" not in seen and "Iyer" not in seen and meera not in seen, seen
         if kind == "questions":
             assert (item["line"], mail and mail.subject) == (
@@ -214,21 +218,23 @@ def test_l_inbox_kinds_dec113_as_committee_stores_no_sender_db(cast: Any, kind: 
         db.execute("DELETE FROM notifications WHERE user_id = %s", (kavya,))
 
 
-def test_l_notify_dec113_a_repeat_as_committee_key_keeps_no_sender_db(cast: Any) -> None:
+@pytest.mark.parametrize("needs_you", (False, True), ids=("digest", "at-once"))
+def test_l_notify_dec113_a_repeat_as_committee_key_keeps_no_sender_db(cast: Any, needs_you: bool) -> None:
     """A second committee comment within the hour reuses lane F's key: one item, still with no sender, read as the
-    committee (BLD-A231, review N3)."""
+    committee (BLD-A231, review N3). Its email waits for the Inbox digest (BLD-A255); marked Needs you, it is emailed
+    at once, and that one email row carries no member either."""
     db, p, ideas = cast["db"], cast["p"], cast["ideas"]
     kavya, rohan = p["kavya"]["id"], p["rohan"]["id"]
     key = f"convo.comment:{ideas['mine']}:20261119T11:committee"
     try:
         for _ in range(2):
             notify.post(db, "comment", [kavya], idea_id=ideas["mine"], sender=rohan, dedupe_key=key,
-                        refs={"entry_id": str(uuid.uuid4()), "as_committee": True})  # fmt: skip
+                        refs={"entry_id": str(uuid.uuid4()), "as_committee": True}, needs_you=needs_you)  # fmt: skip
         rows = db.execute(
             "SELECT channel, from_user_id FROM notifications WHERE user_id = %s AND dedupe_key = %s",
             (kavya, key),
         ).fetchall()
-        assert sorted(r["channel"] for r in rows) == ["email", "in_app"]
+        assert sorted(r["channel"] for r in rows) == (["email", "in_app"] if needs_you else ["in_app"])
         assert all(r["from_user_id"] is None for r in rows)
         item = inbox.items(db, kavya, now=WORKDAY_NOON)["items"][0]
         assert (item["from"], item["body"]["sender"]) == (AS_ONE, "The Ones Committee")
