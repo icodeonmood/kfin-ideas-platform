@@ -4,7 +4,8 @@
  * box (lane F's ConvoPicker, `cv-pick`). The four controls in order with both file inputs `hidden` (S-08's focus carry,
  * BLD-F098), the focus on opening (or not), Escape, links taken at once or answered, a controlled link field, a dropped
  * folder read through its entries or the note to use "Choose a folder", and the look in the shared sheet only.
- * Synthetic file names only.
+ * BLD-D040: the walk leaves out the system's own entries (".git/", ".DS_Store"), and the link field and its setter
+ * come as a pair. Synthetic file names only.
  */
 import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -38,15 +39,17 @@ afterEach(() => {
 });
 
 type Props = Parameters<typeof FilePicker>[0];
-const base = (more: Partial<Props> = {}): Props => ({
-  id: "pick-1",
-  className: "cpick",
-  help: "PDF or images, up to 15 MB each.",
-  onFiles: vi.fn(),
-  onLinks: vi.fn(),
-  onClose: vi.fn(),
-  ...more,
-});
+// The link field and its setter come as a pair (BLD-D040); a case passes both or neither
+const base = (more: Partial<Props> = {}): Props =>
+  ({
+    id: "pick-1",
+    className: "cpick",
+    help: "PDF or images, up to 15 MB each.",
+    onFiles: vi.fn(),
+    onLinks: vi.fn(),
+    onClose: vi.fn(),
+    ...more,
+  }) as Props;
 const show = (p: Props) => act(() => root.render(h(FilePicker, p)));
 const pick = () => host.querySelector<HTMLElement>(".fpick")!;
 const field = () => host.querySelector<HTMLInputElement>("input[type=url]")!;
@@ -146,17 +149,30 @@ describe("C-FILE.uploader, BLD-D031: one picker, as both boxes drew it", () => {
     act(() => named(PICKER_COPY.addLink).click());
     expect(changes.at(-1)).toEqual(NO_LINK);
   });
+
+  it("BLD-D040, C-FILE.picker: the link field and its setter come as a pair; a field without its setter does not compile", () => {
+    const need = { id: "pick-1", help: null, onFiles: vi.fn(), onLinks: vi.fn(), onClose: vi.fn() };
+    // Both (S-08's ConvoPicker) and neither (the share box) compile; tsc fails the line below if `link` alone did
+    expect(h(FilePicker, { ...need, link: NO_LINK, onLinkDraft: vi.fn() })).toBeTruthy();
+    expect(h(FilePicker, need)).toBeTruthy();
+    // @ts-expect-error: a field passed without its setter could never change
+    expect(h(FilePicker, { ...need, link: NO_LINK })).toBeTruthy();
+    // @ts-expect-error: a setter without the field it sets
+    expect(h(FilePicker, { ...need, onLinkDraft: vi.fn() })).toBeTruthy();
+  });
 });
 
 describe("C-FILE.uploader/2, BLD-C224, BLD-D031: a dropped folder", () => {
   type Entry = Record<string, unknown>;
   const pdf = (name: string) => new File(["%PDF"], name, { type: "application/pdf" });
   const fileEntry = (f: File): Entry => ({
+    name: f.name,
     isFile: true,
     isDirectory: false,
     file: (ok: (f: File) => void) => ok(f),
   });
-  const dirEntry = (children: Entry[]): Entry => ({
+  const dirEntry = (children: Entry[], name = "notes"): Entry => ({
+    name,
     isFile: false,
     isDirectory: true,
     createReader: () => {
@@ -210,6 +226,53 @@ describe("C-FILE.uploader/2, BLD-C224, BLD-D031: a dropped folder", () => {
     show(base({ note: null, onNote }));
     await drop([{ kind: "file", getAsFile: () => new File([], "Branch notes") }]);
     expect(onNote.mock.calls.map((c) => c[0])).toEqual([null, PICKER_COPY.useFolder]);
+  });
+
+  it('BLD-D040, C-FILE.uploader: the walk leaves out every file whose name or any folder on its path starts with ".": of .git/config, .DS_Store, notes/.hidden.md and notes/branch-calls.md only branch-calls.md is handed on', async () => {
+    const p = base({ className: "cv-pick", autoFocus: false });
+    show(p);
+    // A dropped File carries no path: ".git/config" would reach the screen as a plain "config"
+    const folder = dirEntry(
+      [
+        dirEntry([fileEntry(pdf("config"))], ".git"),
+        fileEntry(pdf(".DS_Store")),
+        dirEntry([fileEntry(pdf(".hidden.md")), fileEntry(pdf("branch-calls.md"))], "notes"),
+      ],
+      "Branch notes",
+    );
+    await drop([
+      { kind: "file", getAsFile: () => new File([], "Branch notes"), webkitGetAsEntry: () => folder },
+    ]);
+    expect(p.onFiles).toHaveBeenCalledOnce();
+    expect((p.onFiles as ReturnType<typeof vi.fn>).mock.calls[0]![0].map((f: File) => f.name)).toEqual([
+      "branch-calls.md",
+    ]);
+    expect(pick().textContent).not.toContain(PICKER_COPY.onlyDotFiles);
+  });
+
+  it("BLD-D040, C-FILE.uploader: a dropped folder that holds only the system's files adds nothing and says so in the share box's words (a hidden folder itself too)", async () => {
+    const onNote = vi.fn();
+    const p = base({ note: null, onNote });
+    show(p);
+    const folder = dirEntry(
+      [dirEntry([fileEntry(pdf("config"))], ".git"), fileEntry(pdf(".DS_Store"))],
+      "Branch notes",
+    );
+    await drop([
+      { kind: "file", getAsFile: () => new File([], "Branch notes"), webkitGetAsEntry: () => folder },
+    ]);
+    const hidden = dirEntry([fileEntry(pdf("settings.json"))], ".vscode");
+    await drop([{ kind: "file", getAsFile: () => new File([], ".vscode"), webkitGetAsEntry: () => hidden }]);
+    expect(p.onFiles).not.toHaveBeenCalled();
+    expect(PICKER_COPY.onlyDotFiles).toBe(
+      "Nothing was added. Files whose names start with a dot are left out.",
+    );
+    expect(onNote.mock.calls.map((c) => c[0])).toEqual([
+      null,
+      PICKER_COPY.onlyDotFiles,
+      null,
+      PICKER_COPY.onlyDotFiles,
+    ]);
   });
 });
 

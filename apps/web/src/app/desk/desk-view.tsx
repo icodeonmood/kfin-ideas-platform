@@ -32,7 +32,7 @@ import type { CountdownVariant, DeskResponse, DeskRow, DeskSort, DeskTab } from 
 import { addressBack, deskHref, deskSearchBody, deskUrlState, type DeskList } from "@/lib/desk/address";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
 import { TRY_AGAIN } from "@/lib/desk/reply";
-import { useFlipList } from "@/lib/motion/flip";
+import { finishGlide, useFlipList } from "@/lib/motion/flip";
 import {
   clampSearch,
   cleanAddress,
@@ -278,7 +278,7 @@ export function DeskView({ initial }: { initial: DeskResponse }) {
     restored.current = back;
     // A re-sort glide still running would move the row while it is measured: the list simply stands as it is now
     body.current?.querySelectorAll<HTMLElement>("[data-flip]").forEach((r) => {
-      r.getAnimations().forEach((a) => a.finish());
+      r.getAnimations().forEach(finishGlide);
     });
     restoreRow(body.current, back.row, back.dy);
   }, [back]);
