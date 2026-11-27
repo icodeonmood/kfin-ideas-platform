@@ -238,13 +238,15 @@ def _seed(conn: Conn) -> list[dict[str, Any]]:
     _teamup(conn, sorted_ideas[3], helper, "declined", 4 * HOUR, 3 * HOUR)  # wholly before: left out
     _teamup(conn, sorted_ideas[4], helper, "closed", 100 * 60, 20 * 60)  # closed with its idea: answered
     _teamup(conn, sorted_ideas[1], asker, "withdrawn", 30 * 60, None)  # withdrawn by its sender: sent only
-    # Drafts' asks: two sent in the window (one waiting, one declined), one sent before it.
+    # Drafts' asks: sent counts by `sent_at`, declined by `answered_at`, each inside the window only.
     drafts = [
-        lf.idea(conn, asker, f"Draft about {w}", shared_days=None) for w in ("mandates", "nominees", "KYC")
+        lf.idea(conn, asker, f"Draft about {w}", shared_days=None)
+        for w in ("mandates", "nominees", "KYC", "dividends")
     ]
-    _ask(conn, drafts[0], lead, asker, "waiting", 45 * 60, None)
-    _ask(conn, drafts[1], lead, asker, "declined", 2 * HOUR + 1800, 1 * HOUR)
-    _ask(conn, drafts[2], other, asker, "declined", 20 * 60, 5 * 60)
+    _ask(conn, drafts[0], lead, asker, "waiting", 45 * 60, None)  # sent
+    _ask(conn, drafts[1], lead, asker, "declined", 2 * HOUR + 1800, 1 * HOUR)  # sent before: declined
+    _ask(conn, drafts[2], other, asker, "declined", 20 * 60, 5 * 60)  # sent, declined
+    _ask(conn, drafts[3], other, asker, "declined", 4 * HOUR, 3 * HOUR)  # wholly before: left out
     return sorted_ideas
 
 
@@ -256,7 +258,7 @@ def test_bld_a257_the_three_reads_on_seeded_rows(db: Any) -> None:
         trig = conn.execute(
             "SELECT count(*) AS n FROM idea_status_history WHERE from_status IS NULL"
         ).fetchone()
-        assert trig is not None and trig["n"] >= 14
+        assert trig is not None and trig["n"] >= 15
         r1, r2, r3 = reads()
         outputs = [_run(conn, sql) for sql in (r1, r2, r3)]
 
@@ -284,7 +286,15 @@ def test_bld_a257_the_three_reads_on_seeded_rows(db: Any) -> None:
 
         names, rows = outputs[2]
         assert tuple(names) == COLUMNS[2]
-        assert rows == [{"teamup_sent": 5, "teamup_answered": 4, "teamup_declined": 2, "draft_asks": 2}]
+        assert rows == [
+            {
+                "teamup_sent": 5,
+                "teamup_answered": 4,
+                "teamup_declined": 2,
+                "draft_asks": 2,
+                "draft_asks_declined": 2,
+            }
+        ]
 
         # Lane E's READY condition 1: numbers, a timestamp or a label only, and never the seeded words.
         for names, rows in outputs:
@@ -331,5 +341,11 @@ def test_bld_a257_with_no_switch_on_row_read_1_prints_an_empty_since_and_zeros(d
         assert only_numbers_a_time_or_a_label(names, rows) == []
         assert _run(conn, r2)[1] == []
         assert _run(conn, r3)[1] == [
-            {"teamup_sent": 0, "teamup_answered": 0, "teamup_declined": 0, "draft_asks": 0}
+            {
+                "teamup_sent": 0,
+                "teamup_answered": 0,
+                "teamup_declined": 0,
+                "draft_asks": 0,
+                "draft_asks_declined": 0,
+            }
         ]

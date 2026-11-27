@@ -31,7 +31,7 @@ SINCE = (
 COLUMNS = (
     ("since", "sent", "sorted", "checking_over_15_min", "p50_s", "p95_s", "max_s"),
     ("agent", "outcome", "calls", "p50_s", "p95_s", "max_s"),
-    ("teamup_sent", "teamup_answered", "teamup_declined", "draft_asks"),
+    ("teamup_sent", "teamup_answered", "teamup_declined", "draft_asks", "draft_asks_declined"),
 )
 
 # ---- the deny list: columns and tables that hold people's words or hidden values ----------------------------------
@@ -152,6 +152,9 @@ def test_bld_a257_each_read_only_reads(n: int) -> None:
     assert re.findall(r"\bAS (\w+)", sql)[-len(named) :] == named
     if n == 1:
         assert "SELECT c.agent, c.outcome, count(*) AS calls" in sql
+    if n == 2:  # a decline is counted by its state, never by the lead's reason column
+        assert "r.answered_at >= s.since AND r.state = 'declined') AS teamup_declined" in sql
+        assert "m.answered_at >= s.since AND m.state = 'declined') AS draft_asks_declined FROM s" in sql
 
 
 def test_bld_a257_the_window_start_is_the_row_set_switch_writes() -> None:
@@ -207,6 +210,7 @@ def test_bld_a257_the_note_says_what_it_is_when_and_its_limit() -> None:
         "one gatekeeper call outside the lock (BLD-F100)",
         "the `gatekeeper` rows of the second read are the time they wait for the model",
         "the third read counts them",
+        "and drafts' asks sent and declined (with or without the lead's reason)",
     ):
         assert words in text, words
     arch = (helpers.ROOT / "docs" / "ARCHITECTURE.md").read_text("utf-8")
