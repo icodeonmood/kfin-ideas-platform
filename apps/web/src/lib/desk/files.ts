@@ -6,6 +6,11 @@
  */
 export const CUSTOMER_DETAIL = "Has a customer detail";
 
+/** The desk's green badge on every file it lists once both checks have passed, the virus scan and the personal-data
+ * check (DEC-144 (1) and (3), BLD-B284; the worker's `checked`, desk/reads.py `_checked`). A file whose check did not
+ * run gets no badge and no other words. Listed under BUILD_LOG "To confirm later" (DEC-137). */
+export const CHECKED_FOR_DETAILS = "Checked for personal details";
+
 /** The accessible name of a file's "Open": "Open branch-call-log.pdf", or with ", which has a customer detail". */
 export function openFileName(name: string, customerDetail: boolean): string {
   return customerDetail ? `Open ${name}, which has a customer detail` : `Open ${name}`;

@@ -365,6 +365,13 @@ export function settling(p: ProofItem): boolean {
  * (BLD-C236). */
 export const POLL = { everyMs: 2000, maxMs: 30_000, tries: 5, waitingMs: 30_000 } as const;
 
+/** A file still uploading holds Submit; one still being checked does not (DEC-144 (1), amending L-SUBMIT.pre/3,
+ * BLD-B283). The same one state as the server's (`submit/ready.py` `WAITING_FILE`), so the two never disagree: here it
+ * is this browser's upload, which the server has no row for until its bytes are stored. */
+export function stillUploading(p: ProofItem): boolean {
+  return (p.localState ?? p.item?.state) === "uploading";
+}
+
 /** A file whose check waits for the gatekeeper: the worker's waiting line is on its checking row (BLD-C225). */
 export function waitingForCheck(p: ProofItem): boolean {
   return (p.localState ?? p.item?.state) === "checking" && Boolean(p.item?.problem);

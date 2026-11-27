@@ -240,6 +240,18 @@ describe("C-PHONE-TABS.dock, F-SPACE.cta, BLD-D028: the shell's room and scroll 
     expect(decl(".dock-root", "display", "")).toBe("contents");
   });
 
+  it("BLD-D035, C-PHONE-TABS.dock: on a phone the dock is one column from the foot up that never wraps, so a capped dock scrolls rather than starting a second column", () => {
+    expect(decl(".dock", "flex-direction")).toBe("column-reverse");
+    expect(decl(".dock", "flex-wrap")).toBe("nowrap");
+    // A reversed column's start is the foot: what passes a page's cap leaves by the top, where the dock scrolls to it
+    expect(decl(".dock", "justify-content")).toBe("flex-start");
+    // The desk keeps its row at the end of the flow, wrapping (F-SPACE.cta/1)
+    expect(decl(".dock", "flex-wrap", "")).toBe("wrap");
+    expect(decl(".dock", "justify-content", "")).toBe("flex-end");
+    // Every phone rule on .dock in the shell is this one, so nothing later puts the wrap back
+    expect(shellCss.filter((r) => r.selectors.includes(".dock") && r.at === phone)).toHaveLength(1);
+  });
+
   it("S-04 Voice first's dock is styled under .dock, not .cz, so it keeps its look in the shell's slot (lane C's file)", () => {
     const compose = cssRules("app/share/compose.css");
     const selectors = compose.flatMap((r) => r.selectors);

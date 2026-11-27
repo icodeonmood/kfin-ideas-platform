@@ -49,6 +49,8 @@ jobs:
       - name: Install dependencies
         run: |
           cd services/worker && uv sync --frozen
+          # BLD-G012: Chromium's deps come from Ubuntu's archive; the runner's packages.microsoft.com source can 403 and fail apt-get update.
+          { grep -ls packages.microsoft.com /etc/apt/sources.list.d/* || true; } | xargs -r sudo rm -fv
           cd ../../apps/web && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
 
       - name: Lint (ruff, mypy, eslint, prettier, tsc, OKF validator, no model SDK outside the gateway, log scrubber)

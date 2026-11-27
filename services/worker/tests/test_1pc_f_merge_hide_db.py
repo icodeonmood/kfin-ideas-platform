@@ -276,3 +276,46 @@ def test_l_hide_bld_b247_l_merge_effects_5_bld_f096_a_team_up_merge_and_a_desk_m
     # both rolled back: the two ideas and the queued question are as they were
     assert f.status_of(db, mine) == {"status": "with_review_desk", "merged_into": None}
     assert len(_queued_ids(db, mine["id"])) == 1
+
+
+# ---- BLD-F108: a lead-accepted merge takes the merged idea's questions off Needs you (L-INBOX.rules/3) ----------
+
+
+def _needs_you(db: Conn, user_id: str, key: str) -> list[bool]:
+    """Whether each of the person's in-app items under `key` (the item and its reminders) still needs them."""
+    return [
+        bool(r["needs_you"]) and r["resolved_at"] is None
+        for r in db.execute(
+            "SELECT needs_you, resolved_at FROM notifications WHERE user_id = %s AND channel = 'in_app' "
+            "AND (dedupe_key = %s OR starts_with(dedupe_key, %s)) ORDER BY created_at",
+            (user_id, key, key + ":"),
+        ).fetchall()
+    ]
+
+
+def test_l_inbox_rules_3_l_merge_effects_1_bld_f108_a_lead_accepted_merge_resolves_the_merged_ideas_questions(
+    db: Conn, cast: dict[str, Any]
+) -> None:
+    """L-INBOX.rules/3, L-MERGE.effects/1, BLD-F108: Meera sends Kavya a set of questions on Kavya's idea, so Kavya has
+    "Questions from the review desk" in Needs you. Ravi then merges Kavya's idea into his through the team-up answer
+    (`requests.answer`, then `apply_lead_merge`): the set closes, and Kavya's item leaves Needs you with its
+    reminders, as it does when the review desk merges (`desk.merging`, lane B's `adapters.resolve`). Lane A's own
+    `notify`, so the item itself is read, not a stand-in."""
+    from desk import asking
+
+    mine, kavya = cast["mine"], cast["kavya"]
+    sent = asking.send_set(db, mine["idea_id"], cast["meera"]["id"],
+                           {"questions": [Q1], "time_to_answer": "3d"}, f.at(16, 11))  # fmt: skip
+    key = f"qs:{sent['id']}"
+    # Meera's "Send a reminder": a second item under the set's key (`qs:<set>:<day>:<hour>`), cleared with it
+    asking.remind(db, sent["id"], cast["meera"]["id"], f.at(16, 12))
+    assert _needs_you(db, kavya["id"], key) == [True, True]
+
+    asked = requests.send(db, cast["lead"]["idea_id"], kavya["id"],
+                          {"note": NOTE, "brought_idea_ids": [mine["idea_id"]]})  # fmt: skip
+    out = requests.answer(db, asked["id"], cast["ravi"]["id"], {"answer": "merge"})
+    assert out["request"]["state"] == "approved_merged"
+    assert f.status_of(db, mine) == {"status": "merged", "merged_into": cast["lead"]["id"]}
+    closed = db.execute("SELECT state FROM question_sets WHERE id = %s", (sent["id"],)).fetchone()
+    assert closed is not None and closed["state"] == "closed"
+    assert _needs_you(db, kavya["id"], key) == [False, False]

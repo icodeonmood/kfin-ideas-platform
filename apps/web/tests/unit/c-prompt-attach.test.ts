@@ -337,7 +337,7 @@ describe("C-PROMPT.attach on Home (S-03; DEC-124, BLD-C213, C214)", () => {
     expect(document.activeElement).toBe(plus());
   });
 
-  it('BLD-C245 (lane D\'s QA): "+" closing its own picker keeps the focus on "+" and brings it into view, as Escape does', async () => {
+  it('BLD-C245, BLD-C246 (lane D\'s QA): "+" closing its own picker keeps the focus on "+" and brings the box, then "+", into view, as Escape does', async () => {
     // jsdom has no layout: record what a browser would scroll into view.
     const scrolled: { el: Element; opts: unknown }[] = [];
     const had = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
@@ -353,7 +353,14 @@ describe("C-PROMPT.attach on Home (S-03; DEC-124, BLD-C213, C214)", () => {
       expect(host.querySelector(".cpick")).toBeNull();
       expect(plus()!.getAttribute("aria-expanded")).toBe("false");
       expect(document.activeElement).toBe(plus());
-      expect(scrolled).toContainEqual({ el: plus(), opts: { block: "nearest" } });
+      // BLD-C246: the whole box first, so the words show with the "+"; the "+" last, so a box taller than the screen
+      // still leaves it in view.
+      const box = host.querySelector(".cbox.prompt");
+      expect(box).not.toBeNull();
+      expect(scrolled.slice(-2)).toEqual([
+        { el: box, opts: { block: "nearest" } },
+        { el: plus(), opts: { block: "nearest" } },
+      ]);
       // It opens again from "+" as before.
       await openPicker();
       expect(host.querySelector(".cpick")).not.toBeNull();
@@ -372,6 +379,38 @@ describe("C-PROMPT.attach on Home (S-03; DEC-124, BLD-C213, C214)", () => {
     expect(host.querySelector(".cpick")?.textContent).toContain(
       "Nothing was added. Files whose names start with a dot are left out.",
     );
+  });
+
+  it('BLD-C248: "Choose a folder" leaves out files inside a folder whose name starts with ".", as well as dot files', async () => {
+    routes.push((c) =>
+      c.method === "POST" && c.url === "/api/drafts"
+        ? { status: 201, body: { draft: { id: DRAFT, messages: [] }, run_id: null } }
+        : undefined,
+    );
+    const inFolder = (path: string) => {
+      const f = pdf(path.split("/").pop()!);
+      Object.defineProperty(f, "webkitRelativePath", { value: path });
+      return f;
+    };
+    await showHome();
+    await openPicker();
+    const folder = host.querySelector<HTMLInputElement>(".cpick input[type=file][webkitdirectory]")!;
+    expect(folder).not.toBeNull();
+    Object.defineProperty(folder, "files", {
+      value: [
+        inFolder("Reports/Week 47 call log.pdf"),
+        inFolder("Reports/.git/config"),
+        inFolder("Reports/.DS_Store"),
+        inFolder("Reports/notes/.cache/summary.pdf"),
+      ],
+      configurable: true,
+    });
+    await act(async () => {
+      folder.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    for (let i = 0; i < 3; i++) await flush();
+    const sent = calls.filter((c) => c.method === "POST" && c.url === "/api/files");
+    expect(sent.map((c) => (c.form!.get("file") as File).name)).toEqual(["Week 47 call log.pdf"]);
   });
 
   it("BLD-C224: a folder dropped on the drop area adds its files through the directory entries; without them it says to use Choose a folder", async () => {
@@ -665,9 +704,10 @@ describe('The "+" and the Capture first layout in CSS (WCAG 2.1 AA; BLD-C212, C2
     expect(shared).toMatch(/\n\.frow-x \{[^}]*width: 32px;[^}]*height: 32px;/);
     expect(css).not.toMatch(/\.cfile-x/);
     expect(css).not.toMatch(/:has\(\.fmsg\)/);
-    // On a phone the box's rows keep the buttons on their own line under the name, as before BLD-C244 (lane D).
+    // On a phone the box's rows keep the buttons on their own line under the name, as before BLD-C244 (lane D), and
+    // each row fills the list, one to a line (BLD-C246).
     expect(css).toMatch(
-      /@media \(max-width: 640px\) \{\s*\.cz \.cfiles \.flist\.compact \.frow-in \{\s*flex-wrap: wrap;\s*\}\s*\.cz \.cfiles \.flist\.compact \.frow-a \{\s*width: 100%;\s*\}/,
+      /@media \(max-width: 640px\) \{\s*\.cz \.cfiles \.flist\.compact \.frow-in \{\s*flex-wrap: wrap;\s*\}\s*\.cz \.cfiles \.flist\.compact \.frow-a \{\s*width: 100%;\s*\}\s*\.cz \.cfiles \.flist\.compact > \.frow \{\s*flex-basis: 100%;\s*\}/,
     );
   });
 

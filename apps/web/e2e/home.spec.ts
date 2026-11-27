@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { expectNoSeriousAxeIssues, signIn } from "./helpers";
+import { expectNoSeriousAxeIssues, settleMotion, signIn } from "./helpers";
 
 /**
  * S-03 Home (`/home`, BLD-C143 to C147), against the local stack. The question and the box, the sections in order
@@ -138,4 +138,42 @@ test("C-ONES-FAN on Home: the Ones' posts, the arrows and the cheer toggle, axe 
   await cheer.click();
   expect((await unliked).ok()).toBe(true);
   await expect(cheer).toHaveAttribute("aria-pressed", "false");
+});
+
+test("BLD-D036, C-FILE.picker (C-FILE.uploader), S-03: at 320px Home's picker gives the link field its own row and puts Add link under it, full width and 44px tall", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone-360", "the narrow picker is a phone's");
+  await signInFresh(page, "L");
+  await page.setViewportSize({ width: 320, height: 640 });
+  await page.goto("/home");
+  await page.getByRole("button", { name: "Add files, a folder or a link" }).first().click();
+  await expect(page.getByRole("textbox", { name: "Or paste a link to a page, file or idea" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add link" })).toBeVisible();
+  await settleMotion(page);
+  const m = await page.locator(".cpick .fpick-link").evaluate((row) => {
+    const box = (e: Element | null) => {
+      const r = e!.getBoundingClientRect();
+      return { left: r.left, top: r.top, width: r.width, height: r.height, bottom: r.bottom };
+    };
+    return {
+      row: box(row),
+      field: box(row.querySelector("input")),
+      add: box(row.querySelector(".btn")),
+      icon: box(row.querySelector(".fpick-li")),
+    };
+  });
+  // Home's box is 225px at 320 on CI and the picker 201px inside its 12px margins: the field had 79px beside Add link
+  expect(m.field.width, "the field is wide enough to read a link").toBeGreaterThanOrEqual(170);
+  expect(m.field.width, "the field takes the row").toBeGreaterThanOrEqual(m.row.width - 1);
+  expect(m.add.top, "Add link is under the field").toBeGreaterThanOrEqual(m.field.bottom);
+  expect(Math.abs(m.add.width - m.field.width), "Add link is full width").toBeLessThanOrEqual(1);
+  expect(m.add.height, "Add link keeps its 44px target").toBeGreaterThanOrEqual(44);
+  // The link icon sits on the field, centred on its height, not on the two rows
+  expect(m.icon.left).toBeGreaterThan(m.field.left);
+  expect(
+    Math.abs(m.icon.top + m.icon.height / 2 - (m.field.top + m.field.height / 2)),
+    "the icon is centred on the field",
+  ).toBeLessThanOrEqual(1);
+  await expectNoSeriousAxeIssues(page);
 });
