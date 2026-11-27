@@ -599,34 +599,3 @@ def answer(
             conn.execute("UPDATE review_items SET state = 'open' WHERE id = %s", (q["review_item_id"],))
             engine.resume(conn, "review_item", str(q["review_item_id"]), "review", now=now)
         return {"stage": "scanned"}
-
-
-def disagree(conn: Conn, idea_uuid: str, contributor_code: str, text: str) -> dict[str, Any]:
-    """ "Disagree with this?": a `disagreement` item in the core committee's view (§4.12 day one, AT-B6-09)."""
-    with conn.transaction():
-        idea = conn.execute(
-            "SELECT idea_id, contributor_code FROM ideas WHERE id = %s", (idea_uuid,)
-        ).fetchone()
-        if idea is None or idea["contributor_code"] != contributor_code or not idea["idea_id"]:
-            raise ActionRefused(404, "not_found")
-        stage = conn.execute("SELECT stage FROM ideas WHERE id = %s", (idea_uuid,)).fetchone()
-        if stage is None or stage["stage"] not in (
-            "reviewed",
-            "in_cluster",
-            "declined",
-            "redirected",
-            "parked",
-        ):
-            raise ActionRefused(409, "nothing_to_disagree_with")
-        if conn.execute(
-            "SELECT 1 FROM review_items WHERE item_type = 'disagreement' AND ref_id = %s AND state = 'open'",
-            (idea["idea_id"],),
-        ).fetchone():
-            raise ActionRefused(409, "already_raised")  # one open disagreement per idea
-        reason = _tagged(conn, idea["idea_id"], text, min_chars=15)
-        row = conn.execute(
-            "INSERT INTO review_items (item_type, ref_id, reasons) VALUES ('disagreement', %s, %s) RETURNING id",
-            (idea["idea_id"], Jsonb({"person_says": reason})),
-        ).fetchone()
-        assert row is not None
-        return {"item_id": int(row["id"])}

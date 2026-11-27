@@ -142,7 +142,7 @@ def test_a_hold_needs_a_second_reviewer(desk: Any) -> None:
     )
 
 
-def test_question_answer_and_disagree(desk: Any) -> None:
+def test_question_and_answer(desk: Any) -> None:
     db, item = desk["db"], desk["item"]
     out = service.act(
         db, item, desk["r1"], {"action": "ask", "question": "Which branches see this the most?"}
@@ -164,17 +164,6 @@ def test_question_answer_and_disagree(desk: Any) -> None:
     assert timers == {"review": "running", "needs_info": "stopped"}
     with pytest.raises(service.ActionRefused):
         service.answer(db, desk["idea"], desk["code"], "again")  # no open question now
-
-    with pytest.raises(service.ActionRefused) as early:  # nothing has been decided yet
-        service.disagree(db, desk["idea"], desk["code"], "The desk missed that this affects SIF too")
-    assert early.value.code == "nothing_to_disagree_with"
-    service.act(db, item, desk["r1"], {"action": "decide"})
-    d = service.disagree(db, desk["idea"], desk["code"], "The desk missed that this affects SIF too")
-    row = db.execute("SELECT item_type, ref_id FROM review_items WHERE id = %s", (d["item_id"],)).fetchone()
-    assert row == {"item_type": "disagreement", "ref_id": desk["idea_id"]}
-    with pytest.raises(service.ActionRefused) as again:  # one open disagreement per idea
-        service.disagree(db, desk["idea"], desk["code"], "And it affects NPS as well, I think")
-    assert again.value.code == "already_raised"
 
 
 def test_core_committee_veto_within_the_window(desk: Any) -> None:

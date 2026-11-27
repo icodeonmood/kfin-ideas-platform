@@ -10,7 +10,6 @@ from typing import Any
 
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
-from psycopg.types.json import Jsonb
 
 from api.canvas_config import canvas_config
 from attachments import service as attachments
@@ -558,15 +557,6 @@ def idea_answer(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
     )
 
 
-@app.post("/internal/ideas/{idea_uuid}/disagree", dependencies=[Depends(require_token)])
-def idea_disagree(idea_uuid: str, body: dict[str, Any]) -> JSONResponse:
-    from review.service import disagree
-
-    return _review_call(
-        disagree, idea_uuid, str(body.get("contributor_code") or ""), str(body.get("text") or "")
-    )
-
-
 @app.get("/internal/review/items/{item_id}/view", dependencies=[Depends(require_token)])
 def review_item_view(item_id: int, mode: str = "neutral") -> JSONResponse:
     """The item screen as one viewer may see it; the web app decides `mode` from the restore policy."""
@@ -945,67 +935,6 @@ def me_team(user_id: str) -> JSONResponse:
     return _ones_call(team, user_id)
 
 
-# ---- weekly clustering (§4.4 B) -------------------------------------------------------------------------------
-
-
-@app.post("/internal/cluster-runs", dependencies=[Depends(require_token)])
-def cluster_run_now(body: dict[str, Any]) -> JSONResponse:
-    """The desk asks for a run now (the web app checked `approve_cluster_proposals` and the `clusters.batch`
-    switch). The run itself is a job, so the request returns at once."""
-    from core import killswitch
-
-    user = str(body.get("user_id") or "")
-    with connect(autocommit=True) as conn:
-        if not killswitch.is_on("clusters.batch", conn):
-            return JSONResponse({"error": "switched_off"}, status_code=503)
-        busy = conn.execute(
-            "SELECT 1 FROM jobs WHERE type = 'cluster.batch' AND state IN ('queued', 'running') LIMIT 1"
-        ).fetchone()
-        if busy:
-            return JSONResponse({"error": "run_in_progress"}, status_code=409)
-        row = conn.execute(
-            "INSERT INTO jobs (type, payload, dedupe_key) VALUES ('cluster.batch', %s, 'cluster.batch:manual') "
-            "ON CONFLICT DO NOTHING RETURNING id",
-            (Jsonb({"manual_by": user}),),
-        ).fetchone()
-        if row is None:
-            return JSONResponse({"error": "run_in_progress"}, status_code=409)
-        conn.execute(
-            "INSERT INTO audit_log (actor, action, entity) VALUES (%s, 'cluster.run_requested', 'cluster_runs')",
-            (f"user:{user}",),
-        )
-    return JSONResponse({"job_id": row["id"] if row else None}, status_code=202)
-
-
-@app.get("/internal/cluster-runs", dependencies=[Depends(require_token)])
-def cluster_runs_list() -> JSONResponse:
-    from cluster.view import runs
-
-    with connect(autocommit=True) as conn:
-        return JSONResponse(runs(conn), headers={"Cache-Control": "no-store"})
-
-
-@app.get("/internal/cluster-proposals/{item_id}/view", dependencies=[Depends(require_token)])
-def cluster_proposal_view(item_id: int, mode: str = "neutral") -> JSONResponse:
-    from cluster.view import proposal_view
-
-    if mode not in ("real", "neutral"):
-        return JSONResponse({"error": "bad_mode"}, status_code=400)
-    with connect(autocommit=True) as conn:
-        body = proposal_view(conn, item_id, "real" if mode == "real" else "neutral")
-    if body is None:
-        return JSONResponse({"error": "not_found"}, status_code=404)
-    return JSONResponse(body, headers={"Cache-Control": "no-store"})
-
-
-@app.post("/internal/cluster-proposals/{item_id}/action", dependencies=[Depends(require_token)])
-def cluster_proposal_action(item_id: int, body: dict[str, Any]) -> JSONResponse:
-    """Approve, remove a member or reject (the web app checked `approve_cluster_proposals`)."""
-    from cluster.proposals import act
-
-    return _review_call(act, item_id, str(body.get("reviewer_user_id") or ""), body)
-
-
 # --- Delivery (§4.8 to §4.11), lenses (§4.14) and learning (§5). The web checks the capability and passes who is
 # acting; the worker checks each person's part in the delivery again. Refusals answer with a code only.
 
@@ -1274,171 +1203,6 @@ def learning_run(body: dict[str, Any]) -> JSONResponse:
     from learning.run import run_now
 
     return _delivery_call(run_now, _actor(body), body)
-
-
-# ---- committee flow (§4.5–§4.7) -----------------------------------------------------------------------------------
-# The web app has checked the capability for the route; these handlers check the chair, the roster, the
-# cluster's contributors and conflicts of interest, and keep sealed scores and assessments sealed.
-
-
-def _json(body: Any) -> JSONResponse:
-    if body is None:
-        return JSONResponse({"error": "not_found"}, status_code=404)
-    return JSONResponse(body, headers={"Cache-Control": "no-store"})
-
-
-@app.get("/internal/qualify/{item_id}", dependencies=[Depends(require_token)])
-def qualify_view_route(item_id: int, user_id: str = "", mode: str = "real") -> JSONResponse:
-    from committee.views import qualify_view
-
-    with connect(autocommit=True) as conn:
-        return _json(qualify_view(conn, item_id, "real" if mode == "real" else "neutral"))
-
-
-@app.post("/internal/qualify/{item_id}/action", dependencies=[Depends(require_token)])
-def qualify_action(item_id: int, body: dict[str, Any]) -> JSONResponse:
-    from committee.qualify import act
-
-    return _review_call(act, item_id, str(body.get("reviewer_user_id") or ""), body)
-
-
-@app.get("/internal/committee/rounds", dependencies=[Depends(require_token)])
-def committee_rounds(user_id: str) -> JSONResponse:
-    from committee.rounds import is_chair, presentations_for, rounds_for
-
-    with connect(autocommit=True) as conn:
-        return _json({"rounds": rounds_for(conn, user_id), "chair": is_chair(conn, user_id),
-                      "presentations": presentations_for(conn, user_id)})  # fmt: skip
-
-
-@app.get("/internal/committee/rounds/{round_id}", dependencies=[Depends(require_token)])
-def committee_round(round_id: str, user_id: str) -> JSONResponse:
-    from committee.rounds import round_view
-
-    with connect(autocommit=True) as conn:
-        return _json(round_view(conn, round_id, user_id))
-
-
-@app.post("/internal/committee/rounds/{round_id}/action", dependencies=[Depends(require_token)])
-def committee_round_action(round_id: str, body: dict[str, Any]) -> JSONResponse:
-    from committee.rounds import act
-
-    return _review_call(act, round_id, str(body.get("user_id") or ""), body)
-
-
-@app.get("/internal/committee/conflicts", dependencies=[Depends(require_token)])
-def committee_conflicts(user_id: str) -> JSONResponse:
-    """Manager flags waiting for an admin (BLD-221); the round action `clear_conflict` clears one."""
-    from committee.rounds import open_flags
-
-    with connect(autocommit=True) as conn:
-        flags = open_flags(conn, user_id)
-    if flags is None:
-        return JSONResponse({"error": "admin_only"}, status_code=403)
-    return _json({"flags": flags})
-
-
-@app.post("/internal/committee/cycles", dependencies=[Depends(require_token)])
-def committee_cycle(body: dict[str, Any]) -> JSONResponse:
-    from committee.rounds import open_cycle
-
-    return _review_call(open_cycle, str(body.get("user_id") or ""), body)
-
-
-@app.get("/internal/committee/presentations/{pid}", dependencies=[Depends(require_token)])
-def committee_presentation(pid: str, user_id: str) -> JSONResponse:
-    from committee.decide import committee_view
-
-    with connect(autocommit=True) as conn:
-        return _json(committee_view(conn, pid, user_id))
-
-
-@app.post("/internal/committee/presentations/{pid}/action", dependencies=[Depends(require_token)])
-def committee_presentation_action(pid: str, body: dict[str, Any]) -> JSONResponse:
-    from committee.decide import committee_act
-
-    return _review_call(committee_act, pid, str(body.get("user_id") or ""), body)
-
-
-@app.get("/internal/presentations/{pid}", dependencies=[Depends(require_token)])
-def contributor_presentation(pid: str, user_id: str) -> JSONResponse:
-    from committee.decide import contributor_view
-
-    with connect(autocommit=True) as conn:
-        return _json(contributor_view(conn, pid, user_id))
-
-
-@app.post("/internal/presentations/{pid}/action", dependencies=[Depends(require_token)])
-def contributor_presentation_action(pid: str, body: dict[str, Any]) -> JSONResponse:
-    from committee.decide import contributor_act
-
-    return _review_call(contributor_act, pid, str(body.get("user_id") or ""), body)
-
-
-@app.get("/internal/working-groups/{wg}", dependencies=[Depends(require_token)])
-def working_group_view(wg: str, user_id: str) -> JSONResponse:
-    from committee.views import working_group
-
-    with connect(autocommit=True) as conn:
-        return _json(working_group(conn, wg, user_id))
-
-
-# ---- appeals (§4.12) and reports (§3.8, §5.4) ---------------------------------------------------------------------
-
-
-@app.get("/internal/appeals", dependencies=[Depends(require_token)])
-def appeals_mine(user_id: str) -> JSONResponse:
-    from committee.appeals import mine, panel_list
-
-    with connect(autocommit=True) as conn:
-        return _json({"decisions": mine(conn, user_id), "panel": panel_list(conn, user_id)})
-
-
-@app.post("/internal/appeals", dependencies=[Depends(require_token)])
-def appeals_file(body: dict[str, Any]) -> JSONResponse:
-    from committee.appeals import file
-
-    return _review_call(file, str(body.get("user_id") or ""), body)
-
-
-@app.get("/internal/appeals/{aid}", dependencies=[Depends(require_token)])
-def appeals_view(aid: str, user_id: str) -> JSONResponse:
-    from committee.appeals import panel_view
-
-    with connect(autocommit=True) as conn:
-        return _json(panel_view(conn, aid, user_id))
-
-
-@app.post("/internal/appeals/{aid}/decision", dependencies=[Depends(require_token)])
-def appeals_decide(aid: str, body: dict[str, Any]) -> JSONResponse:
-    from committee.appeals import decide
-
-    return _review_call(decide, aid, str(body.get("user_id") or ""), body)
-
-
-@app.get("/internal/reports/{kind}", dependencies=[Depends(require_token)])
-def reports_view(kind: str, user_id: str, quarter: str | None = None) -> JSONResponse:
-    """Fairness or calibration for a whole quarter (§3.8, §5.4); the web app checked `view_fairness_reports`.
-    Each view is written to the audit log."""
-    from psycopg.types.json import Jsonb
-
-    from committee import reports
-
-    if kind not in ("fairness", "calibration"):
-        return JSONResponse({"error": "not_found"}, status_code=404)
-    try:
-        frm, to = reports.period(quarter)
-    except ValueError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
-    with connect(autocommit=True) as conn:
-        body = reports.fairness(conn, frm, to) if kind == "fairness" else reports.calibration(conn, frm, to)
-        conn.execute(
-            "INSERT INTO audit_log (actor, action, entity, after) VALUES (%s, 'report.viewed', %s, %s)",
-            (f"user:{user_id}", f"report:{kind}", Jsonb({"quarter": quarter or reports.current_quarter()})),
-        )
-    body["quarter"] = quarter or reports.current_quarter()
-    body["quarters"] = reports.recent_quarters()
-    return _json(body)
 
 
 # Sorting and sending (lane C): the sorting confirm, Submit, the edit page and its versions, and lane C's values for
