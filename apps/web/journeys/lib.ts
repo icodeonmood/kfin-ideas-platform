@@ -289,8 +289,9 @@ async function findMail(
 /**
  * The newest email to `address` with this subject whose plain text has `has` (an idea's title), polled until
  * it comes. The worker sends queued email every 20 s and reads `comms.email` through a 10 s cache (BLD-A243),
- * so 60 s is ample for an `immediate` item, which goes at any hour; a routine one waits for working hours and
- * is not for a journey.
+ * so 60 s is ample for an email that goes at once, at any hour: a decision, a reversal, a merge notice, an
+ * answer reminder or anything posted as Needs you (DEC-138, BLD-A255). Every other Inbox item's email waits
+ * for the day's digest (10:30 IST on a working day), so it is not for a journey.
  */
 export async function mailTo(page: Page, address: string, subject: string, has: string): Promise<Mail> {
   const seen: { mail?: Mail } = {};
