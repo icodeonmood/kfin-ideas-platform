@@ -15,6 +15,7 @@ import re
 import pytest
 
 from tests import helpers
+from tests.test_b4_service_roles import HIDDEN_FROM_WEB  # the pinned list; a pure import, no database
 
 UAT_DOC = helpers.ROOT / "docs" / "UAT.md"
 MIGRATIONS = helpers.ROOT / "db" / "migrations"
@@ -34,11 +35,45 @@ COLUMNS = (
     ("teamup_sent", "teamup_answered", "teamup_declined", "draft_asks", "draft_asks_declined"),
 )
 
-# ---- the deny list: columns and tables that hold people's words or hidden values ----------------------------------
-# The plain-text columns of the handoff schema that carry words (masked or not), and the sealed tables by name.
-PLAIN_TEXT = {"title", "summary", "text", "note", "words", "reason", "name", "email"}
+# ---- the allowlist: every identifier the three reads may use (lane C's review) -----------------------------------
+# String literals are taken out first; what is left must be one of these, or the scan names it.
+SQL_WORDS = {
+    "with", "as", "select", "from", "join", "on", "where", "and", "is", "null", "filter", "count", "min", "max",
+    "round", "percentile_cont", "within", "group", "order", "by", "extract", "epoch", "now", "interval", "numeric",
+}  # fmt: skip
+ALIASES = {
+    "s", "t", "h", "o", "c", "r", "m", "since", "sent", "sorted", "checking_over_15_min", "p50_s", "p95_s", "max_s",
+    "calls", "teamup_sent", "teamup_answered", "teamup_declined", "draft_asks", "draft_asks_declined",
+}  # fmt: skip
+TABLES = {"audit_log", "idea_status_history", "llm_calls", "teamup_requests", "merge_requests"}
+TABLE_COLUMNS = {
+    "audit_log": {"at", "action", "entity", "after"},
+    "idea_status_history": {"idea_uuid", "from_status", "to_status", "at", "source"},
+    "llm_calls": {"agent", "outcome", "latency_ms", "created_at"},
+    "teamup_requests": {"sent_at", "answered_at", "state"},
+    "merge_requests": {"sent_at", "answered_at", "state"},
+}
+ALLOWED = SQL_WORDS | ALIASES | TABLES | set().union(*TABLE_COLUMNS.values())
+
+
+def not_allowed(sql: str) -> list[str]:
+    """Every identifier of the SQL, outside its string literals, that is not on the allowlist (lower case)."""
+    words = re.findall(r"[a-z_][a-z0-9_]*", re.sub(r"'[^']*'", "''", sql).lower())
+    return sorted({w for w in words if w not in ALLOWED})
+
+
+# ---- the deny list, the second net: columns and tables that hold people's words or hidden values ----------------
+# The plain-text columns of the schema that carry words (masked or not), and the sealed tables by name.
+PLAIN_TEXT = {
+    "title", "summary", "text", "note", "words", "reason", "name", "email", "first_name", "body", "comment",
+    "content", "context_text", "description", "detail", "helper_text", "helper_picks", "open_questions", "outline",
+    "parts", "payload", "qna_notes", "source_quote", "statement", "why", "figure_line", "role_title",
+    "hr_job_title", "hr_department", "outcome_note", "solved_note", "hidden_note", "clear_reason",
+    "override_reason", "plain_reason", "restore_reason", "veto_reason", "visibility_reason",
+    "below_threshold_reason",
+}  # fmt: skip
 SEALED_TABLES = {"idea_words_sealed", "pseudonym_vault", "hidden_values", "hidden_details", "vault_counters"}
-SEALED_SUFFIXES = ("_encrypted", "_sealed", "_masked")
+SEALED_SUFFIXES = ("_encrypted", "_sealed", "_masked", "_reason", "_note", "_text", "_name", "_quote")
 _NOT_A_COLUMN = {
     "returns",
     "type",
@@ -68,12 +103,16 @@ def deny_list() -> set[str]:
     return PLAIN_TEXT | SEALED_TABLES | bytea_columns() | web_revoked_tables()
 
 
+def denied(word: str, deny: set[str] | None = None) -> bool:
+    return word in (deny_list() if deny is None else deny) or word.endswith(SEALED_SUFFIXES)
+
+
 def sealed_hits(sql: str) -> list[str]:
     """Every word of the SQL, string literals included (`after->>'note'` would read a text), that names a column or
     a table holding people's words or hidden values. Empty means the read touches none of them."""
     deny = deny_list()
     words = re.findall(r"[a-z_][a-z0-9_]*", sql.lower())
-    return sorted({w for w in words if w in deny or w.endswith(SEALED_SUFFIXES)})
+    return sorted({w for w in words if denied(w, deny)})
 
 
 # ---- the note and its three reads ---------------------------------------------------------------------------------
@@ -234,8 +273,22 @@ def test_bld_a257_the_deny_list_covers_every_sealed_column_and_worker_only_table
         "value_hmac",
     } <= columns
     assert {"idea_words_sealed", "pseudonym_vault", "llm_cache", "voice_notes", "voice_streams"} <= tables
+    # Every table the pinned privilege test hides from the web role is revoked in a migration the parse reads.
+    assert tables >= HIDDEN_FROM_WEB
     deny = deny_list()
-    assert PLAIN_TEXT.issubset(deny) and SEALED_TABLES.issubset(deny)
+    assert PLAIN_TEXT.issubset(deny) and SEALED_TABLES.issubset(deny) and deny >= HIDDEN_FROM_WEB
+
+
+def test_bld_a257_the_reads_own_names_pass_the_deny_list() -> None:
+    """The deny list's suffixes (`_reason`, `_note`, `_text`, `_name`, `_quote` and the sealed ones) never trip on
+    a name the reads use: `answered_at`, `teamup_declined`, `draft_asks_declined` and the rest."""
+    deny = deny_list()
+    assert [w for w in sorted(ALLOWED) if denied(w, deny)] == []
+    for w in ("answered_at", "teamup_declined", "draft_asks_declined", "checking_over_15_min", "from_status"):
+        assert w in ALLOWED and not denied(w, deny)
+    # The suffixes do catch what they are for.
+    for w in ("decline_reason", "lead_note", "helper_text", "first_name", "source_quote", "note_encrypted"):
+        assert denied(w, deny), w
 
 
 @pytest.mark.parametrize("n", [0, 1, 2], ids=["send-to-sorted", "model-calls", "team-up"])
@@ -268,3 +321,45 @@ def test_bld_a257_the_sealed_column_scan_fails_on_a_bad_read(bad: str) -> None:
     assert built not in (r1, r2, r3)  # the bad read really differs from the doc's
     expected = {"after_note": "note"}.get(bad, bad)
     assert expected in sealed_hits(built)
+
+
+# ---- the allowlist (lane C's review): only the identifiers the reads need ----------------------------------------
+
+
+@pytest.mark.parametrize("n", [0, 1, 2], ids=["send-to-sorted", "model-calls", "team-up"])
+def test_bld_a257_every_identifier_is_on_the_allowlist(n: int) -> None:
+    assert not_allowed(reads()[n]) == []
+
+
+def test_bld_a257_the_allowlist_is_only_what_the_reads_use() -> None:
+    """No spare entry: every allowed name is used by at least one of the three reads."""
+    used = {
+        w for sql in reads() for w in re.findall(r"[a-z_][a-z0-9_]*", re.sub(r"'[^']*'", "''", sql).lower())
+    }
+    assert used == ALLOWED
+    assert set(COLUMNS[0] + COLUMNS[2]) | {"calls", "p50_s", "p95_s", "max_s"} <= ALIASES
+
+
+@pytest.mark.parametrize(
+    ("bad", "names"),
+    [
+        ("i.title from ideas", {"i", "ideas", "title", "string_agg"}),
+        ("first_name", {"u", "users", "first_name", "who"}),
+        ("r.lead_reason_encrypted", {"lead_reason_encrypted", "not"}),
+        ("c.ref_id", {"ref_id"}),
+    ],
+)
+def test_bld_a257_the_allowlist_fails_on_a_bad_read_naming_the_identifier(bad: str, names: set[str]) -> None:
+    r1, r2, r3 = reads()
+    built = {
+        "i.title from ideas": bad_read(),
+        "first_name": r1.replace(
+            "AS since, ", "AS since, (SELECT max(u.first_name) FROM users u) AS who, ", 1
+        ),
+        "r.lead_reason_encrypted": r3.replace(
+            "r.state = 'declined'", "r.lead_reason_encrypted IS NOT NULL", 1
+        ),
+        "c.ref_id": r2.replace("SELECT c.agent, c.outcome, ", "SELECT c.agent, c.outcome, c.ref_id, ", 1),
+    }[bad]
+    assert built not in (r1, r2, r3)  # the bad read really differs from the doc's
+    assert set(not_allowed(built)) == names

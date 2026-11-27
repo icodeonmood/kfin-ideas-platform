@@ -55,10 +55,13 @@ HOUR = 3600.0
 
 def only_numbers_a_time_or_a_label(names: Sequence[str], rows: Sequence[dict[str, Any]]) -> list[str]:
     """What a read may print: a number, the window start (`since`, a timestamp), an agent's name in `agent`, an
-    outcome from the CHECK list in `outcome`, or nothing. Returns each breach as `column: type`, never the value."""
-    problems: list[str] = []
+    outcome from the CHECK list in `outcome`, or nothing. Returns each breach as `column: type`, never the value.
+    A column named `id` or ending `_id`, `_uuid` or `_code` is refused whatever it holds, rows or none."""
+    problems = [f"{n}: an ID column" for n in names if n == "id" or n.endswith(("_id", "_uuid", "_code"))]
     for row in rows:
         for name in names:
+            if name == "id" or name.endswith(("_id", "_uuid", "_code")):
+                continue  # refused above, once
             value = row[name]
             if value is None:
                 continue
@@ -317,6 +320,13 @@ def test_bld_a257_the_numbers_only_check_fails_on_a_read_that_prints_idea_text(d
         assert only_numbers_a_time_or_a_label(["agent"], [{"agent": WORDS}]) == ["agent: str"]
         assert only_numbers_a_time_or_a_label(["outcome"], [{"outcome": "free text"}]) == ["outcome: str"]
         assert only_numbers_a_time_or_a_label(["sent"], [{"sent": _ago(conn, 0)}]) == ["sent: datetime"]
+        # An ID column fails whatever its type, even a plain number, and even with no rows.
+        assert only_numbers_a_time_or_a_label(["id"], [{"id": 7}]) == ["id: an ID column"]
+        assert only_numbers_a_time_or_a_label(["idea_uuid", "from_code"], []) == [
+            "idea_uuid: an ID column",
+            "from_code: an ID column",
+        ]
+        assert only_numbers_a_time_or_a_label(["ref_id"], [{"ref_id": None}]) == ["ref_id: an ID column"]
 
 
 def test_bld_a257_with_no_switch_on_row_read_1_prints_an_empty_since_and_zeros(db: Any) -> None:
