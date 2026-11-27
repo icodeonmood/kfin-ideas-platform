@@ -19,6 +19,8 @@ const ERRORS: Record<string, string> = {
   already_written: "You've already written a message for this.",
   // NOT DRAWN (BLD-E044): HR sign-off
   checks_unavailable: "We can't check text just now. Please try again in a few minutes.",
+  // BLD-B282: the assistant off reads as before here; DEC-143 (f) names only the Showcase brief, Ember and delivery
+  assistant_off: "We can't check text just now. Please try again in a few minutes.",
 };
 // NOT DRAWN (BLD-E044): HR sign-off
 const NOT_SAVED = "That didn't save. Please try again.";

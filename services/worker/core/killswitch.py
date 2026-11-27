@@ -3,6 +3,10 @@
 "on" means the feature runs; "off" means it is killed. Every change needs a reason and writes `audit_log`.
 The web app has the same logic in TypeScript (`apps/web/src/server/killswitch.ts`); both read one table.
 
+The `ai.all` guard (DEC-143 (h), BLD-F111): on a server, `ai.all` reads as off while no real model route is set, so
+the fake route never answers people; the gateway then refuses with its own `switched_off`. The table keeps its own
+state: `states()` and `list` print it as stored, so upgrade.sh still sees an "on" left with no route.
+
 CLI:  python -m core.killswitch set <name> <on|off> --reason "…" --actor REV-0001
       python -m core.killswitch list
 """
@@ -10,12 +14,14 @@ CLI:  python -m core.killswitch set <name> <on|off> --reason "…" --actor REV-0
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from typing import Any
 
 from psycopg.types.json import Jsonb
 
+from core.config import get_settings
 from core.db import Conn, connect
 from core.logging import get_logger
 
@@ -46,14 +52,32 @@ def states(conn: Conn | None = None, *, now: float | None = None) -> dict[str, s
     return dict(_cache["states"])
 
 
+GUARDED = "ai.all"
+
+
+def model_route_missing() -> bool:
+    """True on a server (any `APP_ENV` but dev and test, as `Settings.is_production_like` reads it) with no real model
+    route: the deploy's own rule (`bootstrap.preflight ai-route-ready`), read from the environment the model SDK
+    reads. Dev and test keep the fake route (DEC-143 (h), BLD-F111)."""
+    from bootstrap.preflight import ai_route_ready
+
+    return get_settings().is_production_like and not ai_route_ready(os.environ)
+
+
 def is_on(name: str, conn: Conn | None = None) -> bool:
-    """A switch the table does not know is treated as off: fail closed."""
+    """A switch the table does not know is treated as off: fail closed. `ai.all` is off on a server with no model
+    route, whatever the table says (BLD-F111)."""
+    if name == GUARDED and model_route_missing():
+        return False
     return states(conn).get(name) == "on"
 
 
 def is_on_fresh(name: str, conn: Conn | None = None) -> bool:
     """One switch read straight from the table, past the 10-second cache: for a step that must never run on a
-    stale "on" (a hosted speech call sends raw voice out, DEC-096). Unknown counts as off."""
+    stale "on" (a hosted speech call sends raw voice out, DEC-096). Unknown counts as off; so does `ai.all` on a
+    server with no model route (BLD-F111)."""
+    if name == GUARDED and model_route_missing():
+        return False
     own = conn is None
     c = conn or connect(autocommit=True)
     try:

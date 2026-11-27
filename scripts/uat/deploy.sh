@@ -8,8 +8,8 @@
 # PSEUDONYM_VAULT_KEY; it builds each service's own settings and is never handed to a container as a whole.
 #
 # Steps: preflight → build → empty database check → migrations → service logins → company repo seed (no dev
-# overlay outside dev) → start → Mode B (ai.all off, whatever the model route: golden sets never run in a deployed
-# database, BLD-A245) → smoke tests. Stops at the first failure.
+# overlay outside dev) → Mode B (ai.all off, whatever the model route: golden sets never run in a deployed database,
+# BLD-A245; before the start, BLD-A254) → start → smoke tests. Stops at the first failure.
 # Optional: UAT_DATA_DIR (default ./.data-uat), UAT_WEB_PORT (3100), UAT_PROJECT (kfin-ideas-uat).
 set -euo pipefail
 
@@ -129,19 +129,23 @@ step "5/8 Company repo: seed, validate, index; synthetic people"
 compose run --rm -T -v "$ROOT/seed:/seed:ro" -v "$ROOT/eval/golden:/app/eval/golden:ro" worker \
   python -m bootstrap.seed --seed-dir /seed/company-repo  # the synthetic people come from eval/golden/generators.py
 
-step "6/8 Start the stack"
-compose up -d --wait --wait-timeout 240
-
-step "7/8 Model route"
+step "6/8 Model route"
 # BLD-A245 (the product lead's rule): golden sets never run in a deployed database, in any APP_ENV; real-model calls
 # happen only on a throwaway database. So the deploy starts in Mode B whatever the route: ai.all off, audited. Full
 # mode is a hand step after scripts/eval/live.sh passes (docs/UAT.md, "Switching to full mode (mode A)").
+# BLD-A254: before step 7 starts the worker, so its watch never queues a job while ai.all is still on (rehearsal 4
+# found one desk.text_recheck job from that window). One-off containers: Postgres runs since step 2, and the switch
+# is a database row (step 3) written with the worker's own login (step 4).
 mode_b_reason="Mode B until InfoSec approves the model route (D1)"
-if compose exec -T worker python -m bootstrap.preflight ai-route-ready; then
+if compose run --rm --no-deps -T worker python -m bootstrap.preflight ai-route-ready; then
   echo "model route configured: golden sets are not run on this database; run scripts/eval/live.sh --server (UAT.md, Switching to full mode), then an admin switches ai.all on"
   mode_b_reason="Mode B until scripts/eval/live.sh passes and the product lead says go (BLD-A245)"
 fi
-compose exec -T worker python -m core.killswitch set ai.all off --reason "$mode_b_reason" --actor ops:uat-deploy
+compose run --rm --no-deps -T worker python -m core.killswitch set ai.all off --reason "$mode_b_reason" \
+  --actor ops:uat-deploy || fail "ai.all off (Mode B); nothing was started"
+
+step "7/8 Start the stack"
+compose up -d --wait --wait-timeout 240
 
 step "8/8 Smoke tests"
 compose exec -T worker python -m bootstrap.smoke --web-url http://web:3000 --fresh

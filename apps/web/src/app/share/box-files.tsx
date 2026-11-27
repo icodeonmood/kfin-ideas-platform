@@ -114,20 +114,25 @@ export function useBoxFiles({
 
   // Once the box has drawn without the picker, the "+" is brought into view (BLD-C245, lane D's QA): on a phone the
   // picker sits over the "+", closing shrinks the box and the page does not follow, and focus() does not scroll a "+"
-  // that already has the focus (the "+" itself closing it).
+  // that already has the focus (the "+" itself closing it). The whole box comes into view first, so the words show
+  // with the "+" (BLD-C246, lane D); the "+" goes last, so it stays in view when the box is taller than the screen.
   const close = (focus: boolean) => {
     setOpen(false);
     setNote(null);
     requestAnimationFrame(() => {
       const b = plus.current?.querySelector("button");
       if (focus) b?.focus();
+      plus.current?.closest(".cbox.prompt")?.scrollIntoView?.({ block: "nearest" });
       b?.scrollIntoView?.({ block: "nearest" });
     });
   };
 
   const addFiles = (files: File[]) => {
-    // A folder's own entries for the system (".DS_Store" and the like) are not the person's files.
-    const kept = files.filter((f) => !f.name.startsWith("."));
+    // A folder's own entries for the system (".DS_Store", ".git/…" and the like) are not the person's files: the
+    // name, or any folder on its path, starts with "." (BLD-C248).
+    const kept = files.filter(
+      (f) => !(f.webkitRelativePath || f.name).split("/").some((part) => part.startsWith(".")),
+    );
     if (!kept.length) {
       setNote(files.length ? BOX_FILES_COPY.onlyDotFiles : null); // the picker stays open and says why
       return;

@@ -258,14 +258,32 @@ def _file(world: dict[str, Any], n: int, file_state: str) -> str:
     return att
 
 
-def test_l_submit_pre_3_a_file_still_being_checked_holds_submit(world: dict[str, Any]) -> None:
+def _proof_ok(world: dict[str, Any]) -> tuple[bool, bool]:
+    view = ready.send_view(world["conn"], world["draft"], world["p"]["asha"], now=NOW)
+    return view["ready"], next(r["ok"] for r in view["rows"] if r["key"] == "proof")
+
+
+def test_l_submit_pre_3_a_file_still_uploading_holds_submit_one_being_checked_does_not(
+    world: dict[str, Any],
+) -> None:
+    """DEC-144 (1), BLD-B283 (amends L-SUBMIT.pre/3): a file still uploading holds Submit, in its own words under its
+    row; one still being checked goes with the idea (DEC-127 (3)), and so does one holding a customer detail
+    (DEC-107). Test edit OK'd by lane C, 27 Nov."""
     _confirm(world)
-    att = _file(world, 1, "checking")
+    att = _file(world, 1, "uploading")
+    assert _proof_ok(world) == (False, False)
     with pytest.raises(Refused) as err:
         _submit(world)
-    assert err.value.code == "file_blocked" and err.value.field == att
-    world["conn"].execute("UPDATE attachments SET file_state = 'personal_data_found' WHERE id = %s", (att,))
-    status, _ = _submit(world)  # DEC-107: a file with a customer detail found can still be sent
+    assert (err.value.code, err.value.field, err.value.message) == (
+        "file_blocked",
+        att,
+        ready.STILL_UPLOADING,
+    )
+    world["conn"].execute("UPDATE attachments SET file_state = 'checking' WHERE id = %s", (att,))
+    _file(world, 2, "personal_data_found")
+    assert ready.waiting_files(world["conn"], world["draft"]) == []
+    assert _proof_ok(world) == (True, True)
+    status, _ = _submit(world)
     assert status == 201
 
 

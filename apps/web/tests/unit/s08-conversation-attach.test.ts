@@ -663,6 +663,58 @@ describe("C-FILE.row in S-08's box: upload, Remove, a found file (DEC-107, BLD-F
 });
 
 // --- Sending -----------------------------------------------------------------------------------------------------
+/** A file "Choose a folder" found at `path` (its `webkitRelativePath`, which jsdom does not set). */
+function inFolder(path: string): File {
+  const file = md(path.split("/").pop()!);
+  Object.defineProperty(file, "webkitRelativePath", { value: path });
+  return file;
+}
+
+describe("C-FILE.uploader in S-08's box: \"Choose a folder\" leaves out the system's folders (BLD-F109)", () => {
+  it("BLD-F109: nothing inside a folder whose name starts with “.” goes up, nor a dot-file; the person's files do", async () => {
+    wide();
+    await show(sharerView());
+    await openPicker();
+    const input = host.querySelector<HTMLInputElement>(".cv-pick input[webkitdirectory]")!;
+    const chosen = [
+      inFolder("week-47/.git/config"),
+      inFolder("week-47/notes/.vscode/settings.json"),
+      inFolder("week-47/.DS_Store"),
+      inFolder("week-47/branch-call-log.md"),
+      inFolder("week-47/notes/R07-calls.md"),
+    ];
+    Object.defineProperty(input, "files", { value: chosen, configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flush();
+    await frame();
+    const sent = posts("/api/files").map((c) => (c.form!.get("file") as File).name);
+    expect(sent).toEqual(["branch-call-log.md", "R07-calls.md"]);
+    expect([...rows()!.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
+      expect.stringContaining("branch-call-log.md"),
+      expect.stringContaining("R07-calls.md"),
+    ]);
+  });
+
+  it("BLD-F109: a folder that is itself hidden adds nothing; a dot-file chosen on its own stays out, and the rest go, as before", async () => {
+    wide();
+    await show(sharerView());
+    await openPicker();
+    const folder = host.querySelector<HTMLInputElement>(".cv-pick input[webkitdirectory]")!;
+    Object.defineProperty(folder, "files", { value: [inFolder(".notes/R07-calls.md")], configurable: true });
+    await act(async () => {
+      folder.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flush();
+    expect(posts("/api/files")).toEqual([]);
+    await openPicker(); // the picker closes once a choice is made, even one that adds nothing (as before)
+    await choose([md(".DS_Store"), md("R07-calls.md")]); // no path: the name decides
+    await frame();
+    expect(posts("/api/files").map((c) => (c.form!.get("file") as File).name)).toEqual(["R07-calls.md"]);
+  });
+});
+
 describe("L-CONVO/5, L-CONVO/7: Send carries the files (BLD-F095)", () => {
   it("send carries file_ids with the words; once sent the rows leave the box and the message shows its file with View", async () => {
     wide();

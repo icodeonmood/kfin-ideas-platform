@@ -168,10 +168,11 @@ export function useConvoFiles(ideaRef: string, onClosed: () => void): ConvoFiles
   };
 
   const addFiles = (files: File[]) => {
-    // A folder's own entries for the system (".DS_Store" and the like) are not the person's files.
+    // A folder's own entries for the system (".DS_Store", ".git/…" and the like) are not the person's files: the
+    // name, or any folder on its path, starts with "." (BLD-F109; the share box has the same check, BLD-C248).
     const stamp = Date.now();
     const fresh: ProofItem[] = files
-      .filter((f) => !f.name.startsWith("."))
+      .filter((f) => !(f.webkitRelativePath || f.name).split("/").some((part) => part.startsWith(".")))
       .map((file, i) => ({
         key: `local-${stamp}-${i}-${file.name}`,
         item: null,

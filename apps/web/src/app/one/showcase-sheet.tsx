@@ -6,6 +6,7 @@ import { recordText, SHOWCASE_LABELS } from "@/components/showcase-view";
 import { buttonClass } from "@/components/ui/button";
 import { Field, FieldMsg } from "@/components/ui/field";
 import { Loading, Skeleton } from "@/components/ui/skeleton";
+import { SAVES_ONCE_BACK } from "@/lib/assistant-off";
 import type { ShowcaseBrief } from "@/server/ones";
 
 /** The words the retired /my-ideas/showcase page used, kept as they were (BLD-E042). */
@@ -22,6 +23,7 @@ const ERRORS: Record<string, string> = {
   names_not_allowed: "Leave out the names of colleagues and clients: everyone will see this.",
   text_too_long: "Please keep each part under 600 characters.",
   checks_unavailable: "We can't check text just now. Please try again in a few minutes.",
+  assistant_off: SAVES_ONCE_BACK, // DEC-143 (f), BLD-B282: the parts stay as typed
 };
 
 /**
