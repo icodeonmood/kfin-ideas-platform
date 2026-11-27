@@ -4,7 +4,7 @@ import { BANNERS, type SwitchName } from "@/lib/killswitch-routes";
 import { canFlip } from "@/lib/rbac";
 import { auditIp, authorize, str } from "@/server/auth/authorize";
 import { getDb } from "@/server/db";
-import { KillSwitchError, setKillSwitch } from "@/server/killswitch";
+import { KillSwitchError, modelRouteReady, ROUTE_GUARDED, setKillSwitch } from "@/server/killswitch";
 import { log } from "@/server/log";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +35,13 @@ export async function PUT(request: NextRequest) {
   const body = { name: str(raw.name, 64), state: str(raw.state, 3), reason: str(raw.reason) };
   if (!body.name) return NextResponse.json({ error: "name_required" }, { status: 400 });
   if (!canFlip(me.roles, body.name)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // DEC-143 (h), BLD-F111: `ai.all` goes on only where the worker has a real model route, and stays off when the
+  // worker cannot say. Switching it off is never refused.
+  if (body.name === ROUTE_GUARDED && body.state === "on") {
+    const ready = await modelRouteReady();
+    if (ready === null) return NextResponse.json({ error: "route_unchecked" }, { status: 503 });
+    if (!ready) return NextResponse.json({ error: "no_model_route" }, { status: 409 });
+  }
   try {
     await setKillSwitch({
       name: body.name,
