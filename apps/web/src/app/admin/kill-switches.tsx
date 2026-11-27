@@ -13,6 +13,22 @@ export type Switch = {
 
 const REASON_MIN = 10;
 
+/** What a refused change says. New words, under BUILD_LOG "To confirm later" (BLD-F111, DEC-143 (h)). */
+export const KILL_SWITCH_COPY = {
+  failed: "That didn't work. You may not have permission to change this switch.",
+  noModelRoute:
+    "ai.all can't be switched on: this server has no model route yet. Set the route first (docs/UAT.md, Switching to full mode), then try again.",
+  routeUnchecked:
+    "We couldn't check this server's model route, so ai.all stays off. Please try again in a few minutes.",
+} as const;
+
+/** The line for a refused change, from the route's error code. */
+export function refusedLine(error: unknown): string {
+  if (error === "no_model_route") return KILL_SWITCH_COPY.noModelRoute;
+  if (error === "route_unchecked") return KILL_SWITCH_COPY.routeUnchecked;
+  return KILL_SWITCH_COPY.failed;
+}
+
 export function KillSwitches({ initial }: { initial: Switch[] }) {
   const [switches, setSwitches] = useState<Switch[]>(initial);
   const [message, setMessage] = useState("");
@@ -80,7 +96,8 @@ function SwitchRow({ s, onDone }: { s: Switch; onDone: (message: string) => Prom
       body: JSON.stringify({ name: s.name, state: target, reason }),
     });
     if (!res.ok) {
-      setError("That didn't work. You may not have permission to change this switch.");
+      const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+      setError(refusedLine(body.error));
       return;
     }
     setOpen(false);
