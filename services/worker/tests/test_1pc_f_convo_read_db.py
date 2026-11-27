@@ -556,10 +556,11 @@ def test_s_08_l_convo_8_l_merge_effects_6_bld_f090_a_merge_line_on_the_lead_at_t
     assert page_read.merge_line_count(db, str(lead["id"])) == 1  # the line S-06 counts
 
 
-def test_s_08_l_convo_8_l_merge_effects_6_bld_f090_the_seeds_desk_merge_line_drops_the_empty_block(
+def test_s_08_l_convo_8_l_merge_effects_6_bld_f112_the_seeds_desk_merge_line_drops_the_empty_block(
     db: Any, cast: dict[str, Any]
 ) -> None:
-    """The seed writes a desk merge as `desk_merged` (BLD-F061); S-08 matches the stored code, as S-06 does."""
+    """The seed writes a desk merge as lane B posts it, `desk.merged` by the reviewer (BLD-F112); S-08 drops the empty
+    block for it, and S-06 counts it."""
     ravi, kavya, meera = cast["ravi"], cast["kavya"], cast["meera"]
     lead, merged = fx.idea(db, ravi), fx.idea(db, kavya, status="merged")
     merge_id = db.execute(
@@ -567,10 +568,10 @@ def test_s_08_l_convo_8_l_merge_effects_6_bld_f090_the_seeds_desk_merge_line_dro
         "RETURNING id",
         (lead["id"], merged["id"], meera["id"]),
     ).fetchone()["id"]
-    _seed_line(db, lead, "desk_merged", fx.at(17, 9), {"merge_id": str(merge_id)})
+    _seed_line(db, lead, "desk.merged", fx.at(17, 9), {"merge_id": str(merge_id)}, user=meera["id"])
     view = conversation(db, lead["idea_id"], ravi["id"], at=NOW)
     assert f"The review desk joined it with {merged['idea_id']}. Today, 9:00 am" in texts(view)
-    assert "desk_merged" in [e["code"] for e in view["entries"]]
+    assert "desk.merged" in [e["code"] for e in view["entries"]]
     assert "empty" not in view
     assert page_read.merge_line_count(db, str(lead["id"])) == 1
 
@@ -641,17 +642,22 @@ def test_j_track_9_s_08_layout_1_l_convo_5_bld_f060_a_build_teams_idea_with_a_cr
     assert crew["composer"]["placeholder"] == "Message the build team"
 
 
-def _seed_line(db: Any, idea: dict[str, Any], code: str, at: dt.datetime, payload: dict[str, Any]) -> None:
-    """A line as lane E's seed writes it (bootstrap/club_seed.py `_event`): its own code, an ID, no author."""
+def _seed_line(
+    db: Any, idea: dict[str, Any], code: str, at: dt.datetime, payload: dict[str, Any], *, user: str | None = None,
+    author_code: str | None = None,
+) -> None:  # fmt: skip
+    """A line as lane E's seed writes it (bootstrap/club_seed.py `_event`, BLD-F112): the code the app posts, with the
+    posting lane's author and payload."""
     from psycopg.types.json import Jsonb
 
     db.execute(
-        "INSERT INTO conversation_entries (idea_uuid, type, event, payload, at) VALUES (%s, 'event', %s, %s, %s)",
-        (idea["id"], code, Jsonb(payload), at),
+        "INSERT INTO conversation_entries (idea_uuid, type, event, author_code, author_user_id, payload, at) "
+        "VALUES (%s, 'event', %s, %s, %s, %s, %s)",
+        (idea["id"], code, author_code, user, Jsonb(payload), at),
     )
 
 
-def test_l_convo_3_bld_f061_the_seeds_lines_read_as_the_codes_they_stand_for(
+def test_l_convo_3_bld_f112_the_seeds_lines_are_the_posted_codes_and_read_as_the_apps_own(
     db: Any, cast: dict[str, Any], captured_logs: Any
 ) -> None:
     kavya, meera, rohan, ravi = cast["kavya"], cast["meera"], cast["rohan"], cast["ravi"]
@@ -674,13 +680,14 @@ def test_l_convo_3_bld_f061_the_seeds_lines_read_as_the_codes_they_stand_for(
         "VALUES (%s, %s, '\\x00', 'approved_team_only', %s, %s) RETURNING id",
         (idea["id"], ravi["code"], kavya["code"], fx.at(17, 9, 30)),
     ).fetchone()["id"]
-    _seed_line(db, idea, "shared", fx.at(14, 10, 5), {})
-    _seed_line(db, idea, "checked_matched", fx.at(14, 10, 8), {"hidden": 0, "similar": 0})
-    _seed_line(db, idea, "opened_by_desk", fx.at(16, 9, 50), {"reviewer_id": meera["id"]})
-    _seed_line(db, idea, "decided", fx.at(16, 15), {"decision_id": str(decision)})
-    _seed_line(db, idea, "team_chosen", fx.at(17, 9), {"team": "Plain words team"})
-    _seed_line(db, idea, "crew_joined", fx.at(17, 9, 30), {"request_id": str(request)})
-    _seed_line(db, idea, "shipped", fx.at(17, 10), {})
+    # "You shared it" and "Checked and matched" come from the idea (BLD-F051); the seed writes no line for them, nor
+    # for "shipped", which the board does not draw
+    _seed_line(db, idea, "desk.opened", fx.at(16, 9, 50), {}, user=meera["id"])
+    _seed_line(db, idea, "desk.decided", fx.at(16, 15), {"decision_id": str(decision), "choice": "pick"},
+               user=meera["id"])  # fmt: skip
+    _seed_line(db, idea, "build.team_chosen", fx.at(17, 9), {}, user=meera["id"])
+    _seed_line(db, idea, "crew.joined", fx.at(17, 9, 30), {"via": "teamup", "request_id": str(request)},
+               author_code=ravi["code"])  # fmt: skip
 
     assert texts(conversation(db, idea["idea_id"], kavya["id"], at=NOW)) == [
         "You shared it. Saturday 14 November, 10:05 am",
@@ -706,19 +713,20 @@ def test_l_convo_3_bld_f061_the_seeds_lines_read_as_the_codes_they_stand_for(
         "VALUES (%s, 'reversed', %s, %s, %s) RETURNING id",
         (no, fx.at(15, 11), fx.at(15, 11) + dt.timedelta(days=30), fx.at(15, 11) + dt.timedelta(days=91)),
     ).fetchone()["id"]
-    reversal = db.execute(
+    db.execute(  # Rohan's reversal in the window the line names, as the seed writes T9's
         "INSERT INTO decision_reversals (window_id, to_choice, note_encrypted, by_user_id, at) "
-        "VALUES (%s, 'pick', '\\x00', %s, %s) RETURNING id",
+        "VALUES (%s, 'pick', '\\x00', %s, %s)",
         (window, rohan["id"], fx.at(17, 9)),
-    ).fetchone()["id"]
-    _seed_line(db, turned, "decision_reversed", fx.at(17, 9), {"reversal_id": str(reversal)})
+    )
+    _seed_line(db, turned, "committee.reversed", fx.at(17, 9), {"window_id": str(window), "to": "pick"},
+               user=rohan["id"])  # fmt: skip
     lead = fx.idea(db, ravi)
     merge = db.execute(
         "INSERT INTO merges (lead_idea_uuid, merged_idea_uuid, via, by_user_id) VALUES (%s, %s, 'review_desk', %s) "
         "RETURNING id",
         (lead["id"], turned["id"], meera["id"]),
     ).fetchone()["id"]
-    _seed_line(db, lead, "desk_merged", fx.at(17, 9, 15), {"merge_id": str(merge)})
+    _seed_line(db, lead, "desk.merged", fx.at(17, 9, 15), {"merge_id": str(merge)}, user=meera["id"])
     assert texts(conversation(db, turned["idea_id"], kavya["id"], at=NOW))[-1] == (
         "The Ones Committee reversed the decision. It’s now Picked. Today, 9:00 am"  # DEC-113
     )
