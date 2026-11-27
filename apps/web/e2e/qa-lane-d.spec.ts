@@ -1,7 +1,8 @@
 /**
- * QA ONLY, lane D's branch d/qa-train36-1, never merged: phone QA on main after train 36 (7f4bca4f: D034-D037,
- * B280, B281, F107/F110). The contributor's phone pages at 320 and 360: no sideways scroll; the phone bar's title and
- * Back label are not cut (C-PHONE-TABS.nav, BLD-D034); a fixed dock is one column (C-PHONE-TABS.dock, BLD-D035); a
+ * QA ONLY, lane D's branch d/qa-train37c-1, never merged: phone QA on main after train 37c (31c14de6: D039-D041,
+ * G012). The contributor's phone pages at 320, 360, 390 and 640: no sideways scroll; the phone bar's title and Back
+ * label are not cut, the two keep the bar's 8px, and the title is centred whenever both sides fit (C-PHONE-TABS.nav,
+ * BLD-D034, BLD-D041 at every phone width); a fixed dock is one column (C-PHONE-TABS.dock, BLD-D035); a
  * shown picker under 276px of content stacks Add link under the field (C-FILE.picker, BLD-D036); a multi-line Field
  * under 300px puts its tools under the words, inside the frame (C-FIELD.tools, BLD-D037); axe. Screenshots and
  * measures go to test-results/qa-shots. Synthetic data only.
@@ -27,6 +28,9 @@ async function measure(page: Page) {
     };
     const title = document.querySelector<HTMLElement>(".pnav .pnav-t");
     const backLabel = document.querySelector<HTMLElement>(".pnav .pback span");
+    const bar = document.querySelector<HTMLElement>(".pnav");
+    const back = bar?.querySelector<HTMLElement>(".pback");
+    const right = bar?.querySelector<HTMLElement>(".pnav-r");
     const dock = document.querySelector<HTMLElement>("main#main > .dock-root > .dock");
     const dockKids = dock
       ? [...dock.children].filter((c) => getComputedStyle(c).position !== "absolute" && shown(c))
@@ -40,6 +44,30 @@ async function measure(page: Page) {
       back:
         backLabel && shown(backLabel)
           ? { text: backLabel.textContent, scroll: backLabel.scrollWidth, client: backLabel.clientWidth }
+          : null,
+      bar:
+        bar && title && back && shown(bar) && shown(title)
+          ? (() => {
+              const cs = getComputedStyle(bar);
+              const gap = Number.parseFloat(cs.columnGap) || 0;
+              const inner =
+                bar.clientWidth -
+                Number.parseFloat(cs.paddingLeft) -
+                Number.parseFloat(cs.paddingRight) -
+                2 * gap;
+              const b = bar.getBoundingClientRect();
+              const t = title.getBoundingClientRect();
+              const titleW = Math.min(title.scrollWidth, 180);
+              const sideNeed = Math.max(Math.min(back.scrollWidth, 128), right ? right.scrollWidth : 0);
+              return {
+                gapBackTitle: t.left - back.getBoundingClientRect().right,
+                centreOff: t.left + t.width / 2 - (b.left + b.width / 2),
+                bothFit: (inner - titleW) / 2 >= sideNeed,
+                inner,
+                titleW,
+                sideNeed,
+              };
+            })()
           : null,
       dock:
         dock && shown(dock)
@@ -72,8 +100,10 @@ async function measure(page: Page) {
 for (const [w, h] of [
   [320, 640],
   [360, 740],
+  [390, 844],
+  [640, 800],
 ] as const) {
-  test(`QA (lane D, never merged): train 36 on main, the contributor's phone pages at ${w} × ${h}`, async ({
+  test(`QA (lane D, never merged): train 37c on main, the contributor's phone pages at ${w} × ${h}`, async ({
     page,
   }, info) => {
     test.skip(info.project.name !== "phone-360", "phone QA");
@@ -95,7 +125,7 @@ for (const [w, h] of [
     ];
     const log: Record<string, unknown> = {};
     for (const path of paths) {
-      const at = `t36-${w}${path.replace(/[^a-z0-9]+/gi, "_")}`.replace(ideaId, "idea");
+      const at = `t37c-${w}${path.replace(ideaId, "idea").replace(/[^a-z0-9]+/gi, "_")}`;
       await page.goto(path);
       await expect(page.locator("main#main")).toBeVisible();
       await settleMotion(page);
@@ -107,6 +137,11 @@ for (const [w, h] of [
         expect.soft(m.title.scroll, `${at}: the bar's title is not cut`).toBeLessThanOrEqual(m.title.client);
       if (m.back)
         expect.soft(m.back.scroll, `${at}: Back's label is not cut`).toBeLessThanOrEqual(m.back.client);
+      if (m.bar) {
+        expect.soft(m.bar.gapBackTitle, `${at}: Back and the title keep 8px`).toBeGreaterThanOrEqual(7.5);
+        if (m.bar.bothFit)
+          expect.soft(Math.abs(m.bar.centreOff), `${at}: the title is centred`).toBeLessThanOrEqual(1);
+      }
       if (m.dock && m.dock.count > 1)
         expect.soft(m.dock.lefts, `${at}: the dock is one column`).toHaveLength(1);
       for (const [i, f] of m.fields.entries()) {
@@ -139,6 +174,6 @@ for (const [w, h] of [
       }
       await expectNoSeriousAxeIssues(page);
     }
-    writeFileSync(join(QA_SHOTS, `t36-${w}.json`), JSON.stringify(log, null, 2));
+    writeFileSync(join(QA_SHOTS, `t37c-${w}.json`), JSON.stringify(log, null, 2));
   });
 }
