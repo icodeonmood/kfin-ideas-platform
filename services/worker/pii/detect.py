@@ -8,6 +8,8 @@ Sources, in priority order (a higher-priority find wins an overlap; then the lon
 5. Other person names: Microsoft Presidio with the small spaCy English model, plus two KFin recognisers
    (honorifics such as "Shri" or "Mrs", and a lexicon of common Indian given names and surnames, because the
    small model often labels Indian names as organisations or places). BLD-067.
+6. A known given name followed by a known surname in any case, the way a name typed in lower case looks ("ravi
+   kumar"); one word alone never counts. BLD-C251, DEC-142.
 
 Not tagged: KFin product and system names (the glossary), public competitor and vendor names, amounts, dates.
 """
@@ -17,6 +19,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -227,6 +230,217 @@ def _lexicon_people(text: str, stop: frozenset[str]) -> list[tuple[int, int, flo
     return out
 
 
+# A Latin word, with an apostrophe inside it ("d'souza", "d’souza") or a possessive or closing quote after it
+# ("kumar's", "kumar'"), which the lookup leaves out (the review of a94add9f).
+_LATIN_WORD = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*['’]?")
+_MIDDLE_NAMES_MAX = 2  # "ravi shankar anand kumar"
+
+
+def _latin_words(text: str) -> list[tuple[int, int, str]]:
+    """(start, end, lookup key) per Latin word: the curly apostrophe read as a straight one, and a possessive 's or a
+    closing quote left out of both the key and the span."""
+    out = []
+    for m in _LATIN_WORD.finditer(text):
+        start, end, key = m.start(), m.end(), m.group(0).replace("’", "'").casefold()
+        if key.endswith("'s") and len(key) > 2:
+            key, end = key[:-2], end - 2
+        elif key.endswith("'"):
+            key, end = key[:-1], end - 1
+        out.append((start, end, key))
+    return out
+
+
+def _spaced(text: str, a: tuple[int, int, str], b: tuple[int, int, str]) -> bool:
+    """Two words with only spaces between them: never across a comma, a full stop, a new line or an apostrophe."""
+    return a[1] < b[0] and text[a[1] : b[0]].strip(" \t\u00a0") == ""
+
+
+def _name_pairs(text: str) -> list[tuple[int, int]]:
+    """BLD-C251 (DEC-142): a name typed in lower case, as in "my client ravi kumar called" or Hinglish in Latin
+    script ("devika raghunathan ne bataya"). The capitalised runs above never see it, so a known given name
+    followed by one or more known surnames counts in any case, with at most two more given names between them
+    ("ravi shankar kumar"). One word alone never counts: "asha", "kiran" and "prakash" are everyday words too. Two
+    list words that happen to sit together are tagged even when they mean something else ("kar diya das baje": gave, ten
+    o'clock): too much tagged is the safe way to be wrong, and a rule to tell them apart left real names visible."""
+    given, surnames = _lexicon()
+    words = _latin_words(text)
+    out: list[tuple[int, int]] = []
+    i = 0
+    while i < len(words):
+        if words[i][2] not in given:
+            i += 1
+            continue
+        j = i + 1
+        while (
+            j < len(words)
+            and j - i <= _MIDDLE_NAMES_MAX
+            and words[j][2] in given
+            and words[j][2] not in surnames
+            and _spaced(text, words[j - 1], words[j])
+        ):
+            j += 1  # a middle name
+        end = j
+        while end < len(words) and words[end][2] in surnames and _spaced(text, words[end - 1], words[end]):
+            end += 1
+        if end > j:
+            out.append((words[i][0], words[end - 1][1]))
+            i = end
+        else:
+            i += 1
+    return out
+
+
+# ---- names written in Devanagari (DEC-139 (d), BLD-C247) ------------------------------------------------------------
+# A table in the repo (names/devanagari.tsv), no new dependency. Devanagari has no capitals, so a name is a word in the
+# table; a given name takes one unknown word after it and a surname one before it ("देविका रघुनाथन"), never a word
+# that ends a name in Hindi (the table's `stop` rows: postpositions, "and", the verbs that follow a name, the respectful "जी").
+# Other scripts wait for r8.
+
+# Devanagari letters and signs and the joiners; never the danda (U+0964, U+0965) or the digits (U+0966 to U+096F).
+_DEVA = "\u0900-\u0963\u0970-\u097f\u200c\u200d"
+_DEVA_WORD = re.compile(f"[{_DEVA}]+")
+# डॉक्टर is not one: it is an everyday word ("मैं डॉक्टर बनना चाहता था"), and stays a stop word.
+_DEVA_HONORIFIC = re.compile(f"(?<![{_DEVA}])(?:श्रीमती|श्रीमान|सुश्री|श्री|कुमारी|डॉ[.\u0970]?)(?=[ \u00a0])")
+# Folded out of every lookup key: the nukta (इरफ़ान, typed इरफान), the joiners and the abbreviation sign (डॉ॰).
+_DEVA_FOLD = str.maketrans("", "", "\u093c\u200c\u200d\u0970")
+_JI = "जी"  # joined to a name it is respect, not part of the name: शर्माजी
+
+
+def _deva_key(word: str) -> str:
+    """The form a word is looked up by: NFC, then the nukta, the joiners and the abbreviation sign folded out."""
+    return unicodedata.normalize("NFC", word).translate(_DEVA_FOLD)
+
+
+@lru_cache(maxsize=1)
+def _deva_table() -> dict[str, frozenset[str]]:
+    """names/devanagari.tsv by kind: `given`, `surname` and `stop` (the words that end a name in Hindi)."""
+    kinds: dict[str, set[str]] = {"given": set(), "surname": set(), "stop": set()}
+    lines = (NAMES_DIR / "devanagari.tsv").read_text(encoding="utf-8").splitlines()
+    for n, line in enumerate(lines, start=1):
+        if not line.strip() or line.startswith("#"):
+            continue
+        cells = line.split("\t")
+        if len(cells) != 2 or cells[1].strip() not in kinds or not cells[0].strip():
+            raise ValueError(
+                f"pii/names/devanagari.tsv line {n}: expected a word, a tab, then given, surname or stop"
+            )
+        kinds[cells[1].strip()].add(_deva_key(cells[0].strip()))
+    return {k: frozenset(v) for k, v in kinds.items()}
+
+
+def _deva_lexicon() -> tuple[frozenset[str], frozenset[str]]:
+    t = _deva_table()
+    return t["given"], t["surname"]
+
+
+def _deva_stop() -> frozenset[str]:
+    return _deva_table()["stop"]
+
+
+def _deva_tokens(text: str) -> list[tuple[int, int, str]]:
+    """(start, end, lookup key) per Devanagari word; the spans are the text's own, only the key is folded. A name
+    with जी joined to it is looked up without it, and tagged whole."""
+    given, surnames = _deva_lexicon()
+    names = given | surnames
+    out = []
+    for m in _DEVA_WORD.finditer(text):
+        key = _deva_key(m.group(0))
+        if key not in names and key.endswith(_JI) and key[: -len(_JI)] in names:
+            key = key[: -len(_JI)]
+        out.append((m.start(), m.end(), key))
+    return out
+
+
+def _adjacent(text: str, a: tuple[int, int, str], b: tuple[int, int, str]) -> bool:
+    """Two Devanagari words with only spaces between them (no danda, comma or other word)."""
+    return a[1] < b[0] and text[a[1] : b[0]].strip(" \u00a0") == ""
+
+
+def _devanagari_people(text: str) -> list[tuple[int, int, float]]:
+    """Person names in Devanagari: (start, end, score), as `_lexicon_people` gives them for Latin script."""
+    given, surnames = _deva_lexicon()
+    stop = _deva_stop()
+    known = given | surnames
+    tokens = _deva_tokens(text)
+    out: list[tuple[int, int, float]] = []
+    i = 0
+    while i < len(tokens):
+        if tokens[i][2] not in known or tokens[i][2] in stop:
+            i += 1
+            continue
+        first = last = i
+        while (
+            last + 1 < len(tokens)
+            and tokens[last + 1][2] in known
+            and _adjacent(text, tokens[last], tokens[last + 1])
+        ):
+            last += 1
+        head, tail = tokens[first][2], tokens[last][2]
+        if head in surnames and head not in given and first > 0:
+            before = tokens[first - 1]
+            if before[2] not in stop and _adjacent(text, before, tokens[first]):
+                first -= 1
+        if tail in given and tail not in surnames and last + 1 < len(tokens):
+            after = tokens[last + 1]
+            if after[2] not in stop and _adjacent(text, tokens[last], after):
+                last += 1
+        names = [t[2] for t in tokens[first : last + 1]]
+        both = any(n in given for n in names) and any(n in surnames for n in names)
+        out.append((tokens[first][0], tokens[last][1], 0.85 if both or last > first else 0.6))
+        i = last + 1
+    for m in _DEVA_HONORIFIC.finditer(text):
+        following = [t for t in tokens if t[0] >= m.end()][:3]
+        taken: list[tuple[int, int, str]] = []
+        for t in following:
+            if t[2] in stop or (taken and not _adjacent(text, taken[-1], t)):
+                break
+            if not taken and text[m.end() : t[0]].strip(" \u00a0"):
+                break
+            taken.append(t)
+        if taken:
+            out.append((taken[0][0], taken[-1][1], 0.9))
+    return _merged(text, out)
+
+
+def _merged(text: str, spans: list[tuple[int, int, float]]) -> list[tuple[int, int, float]]:
+    """One span per name: spans that overlap ("अमित प्रकाश" and "प्रकाश शर्मा", प्रकाश not in the table) or touch
+    with only spaces between become one, as the Latin path keeps "Amit Prakash Sharma" whole. Never across a danda
+    or a comma."""
+    out: list[tuple[int, int, float]] = []
+    for s, e, score in sorted(spans):
+        if out and (s <= out[-1][1] or text[out[-1][1] : s].strip(" \u00a0") == ""):
+            ps, pe, pscore = out[-1]
+            out[-1] = (ps, max(pe, e), max(pscore, score))
+        else:
+            out.append((s, e, score))
+    return out
+
+
+def may_hold_names(text: str) -> bool:
+    """Whether the name recognisers have anything to read: a capital letter (Latin script), a word in
+    Devanagari, which has no capitals (BLD-C247), or a known given name and surname in lower case (BLD-C251).
+    `hide.detect.people_in` asks the same."""
+    return any(ch.isupper() for ch in text) or _DEVA_WORD.search(text) is not None or bool(_name_pairs(text))
+
+
+def _pair_people(text: str, never: set[str]) -> list[Found]:
+    return [
+        Found(s, e, "PERSON", text[s:e], priority=5)
+        for s, e in _name_pairs(text)
+        if text[s:e].casefold() not in never
+    ]
+
+
+def _deva_found(text: str, never: set[str]) -> list[Found]:
+    """`_people` for a text with no capital letter: the Devanagari names only, at the same threshold."""
+    out = []
+    for s, e, score in _devanagari_people(text):
+        value = text[s:e]
+        if score >= 0.5 and value.casefold() not in never:
+            out.append(Found(s, e, "PERSON", value, priority=5))
+    return out
+
+
 @lru_cache(maxsize=1)
 def _analyzer() -> Any:
     from presidio_analyzer import AnalyzerEngine, EntityRecognizer, RecognizerRegistry, RecognizerResult
@@ -242,6 +456,7 @@ def _analyzer() -> Any:
 
         def analyze(self, text: str, entities: list[str], nlp_artifacts: Any = None) -> list[Any]:
             results = [RecognizerResult("PERSON", s, e, score) for s, e, score in _lexicon_people(text, stop)]
+            results += [RecognizerResult("PERSON", s, e, score) for s, e, score in _devanagari_people(text)]
             results += [
                 RecognizerResult("PERSON", m.start(1), m.end(1), 0.9) for m in _HONORIFIC.finditer(text)
             ]
@@ -320,8 +535,14 @@ def detect(
     for rx, typ in d._client_res:
         for m in rx.finditer(text):
             found.append(Found(m.start(), m.end(), typ, m.group(0), 4))
+    if people:  # BLD-C251 (DEC-142): names typed in lower case, whatever else the text holds
+        found.extend(_pair_people(text, d.never_person))
     if people and any(ch.isupper() for ch in text):
         found.extend(_people(text, d.never_person))
+    elif people and may_hold_names(text):
+        # Hindi in Devanagari has no capital letters, so the gate above never opens for it (the review of BLD-C247):
+        # the table alone, without the English NER model, which reads nothing in this script but noise.
+        found.extend(_deva_found(text, d.never_person))
 
     chosen: list[Found] = []
     for f in sorted(found, key=lambda f: (f.priority, -(f.end - f.start), f.start)):

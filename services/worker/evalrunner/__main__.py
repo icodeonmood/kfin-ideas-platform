@@ -256,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--only",
         metavar="AGENTS",
-        help="comma list of agents to run, for example gatekeeper,judge (the harness checks still run; BLD-C229)",
+        help="comma list of agents to run, for example gatekeeper,judge,draft-part (the harness checks still run; BLD-C229)",
     )
     args = parser.parse_args(argv)
     try:

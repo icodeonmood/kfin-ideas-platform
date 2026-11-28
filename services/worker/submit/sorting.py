@@ -2,10 +2,11 @@
 and DEC-094).
 
 - Each field arrives pre-filled from the draft's parts with its reason (`L-SORT.rules/1`): who it affects from the
-  `who` part, the area from `area`, what it would bring from `value`; what kind it is from the draft's kind, a
-  problem to fix unless the draft says otherwise or its area is New business (DEC-118, BLD-C196). A suggestion is
-  never stored: while a field is untouched it follows the draft, so a later message that changes a part changes the
-  suggestion too.
+  `who` part, the area from `area`, what it would bring from `value`; what kind it is from the kind the draft-part
+  agent suggested with the title, with its quote (BLD-C201), else a problem to fix unless the area is New business
+  (DEC-118, BLD-C196). New business picked by hand suggests a business idea too, and moving away undoes only that
+  (BLD-C204; `draft.parts.kind_suggestion`). A suggestion is never stored: while a field is untouched it follows the
+  draft and the other fields, so a later message that changes a part changes the suggestion too.
 - Confirmation is explicit (`/2`). `{confirm: true}` ("Confirm sorting", "Looks right") confirms every untouched
   field at its current suggestion; changing a value confirms that field. Each field records its source,
   `suggested`, `confirmed` or `changed` (`/3`), in `ideas.sorting_sources`; a changed value is the person's call
@@ -27,7 +28,7 @@ from typing import Any, Literal
 from psycopg.types.json import Jsonb
 
 from core.db import Conn
-from draft import parts
+from draft import outcomes, parts
 from onepc import enums
 from submit import config, own
 from submit.errors import Refused
@@ -41,11 +42,10 @@ INCOMPLETE = "Confirm these, or change any of them, before you send."
 UNCONFIRMED = "Confirm the sorting first, or change any of it."
 NOTE_SUGGESTED = "These are suggestions from your words. Not confirmed yet."
 NOTE_EDIT = "Confirmed when you shared it. You can still change any of these."
-KIND_WHY = {
-    "problem": "because you described something that goes wrong today.",
-    "business_idea": "because you described something new KFintech could offer.",  # NOT DRAWN: default
-}
-NEW_BUSINESS = "New business"  # the area (draft/config.py, rules/drafting.md) that suggests a business idea
+# The kind's lines and the area that suggests a business idea live with the draft's kind rules (`draft.parts`):
+# "because you described something new KFintech could offer." is NOT DRAWN (default); New business is the area.
+KIND_WHY = parts.KIND_WHY
+NEW_BUSINESS = parts.NEW_BUSINESS
 MAX_PICKS = 20
 # Review.md and Edit.md draw the reason beside What it would bring with a second sentence, for the drawn suggestion
 # (saves time and saves cost): "… Add revenue or outside tools if it does those too." Other suggestions are not
@@ -64,20 +64,15 @@ class Choice:
         return bool(self.value)
 
 
-def kind_on_check_it(kind: object) -> str | None:
-    """E-ENUMS.kind: a problem shared with a fix is stored as `fix` (the Wall's label) and sorted as a problem."""
-    if kind in ("problem", "fix", "problem_with_solution"):
-        return "problem"
-    if kind == "business_idea":
-        return "business_idea"
-    return None
+kind_on_check_it = parts.kind_on_check_it
 
 
 def kind_for_area(area: str | None) -> str:
-    """The kind suggested while the person has not set one (DEC-118 (2), BLD-C196): "A new business idea" when the
-    area comes out as New business, else a problem to fix. A kind the person set, confirmed or changed is never
-    replaced: `suggestions` asks only when the idea has no kind, and `current` keeps what the person chose."""
-    return "business_idea" if area is not None and area.casefold() == NEW_BUSINESS.casefold() else "problem"
+    """The kind suggested while the person has not set one and the agent gave none (DEC-118 (2), BLD-C196): "A new
+    business idea" when the area comes out as New business, else a problem to fix. A kind the person set, confirmed
+    or changed is never replaced: `suggestions` asks only when the idea has no kind, and `current` keeps what the
+    person chose."""
+    return "business_idea" if parts.is_new_business(area) else "problem"
 
 
 def stored_kind(kind: str, fix_included: bool) -> str:
@@ -86,11 +81,21 @@ def stored_kind(kind: str, fix_included: bool) -> str:
 
 def _parts(conn: Conn, idea_uuid: str) -> dict[str, dict[str, Any]]:
     rows = conn.execute(
-        "SELECT key, state, value, why FROM idea_parts WHERE idea_uuid = %s AND key IN ('who', 'value', 'area') "
-        "AND state IN ('filled', 'pinned') AND value IS NOT NULL",
+        "SELECT key, state, value, why FROM idea_parts WHERE idea_uuid = %s "
+        "AND key IN ('title', 'who', 'value', 'area') AND state IN ('filled', 'pinned') AND value IS NOT NULL",
         (idea_uuid,),
     ).fetchall()
     return {str(r["key"]): dict(r) for r in rows}
+
+
+def _kind_choice(idea: dict[str, Any], title_value: Any, area: Any, area_source: str | None) -> Choice:
+    """The kind suggested for the area as it stands (the draft's, or the one the person confirmed or picked by
+    hand): the idea's own kind if it has one, else `draft.parts.kind_suggestion`."""
+    stored = kind_on_check_it(idea.get("kind"))
+    if stored:
+        return Choice(stored, "suggested", KIND_WHY[stored])
+    kind, why = parts.kind_suggestion(title_value, area, area_by_hand=area_source == "changed")
+    return Choice(kind, "suggested", why)
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -104,26 +109,28 @@ def _dedupe(items: list[str]) -> list[str]:
 def suggestions(conn: Conn, idea: dict[str, Any], li: config.Lists) -> dict[Field, Choice]:
     """What the draft suggests for each field, with its reason (L-DRAFT.parts). A part with no value suggests
     nothing; the columns are the fallback for a draft written before its parts were."""
-    parts = _parts(conn, str(idea["id"]))
+    found = _parts(conn, str(idea["id"]))
 
     def why(key: str) -> str | None:
-        w = parts.get(key, {}).get("why")
+        w = found.get(key, {}).get("why")
         return str(w) if w else None
 
-    who = parts.get("who", {}).get("value")
+    who = found.get("who", {}).get("value")
     who_list = who if isinstance(who, list) else list(idea.get("affects") or [])
     affects = _dedupe([x for x in (li.affects_label(v) for v in who_list) if x])
-    area_raw = parts.get("area", {}).get("value", idea.get("area"))
+    area_raw = found.get("area", {}).get("value", idea.get("area"))
     area = li.area_label(area_raw) if area_raw else None
-    value = parts.get("value", {}).get("value")
+    value = found.get("value", {}).get("value")
     value_list = value if isinstance(value, list) else list(idea.get("brings") or [])
     brings = _dedupe([b for b in value_list if b in config.BRINGS])
     if config.NOT_SURE in brings and len(brings) > 1:
         brings = [b for b in brings if b != config.NOT_SURE]
-    kind = kind_on_check_it(idea.get("kind")) or kind_for_area(area)
+    # The kind follows the area as it stands: the person's own, once confirmed or picked by hand (BLD-C204).
+    area_source = ((idea.get("sorting_sources") or {}).get("area") or {}).get("source")
+    area_now = idea.get("area") if area_source in ("confirmed", "changed") else area
     return {
         "affects": Choice(affects, "suggested", why("who") if affects else None),
-        "kind": Choice(kind, "suggested", KIND_WHY[kind]),
+        "kind": _kind_choice(idea, found.get("title", {}).get("value"), area_now, area_source),
         "area": Choice(area, "suggested", why("area") if area else None),
         "brings": Choice(brings, "suggested", why("value") if brings else None),
     }
@@ -282,7 +289,13 @@ def apply(
     suggested = suggestions(conn, idea, li)
     after = dict(before)
     touched: list[Field] = []
-    for f in FIELDS:
+    # The area first: the kind it suggests follows it (BLD-C204).
+    for f in ("affects", "area", "brings", "kind"):
+        if f == "kind" and after["kind"].source == "suggested" and after["area"] != before["area"]:
+            title = _parts(conn, str(idea["id"])).get("title", {}).get("value")
+            suggested["kind"] = after["kind"] = _kind_choice(
+                idea, title, after["area"].value, after["area"].source
+            )  # still a suggestion: nothing is stored for it
         if f not in body:
             continue
         value = _read_value(f, body[f], li)
@@ -303,6 +316,7 @@ def apply(
         return []
     if phase == "edit" and not is_complete(after):
         raise _incomplete()
+    _keep_outcomes(conn, idea, before, after, suggested)
 
     sources = dict(idea.get("sorting_sources") or {})
     for f in FIELDS:
@@ -339,6 +353,48 @@ def apply(
     idea.clear()
     idea.update(dict(row))
     return [f for f in FIELDS if f in touched]
+
+
+def _keep_outcomes(
+    conn: Conn,
+    idea: dict[str, Any],
+    before: dict[Field, Choice],
+    after: dict[Field, Choice],
+    suggested: dict[Field, Choice],
+) -> None:
+    """DEC-122 (BLD-C209): a field that leaves "suggested" keeps the assistant's suggestion beside what the person did
+    with it: `accepted` when confirmed as suggested, `changed` otherwise. Only a suggestion the assistant made: from
+    a part a draft run filled (not pinned, with a value), and the kind only as the agent said it with its quote, never
+    the area's rule or New business picked by hand. Nothing while `learning.outcomes` is off."""
+    moved = [f for f in FIELDS if before[f].source == "suggested" and after[f].source != "suggested"]
+    if not moved or not outcomes.writing(conn):
+        return
+    rows = {
+        str(r["key"]): dict(r)
+        for r in conn.execute(
+            "SELECT key, state, value, run_id FROM idea_parts WHERE idea_uuid = %s "
+            "AND key IN ('title', 'who', 'value', 'area')",
+            (idea["id"],),
+        ).fetchall()
+    }
+    for f in moved:
+        row = rows.get(outcomes.SORTING_FIELDS[f])
+        if f == "kind":
+            agent_kind, _quote = parts.agent_kind((row or {}).get("value"))
+            by_hand = after["area"].source == "changed" and parts.is_new_business(after["area"].value)
+            if not agent_kind or by_hand or suggested["kind"].value != agent_kind:
+                continue
+        elif outcomes.model_part_value(row, outcomes.SORTING_FIELDS[f]) is None:
+            continue
+        outcomes.record(
+            conn,
+            str(idea["id"]),
+            f"sorting.{f}",
+            suggested=suggested[f].value,
+            final=after[f].value,
+            outcome="accepted" if after[f].source == "confirmed" else "changed",
+            run_id=str(row["run_id"]) if row and row.get("run_id") else None,
+        )
 
 
 def update_draft(conn: Conn, key: str, user_id: str, body: Any, *, now: dt.datetime) -> dict[str, Any]:

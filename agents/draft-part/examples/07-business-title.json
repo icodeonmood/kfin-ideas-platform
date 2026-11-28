@@ -1,0 +1,32 @@
+{
+ "description": "A new business idea: the kind with its quote, and a summary that describes the new offer (what it is and for whom)",
+ "input": {
+  "part": "title",
+  "words": [
+   {
+    "n": 1,
+    "text": "KFintech could sell a ready NAV and factsheet feed to small PMS firms. Most of them type their factsheets by hand every month."
+   },
+   {
+    "n": 2,
+    "text": "Two PMS firms I spoke to said they would pay for a clean feed."
+   }
+  ]
+ },
+ "output": {
+  "part": "title",
+  "title": "A ready NAV and factsheet feed for small PMS firms",
+  "summary": "A ready NAV and factsheet feed that KFintech could sell to small PMS firms. Most of them type their factsheets by hand every month, and two firms said they would pay for a clean feed.",
+  "kind": "business_idea",
+  "kind_evidence": "KFintech could sell a ready NAV and factsheet feed",
+  "often": null,
+  "who": [],
+  "worth": [],
+  "area": null,
+  "reason": null,
+  "evidence": [
+   "could sell a ready NAV and factsheet feed to small PMS firms",
+   "would pay for a clean feed"
+  ]
+ }
+}

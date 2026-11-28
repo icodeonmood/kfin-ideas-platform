@@ -428,8 +428,8 @@ def reason_writer(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
 
 # ---- draft-part (L-DRAFT.parts) ------------------------------------------------------------------------------------
 _DRAFT_EMPTY: dict[str, Any] = {
-    "title": None, "summary": None, "often": None, "who": [], "worth": [], "area": None, "reason": None,
-    "evidence": [],
+    "title": None, "summary": None, "kind": None, "kind_evidence": None, "often": None, "who": [], "worth": [],
+    "area": None, "reason": None, "evidence": [],
 }  # fmt: skip
 _OFTEN = re.compile(
     r"(?:(?:about|around|nearly|over|more than)\s+)?\d[\d,]*(?:\s+(?:to|-)\s+\d[\d,]*)?\s+(?:[a-z]+\s+){0,2}?"
@@ -484,6 +484,35 @@ def _holds_no_area_sentence(texts: list[str]) -> bool:
     return NO_AREA_SENTENCE.rstrip(".").casefold() in said
 
 
+# The kind rides with the title (BLD-C201). Words that offer, sell or launch something new make the fake call it a new
+# business idea, quoting the cue; anything else is a problem, quoting the title's own phrase. A product named in
+# passing ("the product page shows the wrong NAV") is not a cue.
+_BUSINESS_CUES = (
+    "could offer", "could sell", "could launch", "could charge", "to launch", "offer it to", "sell it to",
+    "new product", "new service", "new offering", "new business", "business idea", "new revenue", "naya product",
+    "nayi service", "naya business",
+)  # fmt: skip
+# LLM_MODE=fake only: words holding this synthetic sentence are a new business idea under New business, whatever else
+# they say, so lane G's business-idea journey reaches Check it with both suggested (BLD-C206). It names no person or
+# client, holds no personal detail and is over the minimum characters to check.
+BUSINESS_SENTENCE = "KFintech could offer small AMCs a new product that checks factsheets before they go out."
+NEW_BUSINESS = "New business"
+
+
+def _holds_business_sentence(texts: list[str]) -> bool:
+    said = " ".join(" ".join(texts).split()).casefold()
+    return BUSINESS_SENTENCE.rstrip(".").casefold() in said
+
+
+def _kind(texts: list[str], title_quote: str) -> tuple[str, str]:
+    """(kind, its quote): the first business cue the words hold, else a problem resting on the title's phrase."""
+    for cue in _BUSINESS_CUES:
+        q = next((q for t in texts if (q := _cue_quote(t, cue))), None)
+        if q:
+            return "business_idea", q
+    return "problem", title_quote
+
+
 def draft_part(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
     """A plain stand-in for each part, built only from the words so it passes the gateway's checks: the first
     sentence for the title, a frequency phrase, cue words for who, worth and area. Words that plant "a lot of money"
@@ -504,7 +533,11 @@ def draft_part(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
         if not quote or grounding.trivial(quote) or not title:
             return out
         summary = _clip_chars(" ".join(_neutral(_first_sentence(t)) for t in texts[:3]), SUMMARY_MAX)
-        out.update(title=title[:1].upper() + title[1:], summary=summary, evidence=[quote])
+        kind, kind_quote = _kind(texts, quote)
+        out.update(
+            title=title[:1].upper() + title[1:], summary=summary, kind=kind, kind_evidence=kind_quote,
+            evidence=[quote],
+        )  # fmt: skip
         return out
     if part == "often":
         if _PLANT_FIGURE.search(whole):
@@ -520,6 +553,12 @@ def draft_part(spec: AgentSpec, inputs: dict[str, Any]) -> dict[str, Any]:
     if part == "area" and _holds_no_area_sentence(texts):
         return out
     choices = [c for c in (inputs.get("options") or {}).get("choices") or [] if isinstance(c, dict)]
+    if part == "area" and _holds_business_sentence(texts):
+        label = next((str(c["label"]) for c in choices if str(c.get("label")) == NEW_BUSINESS), None)
+        said_new = next((q for t in texts if (q := _cue_quote(t, "new product"))), None)
+        if label and said_new:
+            out.update(area=label, reason="it's about a new product", evidence=[said_new])
+            return out
     if part in ("who", "area"):
         picked, quotes, said = [], [], []
         for c in choices:

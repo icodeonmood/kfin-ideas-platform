@@ -24,14 +24,18 @@ returned for that call, and, before any network call, each masking function tags
 `pii.vectors` (which never leaves the process); for translate, also that the text sent is what the tagging step
 (`gateway.sarvam.tag_for_service`, BLD-C200) returned for what `mask_for_service` returned, and that, before any
 network call, the tagging step puts tags in place of a synthetic colleague's name (from `users`, inside a transaction
-that is rolled back) and of a vector's values; that `speech_calls` has its row (call, model, outcome, our codes and
+that is rolled back), of a customer's name in Devanagari (BLD-C247) and of a vector's values; that `speech_calls` has its row (call, model, outcome, our codes and
 IDs only, no text in any column); and that with `speech.hosted` off the same call refuses before any network call:
 the client's two network entry points (`gateway.sarvam._post` and `_ws_open`) are replaced by tripwires, and reaching
 either fails the check. For speech to text it also checks that a word of each spoken sentence came back,
 which shows tts spoke both sentences sent before one flush.
 
-Synthetic text only, written here: ordinary office words, no names, nothing shaped like a folio, PAN, phone number,
-email, account number or amount. The only audio is what tts makes.
+Synthetic text only, written here: ordinary office words, nothing shaped like a folio, PAN, phone number, email,
+account number or amount, and no names but two made up for the tagging step (`TAG_NAME`, a colleague) and the
+translate call (`DEVA_NAME`, a customer in Devanagari, BLD-C247). Neither ever reaches Sarvam as written: a name
+leaves only as a tag, translate refuses before any network call when a masking function or the tagging step failed
+its check, and the wrapper on `sarvam.tts` and `sarvam.translate` refuses any text holding a part of either name
+(`name_outgoing`) before it is sent. The only audio is what tts makes.
 
 The check makes its own throwaway database the way the tests' `test_database` fixture does (created on the local
 stack's Postgres, migrated with the dbmate container, dropped at the end even on failure; `make up` must be running),
@@ -105,6 +109,12 @@ MASKERS = {
 TAGGER = ("drafts.tag_for_service", ("gateway.sarvam", "tag_for_service"))
 # A synthetic colleague, in `users` only inside the rolled-back transaction of `tagger_tags`. Never sent or printed.
 TAG_NAME = "Tarini Kulasekaran"
+# A customer's name in Devanagari (BLD-C247), made up from a given name and a surname in `pii/names/devanagari.tsv`:
+# in the tagging step's check (a text with no capital letter, the Devanagari-only path) and in the Hinglish that
+# translate sends, where it must go as a tag. Never sent as written (`NAME_PARTS`) or printed (`MARKERS`).
+DEVA_NAME = "सुनिता पाण्डेय"
+DEVA_TEXT = f"ग्राहक {DEVA_NAME} का फ़ॉर्म दो बार आया।"
+NAME_PARTS = (*TAG_NAME.split(), *DEVA_NAME.split())  # refused at the network edge (`_watching`)
 # What a `speech_calls` row may hold besides numbers: one of the worker's own codes, and an ID or a uuid (optionally
 # `kind:`). The prefixes are those of every code `gateway/sarvam.py` (SarvamFailed) and `gateway/speech.py`
 # (SpeechUnavailable, HostedRefused) raise; tests/test_sarvam_live.py reads both files and holds this list to them.
@@ -124,10 +134,10 @@ SPOKEN = "The printer near the lift is out of paper. Please order more chairs fo
 SPOKEN_TITLE = "Summary"
 HEARD = (("printer", "paper"), ("chairs", "meeting"))  # at least one word of each sentence must come back
 # Hinglish as the codemix transcript gives it (Indian words in their script, English words in English).
-HINGLISH = "ऑफिस का printer कल से काम नहीं कर रहा, कृपया नया toner मंगवा दीजिए।"
+HINGLISH = f"ऑफिस का printer कल से काम नहीं कर रहा, {DEVA_NAME} ने कहा कि नया toner मंगवा दीजिए।"
 HINGLISH_LANG = "hi-IN"
 # Words that must never show in a printed line, a `speech_calls` column or a worker warning.
-MARKERS = frozenset({"printer", "paper", "lift", "chairs", "meeting", "toner", "ऑफिस"})
+MARKERS = frozenset({"printer", "paper", "lift", "chairs", "meeting", "toner", "ऑफिस", *DEVA_NAME.split()})
 
 Decoder = Callable[[bytes], bytes]  # MP3 in, 16 kHz mono s16le PCM out; raises DecodeFailed
 
@@ -185,6 +195,7 @@ class _Spy:
     sent: dict[str, list[Any]] = field(
         default_factory=dict
     )  # `sarvam.tts` or `translate`: the text handed to it
+    names_out: list[str] = field(default_factory=list)  # calls refused for a name part in their text
 
     def calls(self, name: str) -> list[tuple[Any, Any]]:
         return self.masked.get(name, [])
@@ -288,6 +299,11 @@ def _watching(spy: _Spy, mark: frozenset[str] = frozenset()) -> Iterator[None]:
         def wrapper(text: Any, *args: Any, **kwargs: Any) -> Any:
             if isinstance(text, str) and SENTINEL in text:  # never: the outgoing maskers drop it
                 raise RuntimeError("sentinel_outgoing")
+            if isinstance(text, str) and any(
+                part in text for part in NAME_PARTS
+            ):  # a name leaves only as a tag
+                spy.names_out.append(call)
+                raise RuntimeError("name_outgoing")
             spy.sent.setdefault(call, []).append(text)
             return real(text, *args, **kwargs)
 
@@ -338,8 +354,9 @@ def tagger_tags(conn: Any) -> bool:
     """The translate path's tagging step (`gateway.sarvam.tag_for_service`, BLD-C200), run once before any network
     call on a synthetic vector's text with a synthetic colleague's name in it: the name, found in `users` as the
     tagger finds colleagues, must come back as a `KFIN_EMPLOYEE` tag and every value the patterns block as a tag, with
-    the leak check passing. The colleague and the vault rows exist only inside a transaction that is rolled back; the
-    text stays in this process: never sent, printed or logged."""
+    the leak check passing. And on a Devanagari text with a made-up customer's name in it (`DEVA_TEXT`, BLD-C247):
+    the name must come back as a `PERSON` tag, no part of it left. The colleague and the vault rows exist only inside
+    a transaction that is rolled back; the texts stay in this process: never sent, printed or logged."""
     from gateway import sarvam
     from pii import vectors
     from pii.tagger import tags_in
@@ -359,13 +376,18 @@ def tagger_tags(conn: Any) -> bool:
                     f"tagger.{secrets.token_hex(4)}@kfintech.example",
                 ),
             )
-            out = sarvam.tag_for_service(text, conn=conn, scope_id=f"DRAFT-{uuid.uuid4()}")
+            scope = f"DRAFT-{uuid.uuid4()}"
+            out = sarvam.tag_for_service(text, conn=conn, scope_id=scope)
+            deva = sarvam.tag_for_service(DEVA_TEXT, conn=conn, scope_id=scope)
             ok = (
                 bool(values)
                 and TAG_NAME not in out.text
                 and not any(v in out.text for v in values)
                 and "KFIN_EMPLOYEE" in out.tags.values()
                 and tags_in(out.text) == set(out.tags)
+                and not any(part in deva.text for part in DEVA_NAME.split())
+                and "PERSON" in deva.tags.values()
+                and tags_in(deva.text) == set(deva.tags)
             )
             raise _Undo
     except _Undo:
@@ -901,7 +923,9 @@ def _translate(run: _Run) -> Line:
     code-mixed, into English), checks the tags came back, and masks what comes back (`hide_text`). Masked: the
     tagging step was given the very object `mask_for_service` returned, the text sent is the very text the tagging
     step returned, and the text returned is the very object `hide_text` returned; both masking functions tag a vector
-    and the tagging step tags a colleague's name and a vector."""
+    and the tagging step tags a colleague's name, a customer's name in Devanagari and a vector. The Hinglish holds
+    that customer's name (BLD-C247), so when a masking function or the tagging step failed its check nothing is sent
+    (`masking_no_op`), and a text holding a part of the name is refused before it is sent (`name_outgoing`)."""
     from gateway import sarvam
     from speech import drafts
     from speech.adapters import hide_text
@@ -918,14 +942,25 @@ def _translate(run: _Run) -> Line:
         _text, _translated, failure = english()
         return failure.removeprefix("translation_") if failure else None
 
+    if not run.masking_works("drafts.mask_for_service", "drafts.hide_text", TAGGER[0]):
+        line.reason = "masking_no_op"  # before any network call: the Hinglish holds a customer's name
+        line.status = _status("http", [], line.reason)
+        return line
     since = _since(run.conn)
     spy = _Spy()
     started = time.monotonic()
     with _watching(spy):
-        text_en, translated, failure = english()
+        try:
+            text_en, translated, failure = english()
+        except RuntimeError:
+            if not spy.names_out:
+                raise
+            text_en, translated, failure = None, None, None
     back = spy.outputs("drafts.hide_text")
     line.ms = _elapsed(started)
-    line.reason = failure.removeprefix("translation_") if failure else None
+    line.reason = (
+        "name_outgoing" if spy.names_out else failure.removeprefix("translation_") if failure else None
+    )
     line.status = _status("http", [], line.reason)
     if line.reason:
         return line
@@ -939,8 +974,6 @@ def _translate(run: _Run) -> Line:
         line.reason = "not_masked"  # what went to mayura is the very text the tagging step returned
     elif len(back) != 1 or text_en is not getattr(back[0], "text", None):
         line.reason = "not_masked"  # what came back to the caller is the very object hide_text returned
-    elif not run.masking_works("drafts.mask_for_service", "drafts.hide_text", TAGGER[0]):
-        line.reason = "masking_no_op"
     else:
         line.reason = _metered(
             run.conn, since, "translate", sarvam.TRANSLATE_MODEL, rows_expected=1

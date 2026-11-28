@@ -815,19 +815,22 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             "VALUES (%s, %s, 'lead', 'shared', %s)",
             (idea_uuid, owner["code"], shared),
         )
-        _event(conn, idea_uuid, "shared", shared, {})
-        if s.status != "checking":  # "similar" is counted once the links exist (`_crews`)
-            _event(conn, idea_uuid, "checked_matched", shared + dt.timedelta(minutes=3),
-                   {"hidden": len(s.hidden), "similar": 0})  # fmt: skip
+        # "You shared it" and "Checked and matched" are read from the idea, never posted (BLD-F051, BLD-F112)
         if opened is not None and reviewer:
-            _event(conn, idea_uuid, "opened_by_desk", opened, {"reviewer_id": reviewer})
+            _event(conn, idea_uuid, "desk.opened", opened, {}, user=reviewer)
     return Made(idea_uuid, ref, s, message_ids)
 
 
-def _event(conn: Conn, idea_uuid: str, event: str, at: dt.datetime, payload: dict[str, Any]) -> None:
+def _event(
+    conn: Conn, idea_uuid: str, event: str, at: dt.datetime, payload: dict[str, Any], *, user: str | None = None,
+    code: str | None = None,
+) -> None:  # fmt: skip
+    """A conversation line under the code the app posts, with its author and payload as the posting lane writes
+    them (`convo.render`'s table; BLD-F112): the reader draws it as it draws the app's own lines."""
     conn.execute(
-        "INSERT INTO conversation_entries (idea_uuid, type, event, payload, at) VALUES (%s, 'event', %s, %s, %s)",
-        (idea_uuid, event, Jsonb(payload), at),
+        "INSERT INTO conversation_entries (idea_uuid, type, event, author_code, author_user_id, payload, at) "
+        "VALUES (%s, 'event', %s, %s, %s, %s, %s)",
+        (idea_uuid, event, code, user, Jsonb(payload), at),
     )
 
 
@@ -919,7 +922,7 @@ def _decide(
         (wid, did, state, at, closes, add_months(at, 3), extended,
          p["shalini"]["id"] if extended else None),
     )  # fmt: skip
-    _event(conn, made.uuid, "decided", at, {"decision_id": did})
+    _event(conn, made.uuid, "desk.decided", at, {"decision_id": did, "choice": choice}, user=p[who]["id"])
     return did, wid
 
 
@@ -1007,7 +1010,8 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
          p["manoj"]["id"], _ago(2, now), _team_by(_ago(2, now))),
     )  # fmt: skip
     conn.execute("UPDATE decision_windows SET state = 'reversed' WHERE id = %s", (windows["T9"],))
-    _event(conn, m["T9"].uuid, "decision_reversed", _ago(2, now), {"reversal_id": rid})
+    _event(conn, m["T9"].uuid, "committee.reversed", _ago(2, now), {"window_id": windows["T9"], "to": "pick"},
+           user=p["manoj"]["id"])  # fmt: skip
     conn.execute(
         "INSERT INTO idea_status_history (idea_uuid, from_status, to_status, at) VALUES (%s, 'not_picked', 'picked', %s)",
         (m["T9"].uuid, _ago(2, now)),
@@ -1048,8 +1052,8 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
         "VALUES (%s, %s, 'crew', 'desk_merge', %s, %s)",
         (m["R2"].uuid, tanvi["code"], mid, merged_at),
     )
-    _event(conn, m["R2"].uuid, "desk_merged", merged_at, {"merge_id": mid})
-    _event(conn, m["T11"].uuid, "desk_merged", merged_at, {"merge_id": mid})
+    for idea in (m["R2"], m["T11"]):  # on both ideas, as lane B's desk merge posts it
+        _event(conn, idea.uuid, "desk.merged", merged_at, {"merge_id": mid}, user=p["lavanya"]["id"])
 
 
 def _crews(
@@ -1082,14 +1086,8 @@ def _crews(
             (m[a].uuid, m[b].uuid, reason, found),
         )
     # "Checked and matched" counts what the check found (L-SIMILAR.rules/5): the links found while drafting or at
-    # the check. One found later, from another idea's match (F2's J2, L-SIMILAR.rules/6), came after it.
-    conn.execute(
-        "UPDATE conversation_entries e SET payload = jsonb_set(e.payload, '{similar}', to_jsonb(n.found)) "
-        "FROM (SELECT idea_uuid, count(*)::int AS found FROM similar_links WHERE idea_uuid = ANY(%s::uuid[]) "
-        "AND found_while IN ('drafting', 'checking') GROUP BY idea_uuid) n "
-        "WHERE e.idea_uuid = n.idea_uuid AND e.event = 'checked_matched'",
-        ([made.uuid for made in m.values()],),
-    )
+    # the check; one found later, from another idea's match (F2's J2, L-SIMILAR.rules/6), came after it. The screens
+    # read `similar_links` itself, so no conversation line carries the count (BLD-F051, BLD-F112).
 
     # T2's, N2's and G2's merge requests wait on Rekha (Submit is held), each in her Inbox with the three answers
     # (L-TEAMUP.rules/5, J-SIMILAR/5; posted in `_inbox`). N1's was accepted into T7.
@@ -1222,7 +1220,8 @@ def _crews(
                 "VALUES (%s, %s, 'crew', 'teamup', %s, %s)",
                 (m[key].uuid, p[who]["code"], rid, _ago(days - 0.5, now)),
             )
-            _event(conn, m[key].uuid, "crew_joined", _ago(days - 0.5, now), {"request_id": rid})
+            _event(conn, m[key].uuid, "crew.joined", _ago(days - 0.5, now), {"via": "teamup", "request_id": rid},
+                   code=p[who]["code"])  # fmt: skip
     # More crew on shipped and building ideas, so cards show faces and counts.
     for key, who, days in (("V1", "tanvi", 100), ("V1", "bhavesh", 98), ("A1", "hemant", 25), ("C1", "bhavesh", 9),
                            ("S1", "naveen", 160), ("J1", "pallavi", 40)):  # fmt: skip
@@ -1334,9 +1333,8 @@ def _builds_and_impact(
                 "INSERT INTO role_grants (user_id, role, scope_id, granted_by) VALUES (%s, 'build_team', %s, %s)",
                 (p[person]["id"], made.ref, p["kunal"]["id"]),
             )
-        _event(conn, made.uuid, "team_chosen", chosen, {"team": name})
-        if made.spec.shipped_days is not None:
-            _event(conn, made.uuid, "shipped", _ago(made.spec.shipped_days, now), {})
+        # Kunal chose the team; the board draws no "shipped" line, so none is written
+        _event(conn, made.uuid, "build.team_chosen", chosen, {}, user=p["kunal"]["id"])
     _message(conn, m["A1"].uuid, _ago(1.0, now), "The first pre-filled forms are ready to try. Please check them before Thursday.",
              user=p["gopal"]["id"])  # fmt: skip
 

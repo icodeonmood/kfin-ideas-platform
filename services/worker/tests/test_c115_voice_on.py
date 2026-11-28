@@ -98,7 +98,9 @@ def test_BLD_C115_voice_is_not_off_by_design_any_more() -> None:
     # DEC-105 and BLD-C077) until IT gives the mailbox and the Teams app, and sign-in by email code
     # (`auth.email_code`, BLD-E002 and DEC-105) until InfoSec approves it.
     assert "capture.voice" not in OFF_BY_DESIGN and "speech.hosted" not in OFF_BY_DESIGN
-    assert set(OFF_BY_DESIGN) == {"intake.email", "intake.teams", "files.blackout", "auth.email_code"}
+    assert set(OFF_BY_DESIGN) == {
+        "intake.email", "intake.teams", "files.blackout", "auth.email_code", "learning.outcomes"
+    }  # fmt: skip
 
 
 # ---- the key is the worker's alone ----------------------------------------------------------------------------
