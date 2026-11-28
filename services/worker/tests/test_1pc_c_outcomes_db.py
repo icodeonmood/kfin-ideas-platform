@@ -271,6 +271,8 @@ def test_bld_c250_a_write_that_fails_never_blocks_the_pin_or_the_confirm(
     db, owner = drafting
     monkeypatch.setattr(outcomes, "_version", lambda: "not a version!")
     idea = _told(db, owner, BUSINESS_SENTENCE)
+    # The run answered on the title, so the row would be written: the table refusing it is what is tested.
+    assert outcomes.writing(db) and outcomes.answered(db, str(_title(db, idea)["run_id"]), "title")
     store.set_part(db, owner, idea, "title", LAPTOP, {"value": "Factsheet checks for small AMCs"})
     assert _title(db, idea)["value"]["title"] == "Factsheet checks for small AMCs"
     out = _patch(db, owner, idea, {"confirm": True})
