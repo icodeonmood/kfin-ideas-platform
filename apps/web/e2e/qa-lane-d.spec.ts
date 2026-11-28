@@ -1,6 +1,9 @@
 /**
- * QA ONLY, lane D's branch d/qa-train37c-1, never merged: phone QA on main after train 37c (31c14de6: D039-D041,
- * G012). The contributor's phone pages at 320, 360, 390 and 640: no sideways scroll; the phone bar's title and Back
+ * QA ONLY, lane D's branch d/qa-train40-1, never merged: phone QA on main after trains 38 to 40 (c90c3bb9: A255,
+ * cbiz, C249 with C203's business questions on Tell it's question card, G011, F112). Two parts. (1) Tell it's S1
+ * question card (S-04B; the flag forced for a new synthetic person, rows removed after): questions 1 and 2 at each
+ * width, no sideways scroll, the card and its buttons inside the screen, no line cut, axe. (2) The train 37c checks
+ * again. The contributor's phone pages at 320, 360, 390 and 640: no sideways scroll; the phone bar's title and Back
  * label are not cut, the two keep the bar's 8px, and the title is centred whenever both sides fit (C-PHONE-TABS.nav,
  * BLD-D034, BLD-D041 at every phone width); a fixed dock is one column (C-PHONE-TABS.dock, BLD-D035); a
  * shown picker under 276px of content stacks Add link under the field (C-FILE.picker, BLD-D036); a multi-line Field
@@ -13,6 +16,7 @@ import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 import { expectNoSeriousAxeIssues, PERSONAS, settleMotion, shareQuickly, signIn } from "./helpers";
+import { personWithFlag, removeFlagRows } from "./variants-lib";
 
 const QA_SHOTS = join(__dirname, "..", "test-results", "qa-shots");
 
@@ -103,7 +107,7 @@ for (const [w, h] of [
   [390, 844],
   [640, 800],
 ] as const) {
-  test(`QA (lane D, never merged): train 37c on main, the contributor's phone pages at ${w} × ${h}`, async ({
+  test(`QA (lane D, never merged): train 40 on main, the contributor's phone pages at ${w} × ${h}`, async ({
     page,
   }, info) => {
     test.skip(info.project.name !== "phone-360", "phone QA");
@@ -125,7 +129,7 @@ for (const [w, h] of [
     ];
     const log: Record<string, unknown> = {};
     for (const path of paths) {
-      const at = `t37c-${w}${path.replace(ideaId, "idea").replace(/[^a-z0-9]+/gi, "_")}`;
+      const at = `t40-${w}${path.replace(ideaId, "idea").replace(/[^a-z0-9]+/gi, "_")}`;
       await page.goto(path);
       await expect(page.locator("main#main")).toBeVisible();
       await settleMotion(page);
@@ -174,6 +178,100 @@ for (const [w, h] of [
       }
       await expectNoSeriousAxeIssues(page);
     }
-    writeFileSync(join(QA_SHOTS, `t37c-${w}.json`), JSON.stringify(log, null, 2));
+    writeFileSync(join(QA_SHOTS, `t40-${w}.json`), JSON.stringify(log, null, 2));
+  });
+}
+
+const WORDS =
+  "Synthetic: the redemption SMS only gives a code, so investors call the branch to ask what it means.";
+
+// Question 1 and 2 as drawn, or C203's business-idea pair if the draft's sorting says a new business idea
+const CARDS = [
+  { n: 1, name: /^(How often does it happen, roughly\?|How many would use it, roughly\?)$/ },
+  { n: 2, name: /^(Who feels it most\?|Who is it for\?)$/ },
+] as const;
+
+for (const [w, h] of [
+  [320, 640],
+  [360, 740],
+  [390, 844],
+  [640, 800],
+] as const) {
+  test.describe(`QA (lane D, never merged): train 40 on main, Tell it's question card at ${w} × ${h}`, () => {
+    let userId: string | null = null;
+    test.afterEach(async () => {
+      await removeFlagRows(userId);
+      userId = null;
+    });
+
+    test(`QA (lane D, never merged): S-04B question card, S1 forced, at ${w} × ${h}`, async ({
+      page,
+    }, info) => {
+      test.skip(info.project.name !== "phone-360", "phone QA");
+      test.setTimeout(180_000);
+      mkdirSync(QA_SHOTS, { recursive: true });
+      userId = await personWithFlag(page, "s1", info);
+      await page.setViewportSize({ width: w, height: h });
+      await page.goto("/share?new=1");
+      const box = page.getByRole("textbox", { name: /^(Describe the problem|For example: )/ });
+      await box.fill(WORDS);
+      await box.press("Enter");
+      await page.waitForURL(/\/share\/[0-9a-f-]{36}$/);
+      const log: Record<string, unknown> = {};
+      for (const { n, name } of CARDS) {
+        const card = page.getByRole("group", { name });
+        await expect(card).toBeVisible();
+        await settleMotion(page);
+        const at = `t40-${w}_s1_q${n}`;
+        const m = await card.evaluate((c) => {
+          const shown = (e: Element) => {
+            const b = e.getBoundingClientRect();
+            return b.width > 0 && b.height > 0 && getComputedStyle(e).visibility !== "hidden";
+          };
+          const b = c.getBoundingClientRect();
+          const input = c.querySelector("input");
+          return {
+            question: c.querySelector("h2, h3")?.textContent ?? null,
+            sideways: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            card: { left: b.left, right: b.right, width: b.width, height: b.height },
+            input: input
+              ? { left: input.getBoundingClientRect().left, right: input.getBoundingClientRect().right }
+              : null,
+            buttons: [...c.querySelectorAll("button")].filter(shown).map((e) => {
+              const r = e.getBoundingClientRect();
+              return { text: (e.textContent ?? "").trim(), left: r.left, right: r.right, height: r.height };
+            }),
+            cut: [...c.querySelectorAll<HTMLElement>("h2, h3, p, button")]
+              .filter(shown)
+              .filter((e) => e.scrollWidth > e.clientWidth + 0.5)
+              .map((e) => (e.textContent ?? "").trim().slice(0, 48)),
+          };
+        });
+        log[at] = m;
+        await page.screenshot({ path: join(QA_SHOTS, `${at}.png`), fullPage: true });
+        expect.soft(m.sideways, `${at}: no sideways scroll`).toBeLessThanOrEqual(0);
+        expect.soft(m.card.left, `${at}: the card inside the screen`).toBeGreaterThanOrEqual(0);
+        expect.soft(m.card.right, `${at}: the card inside the screen`).toBeLessThanOrEqual(w);
+        if (m.input)
+          expect
+            .soft(m.input.right, `${at}: the answer box inside the card`)
+            .toBeLessThanOrEqual(m.card.right + 0.5);
+        for (const bt of m.buttons) {
+          expect
+            .soft(bt.left, `${at}: "${bt.text}" inside the card`)
+            .toBeGreaterThanOrEqual(m.card.left - 0.5);
+          expect
+            .soft(bt.right, `${at}: "${bt.text}" inside the card`)
+            .toBeLessThanOrEqual(m.card.right + 0.5);
+        }
+        expect.soft(m.cut, `${at}: no line cut`).toEqual([]);
+        await expectNoSeriousAxeIssues(page);
+        if (n === 1) {
+          await card.getByRole("textbox", { name }).fill("About 20 times a week at one branch");
+          await card.getByRole("button", { name: "Next question" }).click();
+        }
+      }
+      writeFileSync(join(QA_SHOTS, `t40-${w}_s1.json`), JSON.stringify(log, null, 2));
+    });
   });
 }
