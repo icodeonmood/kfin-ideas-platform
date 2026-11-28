@@ -36,7 +36,9 @@ KINDS = ("folio", "pan", "phone", "email", "account", "aadhaar", "name")  # E-EN
 PRIORITY = {"reviewer": 0, "known": 0, "patterns": 1, "gatekeeper": 2, "names": 3}
 _MASK_TOKEN = re.compile(r"(?:Folio|PAN|Phone|Email|Account|Aadhaar|Name) ••••\S{0,2}")
 CONTEXT_CHARS = 40
-_SENTENCE_END = re.compile(r"[.!?]+(?=\s|$)|\n")
+# The danda and double danda end a Hindi sentence (BLD-C247): without them a Hindi text is one sentence, and every
+# name in it would hide beside a detail in any other.
+_SENTENCE_END = re.compile(r"[.!?\u0964\u0965]+(?=\s|$)|\n")
 
 
 @dataclass(frozen=True)
@@ -288,10 +290,13 @@ def names_near(text: str, people: Iterable[tuple[int, int]], others: list[Found]
 
 
 def people_in(conn: Conn | None, text: str, d: Any = None) -> list[tuple[int, int]]:
-    """Spans of people's names that are not colleagues (Presidio + KFin recognisers, `pii.detect`)."""
-    if not any(ch.isupper() for ch in text):
+    """Spans of people's names that are not colleagues (Presidio + KFin recognisers, `pii.detect`). A text in
+    Devanagari has no capital letters and is read too (BLD-C247), as is a known given name and surname typed in
+    lower case (BLD-C251)."""
+    from pii.detect import Directory, detect, directory, may_hold_names
+
+    if not may_hold_names(text):
         return []
-    from pii.detect import Directory, detect, directory
 
     if d is None:
         d = directory(conn) if conn is not None else Directory().compile()

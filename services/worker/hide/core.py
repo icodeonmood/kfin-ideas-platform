@@ -426,9 +426,12 @@ def _hide(
     seal: bool = True,
     recheck: bool = False,
     gate: detect.Gate | None = None,
+    add_only: bool = False,
 ) -> tuple[Hidden, list[dict[str, Any]]]:
     """`hide_into`, also returning the stored rows. `recheck`: a queued re-check, which raises
-    `GatekeeperUnavailable` instead of going on without the gatekeeper."""
+    `GatekeeperUnavailable` instead of going on without the gatekeeper. `add_only`: no detail is removed; one not
+    found again stays as it was, shown or hidden, and is returned with the rest (the names backfill, BLD-C252: with
+    the gatekeeper left out, a detail it found and the person chose to show is not found again)."""
     if source not in DETAIL_SOURCES:
         raise ValueError("unknown hide source")
     idea_row(conn, idea_uuid)
@@ -472,6 +475,9 @@ def _hide(
             assert row is not None
             kept.append(dict(row))
         gone = [str(d["id"]) for rows in by_tag.values() for d in rows]
+        if add_only:
+            kept.extend(dict(d) for rows in by_tag.values() for d in rows)
+            gone = []
         if gone:
             conn.execute("DELETE FROM hidden_details WHERE id = ANY(%s::uuid[])", (gone,))
         masked, _ = layout(text, kept)
