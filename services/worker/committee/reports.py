@@ -1,4 +1,4 @@
-"""Fairness and calibration reports (§3.8, §4.12 step 6, §5.4, §5.9 step 5), for admins and the core committee.
+"""Fairness reports (§3.8, §4.12 step 6, §5.4, §5.9 step 5), for admins and the core committee.
 
 Names are removed and every count under 5 shows as "fewer than 5", so no person can be picked out of a small
 group (BLD-223). The groups by LOB and location are suppressed on distinct people, not contributions, so one person
@@ -9,8 +9,8 @@ directory (grade is "Coming soon": the HR export has no grade field yet).
 - **Fairness** for a period: time-limit breaches by stage, overrides (capacity and below-threshold shortlists),
   recusals, identity reveals, appeals and their outcomes by deciding body, score-consistency flags, and
   shortlisting and acceptance rates by contributor LOB and location.
-- **Calibration** for a period: the AI pre-score against the committee's medians per dimension (mean gap, share
-  within one level, "AI differs" flags), and how often the review desk changed each kind of proposal.
+- **Calibration** and the quarter list went with the reports route (DEC-106, BLD-E078); `learning/decisions.py`
+  still reads `fairness`.
 Measured outcomes against estimates (§5.4) need the measure-and-close stage and are "Coming soon".
 """
 
@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-import statistics
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -48,16 +47,6 @@ def _quarter_start(year: int, q: int) -> dt.datetime:
 def current_quarter(now: dt.datetime | None = None) -> str:
     local = (now or dt.datetime.now(dt.UTC)).astimezone(IST)
     return f"{local.year}-Q{(local.month - 1) // 3 + 1}"
-
-
-def recent_quarters(count: int = 8, now: dt.datetime | None = None) -> list[str]:
-    """The current quarter and the ones before it, newest first (the choices on the reports page)."""
-    year, q = (int(x) for x in current_quarter(now).replace("Q", "").split("-"))
-    out = []
-    for _ in range(count):
-        out.append(f"{year}-Q{q}")
-        year, q = (year, q - 1) if q > 1 else (year - 1, 4)
-    return out
 
 
 def period(quarter: str | None, now: dt.datetime | None = None) -> tuple[dt.datetime, dt.datetime]:
@@ -150,46 +139,3 @@ def fairness(conn: Conn, start: dt.datetime, end: dt.datetime) -> dict[str, Any]
         "by_location": by("location"),
         "coming_soon": ["by_grade", "manager_chain_conflicts"],
     }  # fmt: skip
-
-
-def calibration(conn: Conn, start: dt.datetime, end: dt.datetime) -> dict[str, Any]:
-    rows = conn.execute(
-        "SELECT r.id, r.medians, a.dimension, a.value FROM scoring_rounds r JOIN ai_prescores a ON a.round_id = r.id "
-        "WHERE r.revealed_at BETWEEN %s AND %s AND r.medians IS NOT NULL",
-        (start, end),
-    ).fetchall()
-    per: dict[str, list[float]] = {}
-    for r in rows:
-        med = (r["medians"] or {}).get(r["dimension"])
-        if med is not None:
-            per.setdefault(r["dimension"], []).append(float(r["value"]) - float(med))
-    ai = [
-        {"dimension": d, "rounds": _n(len(gaps)),
-         "mean_gap": round(statistics.fmean(gaps), 2) if len(gaps) >= SMALL else "too few to show",
-         "within_one_level": _rate(sum(1 for g in gaps if abs(g) <= 1), len(gaps)),
-         "ai_differs": _n(sum(1 for g in gaps if abs(g) >= 2))}
-        for d, gaps in sorted(per.items())
-    ]  # fmt: skip
-    corrections = conn.execute(
-        "SELECT c.field, count(*) AS changed FROM corrections c WHERE c.created_at BETWEEN %s AND %s GROUP BY 1 ORDER BY 1",
-        (start, end),
-    ).fetchall()
-    decided = conn.execute(
-        "SELECT count(*) AS n FROM review_items WHERE item_type = 'idea' AND decided_at BETWEEN %s AND %s",
-        (start, end),
-    ).fetchone()
-    total = int(decided["n"]) if decided else 0
-    return {
-        "period": {"from": start.isoformat(), "to": end.isoformat()},
-        "prescore_vs_committee": ai,
-        "desk_corrections": [
-            {
-                "field": r["field"],
-                "changed": _n(int(r["changed"])),
-                "share_of_reviews": _rate(int(r["changed"]), total),
-            }
-            for r in corrections
-        ],
-        "reviews": _n(total),
-        "coming_soon": ["measured_vs_estimated_value", "priority_class_agreement"],
-    }
