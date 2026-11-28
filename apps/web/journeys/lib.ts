@@ -33,11 +33,13 @@ export type JourneyId =
   | "J-TRACK"
   | "J-COMMITTEE"
   | "J-ONE"
-  | "J-BROWSE";
+  | "J-BROWSE"
+  | "J-BUSINESS";
 
 /** The order of the board and of the walkers' briefs. */
 export const JOURNEYS: readonly JourneyId[] = [
   "J-SHARE",
+  "J-BUSINESS",
   "J-RESUME",
   "J-RECOVER",
   "J-SIMILAR",
@@ -234,6 +236,7 @@ const MAILPIT = (process.env.MAILPIT_URL || "http://localhost:8025").replace(/\/
 export const CLUB_EMAIL = {
   pallavi: "pallavi.joshi.1pc@kfintech.example",
   faisal: "faisal.ansari.1pc@kfintech.example",
+  bhavesh: "bhavesh.patel.1pc@kfintech.example",
 } as const;
 
 /** One email as Mailpit holds it: the plain-text part with LF line ends, and the HTML part. */
@@ -255,43 +258,75 @@ type MailpitMessage = {
   HTML?: string;
 };
 
+/** The newest email to `address` with this subject whose plain text has `has`, if Mailpit holds one now. */
+async function findMail(
+  page: Page,
+  address: string,
+  subject: string,
+  has: string,
+): Promise<Mail | undefined> {
+  const query = encodeURIComponent(`to:${address}`);
+  const res = await page.request.get(`${MAILPIT}/api/v1/search?query=${query}`);
+  const list = (await res.json()) as { messages?: Array<{ ID?: string; Subject?: string }> };
+  for (const m of list.messages ?? []) {
+    if (m.Subject !== subject || !m.ID) continue;
+    const one = await page.request.get(`${MAILPIT}/api/v1/message/${m.ID}`);
+    const full = (await one.json()) as MailpitMessage;
+    const text = (full.Text ?? "").replace(/\r\n/g, "\n");
+    if (!text.includes(has)) continue;
+    return {
+      fromName: full.From?.Name ?? "",
+      fromAddress: full.From?.Address ?? "",
+      to: (full.To ?? []).map((t) => t.Address ?? ""),
+      subject: full.Subject ?? "",
+      text,
+      html: full.HTML ?? "",
+    };
+  }
+  return undefined;
+}
+
 /**
  * The newest email to `address` with this subject whose plain text has `has` (an idea's title), polled until
  * it comes. The worker sends queued email every 20 s and reads `comms.email` through a 10 s cache (BLD-A243),
- * so 60 s is ample for an `immediate` item, which goes at any hour; a routine one waits for working hours and
- * is not for a journey.
+ * so 60 s is ample for an email that goes at once, at any hour: a decision, a reversal, a merge notice, an
+ * answer reminder or anything posted as Needs you (DEC-138, BLD-A255). Every other Inbox item's email waits
+ * for the day's digest (10:30 IST on a working day), so it is not for a journey.
  */
 export async function mailTo(page: Page, address: string, subject: string, has: string): Promise<Mail> {
   const seen: { mail?: Mail } = {};
   await expect
     .poll(
       async () => {
-        const query = encodeURIComponent(`to:${address}`);
-        const res = await page.request.get(`${MAILPIT}/api/v1/search?query=${query}`);
-        const list = (await res.json()) as { messages?: Array<{ ID?: string; Subject?: string }> };
-        for (const m of list.messages ?? []) {
-          if (m.Subject !== subject || !m.ID) continue;
-          const one = await page.request.get(`${MAILPIT}/api/v1/message/${m.ID}`);
-          const full = (await one.json()) as MailpitMessage;
-          const text = (full.Text ?? "").replace(/\r\n/g, "\n");
-          if (!text.includes(has)) continue;
-          seen.mail = {
-            fromName: full.From?.Name ?? "",
-            fromAddress: full.From?.Address ?? "",
-            to: (full.To ?? []).map((t) => t.Address ?? ""),
-            subject: full.Subject ?? "",
-            text,
-            html: full.HTML ?? "",
-          };
-          return true;
-        }
-        return false;
+        seen.mail = await findMail(page, address, subject, has);
+        return seen.mail !== undefined;
       },
       { message: `an email to ${address}: "${subject}"`, timeout: 60_000, intervals: [2_000] },
     )
     .toBe(true);
   if (!seen.mail) throw new Error(`the email to ${address} was not kept`);
   return seen.mail;
+}
+
+/**
+ * No email to `address` with this subject and `has` for `ms`: Mailpit is read every 2 s, and one that comes
+ * fails at once. The worker sends what is due every 20 s (service/__main__.py `ticker`), so 30 s covers at
+ * least one send.
+ */
+export async function expectNoMail(
+  page: Page,
+  address: string,
+  subject: string,
+  has: string,
+  ms: number,
+): Promise<void> {
+  const until = Date.now() + ms;
+  for (;;) {
+    const mail = await findMail(page, address, subject, has);
+    expect(mail?.subject, `no email to ${address}: "${subject}"`).toBeUndefined();
+    if (Date.now() >= until) return;
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
 }
 
 /** The sender on every 1% Club email in dev and CI (comms/send.py; BLD-A243 keeps it as EMAIL_FROM's
@@ -338,6 +373,18 @@ export async function decisionWindow(idea: { uuid: string }): Promise<{ opensAt:
     const row = rows[0];
     if (!row) throw new Error("the idea has no decision window: load the seed with make demo DEMO_SET=1pc");
     return { opensAt: new Date(row.opens_at), closesAt: new Date(row.closes_at) };
+  } finally {
+    await client.end();
+  }
+}
+
+/** The kind a sent idea is kept as (read only; E-ENUMS.kind): S-06 shows the area, not the kind. */
+export async function ideaKind(ref: string): Promise<string | null> {
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+  try {
+    const { rows } = await client.query("SELECT kind FROM ideas WHERE idea_id = $1", [ref]);
+    return rows[0]?.kind ?? null;
   } finally {
     await client.end();
   }

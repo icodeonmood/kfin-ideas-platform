@@ -26,6 +26,14 @@ PACK_CAST = {
 }  # fmt: skip
 
 
+# The similar ideas the check found for an idea: those found while drafting or at the check, not later
+# (L-SIMILAR.rules/5), read from `similar_links` itself, as the screens read it. The seed used to copy this count
+# onto a `checked_matched` line; it writes no such line now (BLD-F051, BLD-F112).
+FOUND_AT_CHECK = (
+    "SELECT count(*) FROM similar_links WHERE idea_uuid = %s AND found_while IN ('drafting', 'checking')"
+)
+
+
 def _one(conn: Any, sql: str, *args: Any) -> Any:
     row = conn.execute(sql, args).fetchone()
     return None if row is None else next(iter(row.values()))
@@ -200,8 +208,8 @@ def test_l_merge_desk_l_review_open_j_review_m3_two_opened_desk_ideas_list_each_
                           ("merges", "lead_idea_uuid"), ("merges", "merged_idea_uuid")):  # fmt: skip
         sql = f"SELECT count(*) FROM {table} WHERE {column} = ANY(%s::uuid[])"  # noqa: S608 - fixed names
         assert _one(conn, sql, pair) == 0, table
-    matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
-    assert _one(conn, matched, m[later].uuid) == "1"
+    matched = FOUND_AT_CHECK
+    assert _one(conn, matched, m[later].uuid) == 1
 
 
 def test_l_merge_request_4_6_7_j_similar_6b_6c_drafts_wait_on_rekha_with_inbox_items(
@@ -452,7 +460,7 @@ def test_l_review_open_1_j_review_1_a1_a3_unopened_unassigned_with_no_question_s
     assert _one(conn, "SELECT count(*) FROM question_sets WHERE idea_uuid = %s", m[key].uuid) == 0
     said = (
         "SELECT count(*) FROM conversation_entries WHERE idea_uuid = %s "
-        "AND (question_set_id IS NOT NULL OR event = 'opened_by_desk')"
+        "AND (question_set_id IS NOT NULL OR event = 'desk.opened')"
     )
     assert _one(conn, said, m[key].uuid) == 0
     asked = (
@@ -558,8 +566,8 @@ def test_gap_seed_j_similar_1_l_similar_rules_4_each_draft_carries_the_matches_c
         assert [x["idea"]["id"] for x in stored] == [made["R1"].ref], key
     assert _one(db, part_of, made["I2"].uuid) == []
 
-    matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
-    for key, found in (("T5", "1"), ("T6", "1"), ("T11", "1"), ("J2", "1"), ("F2", "0"), ("V1", "0")):
+    matched = FOUND_AT_CHECK
+    for key, found in (("T5", 1), ("T6", 1), ("T11", 1), ("J2", 1), ("F2", 0), ("V1", 0)):
         assert _one(db, matched, made[key].uuid) == found, key
 
 
@@ -585,7 +593,7 @@ def test_gap_seed_l_similar_rules_4_with_matching_show_off_the_seed_refuses_and_
             club_seed.load(conn)
         assert club_seed.seed_user_ids(conn) == []
         assert _one(conn, "SELECT count(*) FROM idea_parts") == 0
-        assert _one(conn, "SELECT count(*) FROM conversation_entries WHERE event = 'checked_matched'") == 0
+        assert _one(conn, "SELECT count(*) FROM similar_links") == 0
 
         switch("on")
         m = club_seed.load(conn)
@@ -596,8 +604,8 @@ def test_gap_seed_l_similar_rules_4_with_matching_show_off_the_seed_refuses_and_
         assert "matching.show" in capsys.readouterr().err
         part_of = "SELECT value FROM idea_parts WHERE idea_uuid = %s AND key = 'similar'"
         assert [x["idea"]["id"] for x in _one(conn, part_of, m["T2"].uuid)] == [m["R1"].ref]  # the same rows
-        matched = "SELECT payload->>'similar' FROM conversation_entries WHERE idea_uuid = %s AND event = 'checked_matched'"
-        assert _one(conn, matched, m["T5"].uuid) == "1"
+        matched = FOUND_AT_CHECK
+        assert _one(conn, matched, m["T5"].uuid) == 1
     finally:
         switch("on")
 

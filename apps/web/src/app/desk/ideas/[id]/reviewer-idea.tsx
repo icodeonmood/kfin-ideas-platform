@@ -37,7 +37,7 @@ import type {
   WorthTile,
 } from "@/lib/contracts";
 import { countdown, countdownLabel, nextTickMs } from "@/lib/desk/countdown";
-import { CUSTOMER_DETAIL, fileHref, openFileName } from "@/lib/desk/files";
+import { CHECKED_FOR_DETAILS, CUSTOMER_DETAIL, fileHref, openFileName } from "@/lib/desk/files";
 import { hideableName, partSource } from "@/lib/desk/hide";
 import {
   bottomBar,
@@ -948,10 +948,10 @@ function matchLine(s: ReviewerSimilar): string {
   return `${s.strength === "close" ? "Close match" : "Related"}: ${s.reason}`;
 }
 
-/** A file's own row: its badge, name, line, the customer-detail label (DEC-107) and "Open" where a route can open
- * it (`fileHref`, BLD-B243). Seam: lane C's "Hide this" (a blacked-out copy, C-HIDDEN) joins "Open" here once it is
+/** A file's own row: its badge, name, line, "Checked for personal details" once both checks passed (DEC-144 (1),
+ * BLD-B284), the customer-detail label (DEC-107) and "Open" where a route can open it (`fileHref`, BLD-B243). Seam: lane C's "Hide this" (a blacked-out copy, C-HIDDEN) joins "Open" here once it is
  * served for the desk. */
-function FileArtefact({ a }: { a: ReviewerArtefact }) {
+export function FileArtefact({ a }: { a: ReviewerArtefact }) {
   const ext = (a.title.split(".").pop() ?? "").toUpperCase().slice(0, 4);
   const href = fileHref(a);
   return (
@@ -962,6 +962,11 @@ function FileArtefact({ a }: { a: ReviewerArtefact }) {
       <span className="ri-art-b">
         <strong>{a.title}</strong>
         <span className="meta">{a.line}</span>
+        {a.checked ? (
+          <span>
+            <Pill variant="ok">{CHECKED_FOR_DETAILS}</Pill>
+          </span>
+        ) : null}
         {a.customer_detail ? (
           <span>
             <Pill variant="warn">{CUSTOMER_DETAIL}</Pill>
@@ -1100,6 +1105,7 @@ export function AskedQuestion({ q, ideaId }: { q: ReviewerQuestion; ideaId: stri
                 <li key={f.id} className="meta">
                   <span>{f.name}</span>
                   {f.hidden ? <span>{f.hidden}</span> : null}
+                  {f.checked ? <Pill variant="ok">{CHECKED_FOR_DETAILS}</Pill> : null}
                   {f.customer_detail ? <Pill variant="warn">{CUSTOMER_DETAIL}</Pill> : null}
                 </li>
               ))}

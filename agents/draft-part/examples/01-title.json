@@ -17,6 +17,8 @@
   "part": "title",
   "title": "Investors call to ask why a redemption was rejected",
   "summary": "The rejection SMS only gives a code, such as R07. Investors don't know what it means, so they call the branch. One branch takes about 40 of these calls a day, at 5 to 10 minutes each.",
+  "kind": "problem",
+  "kind_evidence": "Nobody knows what R07 means",
   "often": null,
   "who": [],
   "worth": [],

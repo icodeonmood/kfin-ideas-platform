@@ -125,3 +125,14 @@ The pack keeps three choices open for testing (`P-DECISIONS.experiments`): S1, a
 | Sharing by email and Teams | No employee wording of its own; both stay switched off at launch. | Before IT switches them on, comms and HR need the three reply messages in section 3 (BLD-C037, BLD-C077) |
 | "Hide it for me" on files | No employee wording of its own; it stays switched off at launch and is not offered on any file. | A file with a customer detail found goes to the review desk as it is; the desk keeps it as a genuine example or asks the sharer to remove it (DEC-107, BLD-C064) |
 | Edit after sharing, files added before Save (for the review desk) | No employee wording of its own. | A file added on Edit after sharing is on the idea at once, so the review desk may see a new, checked file before the person saves. Cancel takes it away again; closing the browser tab does not (BLD-C161) |
+
+## 6. To confirm later: a new business idea (BLD-C201 to BLD-C206, 26 Nov 2026)
+
+Built with the recommended wording under DEC-123 (2), extended to Sunday 29 Nov. HR can change any of these later without a code review of the logic.
+
+| Where | Wording | Why |
+|---|---|---|
+| Tell it, after the first telling, the three short questions (S1) when the sorting shows a new business idea | How many would use it, roughly? (example: For example, about 300 distributors) / Who is it for? / What could it earn, roughly? (example: For example, 10 to 20 lakh a year) | The drawn three ask how often a problem happens and its size; these follow the same pattern for an offer (BLD-C203) |
+| Tell it, the next prompts under the draft for a new business idea | Say who it is for / Say how many would use it / Add who offers it today | In the drawn prompts' pattern ("Say how often it happens", "Add what you already tried") (BLD-C203) |
+| Check it and Edit after sharing, the reason beside "What kind it is" when the assistant read a new business idea | Suggested because you said “KFintech could offer small AMCs”. (the person's own words, quoted, with any customer detail still hidden) | The drawn "Suggested because you said “…”." pattern (BLD-C201) |
+| Check it, the same reason when the person picked New business by hand, with the assistant on or off (in Capture first, the state r7 launches in, picking New business by hand is the only way to it) | Suggested because you described something new KFintech could offer. | Already listed in §2 (BLD-C082); now also shown for the area picked by hand (BLD-C204) |

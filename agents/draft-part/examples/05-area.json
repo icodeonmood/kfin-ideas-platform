@@ -61,6 +61,8 @@
   "part": "area",
   "title": null,
   "summary": null,
+  "kind": null,
+  "kind_evidence": null,
   "often": null,
   "who": [],
   "worth": [],

@@ -340,8 +340,8 @@
   }
 }
 
-/* the picker, between the words and the tool row (Home.md, `attachments=Picker open`) */
-/* The picker: lane D's shared FilePicker (BLD-D031, `.fpick` in app/components.css); only its place here */
+/* The picker, between the words and the tool row (Home.md, `attachments=Picker open`): lane D's shared FilePicker
+   (BLD-D031, `.fpick` in app/components.css); only its place here */
 .cz .cpick {
   margin: 4px 12px 0;
 }

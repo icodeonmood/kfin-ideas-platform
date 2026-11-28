@@ -74,14 +74,15 @@ def world(db: Any) -> dict[str, Any]:
         "VALUES (%s, 'reversed', %s, %s, %s) RETURNING id",
         (decision, fx.at(15, 11), fx.at(25, 11), fx.at(30, 11)),
     ).fetchone()["id"]
-    reversal = db.execute(
+    db.execute(
         "INSERT INTO decision_reversals (window_id, to_choice, note_encrypted, by_user_id, at) "
-        "VALUES (%s, 'pick', '\\x00', %s, %s) RETURNING id",
+        "VALUES (%s, 'pick', '\\x00', %s, %s)",
         (window, sunita["id"], fx.at(16, 15, 30)),
-    ).fetchone()["id"]
-    db.execute(  # lane E's seed: no author, the reversal's id
-        "INSERT INTO conversation_entries (idea_uuid, type, event, payload, at) VALUES (%s, 'event', %s, %s, %s)",
-        (idea["id"], "decision_reversed", Jsonb({"reversal_id": str(reversal)}), fx.at(16, 15, 30)),
+    )
+    db.execute(  # lane E's seed writes the reversal as lane B posts it, by the member (BLD-F112)
+        "INSERT INTO conversation_entries (idea_uuid, type, event, author_user_id, payload, at) "
+        "VALUES (%s, 'event', 'committee.reversed', %s, %s, %s)",
+        (idea["id"], sunita["id"], Jsonb({"window_id": str(window), "to": "pick"}), fx.at(16, 15, 30)),
     )
     merge = db.execute(
         "INSERT INTO merges (lead_idea_uuid, merged_idea_uuid, via, by_user_id, at) "
@@ -147,7 +148,7 @@ def test_dec_113_l_convo_a_reader_outside_the_desk_and_the_committee_never_gets_
 def test_dec_113_l_convo_3_j_committee_3b_the_committees_event_lines_read_the_ones_committee(
     db: Any, world: dict[str, Any], who: str
 ) -> None:
-    """committee.reversed, lane E's seeded decision_reversed and committee.merge_reversed (J-COMMITTEE/3b's hand-off,
+    """committee.reversed, lane E's seeded committee.reversed (BLD-F112) and committee.merge_reversed (J-COMMITTEE/3b's hand-off,
     J-TRACK/8)."""
     view = _read(db, world, who)
     lines = [t for t in _texts(view) if t.startswith("The Ones Committee")]

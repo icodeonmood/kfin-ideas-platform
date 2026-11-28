@@ -124,7 +124,7 @@ sarvam-live: ## Live check of the Sarvam client, your own key loaded in this ter
 	cd services/worker && SPEECH_MODE=sarvam $(SARVAM_LIVE_PYTHON) -m speech.sarvam_live --only "$(ONLY)"
 
 # The model key is read from this terminal's environment by the script itself: it never appears on a command line here.
-eval-live: ## Real-model golden sets (gatekeeper, judge) on a throwaway database, your own key loaded in this terminal; never in CI (BLD-C229). ROUTE=bedrock
+eval-live: ## Real-model golden sets (gatekeeper, judge, draft-part) on a throwaway database, your own key loaded in this terminal; never in CI (BLD-C229). ROUTE=bedrock
 	EVAL_LIVE_PYTHON="$(EVAL_LIVE_PYTHON)" scripts/eval/live.sh --route "$(ROUTE)"
 
 killswitch: ## Flip a kill switch: make killswitch NAME=submissions STATE=off REASON="…" ACTOR=REV-0001

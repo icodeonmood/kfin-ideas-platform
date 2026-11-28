@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { SAVES_ONCE_BACK } from "@/lib/assistant-off";
 import { BANNERS, BECAUSE } from "@/lib/killswitch-routes";
 
 /** Plain words for every refusal the delivery, lenses and learning screens can meet. Never echoed text. */
@@ -113,6 +114,8 @@ export const ERRORS: Record<string, string> = {
     "Something in these words can't go into the company repo. Please reword it and try again.",
   text_too_long: "That's too long. Please shorten it.",
   checks_unavailable: "We can't check text just now. Please try again in a few minutes.",
+  // DEC-143 (f), BLD-B282: the assistant is off. The Ember note and delivery's notes keep the words as typed
+  assistant_off: SAVES_ONCE_BACK,
   // A paused route answers with its own notice (`banner`, from BANNERS); this is only the fallback.
   paused: "This is paused for now. Please try again later.",
   try_again: "Someone else changed this at the same moment. Please try again.",

@@ -4,10 +4,13 @@
  * under the pointer. `yieldToInput` ends a re-sort glide at once on a key or the wheel, holds it where it is on a press
  * and ends it once the click has reached the row's link. jsdom has no `Element.animate`, so these use small stand-ins
  * with a play state, `pause()`, `finish()` and a `finished` promise.
+ *
+ * BLD-D039: finish() throws on an animation that never ends, so every place that ends a glide goes through
+ * `finishGlide`, which leaves a loop (a skeleton's shimmer, a spinner) running.
  */
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 
-import { flip, HOLD_MAX_MS, PRESS_GRACE_MS, yieldToInput } from "@/lib/motion/flip";
+import { finishGlide, flip, HOLD_MAX_MS, PRESS_GRACE_MS, yieldToInput } from "@/lib/motion/flip";
 
 type Glide = {
   playState: AnimationPlayState;
@@ -271,6 +274,75 @@ describe("BLD-D038 flip (lib/motion/flip)", () => {
           expect.anything(),
         ]);
       }
+    } finally {
+      list.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+/** A stand-in for an animation with an end (`endTime`) or a loop (Infinity), whose finish() throws as the real one
+ * does: "InvalidStateError" on a loop. Not in `made`, so the shared clean-up never finishes it. */
+function timed(endTime: number) {
+  const a = {
+    playState: "running" as AnimationPlayState,
+    effect: { getComputedTiming: () => ({ endTime }) },
+    finish: vi.fn(() => {
+      if (!Number.isFinite(endTime)) throw new DOMException("The animation never ends.", "InvalidStateError");
+      a.playState = "finished";
+    }),
+  };
+  return a;
+}
+
+describe("BLD-D039 finishGlide (lib/motion/flip)", () => {
+  it("BLD-D039, F-MOTION.rules/5: an animation with an end is finished", () => {
+    const a = timed(560);
+    finishGlide(a as unknown as Animation);
+    expect(a.finish).toHaveBeenCalledTimes(1);
+    expect(a.playState).toBe("finished");
+  });
+
+  it("BLD-D039, F-MOTION.rules/5: a loop is left running and nothing throws", () => {
+    const a = timed(Infinity);
+    expect(() => finishGlide(a as unknown as Animation)).not.toThrow();
+    expect(a.finish).not.toHaveBeenCalled();
+    expect(a.playState).toBe("running");
+  });
+
+  it("BLD-D039, F-MOTION.rules/5: an animation with no effect is finished as before (its end is 0, so finish() cannot throw on it; the D038 stand-ins have none)", () => {
+    const a = glide();
+    finishGlide(a as unknown as Animation);
+    expect(a.finish).toHaveBeenCalledTimes(1);
+    expect(a.playState).toBe("finished");
+  });
+
+  it("BLD-D039, F-MOTION.rules/5: a loop on a row does not make flip() throw and keeps running, while a glide with an end on the same row is finished before it is measured", async () => {
+    vi.stubGlobal("matchMedia", (q: string) => ({ matches: false, media: q }) as MediaQueryList);
+    const list = document.createElement("ul");
+    const row = document.createElement("li");
+    row.dataset.flip = "a";
+    const loop = timed(Infinity);
+    const old = timed(560);
+    const rect = vi.fn(() => ({ left: 0, top: 0, width: 200, height: 40 }) as DOMRect);
+    Object.assign(row, {
+      getAnimations: () => [loop, old] as unknown as Animation[],
+      getBoundingClientRect: rect,
+      animate: vi.fn(),
+    });
+    list.append(row);
+    document.body.append(list);
+    try {
+      await expect(
+        flip(
+          () => list.querySelectorAll<HTMLElement>("[data-flip]"),
+          () => undefined,
+        ),
+      ).resolves.toBeUndefined();
+      expect(loop.finish).not.toHaveBeenCalled();
+      expect(loop.playState).toBe("running");
+      expect(old.finish).toHaveBeenCalledTimes(1);
+      expect(old.finish.mock.invocationCallOrder[0]).toBeLessThan(rect.mock.invocationCallOrder[0] ?? 0);
     } finally {
       list.remove();
       vi.unstubAllGlobals();

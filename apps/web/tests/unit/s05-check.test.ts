@@ -2707,3 +2707,155 @@ describe("V-ACC S-05 DEC-118: a draft that reaches Check it with no title, summa
     expect(button("Change the title")?.getAttribute("aria-describedby")).toBeTruthy();
   });
 });
+
+// --- A new business idea picked by hand (lane C, BLD-C204, L-SORT) -------------------------------------------------
+
+const BUSINESS_LINE = "Suggested because you described something new KFintech could offer.";
+const PROBLEM_LINE = "Suggested because you described something that goes wrong today.";
+
+/** The usual config with New business among the areas, as `draft/config.py` lists it. */
+const CONTROLS = CONFIG.sorting.controls!;
+const BIZ_CONFIG: ConfigResponse = {
+  ...CONFIG,
+  sorting: {
+    ...CONFIG.sorting,
+    areas: [...CONFIG.sorting.areas, "New business"],
+    controls: {
+      ...CONTROLS,
+      area: {
+        ...CONTROLS.area,
+        shown: [...CONTROLS.area.shown, "New business"],
+        all: [...CONTROLS.area.all, "New business"],
+      },
+    },
+  },
+};
+
+/** The worker's answer to an area picked by hand (BLD-C204, `submit/sorting.py`): New business suggests a new
+ * business idea with its line; any other area takes the kind back to a problem. The kind stays a suggestion. */
+const areaByHand: Route = (m, u, b) => {
+  const area = (b as { area?: string } | undefined)?.area;
+  if (m !== "PATCH" || !u.endsWith("/sorting") || !area) return undefined;
+  const business = area === "New business";
+  return {
+    body: {
+      ...sorting(),
+      area: { value: area, source: "changed", why: null, why_line: null },
+      kind: {
+        value: business ? "business_idea" : "problem",
+        source: "suggested",
+        why: null,
+        why_line: business ? BUSINESS_LINE : PROBLEM_LINE,
+      },
+    } satisfies SortingResponse,
+  };
+};
+
+describe("S-05 screen: New business picked by hand (BLD-C204, L-SORT, DEC-118)", () => {
+  const radio = (label: string) =>
+    Array.from(document.querySelectorAll('[role="radio"]')).find((r) => text(r) === label);
+  const lastSortingPatch = () =>
+    calls.filter((c) => c.method === "PATCH" && c.url.endsWith("/sorting")).at(-1)?.body;
+
+  for (const where of ["desktop", "phone"] as const) {
+    it(`on a ${where}: New business picked by hand shows a new business idea with its line; another area takes it back`, async () => {
+      if (where === "phone") asPhone();
+      await mount([areaByHand, ...base()], BIZ_CONFIG);
+      if (where === "desktop") await railTo("Sorting");
+      expect(radio("A problem to fix")?.getAttribute("aria-checked")).toBe("true");
+      expect(document.body.textContent).toContain(PROBLEM_LINE);
+
+      await click(radio("New business"));
+      expect(lastSortingPatch()).toEqual({ area: "New business" }); // only the area: the kind is never sent
+      expect(radio("New business")?.getAttribute("aria-checked")).toBe("true");
+      expect(radio("A new business idea")?.getAttribute("aria-checked")).toBe("true");
+      expect(radio("A problem to fix")?.getAttribute("aria-checked")).toBe("false");
+      expect(document.body.textContent).toContain(BUSINESS_LINE);
+      expect(document.body.textContent).toContain(
+        "These are suggestions from your words. Not confirmed yet.",
+      );
+
+      await click(radio("Operations"));
+      expect(lastSortingPatch()).toEqual({ area: "Operations" });
+      expect(radio("A problem to fix")?.getAttribute("aria-checked")).toBe("true");
+      expect(document.body.textContent).toContain(PROBLEM_LINE);
+      expect(document.body.textContent).not.toContain(BUSINESS_LINE);
+    });
+  }
+});
+
+describe("DEC-144 (1) L-SUBMIT.pre/3 BLD-B283: a file still uploading holds Submit; one still being checked does not", () => {
+  const SENT: Route = (m, u) =>
+    m === "POST" && u.endsWith("/submit")
+      ? {
+          status: 201,
+          body: {
+            idea_id: "IDEA-2026-001482",
+            ref: "IDEA-2026-001482",
+            next: { to: "/ideas/IDEA-2026-001482?from=share", replace: true, state: "just_shared" },
+          },
+        }
+      : undefined;
+  const file = (state: FileItem["state"]): FileItem => ({
+    id: "f8",
+    kind: "file",
+    name: "branch-returns.pdf",
+    type: "application/pdf",
+    size: 2048,
+    state,
+    added_by: KAVYA,
+    added_at: "",
+  });
+  const sends = () => calls.filter((c) => c.method === "POST" && c.url.endsWith("/submit"));
+
+  it("a file still uploading in this browser: no send, its row says so and Proof opens; once it lands, Submit sends", async () => {
+    let land: (v: unknown) => void = () => undefined;
+    const landed = new Promise<void>((r) => (land = () => r()));
+    await mount([
+      (m, u) =>
+        m === "POST" && u === "/api/files"
+          ? { status: 201, body: file("checking"), hold: landed }
+          : undefined,
+      (m, u) => (m === "GET" && u === "/api/files/f8" ? { body: file("checking") } : undefined),
+      SENT,
+      ...base({ sorting: sorting(true) }),
+    ]);
+    await railTo("Proof");
+    await click(button("Attach files"));
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const picked = new File([new Uint8Array(2048)], "branch-returns.pdf", { type: "application/pdf" });
+    Object.defineProperty(input, "files", { value: [picked], configurable: true });
+    await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(sends()).toHaveLength(0);
+    expect(h1()).toBe("Anything that shows it?");
+    expect(text(document.querySelector(".frow"))).toContain(CHECK_COPY.proof.stillUploading);
+    await act(async () => land(null));
+    await settle();
+    // Landed, it is being checked: the hold's words go, and Submit sends with it still checking (DEC-127 (3)).
+    expect(text(document.querySelector(".frow"))).not.toContain(CHECK_COPY.proof.stillUploading);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(sends()).toHaveLength(1);
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001482?from=share");
+  });
+
+  it("a file still being checked goes with the idea: Submit sends at once", async () => {
+    await mount([
+      (m, u) => (m === "GET" && u === "/api/files/f8" ? { body: file("checking") } : undefined),
+      SENT,
+      ...base({ draft: draft({ files: [file("checking")] }), sorting: sorting(true) }),
+    ]);
+    await railTo("Send it");
+    await click(button("Submit"));
+    expect(sends()).toHaveLength(1);
+    expect(replace).toHaveBeenCalledWith("/ideas/IDEA-2026-001482?from=share");
+  });
+
+  it("the words are the server's own (submit/ready.py STILL_UPLOADING)", () => {
+    expect(CHECK_COPY.proof.stillUploading).toBe(
+      "This file is still uploading. Wait a moment, or remove it.",
+    );
+  });
+});

@@ -27,6 +27,8 @@ const ERRORS: Record<string, string> = {
   text_needs_review: "Please reword this: it reads as off-topic or unkind, so we can't save it as it is.",
   names_not_allowed: "Leave out the names of colleagues and clients: everyone will see this.",
   checks_unavailable: "We can't check text just now. Please try again in a few minutes.",
+  // BLD-B282: the assistant off reads as before here; DEC-143 (f) names only the Showcase brief, Ember and delivery
+  assistant_off: "We can't check text just now. Please try again in a few minutes.",
 };
 
 async function send(url: string, body: Record<string, unknown>) {
