@@ -221,3 +221,76 @@ def test_dec141_dec125_bld_c207_capture_first_keeps_nothing_and_asks_no_model(
     with pytest.raises(store.DraftError):
         store.set_part(db, owner, idea, "title", LAPTOP, {"pinned": False})  # 409 assistant_off, as before
     assert db.execute("SELECT count(*) AS n FROM suggestion_outcomes").fetchone()["n"] == 0
+
+
+# ---- BLD-C250: the product lead's note of 26 Nov, item 4, and the C207-C209 review -----------------------------------
+
+
+def test_bld_c250_a_pin_keeps_nothing_while_the_assistant_is_off(drafting: Any) -> None:
+    """`learning.outcomes` on is not enough: with `ai.all` off, or `agent.draft-part` alone off (Capture first,
+    DEC-143 (g)), a pin keeps nothing, even of a title a run filled while the assistant was on. The pin still goes."""
+    db, owner = drafting
+    idea = _told(db, owner, BUSINESS_SENTENCE)
+    assert _title(db, idea)["run_id"] and outcomes.writing(db)
+    for name in ("ai.all", "agent.draft-part"):
+        _switch(db, name, "off")
+        assert not outcomes.writing(db)
+        store.set_part(
+            db, owner, idea, "summary", LAPTOP, {"value": f"Checks before each factsheet ({name})"}
+        )
+        assert _title(db, idea)["value"]["summary"] == f"Checks before each factsheet ({name})"
+        _switch(db, name, "on")
+    assert _rows(db, idea) == []
+
+
+def test_bld_c250_only_a_run_where_the_agent_answered_on_the_part_counts(drafting: Any) -> None:
+    """Item 4: a row only when the suggested value came from an agent answer on that part. A run begun with the
+    assistant off takes the parts over and leaves them showing what they had, with 0 in its `part_ms`: a pin or a
+    sorting change after it keeps nothing, while the same on the run that answered keeps its row."""
+    db, owner = drafting
+    idea = _told(db, owner, BUSINESS_SENTENCE)
+    first = str(_title(db, idea)["run_id"])
+    assert outcomes.answered(db, first, "title")
+    _switch(db, "ai.all", "off")
+    later = runs.begin(db, idea, trigger="retry", only=["title", "area"])  # no similar ideas: it ends at once
+    _switch(db, "ai.all", "on")
+    assert later is not None and str(_title(db, idea)["run_id"]) == later
+    assert not outcomes.answered(db, later, "title") and not outcomes.answered(db, later, "area")
+    shown = _title(db, idea)["value"]["title"]
+    assert shown  # the title still shows the first run's answer, now on a run that did not answer
+    store.set_part(db, owner, idea, "title", LAPTOP, {"value": "Factsheet checks for small AMCs"})
+    _patch(db, owner, idea, {"area": "Operations"})
+    assert _rows(db, idea) == []
+
+
+def test_bld_c250_a_write_that_fails_never_blocks_the_pin_or_the_confirm(
+    drafting: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The row is written in its own savepoint: one the table refuses (here an agent version its check does not
+    allow) is skipped, and the person's pin and confirm go through as if nothing were kept."""
+    db, owner = drafting
+    monkeypatch.setattr(outcomes, "_version", lambda: "not a version!")
+    idea = _told(db, owner, BUSINESS_SENTENCE)
+    store.set_part(db, owner, idea, "title", LAPTOP, {"value": "Factsheet checks for small AMCs"})
+    assert _title(db, idea)["value"]["title"] == "Factsheet checks for small AMCs"
+    out = _patch(db, owner, idea, {"confirm": True})
+    assert all(out[f]["source"] == "confirmed" for f in ("area", "kind"))
+    assert _rows(db, idea) == []
+
+
+def test_bld_c250_an_unknown_field_outcome_or_side_is_a_value_error() -> None:
+    """A caller's mistake, raised before anything is read (it was an assert, gone under `python -O`)."""
+    nothing: Any = None
+    for bad in ({"field": "similar"}, {"outcome": "kept"}, {"side": "committee"}):
+        args: dict[str, Any] = {"field": "title", "outcome": "pinned", "side": "sharer", **bad}
+        with pytest.raises(ValueError):
+            outcomes.record(
+                nothing,
+                str(uuid.uuid4()),
+                args["field"],
+                suggested="A title",
+                final=None,
+                outcome=args["outcome"],
+                run_id=None,
+                side=args["side"],
+            )
