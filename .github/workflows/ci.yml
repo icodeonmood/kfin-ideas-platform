@@ -1,110 +1,268 @@
-# CI for kfin-ideas-platform. The Makefile is the contract; this file only calls it, so the same gates can
-# move to KFin's own CI (GitLab, Azure DevOps) unchanged when IT provides the internal repo (BLD-026).
-# Synthetic data only. No secrets are needed: LLM_MODE=fake, EMBEDDINGS_MODE=hash, OIDC_MODE=mock.
+# Rehearsal 5 (lane A, Sun 29 Nov; throwaway branch a/rehearsal5-1, never landed). ci.yml only; journeys off.
+# Each job checks out the r7 candidate itself (TO below, exactly; this branch's own commit only changes this file) and
+# rehearses IT's upgrade to it on real Docker, in production mode with the file steps (scripts/uat/rehearse-upgrade.sh,
+# the Makefile's uat-rehearsal-upgrade): install FROM, upgrade to TO, roll back, upgrade again. FROM is r6.1 (what IT
+# runs after Friday's GO), r5 and r3 (IT's other possible shapes). The r6.1 job is kept (KEEP=1) for the restore drill
+# and the r7 checks (lane C's out-of-order outcomes migration applied once per upgrade, learning.outcomes off with one
+# audit row). No stack on the developer Mac, so the demo stays up. Synthetic data only; no secrets.
 name: ci
 
-# Every code push to main and every pull request runs the full gates (DEC-093, BLD-159); a newer push cancels the
-# run still going for the same branch, and pushes that change only docs skip it. Also by hand (Run workflow).
 on:
-  push:
-    branches: [main]
-    paths-ignore: ["docs/**", "*.md"]  # docs and top-level notes only; seed and agent Markdown still run it
-  pull_request:
-    paths-ignore: ["docs/**", "*.md"]  # docs and top-level notes only; seed and agent Markdown still run it
   workflow_dispatch:
 
 concurrency:
-  # On main every commit gets its own check, so a new push never cancels the one already running (BLD-A184:
-  # 5 of 25 main runs were cancelled on 16 Nov). Other branches keep only their latest run.
-  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TO: "524c663a26e17db4ab891a6de995c39f970d19a4"
+  OUTCOMES: db/migrations/20261122300900_suggestion_outcomes.sql
 
 jobs:
-  # The journey suite is a gate too (BLD-A230; the Thu 19 Nov 14:00 gates in SHIP_PLAN_1PC.md, added from 09:30 at
-  # lane G's ask): every run off main walks every journey (apps/web/journeys) on its own runner, beside the gates,
-  # with no retries. On main the suite runs from journeys.yml's own push trigger instead, and lane G reads those runs.
   journeys:
-    if: github.ref != 'refs/heads/main'
+    if: false
     uses: ./.github/workflows/journeys.yml
 
   gates:
+    name: "rehearse ${{ matrix.from }} -> r7 (prod)${{ matrix.keep == 1 && ', kept, drill' || '' }}"
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
-    env:
-      # BLD-A244: make test and make e2e also write JUnit XML here; uploaded below as the go/no-go CI report.
-      TEST_RESULTS: ${{ github.workspace }}/test-results
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { from: launch-2026-11-20-r6.1, keep: 1 }
+          - { from: launch-2026-11-20-r5, keep: 0 }
+          - { from: launch-2026-11-20-r3, keep: 0 }
+    defaults:
+      run:
+        shell: bash   # -eo pipefail
     steps:
       - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v6
         with:
-          version: "0.9.27"
+          ref: ${{ env.TO }}
+          fetch-depth: 0   # the launch tags: FROM
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-
-      - name: Install dependencies
+      - name: The runner (disk for two builds, Docker, the tags, the exact TO)
         run: |
-          cd services/worker && uv sync --frozen
-          # BLD-G012: Chromium's deps come from Ubuntu's archive; the runner's packages.microsoft.com source can 403 and fail apt-get update.
-          { grep -ls packages.microsoft.com /etc/apt/sources.list.d/* || true; } | xargs -r sudo rm -fv
-          cd ../../apps/web && npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
+          echo "docker $(docker version --format '{{.Server.Version}}'), compose $(docker compose version --short)"
+          echo "FROM ${{ matrix.from }} = $(git rev-parse '${{ matrix.from }}^{commit}')"
+          echo "TO   $(git rev-parse HEAD)"
+          [[ "$(git rev-parse HEAD)" == "$TO" ]] || { echo "HEAD is not TO"; exit 1; }
+          for t in launch-2026-11-20-r6 launch-2026-11-20-r5 launch-2026-11-20-r3; do
+            git merge-base --is-ancestor "$t" HEAD && echo "$t is an ancestor of TO" || echo "$t is NOT an ancestor of TO"
+          done
+          # r6.1 was cut on a side branch: not an ancestor. TO carries it when its fix commit has a patch-equivalent
+          # here ("-"); 8dfdd988 holds r6.1's own docs rows only, so it shows "+".
+          echo "r6.1's commits against TO (- = carried):"; git cherry HEAD launch-2026-11-20-r6.1 launch-2026-11-20-r6 | cut -c1-12
+          echo "migrations TO has that FROM lacks: $(LC_ALL=C comm -13 <(git ls-tree --name-only '${{ matrix.from }}' db/migrations/ | sort) <(git ls-tree --name-only HEAD db/migrations/ | sort) | grep -c . || true)"
+          git cat-file -e "HEAD:$OUTCOMES" 2>/dev/null && echo "TO carries $OUTCOMES" || echo "TO does not carry $OUTCOMES"
+          [[ -z "$(git status --porcelain)" ]] && echo "checkout clean"
 
-      - name: Lint (ruff, mypy, eslint, prettier, tsc, OKF validator, no model SDK outside the gateway, log scrubber)
-        run: make lint
-
-      - name: Start the local stack (AT-B1-01)
-        # The worker runs as the runner's user so it and the host-side seed share ./.data (Linux keeps file owners).
+      - name: "Install ${{ matrix.from }} in production mode with files, upgrade to r7, roll back, upgrade again"
         run: |
-          make .env
-          printf 'WORKER_UID=%s\nWORKER_GID=%s\n' "$(id -u)" "$(id -g)" >> .env
-          make up
+          W="$PWD/.data-uat-upgrade-rehearsal"
+          # As IT did once on the launch server (UAT.md): the data folder to the worker's uid 10001, ops/ and backups/
+          # to the deploy account. The rehearsal makes $W/data itself, so this waits for it.
+          (
+            for _ in $(seq 1 3000); do
+              if [[ -d "$W/data" ]]; then
+                sudo install -d -m 700 -o "$(id -u)" -g "$(id -g)" "$W/data/ops" "$W/data/backups"
+                sudo chown 10001 "$W/data"
+                echo "runner: $W/data owned by uid 10001; ops/ and backups/ by $(id -un), mode 700"
+                exit 0
+              fi
+              sleep 0.1
+            done
+            echo "runner: $W/data did not appear in 300 s"
+          ) &
+          make .env   # the dev env file, as the usual gates make it (gitignored, so the checkout stays clean)
+          KEEP=${{ matrix.keep }} make uat-rehearsal-upgrade FROM=${{ matrix.from }} REHEARSE_APP_ENV=prod 2>&1 \
+            | tee "$RUNNER_TEMP/rehearsal.log"
+          wait
+          echo
+          echo "== summary lines"
+          grep -E '^(FROM|TO) |PASS|FAIL|migrations applied now|file checks:|^rehearsal: ' "$RUNNER_TEMP/rehearsal.log" || true
+          grep -qx 'rehearsal: upgrade, rollback and upgrade again all passed' "$RUNNER_TEMP/rehearsal.log"
 
-      - name: Seed the company repo
-        run: make seed
-
-      - name: Unit and integration tests (B1 acceptance tests)
-        run: make test
-
-      - name: End-to-end and accessibility (axe)
-        run: make e2e
-
-      - name: Golden sets
-        run: make eval
-
-      - name: Container logs carry no idea text or personal data
-        id: logcheck
-        if: always()
+      - name: "r7 checks: the out-of-order outcomes migration applied once per upgrade, then nothing pending"
         run: |
-          docker compose -f infra/docker-compose.yml --project-directory . --env-file .env \
-            logs --no-color --no-log-prefix worker web > container.log
-          cd services/worker && uv run --frozen python ../../scripts/ci/check_logs.py ../../container.log
+          L="$RUNNER_TEMP/rehearsal.log"
+          V="$(basename "$OUTCOMES" | cut -d_ -f1)"
+          if ! git cat-file -e "HEAD:$OUTCOMES" 2>/dev/null; then
+            echo "SKIPPED: TO does not carry $OUTCOMES (T41 is not in this build): lane C's outcomes checks not run"
+            echo "**SKIPPED (${{ matrix.from }}): TO does not carry \`$(basename "$OUTCOMES")\`; lane C's outcomes checks not run.**" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          FAILED=0
+          applied="$(grep -c "Applying: $(basename "$OUTCOMES")" "$L" || true)"
+          # Once in the upgrade and once in the upgrade again: the rollback restores FROM's backup, which lacks it
+          # (lane C: "twice" holds only because the second upgrade starts from a restored FROM database).
+          [[ "$applied" -eq 2 ]] && echo "check ok: applied $applied times (upgrade, upgrade again)" \
+            || { echo "check FAILED: applied $applied times, 2 wanted"; FAILED=1; }
+          pend="$(grep -E '^ *Pending: ' "$L" | sort | uniq -c || true)"; echo "Pending lines:"; printf '%s\n' "$pend"
+          ! grep -E '^ *Pending: [1-9]' "$L" > /dev/null && echo "check ok: no Pending above 0" \
+            || { echo "check FAILED: a Pending above 0"; FAILED=1; }
+          # Lane C's check 1: each upgrade lists the version exactly once among the migrations it applied.
+          listed="$(grep -cE "^ +$V\$" "$L" || true)"
+          [[ "$listed" -eq 2 ]] && echo "check ok: $V listed once per upgrade ($listed lines)" \
+            || { echo "check FAILED: $V listed $listed times over two upgrades, 2 wanted"; FAILED=1; }
+          grep -E '^migrations applied now: ' "$L" | sort | uniq -c || true
+          echo "outcomes migration (${{ matrix.from }}): $([[ $FAILED -eq 0 ]] && echo PASS || echo FAILED)" >> "$GITHUB_STEP_SUMMARY"
+          exit $FAILED
 
-      # The CI report for the go/no-go (ARCHITECTURE §9.3, "Every B1-B7 acceptance test passes"; BLD-A244): the JUnit
-      # XML of the Python, web unit and end-to-end tests, and the golden-set reports, on every run, pass or fail. Test
-      # names and synthetic data only (non-negotiable 11); no container log goes in it.
-      - name: Keep the test results (the go/no-go CI report)
+      - name: "Lane C's outcomes checks on the kept stack (counts and names only), then again after a restart"
+        if: matrix.keep == 1
+        run: |
+          if ! git cat-file -e "HEAD:$OUTCOMES" 2>/dev/null; then
+            echo "SKIPPED: TO does not carry $OUTCOMES: lane C's outcomes checks not run"; exit 0
+          fi
+          W="$PWD/.data-uat-upgrade-rehearsal"
+          V="$(basename "$OUTCOMES" | cut -d_ -f1)"
+          compose() { UAT_APP_ENV_FILE="$W/app.env" UAT_DATA_DIR="$W/data" docker compose -p kfin-ideas-uat-rehearsal \
+            -f infra/docker-compose.yml -f infra/uat/compose.uat.yml --project-directory . \
+            --env-file "$W/app.env" --env-file "$W/db.env" "$@"; }
+          sql() { docker exec kfin-ideas-uat-rehearsal-postgres-1 psql -X -v ON_ERROR_STOP=1 -U ideas -d ideas -tAq -c "$1"; }
+          FAILED=0
+          want() {  # <check> <wanted> <got>: print only the pass line or the FAIL line
+            if [[ "$3" == "$2" ]]; then echo "check $1 ok: $3"; else echo "check $1 FAILED: got $3, wanted $2"; FAILED=1; fi
+          }
+          PRIVS='ideas_web_svc:DELETE=false ideas_web_svc:INSERT=false ideas_web_svc:SELECT=false ideas_web_svc:TRUNCATE=false ideas_web_svc:UPDATE=false ideas_worker_svc:DELETE=false ideas_worker_svc:INSERT=true ideas_worker_svc:SELECT=true ideas_worker_svc:TRUNCATE=false ideas_worker_svc:UPDATE=false'
+          checks() {  # lane C's checks 2 to 6
+            want 2 1 "$(sql "SELECT count(*) FROM schema_migrations WHERE version = '$V'")"
+            want 3 '1|11|2|c' "$(sql "SELECT (to_regclass('public.suggestion_outcomes') IS NOT NULL)::int AS t, (SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'suggestion_outcomes') AS cols, (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'suggestion_outcomes' AND indexname IN ('suggestion_outcomes_idea', 'suggestion_outcomes_at')) AS idx, (SELECT confdeltype FROM pg_constraint WHERE conrelid = 'public.suggestion_outcomes'::regclass AND contype = 'f') AS fk")"
+            want 4 "$PRIVS" "$(sql "SELECT string_agg(r || ':' || p || '=' || has_table_privilege(r, 'public.suggestion_outcomes', p)::text, ' ' ORDER BY r, p) FROM unnest(ARRAY['ideas_web_svc', 'ideas_worker_svc']) r, unnest(ARRAY['DELETE', 'INSERT', 'SELECT', 'TRUNCATE', 'UPDATE']) p")"
+            want 5 'off|1' "$(sql "SELECT (SELECT state FROM kill_switches WHERE name = 'learning.outcomes') AS state, (SELECT count(*) FROM audit_log WHERE action = 'kill_switch.set' AND entity = 'kill_switch:learning.outcomes' AND actor = 'migration') AS audits")"
+            want 6 0 "$(sql "SELECT count(*) FROM suggestion_outcomes")"
+          }
+          echo "== after the rehearsal (upgrade again, restart and smoke done)"
+          checks
+          # Lane C's check 2, second half: a second dbmate up on the same database applies nothing.
+          again="$(compose run --rm --no-deps -T dbmate up 2>&1)"; printf '%s\n' "$again" | grep -E 'Applying|Pending|Writing' || true
+          ! grep -q 'Applying' <<< "$again" && echo "check 2b ok: a second dbmate up applied nothing" \
+            || { echo "check 2b FAILED: a second dbmate up applied a migration"; FAILED=1; }
+          st="$(compose run --rm --no-deps -T dbmate status 2>&1 | grep -E '^ *Pending: ' || true)"
+          want 2c 'Pending: 0' "$(sed -E 's/^ +//' <<< "$st")"
+          echo "== after a restart of web and worker"
+          # As upgrade.sh's step 6 does it (Postgres keeps running), recreated so both really restart.
+          compose up -d --wait --wait-timeout 240 --no-deps --no-build --force-recreate worker web > /dev/null 2>&1 \
+            && echo "web and worker healthy again" \
+            || { echo "check FAILED: web and worker not healthy after the restart"; FAILED=1; }
+          checks
+          echo "lane C's outcomes checks 2-6 (kept r6.1 job): $([[ $FAILED -eq 0 ]] && echo PASS || echo FAILED)" >> "$GITHUB_STEP_SUMMARY"
+          exit $FAILED
+
+      - name: The drill's checks
+        if: matrix.keep == 1
+        run: |
+          cat > "$RUNNER_TEMP/drill-checks.sh" <<'SH'
+          W="$GITHUB_WORKSPACE/.data-uat-upgrade-rehearsal"
+          PROJECT=kfin-ideas-uat-rehearsal
+          PG="$PROJECT-postgres-1"
+          HINT="  docker exec $PG psql -U ideas -d postgres -c \"DROP DATABASE ideas_restore_drill WITH (FORCE)\""
+          FAILED=0
+          ok() { echo "check ok: $*"; }
+          bad() { echo "check FAILED: $*"; FAILED=1; }
+          n() { grep -c . || true; }
+          sql() { docker exec "$PG" psql -X -v ON_ERROR_STOP=1 -U ideas -d "$1" -tAq -c "$2"; }
+          drill_dbs() { sql postgres "SELECT count(*) FROM pg_database WHERE datname = 'ideas_restore_drill'" || echo '?'; }
+          backups() { find "$W/data/backups" -mindepth 1 -maxdepth 1 -printf '%f %s\n' | LC_ALL=C sort; }
+          records() { find "$W/data/ops" -maxdepth 1 -name 'restore-drill-*.json' | LC_ALL=C sort; }
+          run_drill() {  # <log>: the drill as IT runs it, its whole output; DRILL_RC is its exit status
+            DRILL_RC=0
+            UAT_DATA_DIR="$W/data" UAT_PROJECT="$PROJECT" DRILL_WHERE="github runner" \
+              make uat-restore-drill APP_ENV_FILE="$W/app.env" DB_ENV_FILE="$W/db.env" 2>&1 | tee "$1" || DRILL_RC=$?
+            echo "drill exit status: $DRILL_RC"
+          }
+          common_after() {  # <backups/ before> <records wanted>: what every run leaves, a pass or a refusal
+            [[ ! -e "$W/data/ops/.lock" ]] && ok "the lock ops/.lock is gone" || bad "ops/.lock is still there"
+            [[ "$(find "$W/data/backups" -maxdepth 1 -name 'restore-drill-*.dump' | n)" -eq 0 ]] \
+              && ok "no restore-drill-*.dump in backups/" || bad "a restore-drill-*.dump is left in backups/"
+            if [[ "$(backups)" == "$1" ]]; then
+              ok "backups/ exactly as before the drill: $(n <<< "$1") entries, $(grep -c '^upgrade-.*\.dump ' <<< "$1" || true) upgrade dumps"
+            else
+              bad "backups/ changed"; diff <(printf '%s\n' "$1") <(backups) || true
+            fi
+            [[ "$(docker exec "$PG" sh -c 'ls /tmp/restore-drill-*.counts 2>/dev/null' | n)" -eq 0 ]] \
+              && ok "no counts file left in the postgres container" || bad "a counts file is left in the postgres container"
+            [[ "$(records | n)" -eq "$2" ]] && ok "$2 restore-drill record(s) in ops/" \
+              || bad "$(records | n) restore-drill records in ops/, $2 wanted"
+          }
+          check_pass() {  # <log> <backups/ before> <records wanted>
+            local log="$1" last re tables="" cmp catalog rec
+            echo; echo "== checks"
+            [[ "$DRILL_RC" -eq 0 ]] && ok "the drill exited 0" || bad "the drill exited $DRILL_RC"
+            last="$(tail -n 1 "$log")"
+            re='^restore drill: passed in ([0-9]+)s \(([0-9]+) tables, counts equal\)$'
+            if [[ "$last" =~ $re ]]; then
+              tables="${BASH_REMATCH[2]}"
+              ok "the last line is the pass line: ${BASH_REMATCH[1]} s, $tables tables"
+            else
+              bad "the last line is not the pass line: $last"
+            fi
+            [[ "$(grep -E '^== [1-6]/6 ' "$log" | n)" -eq 6 ]] && ok "six == n/6 lines" || bad "not six == n/6 lines"
+            cmp="$(grep -E '^compare: ' "$log" || true)"
+            re='^compare: ([0-9]+) tables, the same in both; every count equal; schema_migrations at ([0-9]+) in both$'
+            if [[ "$cmp" =~ $re && "${BASH_REMATCH[1]}" == "${tables:-x}" ]]; then
+              ok "the compare line: ${BASH_REMATCH[1]} tables, schema_migrations at ${BASH_REMATCH[2]}"
+            else
+              bad "the compare line: ${cmp:-(none)}"
+            fi
+            catalog="$(sql ideas "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')" || echo '?')"
+            [[ "$catalog" == "${tables:-x}" ]] && ok "ideas has $catalog tables in schema public (catalog), all compared" \
+              || bad "ideas has $catalog tables in schema public; the drill compared ${tables:-?}"
+            [[ "$(drill_dbs)" == "0" ]] && ok "ideas_restore_drill no longer exists" || bad "ideas_restore_drill still exists"
+            rec="$(sed -nE 's#^recorded: ([^ ]+\.json) .*#\1#p' "$log")"
+            if [[ "$rec" == "$W/data/ops/restore-drill-"*.json && -f "$rec" ]] && jq -e '(keys == ["at", "passed", "seconds", "where"]) and .passed == true and (.seconds | type) == "number" and .where == "github runner" and (.at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))' "$rec" > /dev/null; then
+              ok "the record $(basename "$rec") has exactly passed, seconds, where, at; passed true: $(cat "$rec")"
+            else
+              bad "the record ${rec:-(none)}"
+            fi
+            common_after "$2" "$3"
+          }
+          check_refusal() {  # <log> <backups/ before> <records wanted>
+            local log="$1"
+            echo; echo "== checks"
+            [[ "$DRILL_RC" -ne 0 ]] && ok "the drill exited $DRILL_RC (not 0)" || bad "the drill exited 0"
+            grep -qxF -- "$HINT" "$log" && ok "it printed the DROP command:$HINT" || bad "it did not print the DROP command"
+            grep -qxF 'STOPPED: ideas_restore_drill already exists' "$log" \
+              && ok "it printed STOPPED: ideas_restore_drill already exists" || bad "no STOPPED: ideas_restore_drill already exists"
+            grep -qxF 'restore drill: FAILED (checks)' "$log" && ok "it printed restore drill: FAILED (checks)" \
+              || bad "no restore drill: FAILED (checks)"
+            ! grep -qE '^== 2/6 ' "$log" && ok "it stopped in 1/6 (no backup started)" || bad "it went past 1/6"
+            ! grep -q '^dropped ' "$log" && ok "it dropped nothing" || bad "it printed a dropped line"
+            [[ "$(drill_dbs)" == "1" ]] && ok "ideas_restore_drill still exists" || bad "ideas_restore_drill is gone"
+            common_after "$2" "$3"
+          }
+          finish() {
+            echo
+            if [[ $FAILED -eq 0 ]]; then echo "checks: all passed"; else echo "checks: FAILED"; exit 1; fi
+          }
+          SH
+          bash -n "$RUNNER_TEMP/drill-checks.sh" && echo "drill-checks.sh: $(wc -l < "$RUNNER_TEMP/drill-checks.sh") lines"
+
+
+      - name: "The restore drill against the kept r7 stack, and its checks"
+        if: matrix.keep == 1
+        run: |
+          . "$RUNNER_TEMP/drill-checks.sh"
+          before="$(backups)"
+          echo "backups/ before the drill:"; printf '%s\n' "$before"
+          run_drill "$RUNNER_TEMP/drill-1.log"
+          check_pass "$RUNNER_TEMP/drill-1.log" "$before" 1
+          finish
+
+
+      - name: Keep the logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: rehearsal5-${{ matrix.from }}
           path: |
-            test-results/
-            eval/reports/*.json
-          retention-days: 30
-          if-no-files-found: warn
-
-      # IDs-only logs (non-negotiable 3, checked just above), kept for a week so a failure can be diagnosed
-      # after the run (BLD-A171). Never a log the check just refused: artifacts are readable by anyone who can
-      # read the repo.
-      - name: Keep the container logs of a failed run
-        if: failure() && steps.logcheck.outcome == 'success'
-        uses: actions/upload-artifact@v4
-        with:
-          name: container-logs
-          path: container.log
-          retention-days: 7
+            ${{ runner.temp }}/rehearsal.log
+            ${{ runner.temp }}/drill-1.log
           if-no-files-found: ignore
+          retention-days: 14
