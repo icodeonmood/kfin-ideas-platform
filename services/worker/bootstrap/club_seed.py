@@ -388,10 +388,9 @@ def _decide_by(shared: dt.datetime) -> dt.datetime:
     return clock.decide_by(shared, config.promises())
 
 
-# Time for a walk after loading before T6's deadline or an open idea's decide-by passes; T6's day-before reminder
-# has gone by then (L-NOTIFY/5).
+# Time for a walk after loading before T6's deadline or an open idea's decide-by passes. No T6 reminder threshold
+# falls inside it, so the sweep sends no second reminder during the walk (BLD-E077).
 WALK_ROOM = dt.timedelta(hours=2)
-DAY_BEFORE = dt.timedelta(hours=24)  # L-NOTIFY/5, L-QUESTIONS.clock/2: the first reminder, 24 hours before
 # Ideas still with the desk, no decision yet: their decide-by is a promise still ahead.
 WITH_THE_DESK = ("checking", "with_review_desk")
 
@@ -427,15 +426,32 @@ def _answer_due(sent: dt.datetime, time_to_answer: str = "3d") -> dt.datetime:
     return clock.answer_due(sent, time_to_answer, promises.get(), clock.office_calendar())
 
 
+def _reminder_thresholds(due: dt.datetime) -> list[dt.datetime]:
+    """When an open set is reminded (L-QUESTIONS.clock/2): 1 day and 2 hours before its deadline. T6 is sent three
+    days before (`_sent_for`), so every threshold falls after the sending, as `desk.clock.reminders` counts them."""
+    from desk import promises
+
+    return sorted(due - dt.timedelta(hours=h) for h in promises.get().reminders_before_hours)
+
+
 def _due_within_a_day(now: dt.datetime) -> dt.datetime:
     """T6's deadline: 6 pm office time (L-QUESTIONS.clock/5) on the first day whose 6 pm is at least `WALK_ROOM`
-    after loading. So it is under a day away (just over, for a load in the last two hours before 6 pm), the
-    day-before reminder (L-NOTIFY/5) has gone, and a walk straight after the load never finds it overdue."""
+    after loading and has no reminder threshold inside the `WALK_ROOM` after the load (BLD-E077). So a walk straight
+    after the load never finds it overdue and never meets a second reminder from the sweep (`desk.asking.remind_due`
+    sends one per threshold). With a 6 pm deadline: a load before 2 pm gets 6 pm that day (its day-before reminder
+    has gone); from 2 pm to before 4 pm, 6 pm the next day (its day-before reminder comes at 6 pm, after the walk); at
+    4 pm exactly, 6 pm that day (both thresholds crossed at the load); after 4 pm and before 6 pm, 6 pm the day after
+    next (no reminder crossed yet, so it reads "2 days"); from 6 pm, 6 pm the next day (its day-before reminder went
+    at 6 pm)."""
     from desk import clock, promises
 
     cal, hour = clock.office_calendar(), promises.get().deadline_hour
-    due = cal.at(now.astimezone(cal.tz).date(), hour)
-    return due if due - now >= WALK_ROOM else cal.at(due.date() + dt.timedelta(days=1), hour)
+    day = now.astimezone(cal.tz).date()
+    while True:
+        due = cal.at(day, hour)
+        if due - now >= WALK_ROOM and not any(now < x <= now + WALK_ROOM for x in _reminder_thresholds(due)):
+            return due
+        day += dt.timedelta(days=1)
 
 
 def _sent_for(due: dt.datetime, time_to_answer: str = "3d", hour: int = 11, minute: int = 20) -> dt.datetime:
@@ -451,9 +467,10 @@ def _sent_for(due: dt.datetime, time_to_answer: str = "3d", hour: int = 11, minu
 
 
 def _day_before(due: dt.datetime, now: dt.datetime) -> dt.datetime:
-    """When the day-before reminder went (L-NOTIFY/5): 24 hours before the deadline, or the load itself when that is
-    still ahead (a load in the last two hours before 6 pm; `_due_within_a_day`). Either way it reads "1 day left"."""
-    return min(due - DAY_BEFORE, now)
+    """When T6's reminder went (L-NOTIFY/5): the latest threshold already crossed at the load (BLD-E077), so the
+    sweep, which sends once per threshold, never sends that one again. When none has been crossed yet (a load from
+    2 pm to 6 pm, `_due_within_a_day`), the load itself; T6's next threshold then falls after the walk."""
+    return max((x for x in _reminder_thresholds(due) if x <= now), default=now)
 
 
 def _email(name: str) -> str:
@@ -798,19 +815,22 @@ def _idea(conn: Conn, key: str, s: Spec, p: dict[str, dict[str, str]], now: dt.d
             "VALUES (%s, %s, 'lead', 'shared', %s)",
             (idea_uuid, owner["code"], shared),
         )
-        _event(conn, idea_uuid, "shared", shared, {})
-        if s.status != "checking":  # "similar" is counted once the links exist (`_crews`)
-            _event(conn, idea_uuid, "checked_matched", shared + dt.timedelta(minutes=3),
-                   {"hidden": len(s.hidden), "similar": 0})  # fmt: skip
+        # "You shared it" and "Checked and matched" are read from the idea, never posted (BLD-F051, BLD-F112)
         if opened is not None and reviewer:
-            _event(conn, idea_uuid, "opened_by_desk", opened, {"reviewer_id": reviewer})
+            _event(conn, idea_uuid, "desk.opened", opened, {}, user=reviewer)
     return Made(idea_uuid, ref, s, message_ids)
 
 
-def _event(conn: Conn, idea_uuid: str, event: str, at: dt.datetime, payload: dict[str, Any]) -> None:
+def _event(
+    conn: Conn, idea_uuid: str, event: str, at: dt.datetime, payload: dict[str, Any], *, user: str | None = None,
+    code: str | None = None,
+) -> None:  # fmt: skip
+    """A conversation line under the code the app posts, with its author and payload as the posting lane writes
+    them (`convo.render`'s table; BLD-F112): the reader draws it as it draws the app's own lines."""
     conn.execute(
-        "INSERT INTO conversation_entries (idea_uuid, type, event, payload, at) VALUES (%s, 'event', %s, %s, %s)",
-        (idea_uuid, event, Jsonb(payload), at),
+        "INSERT INTO conversation_entries (idea_uuid, type, event, author_code, author_user_id, payload, at) "
+        "VALUES (%s, 'event', %s, %s, %s, %s, %s)",
+        (idea_uuid, event, code, user, Jsonb(payload), at),
     )
 
 
@@ -902,7 +922,7 @@ def _decide(
         (wid, did, state, at, closes, add_months(at, 3), extended,
          p["shalini"]["id"] if extended else None),
     )  # fmt: skip
-    _event(conn, made.uuid, "decided", at, {"decision_id": did})
+    _event(conn, made.uuid, "desk.decided", at, {"decision_id": did, "choice": choice}, user=p[who]["id"])
     return did, wid
 
 
@@ -937,8 +957,9 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
              encrypt_json({"title": m["T5"].spec.title, "n": n}, sealed_context("idea_versions", "snapshot_encrypted", f"{m['T5'].uuid}:{n}")),
              _ago(1.0 - 0.1 * n, now)),
         )  # fmt: skip
-    # T6: questions sent and seen, one answer saved but not sent (Needs you). Due at 6 pm within the day, so its
-    # day-before reminder has gone (L-NOTIFY/5; the Inbox item in `_inbox`), sent 3 days before at 11:20 am.
+    # T6: questions sent and seen, one answer saved but not sent (Needs you). Due at 6 pm with no reminder threshold
+    # inside the walk after the load (BLD-E077), its reminder recorded at the latest threshold crossed or at the load
+    # (L-NOTIFY/5; the Inbox item in `_inbox`), sent 3 days before at 11:20 am.
     t6_due = _due_within_a_day(now)
     _questions(conn, m["T6"], p["harish"]["id"], tanvi["code"], now, state="seen", sent=_sent_for(t6_due),
                reminded=_day_before(t6_due, now),
@@ -989,7 +1010,8 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
          p["manoj"]["id"], _ago(2, now), _team_by(_ago(2, now))),
     )  # fmt: skip
     conn.execute("UPDATE decision_windows SET state = 'reversed' WHERE id = %s", (windows["T9"],))
-    _event(conn, m["T9"].uuid, "decision_reversed", _ago(2, now), {"reversal_id": rid})
+    _event(conn, m["T9"].uuid, "committee.reversed", _ago(2, now), {"window_id": windows["T9"], "to": "pick"},
+           user=p["manoj"]["id"])  # fmt: skip
     conn.execute(
         "INSERT INTO idea_status_history (idea_uuid, from_status, to_status, at) VALUES (%s, 'not_picked', 'picked', %s)",
         (m["T9"].uuid, _ago(2, now)),
@@ -1030,8 +1052,8 @@ def _review(conn: Conn, p: dict[str, dict[str, str]], m: dict[str, Made], now: d
         "VALUES (%s, %s, 'crew', 'desk_merge', %s, %s)",
         (m["R2"].uuid, tanvi["code"], mid, merged_at),
     )
-    _event(conn, m["R2"].uuid, "desk_merged", merged_at, {"merge_id": mid})
-    _event(conn, m["T11"].uuid, "desk_merged", merged_at, {"merge_id": mid})
+    for idea in (m["R2"], m["T11"]):  # on both ideas, as lane B's desk merge posts it
+        _event(conn, idea.uuid, "desk.merged", merged_at, {"merge_id": mid}, user=p["lavanya"]["id"])
 
 
 def _crews(
@@ -1064,14 +1086,8 @@ def _crews(
             (m[a].uuid, m[b].uuid, reason, found),
         )
     # "Checked and matched" counts what the check found (L-SIMILAR.rules/5): the links found while drafting or at
-    # the check. One found later, from another idea's match (F2's J2, L-SIMILAR.rules/6), came after it.
-    conn.execute(
-        "UPDATE conversation_entries e SET payload = jsonb_set(e.payload, '{similar}', to_jsonb(n.found)) "
-        "FROM (SELECT idea_uuid, count(*)::int AS found FROM similar_links WHERE idea_uuid = ANY(%s::uuid[]) "
-        "AND found_while IN ('drafting', 'checking') GROUP BY idea_uuid) n "
-        "WHERE e.idea_uuid = n.idea_uuid AND e.event = 'checked_matched'",
-        ([made.uuid for made in m.values()],),
-    )
+    # the check; one found later, from another idea's match (F2's J2, L-SIMILAR.rules/6), came after it. The screens
+    # read `similar_links` itself, so no conversation line carries the count (BLD-F051, BLD-F112).
 
     # T2's, N2's and G2's merge requests wait on Rekha (Submit is held), each in her Inbox with the three answers
     # (L-TEAMUP.rules/5, J-SIMILAR/5; posted in `_inbox`). N1's was accepted into T7.
@@ -1204,7 +1220,8 @@ def _crews(
                 "VALUES (%s, %s, 'crew', 'teamup', %s, %s)",
                 (m[key].uuid, p[who]["code"], rid, _ago(days - 0.5, now)),
             )
-            _event(conn, m[key].uuid, "crew_joined", _ago(days - 0.5, now), {"request_id": rid})
+            _event(conn, m[key].uuid, "crew.joined", _ago(days - 0.5, now), {"via": "teamup", "request_id": rid},
+                   code=p[who]["code"])  # fmt: skip
     # More crew on shipped and building ideas, so cards show faces and counts.
     for key, who, days in (("V1", "tanvi", 100), ("V1", "bhavesh", 98), ("A1", "hemant", 25), ("C1", "bhavesh", 9),
                            ("S1", "naveen", 160), ("J1", "pallavi", 40)):  # fmt: skip
@@ -1316,9 +1333,8 @@ def _builds_and_impact(
                 "INSERT INTO role_grants (user_id, role, scope_id, granted_by) VALUES (%s, 'build_team', %s, %s)",
                 (p[person]["id"], made.ref, p["kunal"]["id"]),
             )
-        _event(conn, made.uuid, "team_chosen", chosen, {"team": name})
-        if made.spec.shipped_days is not None:
-            _event(conn, made.uuid, "shipped", _ago(made.spec.shipped_days, now), {})
+        # Kunal chose the team; the board draws no "shipped" line, so none is written
+        _event(conn, made.uuid, "build.team_chosen", chosen, {}, user=p["kunal"]["id"])
     _message(conn, m["A1"].uuid, _ago(1.0, now), "The first pre-filled forms are ready to try. Please check them before Thursday.",
              user=p["gopal"]["id"])  # fmt: skip
 
@@ -1589,7 +1605,7 @@ def _inbox(
         stored = None if as_the_desk(kind, refs) else sender
         if days is None:
             # The set's own clock, as lane B posts them: the questions arrive when it is sent, the reminder when it
-            # went (24 hours before the deadline, L-NOTIFY/5), and both are due when the set is (L-QUESTIONS.clock/5)
+            # went (`_day_before`, L-NOTIFY/5), and both are due when the set is (L-QUESTIONS.clock/5)
             qset = sets[m[key].uuid]
             at = qset["reminded_at"] if kind == "answer_reminder" else qset["sent_at"]
             due_at = qset["due_at"]

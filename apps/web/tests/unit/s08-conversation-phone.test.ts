@@ -418,6 +418,14 @@ describe("The look pass from lane D's QA (BLD-F078 to F081)", () => {
     expect(rule(phone, ".cv-box")).toMatch(/box-shadow: none;/); // a phone's box is the dock, with no band
   });
 
+  it("BLD-F106 at 640px and narrower: the picker in the dock is solid white, so the thread never shows through it; wider, lane D's shared look stays", () => {
+    const { phone, wide } = sheet();
+    const pick = rule(phone, ".cv-box .cv-pick");
+    expect(pick).toMatch(/background: var\(--white\);/);
+    expect(pick).not.toMatch(/var\(--card\)/); // --card is 78% glass inside the signed-in shell
+    expect(rule(wide, ".cv-pick")).not.toMatch(/background/); // wider, only its place; `.fpick` draws it
+  });
+
   it("BLD-F079 Messages.jpg: the pill, the reference and the line are one row; the title runs the column's width", async () => {
     await arrive(PAGE);
     const meta = host.querySelector("header .cv-meta")!;

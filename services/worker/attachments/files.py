@@ -50,7 +50,8 @@ Who sees and opens what (DEC-107, P-PRODUCT.privacy; the coordinator's rule of 1
 
 A file's `purpose` is `idea` (Proof, the edit page, an answer) or `conversation` (BLD-C216). Every reader of an idea's
 own files reads `purpose = 'idea' AND conversation_entry_id IS NULL` (`IDEA_OWN`), so a conversation file never
-shows among them. A conversation file still not on an entry a day after it was added is removed by the sweep.
+shows among them. A conversation file still not on an entry a day after its last change (for a checked file, the
+end of its check) is removed by the sweep; one still being checked never is (BLD-A256).
 Logs, errors and audit carry IDs, states and kinds only (non-negotiable 3).
 """
 
@@ -93,7 +94,9 @@ IDEA, CONVERSATION = "idea", "conversation"  # attachments.purpose (BLD-C216)
 # The idea's own files: never one added for the conversation, sent or not (both conditions, so a row that is half
 # one and half the other is never shown as the idea's). Callers prefix the columns when they join.
 IDEA_OWN = "purpose = 'idea' AND conversation_entry_id IS NULL"
-UNSENT_CONVERSATION_HOURS = 24  # a conversation file not on an entry after this long is removed (BLD-C216)
+# A conversation file not on an entry this long after its last change is removed, never while it is still being
+# checked (BLD-C216, BLD-A256).
+UNSENT_CONVERSATION_HOURS = 24
 # Waiting for the gatekeeper (BLD-C225 to BLD-C227). The names are pinned by lane A's upgrade and its rehearsal.
 GATEKEEPER = "gatekeeper"  # `checks.waiting_for` while the check waits for it
 WAITING_GATEKEEPER = "waiting_gatekeeper"  # the job's `last_error` while it waits (a reason, not a failure)
@@ -1252,25 +1255,34 @@ def sweep_failed_copies(conn: Conn) -> int:
     """The attachments sweep, every hour (`files.sweep`, BLD-C242; its old caller, the draft purge, is retired). The
     quarantine copy of a file that stayed `upload_failed` past the retention period (`rules/thresholds.md`
     `attachments.rejected_retention_hours`) is deleted; Try again then asks for the file again. And a file added for
-    the conversation that never went on an entry is removed, every stored copy and its row, a day after it was added
-    (`sweep_unsent_conversation`, BLD-C216). Nothing is deleted unless the most recent worker start sweep finished
-    (`start_sweep_done`). Returns how many of both, 0 while it waits."""
+    the conversation that never went on an entry is removed, every stored copy and its row, a day after its last
+    change, never while it is still being checked (`sweep_unsent_conversation`, BLD-C216, BLD-A256). Nothing is
+    deleted unless the most recent worker start sweep finished (`start_sweep_done`). Returns how many of both, 0
+    while it waits.
+
+    The conversation files go first (BLD-A256): `_sweep_failed` marks a failed copy gone with an UPDATE, which moves
+    the row's `updated_at`, so a failed conversation file swept after it would stay a second day."""
     if not start_sweep_done(conn):
         log.info("files.sweep_waits")  # the latest start sweep did not finish
         return 0
-    return _sweep_failed(conn) + sweep_unsent_conversation(conn)
+    return sweep_unsent_conversation(conn) + _sweep_failed(conn)
 
 
 def sweep_unsent_conversation(conn: Conn, hours: int = UNSENT_CONVERSATION_HOURS) -> int:
-    """Conversation files (`purpose` "conversation") still not on an entry `hours` after they were added: each is
+    """Conversation files (`purpose` "conversation") still not on an entry `hours` after their last change: each is
     locked, checked again and dropped (`drop`: every stored copy, its hidden details, its queued checks, its row).
-    Never an answer's file (`answer_id` set: lane B's own rule keeps those). One file failing (the object store
-    not answering) rolls back that file only, is logged by its ID and the error's type, and the sweep goes on, so
-    the draft purge that runs it never fails after its drafts are gone (BLD-C223). Logs and the audit carry IDs
-    only. Returns how many."""
+    Never a file still being checked (`checking`): a message can carry only a checked file (L-CONVO/7), and while
+    the assistant is off every check waits for the gatekeeper, so the day would run out before it could be sent
+    (BLD-A256, DEC-143 (e)). The day counts from `updated_at` (the `attachments_updated_at` trigger), and the last
+    change to a file on no entry is the end of its check, so the person has a full day to send it once it has
+    passed. Never a row with no `file_state` (r3's shape). Never an answer's file (`answer_id` set: lane B's own
+    rule keeps those). One file failing (the object store not answering) rolls back that file only, is logged by
+    its ID and the error's type, and the sweep goes on, so the draft purge that runs it never fails after its
+    drafts are gone (BLD-C223). Logs and the audit carry IDs only. Returns how many."""
     due = conn.execute(
         "SELECT id FROM attachments WHERE purpose = 'conversation' AND conversation_entry_id IS NULL "
-        "AND answer_id IS NULL AND created_at < now() - make_interval(hours => %s) ORDER BY created_at",
+        "AND answer_id IS NULL AND file_state IS NOT NULL AND file_state <> 'checking' "
+        "AND updated_at < now() - make_interval(hours => %s) ORDER BY created_at",
         (hours,),
     ).fetchall()
     removed = 0
@@ -1280,11 +1292,12 @@ def sweep_unsent_conversation(conn: Conn, hours: int = UNSENT_CONVERSATION_HOURS
                 row = conn.execute(
                     "SELECT * FROM attachments WHERE id = %s AND purpose = 'conversation' "
                     "AND conversation_entry_id IS NULL AND answer_id IS NULL "
-                    "AND created_at < now() - make_interval(hours => %s) FOR UPDATE SKIP LOCKED",
+                    "AND file_state IS NOT NULL AND file_state <> 'checking' "
+                    "AND updated_at < now() - make_interval(hours => %s) FOR UPDATE SKIP LOCKED",
                     (d["id"], hours),
                 ).fetchone()
                 if row is None:
-                    continue  # sent on an entry meanwhile, or another sweep has it
+                    continue  # sent on an entry, checked again or changed meanwhile, or another sweep has it
                 drop(conn, dict(row))
                 _audit(conn, "system:files", "file.swept", str(row["idea_uuid"]),
                        {"file_id": str(row["id"]), "purpose": CONVERSATION})  # fmt: skip

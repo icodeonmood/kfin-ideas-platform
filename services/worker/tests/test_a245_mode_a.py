@@ -1,12 +1,15 @@
 """Full mode (mode A) without golden sets on the launch database (BLD-A245; the product lead's rule, 22 Nov 2026).
 
-`scripts/uat/deploy.sh` step 7/8 never runs golden sets in the deployed database, in any APP_ENV: with or without a
-model route it switches `ai.all` off (Mode B, audited, `--actor ops:uat-deploy`); with a route it says how full mode
-starts instead (lane C's `scripts/eval/live.sh --server` on a throwaway database, then an admin). `upgrade.sh` never
-runs them either. `docs/UAT.md` carries the hand steps ("Switching to full mode (mode A)").
+`scripts/uat/deploy.sh` step 6/8 (7/8 before BLD-A254) never runs golden sets in the deployed database, in any
+APP_ENV: with or without a model route it switches `ai.all` off (Mode B, audited, `--actor ops:uat-deploy`); with a
+route it says how full mode starts instead (lane C's `scripts/eval/live.sh --server` on a throwaway database, then an
+admin). `upgrade.sh` never runs them either. `docs/UAT.md` carries the hand steps ("Switching to full mode (mode A)").
+
+BLD-A254: on a fresh install `ai.all` is off before step 7/8 starts the worker, so the worker's watch never queues a
+job while AI is still on. The route check and the switch run in one-off worker containers (`run --rm --no-deps`).
 
 No Docker, no make: `docker`, `git` and `make` on PATH are stubs that log each call. Only deploy.sh's own helpers and
-the script from step 7/8 to its end run (as `test_a235_deploy_next_line_*` does), so the earlier steps' host checks
+the script from step 6/8 to its end run (as `test_a235_deploy_next_line_*` does), so the earlier steps' host checks
 never apply.
 """
 
@@ -54,6 +57,7 @@ STUB_DOCKER = r"""#!/usr/bin/env bash
 printf 'docker %s\n' "$*" >> "$FAKE_LOG"
 case "$*" in
   *"bootstrap.preflight ai-route-ready"*) exit "$FAKE_ROUTE_EXIT" ;;
+  *"core.killswitch set"*) exit "${FAKE_SWITCH_EXIT:-0}" ;;
   *evalrunner*|*eval/golden*) echo "golden sets stub ran" ;;
   *"bootstrap.smoke"*) echo "smoke: all checks passed" ;;
 esac
@@ -71,14 +75,14 @@ def _route_exit(lines: list[str]) -> str:
     return "0" if preflight.ai_route_ready(env) else "1"
 
 
-def _deploy_from_step_7(
-    tmp_path: Path, app_env: str, lines: list[str]
+def _deploy_from_step_6(
+    tmp_path: Path, app_env: str, lines: list[str], *, switch_exit: str = "0"
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     script = DEPLOY.read_text("utf-8")
-    assert script.count('\nstep "7/8 ') == 1
+    assert script.count('\nstep "6/8 ') == 1
     helpers_part = script.split(f'PROJECT="${{UAT_PROJECT:-{PROJECT}}}"\n', 1)[1].split('\nstep "1/8 ', 1)[0]
-    assert "compose() {" in helpers_part and "value() {" in helpers_part
-    from_step_7 = 'step "7/8 ' + script.split('\nstep "7/8 ', 1)[1]
+    assert "compose() {" in helpers_part and "fail() {" in helpers_part and "value() {" in helpers_part
+    from_step_6 = 'step "6/8 ' + script.split('\nstep "6/8 ', 1)[1]
 
     app, db = tmp_path / "app.env", tmp_path / "db.env"
     app.write_text("\n".join([f"APP_ENV={app_env}", *lines]) + "\n")
@@ -97,13 +101,16 @@ def _deploy_from_step_7(
             f"export UAT_DATA_DIR={shlex.quote(str(tmp_path / 'data'))}",
             f"PROJECT={PROJECT}",
             helpers_part,
-            from_step_7,
+            from_step_6,
         ]
     )
     log = tmp_path / "calls.log"
     env = {k: v for k, v in os.environ.items() if not k.startswith(("FAKE_", "UAT_", "COMPOSE_"))}
     env.update(
-        PATH=f"{stub}{os.pathsep}{os.environ['PATH']}", FAKE_LOG=str(log), FAKE_ROUTE_EXIT=_route_exit(lines)
+        PATH=f"{stub}{os.pathsep}{os.environ['PATH']}",
+        FAKE_LOG=str(log),
+        FAKE_ROUTE_EXIT=_route_exit(lines),
+        FAKE_SWITCH_EXIT=switch_exit,
     )
     run = subprocess.run(
         ["bash", "-c", snippet],
@@ -131,10 +138,14 @@ def _assert_no_golden_sets(run: subprocess.CompletedProcess[str], calls: list[st
     assert not [c for c in calls if "ai.all on" in c]
 
 
+START = "up -d --wait --wait-timeout 240"
+
+
 def _assert_tail(run: subprocess.CompletedProcess[str], app_env: str) -> None:
     out = run.stdout
     assert (
-        out.index("== 7/8 Model route")
+        out.index("== 6/8 Model route")
+        < out.index("== 7/8 Start the stack")
         < out.index("== 8/8 Smoke tests")
         < out.index("smoke: all checks passed")
     )
@@ -146,55 +157,93 @@ def _assert_tail(run: subprocess.CompletedProcess[str], app_env: str) -> None:
 
 @pytest.mark.parametrize("app_env", ["uat", "prod"])
 @pytest.mark.parametrize("route", sorted(ROUTES))
-def test_a245_deploy_step_7_with_a_route_switches_ai_all_off_and_never_runs_golden_sets(
+def test_a245_deploy_step_6_with_a_route_switches_ai_all_off_and_never_runs_golden_sets(
     tmp_path: Path, app_env: str, route: str
 ) -> None:
     lines = ROUTES[route]
     assert _route_exit(lines) == "0"  # the worker would say a route is configured
-    run, calls = _deploy_from_step_7(tmp_path, app_env, lines)
+    run, calls = _deploy_from_step_6(tmp_path, app_env, lines)
     assert run.returncode == 0, run.stdout + run.stderr
     assert ROUTE_LINE in run.stdout.splitlines()
     app, db = tmp_path / "app.env", tmp_path / "db.env"
     off = _compose_call(
         app,
         db,
-        f"exec -T worker python -m core.killswitch set ai.all off --reason {REASON_ROUTE} --actor ops:uat-deploy",
+        "run --rm --no-deps -T worker python -m core.killswitch set ai.all off "
+        f"--reason {REASON_ROUTE} --actor ops:uat-deploy",
     )
     assert [c for c in calls if "core.killswitch" in c] == [off]
-    ready = calls.index(_compose_call(app, db, "exec -T worker python -m bootstrap.preflight ai-route-ready"))
-    assert ready < calls.index(off) < next(i for i, c in enumerate(calls) if "bootstrap.smoke" in c)
+    ready = calls.index(
+        _compose_call(app, db, "run --rm --no-deps -T worker python -m bootstrap.preflight ai-route-ready")
+    )
+    start = calls.index(_compose_call(app, db, START))
+    assert ready < calls.index(off) < start < next(i for i, c in enumerate(calls) if "bootstrap.smoke" in c)
     _assert_no_golden_sets(run, calls)
     _assert_tail(run, app_env)
 
 
 @pytest.mark.parametrize("app_env", ["uat", "prod"])
 @pytest.mark.parametrize("settings", sorted(NO_ROUTES))
-def test_a245_deploy_step_7_without_a_route_is_mode_b_as_before(
+def test_a245_deploy_step_6_without_a_route_is_mode_b_as_before(
     tmp_path: Path, app_env: str, settings: str
 ) -> None:
     lines = NO_ROUTES[settings]
     assert _route_exit(lines) == "1"
-    run, calls = _deploy_from_step_7(tmp_path, app_env, lines)
+    run, calls = _deploy_from_step_6(tmp_path, app_env, lines)
     assert run.returncode == 0, run.stdout + run.stderr
     assert "model route configured" not in run.stdout
     app, db = tmp_path / "app.env", tmp_path / "db.env"
     off = _compose_call(
         app,
         db,
-        f"exec -T worker python -m core.killswitch set ai.all off --reason {REASON_NO_ROUTE} --actor ops:uat-deploy",
+        "run --rm --no-deps -T worker python -m core.killswitch set ai.all off "
+        f"--reason {REASON_NO_ROUTE} --actor ops:uat-deploy",
     )
-    assert [c for c in calls if "core.killswitch" in c] == [off]  # the same call as before BLD-A245
+    assert [c for c in calls if "core.killswitch" in c] == [off]  # the reason as before BLD-A245
+    assert calls.index(off) < calls.index(_compose_call(app, db, START))
     _assert_no_golden_sets(run, calls)
     _assert_tail(run, app_env)
 
 
-def test_a245_deploy_step_7_has_no_golden_set_mount_and_the_eight_steps_stay() -> None:
+def test_a245_deploy_step_6_has_no_golden_set_mount_and_the_eight_steps_stay() -> None:
     deploy = DEPLOY.read_text("utf-8")
-    step7 = deploy.split('step "7/8 Model route"', 1)[1].split('step "8/8 ', 1)[0]
-    assert "eval/golden" not in step7 and "evalrunner" not in step7
-    assert step7.count("core.killswitch set ai.all off") == 1
-    assert "set ai.all on" not in step7
+    step6 = deploy.split('step "6/8 Model route"', 1)[1].split('step "7/8 ', 1)[0]
+    assert "eval/golden" not in step6 and "evalrunner" not in step6
+    assert step6.count("core.killswitch set ai.all off") == 1
+    assert "set ai.all on" not in step6
     assert re.findall(r'^step "(\d)/8 ', deploy, re.M) == list("12345678")
+
+
+# ---- BLD-A254: on a fresh install ai.all is off before the worker starts taking jobs -------------------------------
+
+
+def test_bld_a254_deploy_switches_ai_all_off_before_anything_starts_the_worker() -> None:
+    """The switch and the route check run in one-off containers before step 7/8; nothing execs into a running
+    worker before the start, and the start is the script's only `up` after Postgres's own (step 2/8)."""
+    deploy = DEPLOY.read_text("utf-8")
+    before_start, start_on = deploy.split('\nstep "7/8 Start the stack"\n', 1)
+    assert start_on.startswith("compose up -d --wait --wait-timeout 240\n")
+    assert [line for line in before_start.splitlines() if "compose exec -T worker" in line] == []
+    ups = re.findall(r"^compose up [^\n]*", deploy, re.M)
+    assert ups == [
+        "compose up -d --wait --wait-timeout 120 postgres",
+        "compose up -d --wait --wait-timeout 240",
+    ]
+    step6 = before_start.split('\nstep "6/8 Model route"\n', 1)[1]
+    assert "compose run --rm --no-deps -T worker python -m bootstrap.preflight ai-route-ready" in step6
+    assert "compose run --rm --no-deps -T worker python -m core.killswitch set ai.all off" in step6
+
+
+@pytest.mark.parametrize("app_env", ["uat", "prod"])
+def test_bld_a254_deploy_stops_before_the_start_when_ai_all_cannot_be_switched_off(
+    tmp_path: Path, app_env: str
+) -> None:
+    run, calls = _deploy_from_step_6(tmp_path, app_env, NO_ROUTES["fake"], switch_exit="1")
+    assert run.returncode == 1
+    assert "STOPPED: ai.all off (Mode B); nothing was started" in run.stderr
+    assert "== 7/8 Start the stack" not in run.stdout
+    assert not [c for c in calls if " up " in c or "bootstrap.smoke" in c]
+    assert [c for c in calls if "core.killswitch" in c]  # it was tried, once
 
 
 # ---- deploy.sh and upgrade.sh never run golden sets ----------------------------------------------------------------
@@ -218,7 +267,7 @@ def test_a245_the_golden_set_check_catches_what_it_must() -> None:
     for line in (
         'echo "run scripts/eval/live.sh --server"',
         "make uat-rollback BACKUP=x",
-        "compose exec -T worker python -m bootstrap.preflight ai-route-ready",
+        "compose run --rm --no-deps -T worker python -m bootstrap.preflight ai-route-ready",
     ):
         assert not _GOLDEN.search(line), line
 
@@ -327,7 +376,7 @@ def test_bld_a248_full_mode_step_7_waits_for_the_words_and_step_8_waits_for_step
     section = _section(UAT_DOC.read_text("utf-8"), "Switching to full mode (mode A)")
     [step1] = [line for line in section.splitlines() if line.startswith("1. **")]
     assert "(BLD-C231, with BLD-C234)" in step1 and "(BLD-B278)" in step1
-    assert "the tag that has all five" in step1
+    assert "the tag that has all six" in step1 and "the draft-part golden set in it (BLD-C249)" in step1
     step7, reads = _words_reads()
     order = [
         "FROM jobs WHERE type = 'file.check' GROUP BY 1, 2",

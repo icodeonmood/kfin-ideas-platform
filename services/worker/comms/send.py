@@ -36,6 +36,7 @@ MAX_ATTEMPTS = 3
 RETRY = dt.timedelta(minutes=5)  # the wait before the next try after a failure that spends one
 # Sent whole and only while their switches are on: never folded into a digest (Ember review).
 NO_DIGEST = ("ember.issue", "ones.announced")
+INBOX_DIGEST = "inbox.digest"  # notify.digest.INBOX_EVENT (BLD-A255); notify is imported lazily here
 
 
 def paused(conn: Conn, event: str) -> bool:
@@ -94,12 +95,17 @@ def compose(
     row: dict[str, Any] | None = None,
 ) -> email_html.Email | None:
     """The email for one queued notification. An Inbox item (`row["kind"]`) is rendered by `notify.render` from its
-    IDs (L-NOTIFY/3); the decide-by digest lists the ideas as they are now, and is None when none is late any more or it is off."""
+    IDs (L-NOTIFY/3); the Inbox digest lists its items still unread, and is None when all are read (BLD-A255); the
+    decide-by digest lists the ideas as they are now, and is None when none is late any more or it is off."""
     base = get_settings().app_base_url
     if row is not None and row.get("kind"):
         from notify.render import email as inbox_email
 
         return inbox_email(conn, row)
+    if event == INBOX_DIGEST:  # DEC-138 (BLD-A255): the day's Inbox items, as they are when it goes
+        from notify import digest as inbox_digest
+
+        return inbox_digest.compose_inbox(conn, user_id, dict(refs or {}))
     if event == "review.decide_by_digest":
         from notify import digest
 
@@ -146,7 +152,10 @@ def send_due(conn: Conn, now: dt.datetime | None = None, limit: int = 50) -> int
                 "n.idea_uuid, n.from_user_id, n.due_at, n.created_at, n.actions, n.channel, n.dedupe_key "
                 "FROM notifications n JOIN users u ON u.id = n.user_id WHERE n.channel = 'email' "
                 "AND n.state = 'queued' AND n.send_after <= %s AND u.active AND NOT (n.id = ANY(%s::bigint[])) "
-                "ORDER BY n.send_after, n.id LIMIT 1 FOR UPDATE OF n SKIP LOCKED",
+                # BLD-A255: every other email goes before the Inbox digests, so a backlog of digests never holds
+                # back a decision or a Needs you email.
+                "ORDER BY (n.event IS NOT DISTINCT FROM 'inbox.digest'), n.send_after, n.id "
+                "LIMIT 1 FOR UPDATE OF n SKIP LOCKED",
                 (now, seen),
             ).fetchone()
             if r is None:
@@ -174,6 +183,13 @@ def _send_one(conn: Conn, r: dict[str, Any], now: dt.datetime) -> str | graph.Ma
             (now + dt.timedelta(minutes=15), r["id"]),
         )
         return "next"
+    if r["event"] == INBOX_DIGEST:
+        # BLD-A255: the Inbox digest goes in working hours on working days only, so a backlog (`comms.email` back on
+        # at night) waits for the next opening. It is `immediate`: never capped or folded into the old routes' digest.
+        opens = next_send_time(now, "routine")
+        if opens != now:
+            conn.execute("UPDATE notifications SET send_after = %s WHERE id = %s", (opens, r["id"]))
+            return "next"
     if r["urgency"] == "routine" and _hold_back(conn, r, now):
         return "next"
     try:

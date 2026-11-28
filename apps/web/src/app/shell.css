@@ -1104,15 +1104,23 @@
     transform: scale(0.94);
   }
 
-  /* Child screens: one compact bar, Back on the left, a short centred title. Each side keeps 110px, room for Back
-     with the conversation's label ("The idea", "Your idea") in full; the title gives way first, a longer label ends
-     in an ellipsis, and the two never touch (C-PHONE-TABS.nav) */
+  /* Child screens: one compact bar, Back on the left, a short centred title (C-PHONE-TABS.nav; BLD-D034, at every
+     phone width since BLD-D041). Each side's minimum is its own content: Back is 4 + 22 (chevron) + 2 + 8 = 36px plus
+     its label at 500 16px ("Home" 45.2px, "Your idea" 71.2px), the actions none or 44px each. The title takes what
+     both sides leave, then the sides share the rest equally, so it stays centred whenever both fit. Back stops at
+     128px, so "Your idea" stays whole and a longer label ends in an ellipsis; the title (at most 180px) ends in one
+     when even that leaves too little. The bar's own 8px gaps mean Back and the title never touch. At 320 the inside is
+     320 - 16 padding - 16 gaps = 288px, 273px beside a 15px classic scrollbar: S-R3's "Answer" (56px) has 116px a
+     side, and "Conversation" (97.7px) keeps 273 - 128 - 44 = 101px beside "Your idea" and the info button. Two fixed
+     110px sides cut a longer title up to about 391px: on /crew, inside lane F's 16px phone padding, "Find your crew"
+     (108px at 600 15px) got 76px on a 360 phone and 61px on CI ("Find y…"); now the inside is 360 - 32 - 16 - 16 =
+     296px, and beside Back "Home" (36 + 45.2px) the title fits whole and centred */
   .pnav {
     position: sticky;
     top: 0;
     z-index: var(--z-sticky);
     display: grid;
-    grid-template-columns: minmax(110px, 1fr) auto minmax(110px, 1fr);
+    grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
     align-items: center;
     gap: 8px;
     min-height: 44px;
@@ -1126,6 +1134,7 @@
     align-items: center;
     gap: 2px;
     min-width: 44px;
+    max-width: 128px;
     min-height: 44px;
     padding: 0 8px 0 4px;
     overflow: hidden;
@@ -1205,6 +1214,11 @@
     bottom: 0;
     z-index: var(--z-sidebar);
     flex-direction: column-reverse;
+    /* One column on every page (BLD-D035). A dock with a height cap (S-06B's 45vh) needs both: with wrap, a capped
+       column starts a second column sideways; packed to the end (the top, in a reversed column), what passes the cap
+       leaves by the foot, where no scroll reaches it. From the start (the foot) it leaves by the top, and scrolls */
+    flex-wrap: nowrap;
+    justify-content: flex-start;
     align-items: stretch;
     gap: 8px;
     margin: 0;

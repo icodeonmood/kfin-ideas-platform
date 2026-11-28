@@ -62,6 +62,7 @@ import {
   similarRail,
   sortingCount,
   stepOf,
+  stillUploading,
   strongMatch,
   type FixForm,
   type SimilarLoad,
@@ -668,6 +669,17 @@ export function CheckIt({
     if (sortingUnconfirmed) {
       sendQueue.clear(draftId);
       setSendState({ kind: "unconfirmed" });
+      return;
+    }
+    // A file still uploading holds Submit, in the server's words under its row (DEC-144 (1), amending
+    // L-SUBMIT.pre/3, BLD-B283); the server has no row for it yet. One still being checked goes with the idea and
+    // opens for nobody else until both checks pass (DEC-127 (3)).
+    const uploading = proof.filter(stillUploading);
+    if (uploading.length) {
+      sendQueue.clear(draftId);
+      for (const p of uploading) noteFile(p.item?.id ?? p.key, C.proof.stillUploading);
+      setSendState({ kind: "idle" });
+      go(4);
       return;
     }
     // Words typed for "Who would help" that are still waiting for a pause go first (S-05 part 6).

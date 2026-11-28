@@ -84,7 +84,8 @@ describe("C-FIELD, C-FIELD.states, BLD-D029: the frame draws the field and the c
     expect(decl(".fld-frame", "display")).toBe("flex");
     expect(decl(".fld-frame.multi", "align-items")).toBe("flex-end");
     expect(decl(".fld-tools", "flex")).toBe("none");
-    expect(decl(".fld-frame.multi > .fld-tools", "padding-bottom")).toBe("4px");
+    // 6px in since BLD-D037 (4px before), so a tool's focus ring keeps 2px clear inside the frame's border
+    expect(decl(".fld-frame.multi > .fld-tools", "padding-bottom")).toBe("6px");
   });
 
   it("C-FIELD.states: focus anywhere in the frame gives the blue border and ring; an error gives the red ones", () => {
@@ -109,5 +110,64 @@ describe("C-FIELD, C-FIELD.states, BLD-D029: the frame draws the field and the c
     // The frame's 1px border plus the control's height is the field's own: 48px, or 112px for a text area
     expect(decl(CONTROL, "min-height")).toBe("calc(var(--ctl) - 2px)");
     expect(decl(".fld-frame > textarea.fld", "min-height")).toBe("110px");
+  });
+});
+
+describe("C-FIELD.tools, BLD-D037: a narrow multi-line frame puts its tools on their own row, and a tool's ring stays inside the frame", () => {
+  const css = cssRules("app/components.css");
+  const NARROW = "@container fld (max-width: 297px)";
+  const decl = (selector: string, prop: string, at = "") =>
+    css
+      .filter((r) => r.at === at && r.selectors.includes(selector) && r.decls.has(prop))
+      .at(-1)
+      ?.decls.get(prop);
+  // The tools' widths: the "+" and S-R3's mic are 44px each, 2px apart; the frame's gap is 4px
+  const TWO_TOOLS = 44 + 2 + 44;
+
+  it("BLD-D037, C-FIELD.tools: a multi-line frame measures itself and may wrap; its text starts from no width, so the tools stay beside it until the frame is narrow; a one-line frame does neither", () => {
+    expect(decl(".fld-frame.multi", "container")).toBe("fld / inline-size");
+    expect(decl(".fld-frame.multi", "flex-wrap")).toBe("wrap");
+    expect(decl(".fld-frame.multi > .fld", "flex-basis")).toBe("0");
+    expect(decl(".fld-frame", "container")).toBeUndefined();
+    expect(decl(".fld-frame", "flex-wrap")).toBeUndefined();
+    expect(css.filter((r) => r.at === NARROW).flatMap((r) => r.selectors)).toEqual([
+      ".fld-frame.multi > .fld",
+      ".fld-frame.multi > .fld-tools",
+    ]);
+  });
+
+  it("BLD-D037, C-FIELD.tools (S-R3): under 300px the text takes the frame's full width, 14px clear on the right, and the tools go under it at the end", () => {
+    expect(decl(".fld-frame.multi > .fld", "flex-basis", NARROW)).toBe("100%");
+    expect(decl(".fld-frame.multi > .fld", "padding-right", NARROW)).toBe("14px");
+    expect(decl(".fld-frame.multi > .fld-tools", "margin-left", NARROW)).toBe("auto");
+    // Same weight as the control's own padding in every state, and later, so it wins
+    const last = (pred: (r: (typeof css)[number]) => boolean) => css.findLastIndex(pred);
+    expect(last((r) => r.at === NARROW)).toBeGreaterThan(
+      last((r) => r.selectors.includes('.fld-frame > .fld[aria-invalid="true"]')),
+    );
+    // The breakpoint from S-R3's measurements (CI, beside a 15px scrollbar): its frame is 265px at 360 and 225px at
+    // 320, where the text kept 165px and 125px; at 390 it is 310px. 297px inside the 1px border is a frame under 300px
+    const inside = Number.parseFloat(NARROW.match(/(\d+)px/)![1]!);
+    const tools = TWO_TOOLS + Number.parseFloat(decl(".fld-tools", "padding-right")!) + 4;
+    for (const frame of [265, 225]) expect(frame - 2).toBeLessThanOrEqual(inside);
+    expect(310 - 2).toBeGreaterThan(inside);
+    expect(310 - 2 - tools).toBeGreaterThanOrEqual(200); // the board's width keeps its text beside the tools
+  });
+
+  it("BLD-D037, C-FIELD.tools, F-SPACE.targets: the tools sit 6px in from the frame's end and foot, so a 2px ring 2px out keeps 2px clear inside its border; every tool stays 44px", () => {
+    const end = Number.parseFloat(decl(".fld-tools", "padding-right")!);
+    const foot = Number.parseFloat(decl(".fld-frame.multi > .fld-tools", "padding-bottom")!);
+    const answer = cssRules("app/ideas/[id]/answer/answer.css");
+    const ring = (rules: typeof css, selector: string) => {
+      const r = rules.find((x) => x.at === "" && x.selectors.includes(selector))!;
+      return Number.parseFloat(r.decls.get("outline")!) + Number.parseFloat(r.decls.get("outline-offset")!);
+    };
+    for (const out of [ring(css, ".attach-btn:focus-visible"), ring(answer, ".ans-mic:focus-visible")]) {
+      expect(out).toBe(4);
+      expect(end - out).toBeGreaterThanOrEqual(2);
+      expect(foot - out).toBeGreaterThanOrEqual(2);
+    }
+    expect(decl(".attach-btn", "width")).toBe("var(--target)");
+    expect(decl(".attach-btn", "height")).toBe("var(--target)");
   });
 });

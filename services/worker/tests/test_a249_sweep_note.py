@@ -25,9 +25,11 @@ READ_FAILED_COPIES = (
     "SELECT count(*) FROM attachments WHERE kind = 'file' AND file_state = 'upload_failed' AND store_key IS NOT NULL "
     "AND (checks->>'ended_at')::timestamptz < now() - interval '24 hours' AND coalesce(checks->>'copy', '') <> 'gone'"
 )
+# BLD-A256: never a file still being checked, and the day counts from the file's last change.
 READ_UNSENT_CONVERSATION = (
     "SELECT count(*) FROM attachments WHERE purpose = 'conversation' AND conversation_entry_id IS NULL "
-    "AND answer_id IS NULL AND created_at < now() - interval '24 hours'"
+    "AND answer_id IS NULL AND file_state IS NOT NULL AND file_state <> 'checking' "
+    "AND updated_at < now() - interval '24 hours'"
 )
 READS = (READ_LATEST_START_SWEEP, READ_FAILED_COPIES, READ_UNSENT_CONVERSATION)
 
@@ -114,3 +116,35 @@ def test_bld_a249_reads_count_what_files_sweep_deletes_once_c242_is_in() -> None
 
     unsent = [_where(s) for s in _sql_in(files.sweep_unsent_conversation)]
     assert unsent[0] == as_code(READ_UNSENT_CONVERSATION)
+
+
+def test_bld_a256_the_locked_recheck_reads_the_same_rule_and_conversation_files_go_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """BLD-A256 (L-HIDE.files, L-CONVO/7, DEC-143 (e)): the sweep's locked re-check of each file reads the same rule
+    as its first select (never `checking`, a day from `updated_at`), so a file whose check was started again in
+    between stays; and `sweep_failed_copies` takes the conversation files before `_sweep_failed`, whose `copy: gone`
+    update would move a failed conversation file's `updated_at` and keep it a second day."""
+    from attachments import files
+
+    first, recheck = (_where(s) for s in _sql_in(files.sweep_unsent_conversation))
+    rule = _where(READ_UNSENT_CONVERSATION).replace("interval '24 hours'", "make_interval(hours => %s)")
+    assert first == rule
+    assert recheck == f"id = %s AND {rule} FOR UPDATE SKIP LOCKED"
+    for sql in (first, recheck):
+        assert "file_state <> 'checking'" in sql and "created_at" not in sql
+
+    calls: list[str] = []
+
+    def called(name: str, n: int) -> object:
+        def run(conn: object, *_a: object) -> int:
+            calls.append(name)
+            return n
+
+        return run
+
+    monkeypatch.setattr(files, "start_sweep_done", lambda conn: True)
+    monkeypatch.setattr(files, "sweep_unsent_conversation", called("conversation", 1))
+    monkeypatch.setattr(files, "_sweep_failed", called("failed", 2))
+    assert files.sweep_failed_copies(object()) == 3  # type: ignore[arg-type]
+    assert calls == ["conversation", "failed"]

@@ -4,7 +4,8 @@
  * box (lane F's ConvoPicker, `cv-pick`). The four controls in order with both file inputs `hidden` (S-08's focus carry,
  * BLD-F098), the focus on opening (or not), Escape, links taken at once or answered, a controlled link field, a dropped
  * folder read through its entries or the note to use "Choose a folder", and the look in the shared sheet only.
- * Synthetic file names only.
+ * BLD-D040: the walk leaves out the system's own entries (".git/", ".DS_Store"), and the link field and its setter
+ * come as a pair. Synthetic file names only.
  */
 import { act, createElement as h } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -38,15 +39,17 @@ afterEach(() => {
 });
 
 type Props = Parameters<typeof FilePicker>[0];
-const base = (more: Partial<Props> = {}): Props => ({
-  id: "pick-1",
-  className: "cpick",
-  help: "PDF or images, up to 15 MB each.",
-  onFiles: vi.fn(),
-  onLinks: vi.fn(),
-  onClose: vi.fn(),
-  ...more,
-});
+// The link field and its setter come as a pair (BLD-D040); a case passes both or neither
+const base = (more: Partial<Props> = {}): Props =>
+  ({
+    id: "pick-1",
+    className: "cpick",
+    help: "PDF or images, up to 15 MB each.",
+    onFiles: vi.fn(),
+    onLinks: vi.fn(),
+    onClose: vi.fn(),
+    ...more,
+  }) as Props;
 const show = (p: Props) => act(() => root.render(h(FilePicker, p)));
 const pick = () => host.querySelector<HTMLElement>(".fpick")!;
 const field = () => host.querySelector<HTMLInputElement>("input[type=url]")!;
@@ -146,17 +149,30 @@ describe("C-FILE.uploader, BLD-D031: one picker, as both boxes drew it", () => {
     act(() => named(PICKER_COPY.addLink).click());
     expect(changes.at(-1)).toEqual(NO_LINK);
   });
+
+  it("BLD-D040, C-FILE.picker: the link field and its setter come as a pair; a field without its setter does not compile", () => {
+    const need = { id: "pick-1", help: null, onFiles: vi.fn(), onLinks: vi.fn(), onClose: vi.fn() };
+    // Both (S-08's ConvoPicker) and neither (the share box) compile; tsc fails the line below if `link` alone did
+    expect(h(FilePicker, { ...need, link: NO_LINK, onLinkDraft: vi.fn() })).toBeTruthy();
+    expect(h(FilePicker, need)).toBeTruthy();
+    // @ts-expect-error: a field passed without its setter could never change
+    expect(h(FilePicker, { ...need, link: NO_LINK })).toBeTruthy();
+    // @ts-expect-error: a setter without the field it sets
+    expect(h(FilePicker, { ...need, onLinkDraft: vi.fn() })).toBeTruthy();
+  });
 });
 
 describe("C-FILE.uploader/2, BLD-C224, BLD-D031: a dropped folder", () => {
   type Entry = Record<string, unknown>;
   const pdf = (name: string) => new File(["%PDF"], name, { type: "application/pdf" });
   const fileEntry = (f: File): Entry => ({
+    name: f.name,
     isFile: true,
     isDirectory: false,
     file: (ok: (f: File) => void) => ok(f),
   });
-  const dirEntry = (children: Entry[]): Entry => ({
+  const dirEntry = (children: Entry[], name = "notes"): Entry => ({
+    name,
     isFile: false,
     isDirectory: true,
     createReader: () => {
@@ -211,6 +227,53 @@ describe("C-FILE.uploader/2, BLD-C224, BLD-D031: a dropped folder", () => {
     await drop([{ kind: "file", getAsFile: () => new File([], "Branch notes") }]);
     expect(onNote.mock.calls.map((c) => c[0])).toEqual([null, PICKER_COPY.useFolder]);
   });
+
+  it('BLD-D040, C-FILE.uploader: the walk leaves out every file whose name or any folder on its path starts with ".": of .git/config, .DS_Store, notes/.hidden.md and notes/branch-calls.md only branch-calls.md is handed on', async () => {
+    const p = base({ className: "cv-pick", autoFocus: false });
+    show(p);
+    // A dropped File carries no path: ".git/config" would reach the screen as a plain "config"
+    const folder = dirEntry(
+      [
+        dirEntry([fileEntry(pdf("config"))], ".git"),
+        fileEntry(pdf(".DS_Store")),
+        dirEntry([fileEntry(pdf(".hidden.md")), fileEntry(pdf("branch-calls.md"))], "notes"),
+      ],
+      "Branch notes",
+    );
+    await drop([
+      { kind: "file", getAsFile: () => new File([], "Branch notes"), webkitGetAsEntry: () => folder },
+    ]);
+    expect(p.onFiles).toHaveBeenCalledOnce();
+    expect((p.onFiles as ReturnType<typeof vi.fn>).mock.calls[0]![0].map((f: File) => f.name)).toEqual([
+      "branch-calls.md",
+    ]);
+    expect(pick().textContent).not.toContain(PICKER_COPY.onlyDotFiles);
+  });
+
+  it("BLD-D040, C-FILE.uploader: a dropped folder that holds only the system's files adds nothing and says so in the share box's words (a hidden folder itself too)", async () => {
+    const onNote = vi.fn();
+    const p = base({ note: null, onNote });
+    show(p);
+    const folder = dirEntry(
+      [dirEntry([fileEntry(pdf("config"))], ".git"), fileEntry(pdf(".DS_Store"))],
+      "Branch notes",
+    );
+    await drop([
+      { kind: "file", getAsFile: () => new File([], "Branch notes"), webkitGetAsEntry: () => folder },
+    ]);
+    const hidden = dirEntry([fileEntry(pdf("settings.json"))], ".vscode");
+    await drop([{ kind: "file", getAsFile: () => new File([], ".vscode"), webkitGetAsEntry: () => hidden }]);
+    expect(p.onFiles).not.toHaveBeenCalled();
+    expect(PICKER_COPY.onlyDotFiles).toBe(
+      "Nothing was added. Files whose names start with a dot are left out.",
+    );
+    expect(onNote.mock.calls.map((c) => c[0])).toEqual([
+      null,
+      PICKER_COPY.onlyDotFiles,
+      null,
+      PICKER_COPY.onlyDotFiles,
+    ]);
+  });
 });
 
 describe("C-FILE.uploader, BLD-D031: the look is the shared sheet's; each screen sets only its place", () => {
@@ -227,6 +290,40 @@ describe("C-FILE.uploader, BLD-D031: the look is the shared sheet's; each screen
     expect(decl(".fpick-folder:focus-visible", "outline")).toBe("2px solid var(--blue)");
     expect(decl(".fpick-link .fld", "padding-left")).toBe("38px");
     expect(decl(".fpick-h", "font-size")).toBe("12.5px");
+  });
+
+  it("BLD-D036, C-FILE.picker: below 300px the link field and Add link stack: the field takes the row, Add link goes under it full width and 44px tall, and the icon stays on the field's row", () => {
+    // The picker's own width decides: its content box under 276px is a picker under 300px with its 12px padding
+    expect(decl(".fpick", "container")).toBe("fpick / inline-size");
+    const narrow = "@container fpick (max-width: 275px)";
+    const at = (selector: string, prop: string) =>
+      shared
+        .find((r) => r.at === narrow && r.selectors.includes(selector) && r.decls.has(prop))
+        ?.decls.get(prop);
+    expect(275 + 2 * Number.parseFloat(decl(".fpick", "padding") ?? "")).toBe(299);
+    // Home's phone box is 265px at 360 and 225px at 320 (CI); the picker inside its 12px margins, 241px and 201px, gave
+    // the field 119px and 79px beside Add link. Both are under 300px, so the field takes the row: 217px and 177px
+    for (const picker of [265 - 24, 225 - 24]) expect(picker - 24).toBeLessThanOrEqual(275);
+    expect(at(".fpick-link", "display")).toBe("grid");
+    expect(at(".fpick-link", "grid-template-columns")).toBe("minmax(0, 1fr)");
+    expect(at(".fpick-link .fld", "grid-area")).toBe("1 / 1");
+    expect(at(".fpick-link > .btn", "grid-area")).toBe("2 / 1");
+    expect(at(".fpick-link > .btn", "width")).toBe("100%");
+    // The icon in the field's own cell, centred on it, painted over it, where the field's 38px left padding leaves room
+    expect(at(".fpick-li", "grid-area")).toBe("1 / 1");
+    expect(at(".fpick-li", "position")).toBe("static");
+    expect(at(".fpick-li", "align-self")).toBe("center");
+    expect(at(".fpick-li", "z-index")).toBe("1");
+    expect(at(".fpick-li", "margin-left")).toBe("14px");
+    expect(at(".fpick-li", "transform")).toBe("none");
+    // Add link is the small button, 44px tall (F-SPACE.targets: --ctl-sm)
+    show(base());
+    expect(named(PICKER_COPY.addLink).classList.contains("btn-sm")).toBe(true);
+    expect(host.querySelector(".fpick-link > .btn")).toBe(named(PICKER_COPY.addLink));
+    const sm = cssRules("app/offer.css").find((r) => r.at === "" && r.selectors.includes(".btn-sm"));
+    expect(sm?.decls.get("min-height")).toBe("var(--ctl-sm)");
+    const root = cssRules("app/foundation.css").find((r) => r.at === "" && r.decls.has("--ctl-sm"));
+    expect(root?.decls.get("--ctl-sm")).toBe("44px");
   });
 
   it("compose.css and conversation.css keep the picker's place only", () => {
