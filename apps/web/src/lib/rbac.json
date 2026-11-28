@@ -173,6 +173,9 @@
     "learning.jobs": [
       "admin"
     ],
+    "learning.outcomes": [
+      "admin"
+    ],
     "ember.send": [
       "admin"
     ],

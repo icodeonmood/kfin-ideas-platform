@@ -28,7 +28,7 @@ from typing import Any, Literal
 from psycopg.types.json import Jsonb
 
 from core.db import Conn
-from draft import parts
+from draft import outcomes, parts
 from onepc import enums
 from submit import config, own
 from submit.errors import Refused
@@ -316,6 +316,7 @@ def apply(
         return []
     if phase == "edit" and not is_complete(after):
         raise _incomplete()
+    _keep_outcomes(conn, idea, before, after, suggested)
 
     sources = dict(idea.get("sorting_sources") or {})
     for f in FIELDS:
@@ -352,6 +353,48 @@ def apply(
     idea.clear()
     idea.update(dict(row))
     return [f for f in FIELDS if f in touched]
+
+
+def _keep_outcomes(
+    conn: Conn,
+    idea: dict[str, Any],
+    before: dict[Field, Choice],
+    after: dict[Field, Choice],
+    suggested: dict[Field, Choice],
+) -> None:
+    """DEC-122 (BLD-C209): a field that leaves "suggested" keeps the assistant's suggestion beside what the person did
+    with it: `accepted` when confirmed as suggested, `changed` otherwise. Only a suggestion the assistant made: from
+    a part a draft run filled (not pinned, with a value), and the kind only as the agent said it with its quote, never
+    the area's rule or New business picked by hand. Nothing while `learning.outcomes` is off."""
+    moved = [f for f in FIELDS if before[f].source == "suggested" and after[f].source != "suggested"]
+    if not moved or not outcomes.writing(conn):
+        return
+    rows = {
+        str(r["key"]): dict(r)
+        for r in conn.execute(
+            "SELECT key, state, value, run_id FROM idea_parts WHERE idea_uuid = %s "
+            "AND key IN ('title', 'who', 'value', 'area')",
+            (idea["id"],),
+        ).fetchall()
+    }
+    for f in moved:
+        row = rows.get(outcomes.SORTING_FIELDS[f])
+        if f == "kind":
+            agent_kind, _quote = parts.agent_kind((row or {}).get("value"))
+            by_hand = after["area"].source == "changed" and parts.is_new_business(after["area"].value)
+            if not agent_kind or by_hand or suggested["kind"].value != agent_kind:
+                continue
+        elif outcomes.model_part_value(row, outcomes.SORTING_FIELDS[f]) is None:
+            continue
+        outcomes.record(
+            conn,
+            str(idea["id"]),
+            f"sorting.{f}",
+            suggested=suggested[f].value,
+            final=after[f].value,
+            outcome="accepted" if after[f].source == "confirmed" else "changed",
+            run_id=str(row["run_id"]) if row and row.get("run_id") else None,
+        )
 
 
 def update_draft(conn: Conn, key: str, user_id: str, body: Any, *, now: dt.datetime) -> dict[str, Any]:

@@ -55,6 +55,8 @@ OFF_BY_DESIGN: dict[str, str] = {
     "auth.email_code": "Off until InfoSec approves sign-in by email code (BLD-E002, DEC-105)",
     # Matches its reason in migration 20261122300100 (lane C, BLD-C064).
     "files.blackout": "Off until black-out passes review (DEC-107)",
+    # Matches its reason in migration 20261122300900 (lane C, BLD-C207): keeping suggestions waits for the notice.
+    "learning.outcomes": "Off until the privacy notice names this purpose (DEC-122)",
 }
 
 VOICE = "Voice: on at launch through Sarvam, or the on-server engine behind the isolated service (DEC-108)"

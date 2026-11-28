@@ -70,6 +70,7 @@ kill_switch_flippers:
   attachments.deep_check: [admin, infosec]
   scan.live: [admin]
   learning.jobs: [admin]
+  learning.outcomes: [admin]  # DEC-122 (BLD-C207): keeping suggestions, off until the privacy notice names it
   ember.send: [admin]
   solutions.publish: [admin]
   capture.mic_hint: [admin, infosec]                  # DEC-096: the keyboard-mic tip under quick capture
