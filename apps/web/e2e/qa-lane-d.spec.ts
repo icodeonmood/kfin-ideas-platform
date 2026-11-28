@@ -114,7 +114,9 @@ for (const [w, h] of [
     test.setTimeout(300_000);
     mkdirSync(QA_SHOTS, { recursive: true });
     await signIn(page, PERSONAS.contributor);
-    const ideaId = await shareQuickly(page, `QA lane D: branch SMS gives a code only (${w} ${Date.now()})`);
+    // No long digit run in the words: "320 1764…" (width plus Date.now()) is 16 digits, and the card pattern blocks
+    // one that passes Luhn, so the save got a 422 about one run in ten
+    const ideaId = await shareQuickly(page, `QA lane D: branch SMS gives a code only, phone width ${w}`);
     await page.setViewportSize({ width: w, height: h });
     const paths = [
       "/",
